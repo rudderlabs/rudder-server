@@ -2572,7 +2572,7 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	if !proc.config.enableEventCount {
 		eventCount = 0
 	}
-	queryParams := jobsdb.GetQueryParams{
+	queryParams := jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{proc.config.GWCustomVal},
 		JobsLimit:        proc.config.maxEventsToProcess,
 		EventsLimit:      eventCount,

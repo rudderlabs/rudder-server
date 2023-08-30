@@ -162,7 +162,7 @@ func TestProcessorManager(t *testing.T) {
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -254,7 +254,7 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -293,14 +293,14 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.NoError(t, err, "failed to get unprocessed jobs")
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},

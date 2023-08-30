@@ -22,7 +22,7 @@ import (
 // DumpsLoaderHandleT - dumps-loader handle
 type dumpsLoaderHandleT struct {
 	log           logger.Logger
-	dbHandle      *jobsdb.Handle
+	dbHandle      *jobsdb.HandleT
 	prefix        string
 	bucket        string
 	startAfterKey string
@@ -80,7 +80,7 @@ type OrderedJobs struct {
 	Job       *jobsdb.JobT
 }
 
-func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Handle, log logger.Logger) {
+func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT, log logger.Logger) {
 	// sorting dumps list on index
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].SortIndex < objects[j].SortIndex
@@ -228,7 +228,7 @@ func (handle *dumpsLoaderHandleT) handleRecovery() {
 }
 
 // Setup sets up dumps-loader.
-func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	var err error
 	handle.log = log
 	handle.dbHandle = db

@@ -27,13 +27,13 @@ type LifecycleManager struct {
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        interface{ Wait() }
-	gatewayDB        *jobsdb.Handle
-	routerDB         *jobsdb.Handle
-	batchRouterDB    *jobsdb.Handle
-	readErrDB        *jobsdb.Handle
-	writeErrDB       *jobsdb.Handle
-	esDB             *jobsdb.Handle
-	arcDB            *jobsdb.Handle
+	gatewayDB        *jobsdb.HandleT
+	routerDB         *jobsdb.HandleT
+	batchRouterDB    *jobsdb.HandleT
+	readErrDB        *jobsdb.HandleT
+	writeErrDB       *jobsdb.HandleT
+	esDB             *jobsdb.HandleT
+	arcDB            *jobsdb.HandleT
 	clearDB          *bool
 	ReportingI       types.Reporting // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
@@ -91,7 +91,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.HandleT,
 	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,

@@ -22,7 +22,7 @@ func TestIsolationStrategy(t *testing.T) {
 			require.Equal(t, []string{""}, partitions)
 		})
 		t.Run("augment query params", func(t *testing.T) {
-			var params jobsdb.GetQueryParams
+			var params jobsdb.GetQueryParamsT
 			toAugment := params
 			strategy.AugmentQueryParams("partition", &toAugment)
 			require.Equal(t, params, toAugment)
@@ -37,9 +37,9 @@ func TestIsolationStrategy(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("augment query params", func(t *testing.T) {
-			var params jobsdb.GetQueryParams
+			var params jobsdb.GetQueryParamsT
 			strategy.AugmentQueryParams("partition", &params)
-			var expected jobsdb.GetQueryParams
+			var expected jobsdb.GetQueryParamsT
 			expected.WorkspaceID = "partition"
 			require.Equal(t, expected, params)
 		})

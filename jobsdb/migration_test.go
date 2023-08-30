@@ -26,7 +26,7 @@ func TestMigration(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 
-		jobDB := Handle{
+		jobDB := HandleT{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -213,7 +213,7 @@ func TestMigration(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
 
-		jobDB := Handle{
+		jobDB := HandleT{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},

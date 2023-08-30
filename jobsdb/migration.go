@@ -22,14 +22,14 @@ import (
 // First all the unprocessed jobs are copied over. Then all the jobs which haven't
 // completed (state is failed or waiting or waiting_retry or executiong) are copied
 // over. Then the status (only the latest) is set for those jobs
-func (jd *Handle) startMigrateDSLoop(ctx context.Context) {
+func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.migrateDSLoop(ctx)
 		return nil
 	}))
 }
 
-func (jd *Handle) migrateDSLoop(ctx context.Context) {
+func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 	for {
 		select {
 		case <-jd.TriggerMigrateDS():
@@ -57,7 +57,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 	}
 }
 
-func (jd *Handle) doMigrateDS(ctx context.Context) error {
+func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
@@ -180,7 +180,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
-func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
+func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
@@ -227,7 +227,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 }
 
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
-func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
+func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
@@ -276,7 +276,7 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 }
 
 // based on an estimate cleans up the status tables
-func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
+func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
 	var toVacuum []string
 	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList)
 	if err != nil {
@@ -332,7 +332,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 }
 
 // cleanStatusTable deletes all rows except for the latest status for each job
-func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
+func (jd *HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
 	result, err := tx.ExecContext(
 		ctx,
 		fmt.Sprintf(`DELETE FROM %[1]q
@@ -361,7 +361,7 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 // getMigrationList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
-func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
+func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
 	var (
 		liveDSCount, migrateDSProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
@@ -422,7 +422,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 	return
 }
 
-func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
+func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
 	defer jd.getTimerStat(
 		"migration_jobs",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -462,7 +462,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	return int(numJobsMigrated), nil
 }
 
-func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
+func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
 	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList, err := jd.doRefreshDSList(l)
 	if err != nil {
@@ -481,7 +481,7 @@ func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBef
 	return newDSIdx, nil
 }
 
-func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
+func (jd *HandleT) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
 		if jd.isBackupEnabled() {
@@ -521,7 +521,7 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 // checkIfMigrateDS checks when DB is full or DB needs to be migrated.
 // We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
 // Or when the job_status table gets too big because of lots of retries/failures
-func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
+func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	migrate, small bool, recordsLeft int, err error,
 ) {
 	defer jd.getTimerStat(

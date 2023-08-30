@@ -83,8 +83,9 @@ func Test_JobsForwarder(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			jobs, err := schemasDB.GetSucceeded(context.Background(), jobsdb.GetQueryParams{
-				JobsLimit: 10,
+			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
+				StateFilters: []string{jobsdb.Succeeded.State},
+				JobsLimit:    10,
 			})
 			require.NoError(t, err)
 			return len(jobs.Jobs) == 10
@@ -113,8 +114,9 @@ func Test_JobsForwarder(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			jobs, err := schemasDB.GetAborted(context.Background(), jobsdb.GetQueryParams{
-				JobsLimit: 10,
+			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
+				StateFilters: []string{jobsdb.Aborted.State},
+				JobsLimit:    10,
 			})
 			require.NoError(t, err)
 			return len(jobs.Jobs) == 10

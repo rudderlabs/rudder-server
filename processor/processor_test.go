@@ -1127,7 +1127,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
-				jobsdb.GetQueryParams{
+				jobsdb.GetQueryParamsT{
 					CustomValFilters: gatewayCustomVal,
 					JobsLimit:        processor.config.maxEventsToProcess,
 					EventsLimit:      processor.config.maxEventsToProcess,
@@ -1270,7 +1270,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
-				jobsdb.GetQueryParams{
+				jobsdb.GetQueryParamsT{
 					CustomValFilters: gatewayCustomVal,
 					JobsLimit:        processor.config.maxEventsToProcess,
 					EventsLimit:      processor.config.maxEventsToProcess,
@@ -1477,7 +1477,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        processor.config.maxEventsToProcess,
 				EventsLimit:      processor.config.maxEventsToProcess,
@@ -1765,7 +1765,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        processor.config.maxEventsToProcess,
 				EventsLimit:      processor.config.maxEventsToProcess,
@@ -1907,7 +1907,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        processor.config.maxEventsToProcess,
 				EventsLimit:      processor.config.maxEventsToProcess,
@@ -1998,7 +1998,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        processor.config.maxEventsToProcess,
 				EventsLimit:      processor.config.maxEventsToProcess,
@@ -2070,7 +2070,8 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockReadProcErrorsDB.EXPECT().FailExecuting().Times(1)
-			c.mockReadProcErrorsDB.EXPECT().GetToProcess(gomock.Any(), gomock.Any(), gomock.Any()).Return(&jobsdb.MoreJobsResult{}, nil).AnyTimes()
+			c.mockReadProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockReadProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
 
@@ -2125,7 +2126,8 @@ var _ = Describe("Processor", Ordered, func() {
 			processor.config.readLoopSleep = time.Millisecond
 
 			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
-			c.mockReadProcErrorsDB.EXPECT().GetToProcess(gomock.Any(), gomock.Any(), gomock.Any()).Return(&jobsdb.MoreJobsResult{}, nil).AnyTimes()
+			c.mockReadProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
+			c.mockReadProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()

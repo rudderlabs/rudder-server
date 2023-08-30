@@ -40,7 +40,8 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	jobs, err := jdb.GetJobs(context.Background(), []string{jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{JobsLimit: 1})
+	// jobs, err := jdb.GetJobs(context.Background(), []string{jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{JobsLimit: 1})
+	jobs, err := jdb.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{JobsLimit: 1})
 	require.NoError(t, err)
 	require.Len(t, jobs.Jobs, 1)
 	job := jobs.Jobs[0]

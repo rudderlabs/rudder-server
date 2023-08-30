@@ -17,7 +17,7 @@ func Test_mustRenameDS(t *testing.T) {
 	postgresql := startPostgres(t)
 	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
 	dbHandle := postgresql.DB
-	jobsdb := &Handle{
+	jobsdb := &HandleT{
 		tablePrefix: prefix,
 		dbHandle:    dbHandle,
 	}
@@ -63,7 +63,7 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	dbHandle := postgresql.DB
 
 	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
-	jobsdb := &Handle{
+	jobsdb := &HandleT{
 		tablePrefix: prefix,
 		dbHandle:    dbHandle,
 	}

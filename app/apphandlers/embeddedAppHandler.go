@@ -326,7 +326,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return gw.StartWebHandler(ctx)
 	})
 	if a.config.enableReplay {
-		var replayDB jobsdb.Handle
+		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
 			prebackupHandlers, fileUploaderProvider,

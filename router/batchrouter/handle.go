@@ -184,22 +184,37 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 
 	brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "getJobs", "destType": brt.destType, "partition": partition})
 	queryStart := time.Now()
-	queryParams := jobsdb.GetQueryParams{
+	queryParams := jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{brt.destType},
 		JobsLimit:        limit,
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
 	var limitsReached bool
-	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
-		return brt.jobsDB.GetToProcess(ctx, queryParams, nil)
+	toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		return brt.jobsDB.GetToRetry(ctx, queryParams)
 	}, brt.sendQueryRetryStats)
 	if err != nil {
 		brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
 		panic(err)
 	}
-	jobs = toProcess.Jobs
-	limitsReached = toProcess.LimitsReached
+	jobs = toRetry.Jobs
+	limitsReached = toRetry.LimitsReached
+	if !limitsReached {
+		queryParams.JobsLimit -= len(toRetry.Jobs)
+		if queryParams.PayloadSizeLimit > 0 {
+			queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+		}
+		unprocessed, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return brt.jobsDB.GetUnprocessed(ctx, queryParams)
+		}, brt.sendQueryRetryStats)
+		if err != nil {
+			brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
+			panic(err)
+		}
+		jobs = append(jobs, unprocessed.Jobs...)
+		limitsReached = unprocessed.LimitsReached
+	}
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID
@@ -780,7 +795,7 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 // skipFetchingJobs returns true if the destination type is async and the there are still jobs in [importing] state for this destination type
 func (brt *Handle) skipFetchingJobs(partition string) bool {
 	if slices.Contains(asyncDestinations, brt.destType) {
-		queryParams := jobsdb.GetQueryParams{
+		queryParams := jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        1,
 			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),

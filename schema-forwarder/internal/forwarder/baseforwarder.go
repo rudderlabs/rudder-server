@@ -50,7 +50,7 @@ func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb
 // GetJobs is an abstraction over the GetUnprocessed method of the jobsdb which includes retries
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
 	unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.conf.jobsDBQueryRequestTimeout, bf.conf.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return bf.jobsDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+		return bf.jobsDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
 			EventsLimit:      bf.conf.pickupSize,
 			JobsLimit:        bf.conf.pickupSize,
 			PayloadSizeLimit: bf.conf.jobsDBPayloadSize,

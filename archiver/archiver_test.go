@@ -148,12 +148,14 @@ func TestJobsArchival(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			succeeded, err := jd.GetSucceeded(
+			succeeded, err := jd.GetProcessed(
 				ctx,
-				jobsdb.GetQueryParams{
-					JobsLimit:        1000,
-					EventsLimit:      1000,
-					PayloadSizeLimit: bytesize.GB,
+				jobsdb.GetQueryParamsT{
+					IgnoreCustomValFiltersInQuery: true,
+					StateFilters:                  []string{jobsdb.Succeeded.State},
+					JobsLimit:                     1000,
+					EventsLimit:                   1000,
+					PayloadSizeLimit:              bytesize.GB,
 				},
 			)
 			require.NoError(t, err)
