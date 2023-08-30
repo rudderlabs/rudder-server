@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type implementEloqua struct {
@@ -107,6 +108,22 @@ func (e *implementEloqua) UploadData(data *HttpRequestData, filePath string) err
 	data.Method = "POST"
 	data.ContentType = "text/csv"
 	data.Body = file
+	_, statusCode, err := e.MakeHTTPRequest(data)
+	if err != nil {
+		return err
+	}
+	if statusCode != 204 {
+		return fmt.Errorf("Upload failed with status code: %d", statusCode)
+	}
+	return nil
+}
+
+func (e *implementEloqua) UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]interface{}) error {
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart + "/data"
+	data.Method = "POST"
+	data.ContentType = "application/json"
+	marshalledData, _ := json.Marshal(uploadData)
+	data.Body = strings.NewReader(string(marshalledData))
 	_, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return err

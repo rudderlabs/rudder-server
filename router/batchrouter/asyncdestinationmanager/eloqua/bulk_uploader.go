@@ -21,7 +21,7 @@ func createAsyncUploadOutput(errorString string, err error, destinationId string
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-
+	uploadDataThroughCSV := false
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
 		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
@@ -50,8 +50,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		fileSizeLimit: b.fileSizeLimit,
 		importingJobs: asyncDestStruct.ImportingJobIDs,
 	}
-	filePAth, _ := createCSVFile(fields, file, &uploadJobInfo)
-	defer os.Remove(filePAth)
+
 	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, identifierFieldName)
 	if err != nil {
 		return createAsyncUploadOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
@@ -88,8 +87,18 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-
-	err = b.service.UploadData(&uploadDataData, filePAth)
+	var (
+		filePAth   string
+		uploadData []map[string]interface{}
+	)
+	if uploadDataThroughCSV {
+		filePAth, _ = createCSVFile(fields, file, &uploadJobInfo)
+		defer os.Remove(filePAth)
+		err = b.service.UploadData(&uploadDataData, filePAth)
+	} else {
+		uploadData = createUploadData(file, &uploadJobInfo)
+		err = b.service.UploadDataWithoutCSV(&uploadDataData, uploadData)
+	}
 	if err != nil {
 		return createAsyncUploadOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
