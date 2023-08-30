@@ -59,6 +59,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
+	fmt.Println("[ELOQUA]::importDefinition data: " + string(marshalledData))
 	importDefinitionData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
@@ -67,6 +68,8 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 
 	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventType)
+	marshaledImportDefiniton, _ := json.Marshal(importDefinition)
+	fmt.Println("[ELOQUA]::importDefinition created: " + string(marshaledImportDefiniton))
 	if err != nil {
 		return createAsyncUploadOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
 	}
@@ -93,10 +96,12 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	)
 	if uploadDataThroughCSV {
 		filePAth, _ = createCSVFile(fields, file, &uploadJobInfo)
-		defer os.Remove(filePAth)
+		// defer os.Remove(filePAth)
 		err = b.service.UploadData(&uploadDataData, filePAth)
 	} else {
 		uploadData = createUploadData(file, &uploadJobInfo)
+		marshaledUploadData, _ := json.Marshal(uploadData)
+		fmt.Println("[ELOQUA]::uploadData created: " + string(marshaledUploadData))
 		err = b.service.UploadDataWithoutCSV(&uploadDataData, uploadData)
 	}
 	if err != nil {
