@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/mock/gomock"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -19,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -490,7 +487,9 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 
 	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 
-	if err = operations.Setup(ctx, warehouse, newMockUploader(dest)); err != nil {
+	if err = operations.Setup(ctx, warehouse, &dummyUploader{
+		dest: dest,
+	}); err != nil {
 		return nil, fmt.Errorf("setting up manager: %w", err)
 	}
 
@@ -549,15 +548,35 @@ func tableWithUUID() string {
 	return table + "_" + warehouseutils.RandHex()
 }
 
-type noopReporter struct{}
+type dummyUploader struct {
+	dest *backendconfig.DestinationT
+}
 
-func (c *noopReporter) Errorf(_ string, _ ...interface{}) {}
-func (c *noopReporter) Fatalf(_ string, _ ...interface{}) {}
+func (*dummyUploader) GetSchemaInWarehouse() model.Schema                    { return nil }
+func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error)  { return nil, nil }
+func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
+func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
+func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
+func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema    { return nil }
+func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema       { return nil }
+func (*dummyUploader) CanAppend() bool                                       { return false }
+func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
+	return "", nil
+}
 
-func newMockUploader(dest *backendconfig.DestinationT) *mockuploader.MockUploader {
-	ctrl := gomock.NewController(&noopReporter{})
-	u := mockuploader.NewMockUploader(ctrl)
-	u.EXPECT().GetLoadFileType().AnyTimes().Return(dest.DestinationDefinition.Name)
-	u.EXPECT().UseRudderStorage().AnyTimes().Return(misc.IsConfiguredToUseRudderObjectStorage(dest.Config))
-	return u
+func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+	return nil
+}
+
+func (*dummyUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
+}
+
+func (m *dummyUploader) GetLoadFileType() string {
+	return warehouseutils.GetLoadFileType(m.dest.DestinationDefinition.Name)
+}
+
+func (m *dummyUploader) UseRudderStorage() bool {
+	return misc.IsConfiguredToUseRudderObjectStorage(m.dest.Config)
 }
