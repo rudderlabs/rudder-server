@@ -26,8 +26,8 @@ var (
 	queueName          string
 	maxAttempt         int
 	trackBatchInterval time.Duration
-	maxPollSleep       time.Duration
-	jobOrphanTimeout   time.Duration
+	maxPollSleep       config.Atomic[time.Duration]
+	jobOrphanTimeout   config.Atomic[time.Duration]
 	pkgLogger          logger.Logger
 )
 
@@ -108,10 +108,10 @@ func loadPGNotifierConfig() {
 	pgNotifierDBPort = config.GetInt("PGNOTIFIER_DB_PORT", 5432)
 	pgNotifierDBPassword = config.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
 	pgNotifierDBSSLMode = config.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
-	config.RegisterIntConfigVariable(3, &maxAttempt, false, 1, "PgNotifier.maxAttempt")
+	config.RegisterIntVar(3, &maxAttempt, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
-	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
+	config.RegisterAtomicDurationVar(5000, &maxPollSleep, time.Millisecond, "PgNotifier.maxPollSleep")
+	config.RegisterAtomicDurationVar(120, &jobOrphanTimeout, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
 // New Given default connection info return pg notifier object from it
@@ -613,8 +613,8 @@ func (notifier *PGNotifier) Subscribe(ctx context.Context, workerId string, jobs
 				pollSleep = time.Duration(0)
 			} else {
 				pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
-				if pollSleep > maxPollSleep {
-					pollSleep = maxPollSleep
+				if pollSleep > maxPollSleep.Load() {
+					pollSleep = maxPollSleep.Load()
 				}
 			}
 			select {
@@ -678,7 +678,7 @@ func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(jobOrphanTimeout / 5):
+		case <-time.After(jobOrphanTimeout.Load() / 5):
 		}
 	}
 	for {
@@ -705,7 +705,7 @@ func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			ExecutingState,
-			int(jobOrphanTimeout/time.Second),
+			int(jobOrphanTimeout.Load()/time.Second),
 		)
 		pkgLogger.Debugf("PgNotifier: re-triggering zombie jobs: %v", stmt)
 		rows, err := notifier.db.Query(stmt)
@@ -732,7 +732,7 @@ func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(jobOrphanTimeout / 5):
+		case <-time.After(jobOrphanTimeout.Load() / 5):
 		}
 	}
 }
