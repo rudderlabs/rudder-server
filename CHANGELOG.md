@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.13.0-preview-1](https://github.com/rudderlabs/rudder-server/compare/v1.12.1...v1.13.0-preview-1) (2023-08-30)
+
+
+### Features
+
+* archive jobs to object storage ([#3721](https://github.com/rudderlabs/rudder-server/issues/3721)) ([c65ded3](https://github.com/rudderlabs/rudder-server/commit/c65ded3fb0475ad1ad25d0b804bc784f8382ef69))
+
+
+### Miscellaneous
+
+* change some worker pool logs to debug ([#3744](https://github.com/rudderlabs/rudder-server/issues/3744)) ([6c3fcca](https://github.com/rudderlabs/rudder-server/commit/6c3fcca04412895bc34f894ff6299501405524b2))
+* **deps:** bump cloud.google.com/go/bigquery from 1.53.0 to 1.54.0 ([#3763](https://github.com/rudderlabs/rudder-server/issues/3763)) ([0612cc1](https://github.com/rudderlabs/rudder-server/commit/0612cc1a3466fd61ded52663019539c178dfff6e))
+* **deps:** bump cloud.google.com/go/storage from 1.31.0 to 1.32.0 ([#3754](https://github.com/rudderlabs/rudder-server/issues/3754)) ([8ab2ac2](https://github.com/rudderlabs/rudder-server/commit/8ab2ac272b02b2deeb39e60a72303479e6db6628))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.319 to 1.44.323 ([#3748](https://github.com/rudderlabs/rudder-server/issues/3748)) ([7d10800](https://github.com/rudderlabs/rudder-server/commit/7d10800e9be8108fdcd2b96064a2b2e63d75de69))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.323 to 1.44.324 ([#3753](https://github.com/rudderlabs/rudder-server/issues/3753)) ([a3f28c7](https://github.com/rudderlabs/rudder-server/commit/a3f28c7a1187f045150ee675cc730583991dc76e))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.324 to 1.44.326 ([#3761](https://github.com/rudderlabs/rudder-server/issues/3761)) ([9fcead7](https://github.com/rudderlabs/rudder-server/commit/9fcead7c16394911b8f5fcfeb62edbfed8e47cad))
+* **deps:** bump github.com/minio/minio-go/v7 from 7.0.61 to 7.0.62 ([#3762](https://github.com/rudderlabs/rudder-server/issues/3762)) ([417c981](https://github.com/rudderlabs/rudder-server/commit/417c981fa42fe082e47489dbd24f6b32227bd895))
+* **deps:** bump google.golang.org/api from 0.136.0 to 0.137.0 ([#3749](https://github.com/rudderlabs/rudder-server/issues/3749)) ([3aff568](https://github.com/rudderlabs/rudder-server/commit/3aff5687685c463c78f10f402d04684596d958fd))
+* **deps:** bump google.golang.org/api from 0.137.0 to 0.138.0 ([#3760](https://github.com/rudderlabs/rudder-server/issues/3760)) ([862a0b9](https://github.com/rudderlabs/rudder-server/commit/862a0b92f67175f84f941094a9e3e9fb6a80b0a0))
+* **gateway:** authentication middlewares and context information ([#3736](https://github.com/rudderlabs/rudder-server/issues/3736)) ([264c52a](https://github.com/rudderlabs/rudder-server/commit/264c52ae80d033c6e36345861d899175e18b3def))
+* introduce encoding factory ([#3740](https://github.com/rudderlabs/rudder-server/issues/3740)) ([188b95c](https://github.com/rudderlabs/rudder-server/commit/188b95cd5aa199f9bd29085dabacd9ef48d87fe5))
+* remove archival for jobsdb journal tables ([#3758](https://github.com/rudderlabs/rudder-server/issues/3758)) ([ff80a1d](https://github.com/rudderlabs/rudder-server/commit/ff80a1d3bcfdce7cdb9508b936d6a07892e0e9f9))
+* remove Init and exported struct variables from Archiver ([#3735](https://github.com/rudderlabs/rudder-server/issues/3735)) ([6c3fcca](https://github.com/rudderlabs/rudder-server/commit/6c3fcca04412895bc34f894ff6299501405524b2))
+* replay internal endpoint ([#3746](https://github.com/rudderlabs/rudder-server/issues/3746)) ([cd7557f](https://github.com/rudderlabs/rudder-server/commit/cd7557f3e5f1001734a602754a136926fec29bb4))
+* slave cleanup and introduce tests ([#3728](https://github.com/rudderlabs/rudder-server/issues/3728)) ([6c3fcca](https://github.com/rudderlabs/rudder-server/commit/6c3fcca04412895bc34f894ff6299501405524b2))
+* uploads cleanup ([#3743](https://github.com/rudderlabs/rudder-server/issues/3743)) ([ca52403](https://github.com/rudderlabs/rudder-server/commit/ca52403c0fd952d6256e2a6cf624ae11a3a05ebb))
+
 ## [1.12.1](https://github.com/rudderlabs/rudder-server/compare/v1.12.0...v1.12.1) (2023-08-16)
 
 
