@@ -238,6 +238,7 @@ func (w *worker) markStatus(
 						JobID:         job.JobID,
 						JobState:      state,
 						ErrorResponse: response,
+						Parameters:    []byte(`{}`),
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
