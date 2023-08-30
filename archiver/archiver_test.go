@@ -261,7 +261,7 @@ func (jd jdWrapper) GetDistinctParameterValues(ctx context.Context, parameterNam
 
 func (jd jdWrapper) GetUnprocessed(
 	ctx context.Context,
-	params jobsdb.GetQueryParams,
+	params jobsdb.GetQueryParamsT,
 ) (jobsdb.JobsResult, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return jobsdb.JobsResult{}, nil
@@ -280,7 +280,7 @@ func (jd jdWrapper) UpdateJobStatus(
 func TestNoQueriesIfDisabled(t *testing.T) {
 	queryCount := int32(0)
 	jd := jdWrapper{
-		&jobsdb.Handle{},
+		&jobsdb.HandleT{},
 		&queryCount,
 	}
 	c := config.New()
