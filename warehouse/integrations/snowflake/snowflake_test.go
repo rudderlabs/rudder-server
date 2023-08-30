@@ -12,6 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 
@@ -322,13 +328,16 @@ func TestIntegration(t *testing.T) {
 				cancel := bootstrap(t, tc.appendMode)
 				defer cancel()
 
+				cred := tc.cred
+				cred.Database = tc.database
+
 				urlConfig := sfdb.Config{
-					Account:   tc.cred.Account,
-					User:      tc.cred.User,
-					Role:      tc.cred.Role,
-					Password:  tc.cred.Password,
-					Database:  tc.database,
-					Warehouse: tc.cred.Warehouse,
+					Account:   cred.Account,
+					User:      cred.User,
+					Role:      cred.Role,
+					Password:  cred.Password,
+					Database:  cred.Database,
+					Warehouse: cred.Warehouse,
 				}
 
 				dsn, err := sfdb.DSN(&urlConfig)
@@ -486,6 +495,72 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
+}
+
+func TestSnowflake_ShouldAppend(t *testing.T) {
+	testCases := []struct {
+		name              string
+		loadTableStrategy string
+		sourceCategory    string
+		expected          bool
+	}{
+		{
+			name:              "merge with event stream",
+			loadTableStrategy: "MERGE",
+			sourceCategory:    "event-stream",
+			expected:          false,
+		},
+		{
+			name:              "append with event-stream",
+			loadTableStrategy: "MERGE",
+			sourceCategory:    "event-stream",
+			expected:          false,
+		},
+		{
+			name:              "merge with extract cloud source",
+			loadTableStrategy: "MERGE",
+			sourceCategory:    "cloud",
+			expected:          false,
+		},
+		{
+			name:              "merge with extract singer protocol source",
+			loadTableStrategy: "MERGE",
+			sourceCategory:    "singer-protocol",
+			expected:          false,
+		},
+		{
+			name:              "append with extract cloud source",
+			loadTableStrategy: "APPEND",
+			sourceCategory:    "cloud",
+			expected:          false,
+		},
+		{
+			name:              "append with extract singer protocol source",
+			loadTableStrategy: "APPEND",
+			sourceCategory:    "singer-protocol",
+			expected:          false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.New()
+			c.Set("Warehouse.snowflake.loadTableStrategy", tc.loadTableStrategy)
+
+			sf, err := snowflake.New(c, logger.NOP, stats.Default)
+			require.NoError(t, err)
+
+			sf.Warehouse = model.Warehouse{
+				Source: backendconfig.SourceT{
+					SourceDefinition: backendconfig.SourceDefinitionT{
+						Category: tc.sourceCategory,
+					},
+				},
+			}
+
+			require.Equal(t, sf.ShouldAppend(), tc.expected)
+		})
+	}
 }
 
 func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
