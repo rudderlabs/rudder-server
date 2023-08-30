@@ -21,7 +21,7 @@ func createAsyncUploadOutput(errorString string, err error, destinationId string
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	uploadDataThroughCSV := false
+	uploadDataThroughCSV := b.uploadDataThroughCSV
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
 		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)

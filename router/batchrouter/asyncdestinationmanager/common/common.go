@@ -157,6 +157,15 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	}
 }
 
+func GetBatchRouterConfigBool(key, destType string, defaultValue bool) bool {
+	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
+	if destOverrideFound {
+		return config.GetBool("BatchRouter."+destType+"."+key, defaultValue)
+	} else {
+		return config.GetBool("BatchRouter."+key, defaultValue)
+	}
+}
+
 /*
 Generates array of strings for comma separated string
 Also removes "" elements from the array of strings if any.
