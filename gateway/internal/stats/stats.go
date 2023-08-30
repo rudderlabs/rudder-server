@@ -97,7 +97,6 @@ func (ss *SourceStat) Report(s stats.Stats) {
 	if ss.reason != "" {
 		failedTags["reason"] = ss.reason
 	}
-
 	s.NewTaggedStat("gateway.write_key_requests", stats.CountType, tags).Count(ss.requests.total)
 	s.NewTaggedStat("gateway.write_key_successful_requests", stats.CountType, tags).Count(ss.requests.succeeded)
 	s.NewTaggedStat("gateway.write_key_failed_requests", stats.CountType, failedTags).Count(ss.requests.failed)
