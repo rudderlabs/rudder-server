@@ -294,12 +294,11 @@ func TestNoQueriesIfDisabled(t *testing.T) {
 
 	require.NoError(t, arc.Start())
 	defer arc.Stop()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.True(t, atomic.LoadInt32(&queryCount) == 0)
 
 	c.Set("archival.Enabled", true)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.True(t, atomic.LoadInt32(&queryCount) > 0)
 	// queries should've happened(only getDistinct) -> since empty list is returned
-
 }
