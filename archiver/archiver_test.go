@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,4 +245,61 @@ func getAllFileNames(fileIter filemanager.ListSession) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+type jdWrapper struct {
+	jobsdb.JobsDB
+	queries *int32
+}
+
+func (jd jdWrapper) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
+	atomic.AddInt32(jd.queries, 1)
+	return []string{}, nil
+}
+
+func (jd jdWrapper) GetUnprocessed(
+	ctx context.Context,
+	params jobsdb.GetQueryParams,
+) (jobsdb.JobsResult, error) {
+	atomic.AddInt32(jd.queries, 1)
+	return jobsdb.JobsResult{}, nil
+}
+
+func (jd jdWrapper) UpdateJobStatus(
+	ctx context.Context,
+	statusList []*jobsdb.JobStatusT,
+	customValFilters []string,
+	parameterFilters []jobsdb.ParameterFilterT,
+) error {
+	atomic.AddInt32(jd.queries, 1)
+	return nil
+}
+
+func TestNoQueriesIfDisabled(t *testing.T) {
+	queryCount := int32(0)
+	jd := jdWrapper{
+		&jobsdb.Handle{},
+		&queryCount,
+	}
+	c := config.New()
+	c.Set("archival.Enabled", false)
+	c.Set("archival.ArchiveSleepDuration", "1ms")
+
+	arc := New(
+		jd,
+		fileuploader.NewStaticProvider(map[string]fileuploader.StorageSettings{}),
+		c,
+		stats.Default,
+	)
+
+	require.NoError(t, arc.Start())
+	defer arc.Stop()
+	time.Sleep(10 * time.Millisecond)
+	require.True(t, atomic.LoadInt32(&queryCount) == 0)
+
+	c.Set("archival.Enabled", true)
+	time.Sleep(10 * time.Millisecond)
+	require.True(t, atomic.LoadInt32(&queryCount) > 0)
+	// queries should've happened(only getDistinct) -> since empty list is returned
+
 }
