@@ -1,38 +1,32 @@
 package cloudfunctions
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"golang.org/x/oauth2/jwt"
+	"regexp"
+	"strings"
 
 	"google.golang.org/api/cloudfunctions/v1"
-	v1 "google.golang.org/api/cloudfunctions/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/idtoken"
 
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/tidwall/gjson"
 )
 
 type Config struct {
 	Credentials            string `json:"credentials"`
 	FunctionEnvironment    string `json:"functionEnvironment"`
-	RequireAuthentication  string `json:"requireAuthentication"`
+	RequireAuthentication  bool   `json:"requireAuthentication"`
 	GoogleCloudFunctionUrl string `json:"googleCloudFunctionUrl"`
-}
-
-type Credentials struct {
-	Email      string `json:"client_email"`
-	PrivateKey string `json:"private_key"`
-	TokenUrl   string `json:"token_uri"`
 }
 
 type Client struct {
@@ -62,9 +56,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: error in GoogleCloudFunction while unmarshalling destination config:: %w", err)
 	}
 
-	var opts []option.ClientOption
-	if opts, err = clientOptions(&config); err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] error :: %w", err)
+	opts := []option.ClientOption{
+		option.WithCredentialsJSON([]byte(config.Credentials)),
 	}
 
 	service, err := generateService(destination, opts...)
@@ -78,36 +71,92 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	return &GoogleCloudFunctionProducer{client}, err
 }
 
-func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
-	client := producer.client
-	if client == nil {
-		respStatus = "Failure"
-		responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
-		return 400, respStatus, responseMessage
-	}
+func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, destConfig Config) (statusCode int, respStatus, responseMessage string) {
 
-	// Make the HTTP request
-	call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
+	parsedJSON := gjson.ParseBytes(jsonData)
+	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
+		client := producer.client
 
-	response, err := call.Do()
-	if err != nil {
-		if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
-			fmt.Println("Function call was not executed (Not Modified)")
-		} else {
-			log.Fatalf("Failed to call function: %v", err)
+		if client == nil {
+			respStatus = "Failure"
+			responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
+			return 400, respStatus, responseMessage
 		}
+
+		functionName := getFunctionName(destConfig.GoogleCloudFunctionUrl)
+
+		fmt.Print(functionName)
+
+		requestPayload := &cloudfunctions.CallFunctionRequest{
+			Data: `{"input_key": "input_value"}`,
+		}
+
+		// Make the HTTP request
+		call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
+
+		response, err := call.Do()
+		if err != nil {
+			if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
+				fmt.Println("Function call was not executed (Not Modified)")
+			} else {
+				log.Fatalf("Failed to call function: %v", err)
+			}
+		}
+
+		// Process the response (sample response handling here).
+		if response != nil {
+			fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
+			// Handle response content as needed.
+		}
+		fmt.Println("Request successful!")
+
+		respStatus = "Success"
+		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: "
+		return 200, respStatus, responseMessage
 	}
 
-	// Process the response (sample response handling here).
-	if response != nil {
-		fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
-		// Handle response content as needed.
+	ctx := context.Background()
+	url := destConfig.GoogleCloudFunctionUrl // Replace with your actual audience URL
+
+	// Construct the GoogleCredentials object which obtains the default configuration from your
+	// working environment.
+	ts, err := idtoken.NewTokenSource(ctx, url, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
+	if err != nil {
+		fmt.Print("failed to create NewTokenSource: %w", err)
 	}
 
-	fmt.Println("Request successful!")
+	// Get the ID token, to make an authenticated call to the target audience.
+	token, err := ts.Token()
+	if err != nil {
+		fmt.Print("failed to receive token: %w", err)
+	}
 
-	respStatus = "Success"
-	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: "
+	// Create a POST request
+	req, err := http.NewRequest("POST", destConfig.GoogleCloudFunctionUrl, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return
+	}
+
+	// Set the appropriate headers
+	req.Header.Set("Content-Type", "application/json")
+	if destConfig.RequireAuthentication {
+		req.Header.Add("Authorization", "Bearer "+token.AccessToken)
+	}
+
+	// Make the request using the client
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println("Error making request:", err)
+		return
+	}
+
+	if resp.Status == "OK" {
+		respStatus = "Success"
+		responseMessage = "[GoogleSheets] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
+	}
+	fmt.Print(resp.Status)
+
 	return 200, respStatus, responseMessage
 }
 
@@ -115,60 +164,52 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 func generateService(destination *backendconfig.DestinationT, opts ...option.ClientOption) (*cloudfunctions.Service, error) {
 	ctx := context.Background()
 
-	cloudFunctionService, err := v1.NewService(ctx, opts...)
+	cloudFunctionService, err := cloudfunctions.NewService(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: Unable to create cloudfunction service :: %w", err)
 	}
 	return cloudFunctionService, err
 }
 
-func clientOptions(config *Config) ([]option.ClientOption, error) {
-	var credentials Credentials
-	if config.Credentials != "" {
-		err := json.Unmarshal([]byte(config.Credentials), &credentials)
-		if err != nil {
-			return nil, fmt.Errorf("[GoogleCloudFunction] error  :: error in GoogleCloudFunction while unmarshalling credentials json:: %w", err)
+func getFunctionName(url string) (functionName string) {
+
+	// Define a regular expression pattern to match URLs between "https://" and dot (.)
+	pattern := `https://(.*?)\.`
+
+	// Compile the regular expression pattern
+	regExp := regexp.MustCompile(pattern)
+
+	// Find all matches in the input string
+	matches := regExp.FindAllStringSubmatch(url, -1)
+
+	// Extract the captured groups
+	var resultArray []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			resultArray = append(resultArray, match[1])
 		}
 	}
-	// Creating token URL from Credentials file if not using constant from google.JWTTOkenURL
-	tokenURI := google.JWTTokenURL
-	if credentials.TokenUrl != "" {
-		tokenURI = credentials.TokenUrl
-	}
-	// Creating JWT Config which we are using for getting the oauth token
-	jwtconfig := &jwt.Config{
-		Email:      credentials.Email,
-		PrivateKey: []byte(credentials.PrivateKey),
-		Scopes: []string{
-			"https://www.googleapis.com/auth",
-		},
-		UseIDToken: true,
-		TokenURL:   tokenURI,
-	}
-	client, err := generateOAuthClient(jwtconfig)
-	if err != nil {
-		pkgLogger.Errorf("[GoogleCloudFunction] error  :: %v", err)
-		return nil, err
-	}
-	return []option.ClientOption{option.WithHTTPClient(client)}, nil
-}
 
-// generateOAuthClient produces an OAuth client based on a jwt Config
-func generateOAuthClient(jwtconfig *jwt.Config) (*http.Client, error) {
-	ctx := context.Background()
-	var oauthconfig *oauth2.Config
-	token, err := jwtconfig.TokenSource(ctx).Token()
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: error in GoogleCloudFunction while Retrieving token for service account:: %w", err)
+	// Combine the first two elements
+	splitValues := strings.Split(resultArray[0], "-")
+	// Join the first two values with "-" and assign to REGION
+	REGION := strings.Join(splitValues[:2], "-")
+
+	// Join the rest of the values with "-" and assign to PROJECT_ID
+	PROJECT_ID := strings.Join(splitValues[2:], "-")
+
+	var FUNCTION_NAME string
+
+	index := strings.Index(url, "cloudfunctions.net/")
+
+	if index != -1 {
+		// Extract the substring after "cloudfunctions.net/"
+		FUNCTION_NAME = url[index+len("cloudfunctions.net/"):]
+	} else {
+		fmt.Println("No match found")
 	}
-	// Once the token is received we are generating the oauth-config client which are using for generating the google-cloud-function service
-	client := oauthconfig.Client(ctx, token)
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: Unable to create oauth client :: %w", err)
-	}
-	return client, err
-}
-func (*GoogleCloudFunctionProducer) Close() error {
-	// no-op
-	return nil
+
+	functionName = "projects/" + PROJECT_ID + "/locations/" + REGION + "/functions/" + FUNCTION_NAME
+
+	return functionName
 }
