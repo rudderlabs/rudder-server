@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -73,18 +74,20 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return createAsyncUploadOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
 	}
+	if b.removeImportDefinition {
+		defer func() {
+			deleteImportDefinitionData := HttpRequestData{
+				BaseEndpoint:  b.baseEndpoint,
+				Authorization: b.authorization,
+				DynamicPart:   importDefinition.URI,
+			}
+			err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
+			if err != nil {
+				b.logger.Error("Error while deleting import definition", err)
+			}
+		}()
+	}
 
-	defer func() {
-		deleteImportDefinitionData := HttpRequestData{
-			BaseEndpoint:  b.baseEndpoint,
-			Authorization: b.authorization,
-			DynamicPart:   importDefinition.URI,
-		}
-		err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
-		if err != nil {
-			b.logger.Error("Error while deleting import definition", err)
-		}
-	}()
 	uploadDataData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		DynamicPart:   importDefinition.URI,
@@ -119,6 +122,11 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		Authorization: b.authorization,
 		Body:          strings.NewReader(string(marshalledData)),
 	}
+
+	if b.addDelayBeforeSync {
+		time.Sleep(5 * time.Second)
+	}
+
 	syncURI, err := b.service.RunSync(&runSyncData)
 	if err != nil {
 		return createAsyncUploadOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
