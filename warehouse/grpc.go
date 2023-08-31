@@ -5,6 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
+
+	"golang.org/x/exp/slices"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -22,23 +34,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"golang.org/x/exp/slices"
-	"google.golang.org/genproto/googleapis/rpc/code"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
-	"net/http"
-	"os"
 )
 
 const (
-	TriggeredSuccessfully   = "Triggered successfully"
-	NoPendingEvents         = "No pending events to sync for this destination"
-	DownloadFileNamePattern = "downloadfile.*.tmp"
-	NoSuchSync              = "No such sync exist"
+	triggeredSuccessfully   = "Triggered successfully"
+	noPendingEvents         = "No pending events to sync for this destination"
+	downloadFileNamePattern = "downloadfile.*.tmp"
+	noSuchSync              = "No such sync exist"
 )
 
 type GRPC struct {
@@ -367,7 +369,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	if pendingUploadCount+pendingStagingFilesCount == 0 {
 		return &proto.TriggerWhUploadsResponse{
 			StatusCode: http.StatusOK,
-			Message:    NoPendingEvents,
+			Message:    noPendingEvents,
 		}, nil
 	}
 
@@ -388,7 +390,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
-		Message:    TriggeredSuccessfully,
+		Message:    triggeredSuccessfully,
 	}, nil
 }
 
@@ -407,7 +409,7 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	upload, err := g.uploadRepo.Get(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
-			Message:    NoSuchSync,
+			Message:    noSuchSync,
 			StatusCode: http.StatusOK,
 		}, nil
 	}
@@ -424,7 +426,7 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
-			Message:    NoSuchSync,
+			Message:    noSuchSync,
 			StatusCode: http.StatusOK,
 		}, nil
 	}
@@ -435,7 +437,7 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
-		Message:    TriggeredSuccessfully,
+		Message:    triggeredSuccessfully,
 	}, nil
 }
 
@@ -726,7 +728,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to create temp directory: \n%w", err)
 	}
 
-	f, err = os.CreateTemp(tmpDirectory, DownloadFileNamePattern)
+	f, err = os.CreateTemp(tmpDirectory, downloadFileNamePattern)
 	if err != nil {
 		return fmt.Errorf("unable to create temp file: \n%w", err)
 	}

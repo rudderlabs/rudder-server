@@ -4,8 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -24,22 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/samber/lo"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
-	"testing"
-	"time"
 )
 
 func TestGRPC(t *testing.T) {
@@ -212,7 +214,6 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			var uploadIDs []int64
 			for i := 0; i < totalUploads; i++ {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
@@ -246,8 +247,6 @@ func TestGRPC(t *testing.T) {
 
 				err = repoTableUploads.Insert(ctx, uploadID, tables)
 				require.NoError(t, err)
-
-				uploadIDs = append(uploadIDs, uploadID)
 			}
 
 			t.Run("GetWHUpload", func(t *testing.T) {
@@ -423,14 +422,13 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			var uploadIDs []int64
 			for i := 0; i < totalUploads; i++ {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 
-				uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+				_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 					SourceID:        sourceID,
 					DestinationID:   destinationID,
 					DestinationType: destinationType,
@@ -454,8 +452,6 @@ func TestGRPC(t *testing.T) {
 					},
 				})
 				require.NoError(t, err)
-
-				uploadIDs = append(uploadIDs, uploadID)
 			}
 
 			t.Run("TriggerWHUpload", func(t *testing.T) {
@@ -480,7 +476,7 @@ func TestGRPC(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
-					require.EqualValues(t, NoSuchSync, res.GetMessage())
+					require.EqualValues(t, noSuchSync, res.GetMessage())
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 				})
 
@@ -505,7 +501,7 @@ func TestGRPC(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.NotNil(t, res)
-					require.EqualValues(t, TriggeredSuccessfully, res.GetMessage())
+					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 
 					upload, err := repoUpload.Get(ctx, 1)
@@ -553,7 +549,7 @@ func TestGRPC(t *testing.T) {
 					require.NoError(t, err)
 					require.NotNil(t, res)
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
-					require.EqualValues(t, TriggeredSuccessfully, res.GetMessage())
+					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
 				})
 
 				t.Run("success", func(t *testing.T) {
@@ -571,7 +567,7 @@ func TestGRPC(t *testing.T) {
 					require.NoError(t, err)
 					require.NotNil(t, res)
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
-					require.EqualValues(t, TriggeredSuccessfully, res.GetMessage())
+					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
 					require.True(t, isUploadTriggered(model.Warehouse{
 						Identifier: "POSTGRES:test_source_id:test_destination_id",
 					}))
@@ -586,7 +582,7 @@ func TestGRPC(t *testing.T) {
 					require.NoError(t, err)
 					require.NotNil(t, res)
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
-					require.EqualValues(t, NoPendingEvents, res.GetMessage())
+					require.EqualValues(t, noPendingEvents, res.GetMessage())
 				})
 			})
 		})
@@ -603,14 +599,13 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			var uploadIDs []int64
 			for i := 0; i < totalUploads; i++ {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 
-				uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+				_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 					SourceID:        sourceID,
 					DestinationID:   destinationID,
 					DestinationType: destinationType,
@@ -634,8 +629,6 @@ func TestGRPC(t *testing.T) {
 					},
 				})
 				require.NoError(t, err)
-
-				uploadIDs = append(uploadIDs, uploadID)
 			}
 
 			t.Run("RetryWHUploads", func(t *testing.T) {

@@ -688,7 +688,7 @@ func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destination
 	return createdAt.Time, nil
 }
 
-func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit int, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
 	syncUploadInfos, totalUploads, err := uploads.syncsInfo(ctx, limit, offset, opts, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
@@ -705,7 +705,7 @@ func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit int, 
 	return syncUploadInfos, totalUploads, nil
 }
 
-func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit int, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
 	syncUploadInfos, _, err := uploads.syncsInfo(ctx, limit, offset, opts, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
@@ -719,7 +719,7 @@ func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit in
 	return syncUploadInfos, totalUploads, nil
 }
 
-func (uploads *Uploads) syncsInfo(ctx context.Context, limit int, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
+func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
 	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
 
 	countOverClause := "0 AS total_uploads"

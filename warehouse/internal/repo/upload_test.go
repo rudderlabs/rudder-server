@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/samber/lo"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/stretchr/testify/require"
 
@@ -1223,7 +1224,7 @@ func TestUploads_Retry(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	intervalInHours := time.Now().Sub(now.Add(-12*time.Hour)) / time.Hour
+	intervalInHours := time.Since(now.Add(-12*time.Hour)) / time.Hour
 
 	t.Run("filters", func(t *testing.T) {
 		testCases := []struct {
@@ -1269,7 +1270,7 @@ func TestUploads_Retry(t *testing.T) {
 				retryCount: 1,
 			},
 			{
-				name: "unknwon filters",
+				name: "unknown filters",
 				filters: model.RetryOptions{
 					WorkspaceID:     "unknown_workspace_id",
 					DestinationID:   "unknown_destination_id",

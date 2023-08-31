@@ -225,36 +225,6 @@ func setupTables(dbHandle *sql.DB) error {
 	return nil
 }
 
-func TriggerUploadHandler(sourceID, destID string) error {
-	// return error if source id and dest id is empty
-	if sourceID == "" && destID == "" {
-		err := fmt.Errorf("empty source and destination id")
-		pkgLogger.Errorf("[WH]: trigger upload : %v", err)
-		return err
-	}
-
-	var wh []model.Warehouse
-	if sourceID != "" && destID == "" {
-		wh = bcManager.WarehousesBySourceID(sourceID)
-	}
-	if destID != "" {
-		wh = bcManager.WarehousesByDestID(destID)
-	}
-
-	// return error if no such destinations found
-	if len(wh) == 0 {
-		err := fmt.Errorf("no warehouse destinations found for source id '%s'", sourceID)
-		pkgLogger.Errorf("[WH]: %v", err)
-		return err
-	}
-
-	// iterate over each wh destination and trigger upload
-	for _, warehouse := range wh {
-		triggerUpload(warehouse)
-	}
-	return nil
-}
-
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
@@ -378,19 +348,19 @@ func Start(ctx context.Context, app app.App) error {
 		return nil
 	})
 
-	grpc, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
-	if err != nil {
-		return fmt.Errorf("grpc server failed to start: %v", err)
-	}
-	g.Go(func() error {
-		grpc.Start(gCtx)
-		return nil
-	})
-
 	RegisterAdmin(bcManager, pkgLogger)
 
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
+		grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
+		if err != nil {
+			return fmt.Errorf("cannot create grpc server: %w", err)
+		}
+		g.Go(func() error {
+			grpcServer.Start(gCtx)
+			return nil
+		})
+
 		api := NewApi(
 			mode, config.Default, pkgLogger, stats.Default,
 			backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
@@ -399,7 +369,7 @@ func Start(ctx context.Context, app app.App) error {
 		return api.Start(ctx)
 	}
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
+	notifier, err := pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
@@ -480,6 +450,15 @@ func Start(ctx context.Context, app app.App) error {
 			))
 			return nil
 		}))
+
+		grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
+		if err != nil {
+			return fmt.Errorf("cannot create grpc server: %w", err)
+		}
+		g.Go(func() error {
+			grpcServer.Start(gCtx)
+			return nil
+		})
 
 		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
