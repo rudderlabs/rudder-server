@@ -185,6 +185,23 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 	return &eventStatMeta, nil
 }
 
+func parseFailedData(syncId string, importingList []*jobsdb.JobT) (*common.EventStatMeta, error) {
+
+	jobIDs := []int64{}
+	failedReasons := map[int64]string{}
+	for _, job := range importingList {
+		jobIDs = append(jobIDs, job.JobID)
+		failedReasons[job.JobID] = "some error occurred please check the logs, using this syncId: " + syncId
+	}
+
+	eventStatMeta := common.EventStatMeta{
+		FailedKeys:    jobIDs,
+		FailedReasons: failedReasons,
+		SucceededKeys: []int64{},
+	}
+	return &eventStatMeta, nil
+}
+
 func createUploadData(file *os.File, uploaJobInfo *JobInfo) []map[string]interface{} {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
@@ -201,4 +218,16 @@ func createUploadData(file *os.File, uploaJobInfo *JobInfo) []map[string]interfa
 	uploaJobInfo.succeededJobs = uploaJobInfo.importingJobs
 	uploaJobInfo.failedJobs = []int64{}
 	return data1
+}
+
+func deleteImportDef(b *EloquaBulkUploader, importDefId string) {
+	deleteImportDefinitionData := HttpRequestData{
+		BaseEndpoint:  b.baseEndpoint,
+		Authorization: b.authorization,
+		DynamicPart:   importDefId,
+	}
+	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
+	if err != nil {
+		b.logger.Error("Error while deleting import definition", err)
+	}
 }

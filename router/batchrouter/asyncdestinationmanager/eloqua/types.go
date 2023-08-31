@@ -12,7 +12,6 @@ type Eloqua interface {
 	FetchFields(*HttpRequestData) (*Fields, error)
 	CreateImportDefinition(*HttpRequestData, string) (*ImportDefinition, error)
 	UploadData(*HttpRequestData, string) error
-	UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]interface{}) error
 	RunSync(*HttpRequestData) (string, error)
 	CheckSyncStatus(*HttpRequestData) (string, error)
 	DeleteImportDefinition(*HttpRequestData) error

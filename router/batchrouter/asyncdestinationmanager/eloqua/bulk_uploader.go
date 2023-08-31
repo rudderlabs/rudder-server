@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -22,7 +21,6 @@ func createAsyncUploadOutput(errorString string, err error, destinationId string
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	uploadDataThroughCSV := b.uploadDataThroughCSV
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
 		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
@@ -33,8 +31,6 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		return createAsyncUploadOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
 	}
 
-	var eloquaFields *Fields
-
 	customObjectData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
@@ -42,7 +38,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if eventType == "track" {
 		customObjectData.DynamicPart = customObjectId
 	}
-	eloquaFields, err = b.service.FetchFields(&customObjectData)
+	eloquaFields, err := b.service.FetchFields(&customObjectData)
 	if err != nil {
 		return createAsyncUploadOutput("got error while fetching fields. ", err, destination.ID, asyncDestStruct)
 	}
@@ -69,23 +65,8 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 
 	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventType)
-	marshaledImportDefiniton, _ := json.Marshal(importDefinition)
-	fmt.Println("[ELOQUA]::importDefinition created: " + string(marshaledImportDefiniton))
 	if err != nil {
 		return createAsyncUploadOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
-	}
-	if b.removeImportDefinition {
-		defer func() {
-			deleteImportDefinitionData := HttpRequestData{
-				BaseEndpoint:  b.baseEndpoint,
-				Authorization: b.authorization,
-				DynamicPart:   importDefinition.URI,
-			}
-			err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
-			if err != nil {
-				b.logger.Error("Error while deleting import definition", err)
-			}
-		}()
 	}
 
 	uploadDataData := HttpRequestData{
@@ -93,20 +74,12 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	var (
-		filePAth   string
-		uploadData []map[string]interface{}
-	)
-	if uploadDataThroughCSV {
-		filePAth, _ = createCSVFile(fields, file, &uploadJobInfo)
-		// defer os.Remove(filePAth)
-		err = b.service.UploadData(&uploadDataData, filePAth)
-	} else {
-		uploadData = createUploadData(file, &uploadJobInfo)
-		marshaledUploadData, _ := json.Marshal(uploadData)
-		fmt.Println("[ELOQUA]::uploadData created: " + string(marshaledUploadData))
-		err = b.service.UploadDataWithoutCSV(&uploadDataData, uploadData)
+	filePAth, err := createCSVFile(fields, file, &uploadJobInfo)
+	if err != nil {
+		return createAsyncUploadOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
+	defer os.Remove(filePAth)
+	err = b.service.UploadData(&uploadDataData, filePAth)
 	if err != nil {
 		return createAsyncUploadOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
@@ -122,18 +95,12 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		Authorization: b.authorization,
 		Body:          strings.NewReader(string(marshalledData)),
 	}
-
-	if b.addDelayBeforeSync {
-		time.Sleep(5 * time.Second)
-	}
-
 	syncURI, err := b.service.RunSync(&runSyncData)
 	if err != nil {
 		return createAsyncUploadOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
-
 	var parameters common.ImportParameters
-	parameters.ImportId = syncURI
+	parameters.ImportId = syncURI + ":" + importDefinition.URI
 	importParameters, err := stdjson.Marshal(parameters)
 	if err != nil {
 		return createAsyncUploadOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
@@ -150,12 +117,12 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 }
 
 func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+	importIds := strings.Split(pollInput.ImportId, ":")
 	checkSyncStatusData := HttpRequestData{
-		DynamicPart:   pollInput.ImportId,
+		DynamicPart:   importIds[0],
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 	}
-
 	uploadStatus, err := b.service.CheckSyncStatus(&checkSyncStatusData)
 	if err != nil {
 		return common.PollStatusResponse{
@@ -168,31 +135,33 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 	}
 	switch uploadStatus {
 	case "success":
+		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
-			Complete:      true,
-			InProgress:    false,
-			StatusCode:    200,
-			HasFailed:     false,
-			HasWarning:    false,
-			FailedJobURLs: pollInput.ImportId,
+			Complete:   true,
+			InProgress: false,
+			StatusCode: 200,
+			HasFailed:  false,
+			HasWarning: false,
 		}
 	case "error":
+		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
 			Complete:      true,
 			InProgress:    false,
 			StatusCode:    200,
 			HasFailed:     true,
 			HasWarning:    false,
-			FailedJobURLs: "error",
+			FailedJobURLs: importIds[0],
 		}
 	case "warning":
+		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
-			Complete:      true,
-			InProgress:    false,
-			StatusCode:    200,
-			HasFailed:     true,
-			HasWarning:    true,
-			FailedJobURLs: pollInput.ImportId,
+			Complete:       true,
+			InProgress:     false,
+			StatusCode:     200,
+			HasFailed:      true,
+			HasWarning:     true,
+			WarningJobURLs: importIds[0],
 		}
 	case "pending":
 		return common.PollStatusResponse{
@@ -214,28 +183,28 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 }
 
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	jobIDs := []int64{}
-	failedReasons := map[int64]string{}
-	for _, job := range UploadStatsInput.ImportingList {
-		jobIDs = append(jobIDs, job.JobID)
-		failedReasons[job.JobID] = "error due to unknown reason"
-	}
-	eventStatMeta := common.EventStatMeta{}
-	if UploadStatsInput.FailedJobURLs == "error" {
-		eventStatMeta.FailedKeys = jobIDs
-		eventStatMeta.SucceededKeys = []int64{}
-		eventStatMeta.FailedReasons = failedReasons
-		return common.GetUploadStatsResponse{
-			StatusCode: 200,
-			Metadata:   eventStatMeta,
+
+	if UploadStatsInput.WarningJobURLs != "" {
+		checkRejectedData := HttpRequestData{
+			BaseEndpoint:  b.baseEndpoint,
+			DynamicPart:   UploadStatsInput.WarningJobURLs,
+			Authorization: b.authorization,
 		}
+		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
+		if err != nil {
+			b.logger.Error("Error while parsing rejected data", err)
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+			}
+		}
+		uploadStatusResponse := common.GetUploadStatsResponse{
+			StatusCode: 200,
+			Metadata:   *eventStatMetaWithRejectedSucceededJobs,
+		}
+		return uploadStatusResponse
 	}
-	checkRejectedData := HttpRequestData{
-		BaseEndpoint:  b.baseEndpoint,
-		DynamicPart:   UploadStatsInput.FailedJobURLs,
-		Authorization: b.authorization,
-	}
-	eventStatMetaWithFailedJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
+
+	eventStatMetaWithFailedJobs, err := parseFailedData(UploadStatsInput.FailedJobURLs, UploadStatsInput.ImportingList)
 	if err != nil {
 		b.logger.Error("Error while parsing rejected data", err)
 		return common.GetUploadStatsResponse{
@@ -247,4 +216,5 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		Metadata:   *eventStatMetaWithFailedJobs,
 	}
 	return uploadStatusResponse
+
 }

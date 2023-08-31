@@ -39,15 +39,12 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 
 func NewEloquaBulkUploader(destinationName string, authorization string, baseEndpoint string, eloqua Eloqua) *EloquaBulkUploader {
 	return &EloquaBulkUploader{
-		destName:               destinationName,
-		logger:                 logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
-		authorization:          authorization,
-		baseEndpoint:           baseEndpoint,
-		fileSizeLimit:          common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
-		eventsLimit:            common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
-		service:                eloqua,
-		uploadDataThroughCSV:   common.GetBatchRouterConfigBool("UploadDataThroughCSV", destinationName, false),
-		removeImportDefinition: common.GetBatchRouterConfigBool("removeImportDefinition", destinationName, false),
-		addDelayBeforeSync:     common.GetBatchRouterConfigBool("addDelayBeforeSync", destinationName, true),
+		destName:      destinationName,
+		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
+		authorization: authorization,
+		baseEndpoint:  baseEndpoint,
+		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
+		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
+		service:       eloqua,
 	}
 }
