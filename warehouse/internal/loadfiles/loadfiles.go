@@ -286,8 +286,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				var jobResponse WorkerJobResponse
-				err = json.Unmarshal(resp.Payload, &jobResponse)
-				if err != nil {
+				if err := json.Unmarshal(resp.Payload, &jobResponse); err != nil {
 					return fmt.Errorf("unmarshalling response from notifier: %w", err)
 				}
 

@@ -54,10 +54,10 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.Publish
 			errString = err.Error()
 		}
 
-		status := "ok"
+		status := notifierModel.Succeeded
 		if req.StagingFileLocation == "" {
 			errString = "staging file location is empty"
-			status = "aborted"
+			status = notifierModel.Aborted
 		}
 
 		responses.Jobs = append(responses.Jobs, notifierModel.Job{

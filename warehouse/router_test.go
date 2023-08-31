@@ -99,7 +99,6 @@ func TestRouter(t *testing.T) {
 		n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
-		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
 
