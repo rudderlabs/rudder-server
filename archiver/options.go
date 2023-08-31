@@ -12,6 +12,7 @@ type configGetter interface {
 	GetInt64(key string, defaultValue int64) (value int64)
 	GetString(key, defaultValue string) (value string)
 	GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) time.Duration
+	GetBool(key string, defaultValue bool) (value bool)
 }
 
 type Option func(*archiver)
