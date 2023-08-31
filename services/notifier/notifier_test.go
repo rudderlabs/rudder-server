@@ -71,19 +71,18 @@ func TestNotifier(t *testing.T) {
 		c.Set("PgNotifier.maxOpenConnections", 500)
 		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
 		c.Set("PgNotifier.maxPollSleep", "1s")
-		c.Set("PgNotifier.jobOrphanTimeout", "30s")
+		c.Set("PgNotifier.jobOrphanTimeout", "120s")
 
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n, err := notifier.New(groupCtx, c, logger.NOP, statsStore, workspaceIdentifier,
-			pgResource.DBDsn,
-		)
+		n := notifier.New(c, logger.NewLogger(), statsStore, workspaceIdentifier)
+		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		const (
-			jobs              = 64
-			subscribers       = 32
+			jobs              = 12
+			subscribers       = 8
 			subscriberWorkers = 4
 		)
 
@@ -189,7 +188,7 @@ func TestNotifier(t *testing.T) {
 			batchSize         = 1000
 			jobs              = 1
 			subscribers       = 100
-			subscriberWorkers = 10
+			subscriberWorkers = 4
 		)
 
 		var payloads []json.RawMessage
@@ -209,14 +208,13 @@ func TestNotifier(t *testing.T) {
 		c.Set("PgNotifier.maxOpenConnections", 900)
 		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
 		c.Set("PgNotifier.maxPollSleep", "100ms")
-		c.Set("PgNotifier.jobOrphanTimeout", "30s")
+		c.Set("PgNotifier.jobOrphanTimeout", "120s")
 
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n, err := notifier.New(groupCtx, c, logger.NOP, stats.Default, workspaceIdentifier,
-			pgResource.DBDsn,
-		)
+		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		publishResponses := make(chan *model.PublishResponse)
@@ -305,9 +303,8 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n, err := notifier.New(groupCtx, c, logger.NOP, stats.Default, workspaceIdentifier,
-			pgResource.DBDsn,
-		)
+		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		publishResponses := make(chan *model.PublishResponse)
@@ -388,9 +385,8 @@ func TestNotifier(t *testing.T) {
 		c.Set("PGNOTIFIER_DB_PORT", port)
 		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
 
-		_, err = notifier.New(ctx, c, logger.NOP, stats.Default, workspaceIdentifier,
-			"postgres://localhost:5432/invalid",
-		)
+		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 	})
 }

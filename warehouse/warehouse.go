@@ -431,10 +431,9 @@ func Start(ctx context.Context, app app.App) error {
 		return api.Start(ctx)
 	}
 
-	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifierInstance, err = notifier.New(ctx, config.Default, pkgLogger, stats.Default, workspaceIdentifier, psqlInfo)
-	if err != nil {
+	notifierInstance = notifier.New(config.Default, pkgLogger, stats.Default, workspaceIdentifier)
+	if err := notifierInstance.Setup(ctx, psqlInfo); err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 	g.Go(func() error {

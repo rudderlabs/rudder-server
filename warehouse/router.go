@@ -395,16 +395,18 @@ loop:
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				break loop
-			}
-			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "57014" {
-				break loop
-			}
+			var pqErr *pq.Error
 
-			r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
+			switch true {
+			case errors.Is(err, context.Canceled),
+				errors.Is(err, context.DeadlineExceeded),
+				errors.As(err, &pqErr) && pqErr.Code == "57014":
+				break loop
+			default:
+				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
 
-			panic(err)
+				panic(err)
+			}
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {

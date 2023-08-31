@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/notifier/repo"
 	"math/rand"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/notifier/repo"
 
 	"github.com/lib/pq"
 
@@ -18,8 +19,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/allisson/go-pglock/v2"
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
 	"github.com/spaolacci/murmur3"
+
+	"github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -93,13 +95,11 @@ type Notifier struct {
 }
 
 func New(
-	ctx context.Context,
 	conf *config.Config,
 	log logger.Logger,
 	statsFactory stats.Stats,
 	workspaceIdentifier string,
-	fallbackDSN string,
-) (*Notifier, error) {
+) *Notifier {
 	n := &Notifier{
 		conf:                conf,
 		logger:              log.Child("notifier"),
@@ -164,24 +164,26 @@ func New(
 		"module":    "pg_notifier",
 		"queueName": queueName,
 	})
+	return n
+}
 
-	groupCtx, groupCancel := context.WithCancel(ctx)
-	n.background.group, n.background.ctx = errgroup.WithContext(groupCtx)
-	n.background.cancel = groupCancel
-	n.background.wait = n.background.group.Wait
-
+func (n *Notifier) Setup(ctx context.Context, fallbackDSN string) error {
 	dsn := fallbackDSN
 	if n.checkForNotifierEnvVars() {
 		dsn = n.connectionString()
 	}
 
 	if err := n.setupDB(ctx, dsn); err != nil {
-		return nil, fmt.Errorf("could not setup db: %w", err)
+		return fmt.Errorf("could not setup db: %w", err)
 	}
-
 	n.repo = repo.NewNotifier(n.db)
 
-	return n, nil
+	groupCtx, groupCancel := context.WithCancel(ctx)
+	n.background.group, n.background.ctx = errgroup.WithContext(groupCtx)
+	n.background.cancel = groupCancel
+	n.background.wait = n.background.group.Wait
+
+	return nil
 }
 
 func (n *Notifier) checkForNotifierEnvVars() bool {
@@ -378,14 +380,26 @@ func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize in
 
 		for {
 			job, metadata, err := n.claim(ctx, workerId)
-			if err == nil {
+			if err != nil {
+				var pqErr *pq.Error
+
+				switch true {
+				case errors.Is(err, sql.ErrNoRows),
+					errors.Is(err, context.Canceled),
+					errors.Is(err, context.DeadlineExceeded),
+					errors.As(err, &pqErr) && pqErr.Code == "57014":
+				default:
+					n.logger.Warnf("claiming job: %v", err)
+				}
+
+				pollSleep = nextPollInterval(pollSleep)
+			} else {
 				jobsCh <- &model.ClaimJob{
 					Job:         job,
 					JobMetadata: metadata,
 				}
+
 				pollSleep = time.Duration(0)
-			} else {
-				pollSleep = nextPollInterval(pollSleep)
 			}
 
 			select {
@@ -478,14 +492,16 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 	for {
 		orphanJobIDs, err := n.repo.OrphanJobIDs(ctx, int(n.config.jobOrphanTimeout/time.Second))
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "57014" {
-				return nil
-			}
+			var pqErr *pq.Error
 
-			return fmt.Errorf("fetching orphan job ids: %w", err)
+			switch true {
+			case errors.Is(err, context.Canceled),
+				errors.Is(err, context.DeadlineExceeded),
+				errors.As(err, &pqErr) && pqErr.Code == "57014":
+				return nil
+			default:
+				return fmt.Errorf("fetching orphan job ids: %w", err)
+			}
 		}
 
 		n.logger.Debugf("Re-triggered job ids: %v", orphanJobIDs)
@@ -502,7 +518,7 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 func (n *Notifier) Wait() error {
 	<-n.background.ctx.Done()
 
-	n.logger.Infof("Shutting down")
+	n.logger.Infof("Shutting down notifier")
 	n.background.cancel()
 	return n.background.group.Wait()
 }
