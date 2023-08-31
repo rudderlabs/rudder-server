@@ -597,6 +597,8 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to validate: %v", err)
 	}
+
+	// TODO: We can get rid of the Error field in the response. Since it requires compatibility on the cp router side, leaving it as it is for now.
 	if res.Error != "" {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to validate: %v", res.Error)
