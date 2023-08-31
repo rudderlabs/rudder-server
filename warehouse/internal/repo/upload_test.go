@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/stretchr/testify/require"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -997,7 +999,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		_, err := repoUpload.PendingTableUploads(ctx, namespace, uploadID, destID)
-		require.EqualError(t, err, "pending table uploads: context canceled")
+		require.ErrorIs(t, err, context.Canceled)
 	})
 }
 
@@ -1057,7 +1059,7 @@ func TestUploads_ResetInProgress(t *testing.T) {
 		cancel()
 
 		err := repoUpload.ResetInProgress(ctx, destinationType)
-		require.EqualError(t, err, "reset in progress: context canceled")
+		require.ErrorIs(t, err, context.Canceled)
 	})
 }
 
@@ -1118,7 +1120,603 @@ func TestUploads_LastCreatedAt(t *testing.T) {
 		cancel()
 
 		lastCreatedAt, err := repoUpload.LastCreatedAt(ctx, sourceID, destinationID)
-		require.EqualError(t, err, "last created at: context canceled")
+		require.ErrorIs(t, err, context.Canceled)
 		require.Equal(t, lastCreatedAt, time.Time{})
+	})
+}
+
+func TestUploads_TriggerUpload(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+		workspaceID     = "workspace_id"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		DestinationType: destinationType,
+		WorkspaceID:     workspaceID,
+		Status:          model.Waiting,
+	}, []*model.StagingFile{
+		{
+			ID:            stagingID,
+			SourceID:      sourceID,
+			DestinationID: destinationID,
+			WorkspaceID:   workspaceID,
+		},
+	})
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		err := repoUpload.TriggerUpload(ctx, uploadID)
+		require.NoError(t, err)
+
+		upload, err := repoUpload.Get(ctx, uploadID)
+		require.NoError(t, err)
+		require.Equal(t, upload.Status, model.Waiting)
+		require.True(t, upload.Retried)
+		require.Equal(t, upload.Priority, 50)
+	})
+
+	t.Run("unknown id", func(t *testing.T) {
+		err := repoUpload.TriggerUpload(ctx, -1)
+		require.EqualError(t, err, "trigger uploads: no rows affected")
+	})
+
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		err := repoUpload.TriggerUpload(ctx, uploadID)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestUploads_Retry(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+		workspaceID     = "workspace_id"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		DestinationType: destinationType,
+		WorkspaceID:     workspaceID,
+		Status:          model.Waiting,
+	}, []*model.StagingFile{
+		{
+			ID:            stagingID,
+			SourceID:      sourceID,
+			DestinationID: destinationID,
+			WorkspaceID:   workspaceID,
+		},
+	})
+	require.NoError(t, err)
+
+	intervalInHours := time.Since(now.Add(-12*time.Hour)) / time.Hour
+
+	t.Run("filters", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			filters    model.RetryOptions
+			retryCount int
+			wantError  error
+		}{
+			{
+				name: "all filters",
+				filters: model.RetryOptions{
+					WorkspaceID:     workspaceID,
+					SourceIDs:       []string{sourceID},
+					DestinationID:   destinationID,
+					DestinationType: destinationType,
+					ForceRetry:      true,
+					UploadIds:       []int64{uploadID},
+					IntervalInHours: int64(intervalInHours),
+				},
+				retryCount: 1,
+			},
+			{
+				name: "no aborted jobs",
+				filters: model.RetryOptions{
+					WorkspaceID:     workspaceID,
+					SourceIDs:       []string{sourceID},
+					DestinationID:   destinationID,
+					DestinationType: destinationType,
+					ForceRetry:      false,
+					UploadIds:       []int64{uploadID},
+					IntervalInHours: int64(intervalInHours),
+				},
+				retryCount: 0,
+			},
+			{
+				name: "few filters",
+				filters: model.RetryOptions{
+					WorkspaceID:     workspaceID,
+					DestinationID:   destinationID,
+					ForceRetry:      true,
+					IntervalInHours: int64(intervalInHours),
+				},
+				retryCount: 1,
+			},
+			{
+				name: "unknown filters",
+				filters: model.RetryOptions{
+					WorkspaceID:     "unknown_workspace_id",
+					DestinationID:   "unknown_destination_id",
+					IntervalInHours: int64(intervalInHours),
+				},
+				retryCount: 0,
+			},
+			{
+				name:       "no filters",
+				filters:    model.RetryOptions{},
+				retryCount: 0,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run("count to retry "+tc.name, func(t *testing.T) {
+				retryCount, err := repoUpload.RetryCount(ctx, tc.filters)
+				if tc.wantError != nil {
+					require.ErrorIs(t, err, tc.wantError)
+					return
+				}
+				require.NoError(t, err)
+				require.EqualValues(t, retryCount, tc.retryCount)
+			})
+
+			t.Run("retry "+tc.name, func(t *testing.T) {
+				retryCount, err := repoUpload.Retry(ctx, tc.filters)
+				if tc.wantError != nil {
+					require.ErrorIs(t, err, tc.wantError)
+					return
+				}
+				require.NoError(t, err)
+				require.EqualValues(t, retryCount, tc.retryCount)
+
+				if tc.retryCount > 0 {
+					upload, err := repoUpload.Get(ctx, uploadID)
+					require.NoError(t, err)
+					require.Equal(t, upload.Status, model.Waiting)
+					require.True(t, upload.Retried)
+					require.Equal(t, upload.Priority, 50)
+				}
+			})
+		}
+	})
+
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		retryCount, err := repoUpload.Retry(ctx, model.RetryOptions{})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, retryCount)
+
+		retryCount, err = repoUpload.RetryCount(ctx, model.RetryOptions{})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, retryCount)
+	})
+}
+
+func TestUploads_SyncsInfo(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+		workspaceID     = "workspace_id"
+
+		totalUploads = 100
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
+	lastExecAt := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	var uploadIDs []int64
+	for i := 0; i < totalUploads; i++ {
+		fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+		sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+			NextRetryTime:   now,
+		}, []*model.StagingFile{
+			{
+				ID:            fid,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				FirstEventAt:  firstEventAt,
+			},
+			{
+				ID:            sid,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				LastEventAt:   lastEventAt,
+			},
+		})
+		require.NoError(t, err)
+
+		uploadIDs = append(uploadIDs, uploadID)
+	}
+
+	reverseUploadIDs := lo.Reverse(uploadIDs)
+
+	for _, uploadID := range uploadIDs[26:51] {
+		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, error = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
+			{
+			  "exporting_data_failed": {
+				"errors": [
+				  "test_exporting_error"
+				],
+				"attempt": 7
+			  },
+			  "generating_load_files_failed": {
+				"errors": [
+				  "test_generating_load_files_error"
+				],
+				"attempt": 3
+			  }
+			}
+`, `
+			[
+			  {
+				"exporting_data_failed": "2023-08-15T09:30:35.829895191Z"
+			  }
+			]
+`,
+			model.Failed,
+			lastExecAt,
+			uploadID,
+		)
+		require.NoError(t, err)
+	}
+	for _, uploadID := range uploadIDs[51:76] {
+		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, error = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
+			{
+			  "exporting_data_failed": {
+				"errors": [
+				  "test_exporting_error"
+				],
+				"attempt": 25
+			  },
+			  "generating_load_files_failed": {
+				"errors": [
+				  "test_generating_load_files_error"
+				],
+				"attempt": 3
+			  }
+			}
+
+`, `
+			[
+			  {
+				"exporting_data_failed": "2023-08-15T09:30:35.829895191Z"
+			  }
+			]
+`,
+			model.Aborted,
+			lastExecAt,
+			uploadID,
+		)
+		require.NoError(t, err)
+	}
+	for _, uploadID := range uploadIDs[76:] {
+		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $2, metadata = $1 WHERE id = $3;", `
+			{
+			  "archivedStagingAndLoadFiles": true
+			}
+`,
+			model.ExportedData,
+			uploadID,
+		)
+		require.NoError(t, err)
+	}
+
+	t.Run("limit and offset", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			limit       int
+			offset      int
+			expectedIDs []int64
+		}{
+			{
+				name:        "limit 10 offset 0",
+				limit:       10,
+				offset:      0,
+				expectedIDs: reverseUploadIDs[:10],
+			},
+			{
+				name:        "limit 35 offset 10",
+				limit:       35,
+				offset:      10,
+				expectedIDs: reverseUploadIDs[10:45],
+			},
+			{
+				name:        "limit 10 offset 100",
+				limit:       10,
+				offset:      100,
+				expectedIDs: []int64{},
+			},
+			{
+				name:        "limit 10 offset 95",
+				limit:       10,
+				offset:      95,
+				expectedIDs: reverseUploadIDs[95:],
+			},
+		}
+		for _, tc := range testCases {
+			options := model.SyncUploadOptions{
+				SourceIDs:       []string{sourceID},
+				DestinationID:   destinationID,
+				DestinationType: destinationType,
+			}
+
+			t.Run("multi-tenant"+tc.name, func(t *testing.T) {
+				uploadInfos, uploadsCount, err := repoUpload.SyncsInfoForMultiTenant(ctx, tc.limit, tc.offset, options)
+				require.NoError(t, err)
+				require.EqualValues(t, uploadsCount, totalUploads)
+				require.Equal(t, len(uploadInfos), len(tc.expectedIDs))
+				require.Equal(t, tc.expectedIDs, lo.Map(uploadInfos, func(info model.UploadInfo, index int) int64 {
+					return info.ID
+				}))
+			})
+
+			t.Run("non multi-tenant"+tc.name, func(t *testing.T) {
+				uploadInfos, uploadsCount, err := repoUpload.SyncsInfoForNonMultiTenant(ctx, tc.limit, tc.offset, options)
+				require.NoError(t, err)
+				require.EqualValues(t, uploadsCount, totalUploads)
+				require.Equal(t, len(uploadInfos), len(tc.expectedIDs))
+				require.Equal(t, tc.expectedIDs, lo.Map(uploadInfos, func(info model.UploadInfo, index int) int64 {
+					return info.ID
+				}))
+			})
+		}
+	})
+
+	t.Run("all filters", func(t *testing.T) {
+		filters := model.SyncUploadOptions{
+			SourceIDs:       []string{sourceID},
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+		}
+
+		t.Log("syncs info for multi-tenant")
+		multiTenantUploadInfos, multiTenantTotalUploads, err := repoUpload.SyncsInfoForMultiTenant(ctx, 1000, 0, filters)
+		require.NoError(t, err)
+		require.EqualValues(t, multiTenantTotalUploads, totalUploads)
+		require.Len(t, multiTenantUploadInfos, totalUploads)
+
+		t.Log("syncs info for non-multi-tenant")
+		nonMultiTenantUploadInfos, nonMultiTenantTotalUploads, err := repoUpload.SyncsInfoForNonMultiTenant(ctx, 1000, 0, filters)
+		require.NoError(t, err)
+		require.EqualValues(t, nonMultiTenantTotalUploads, totalUploads)
+		require.Len(t, nonMultiTenantUploadInfos, totalUploads)
+
+		t.Log("compare multi-tenant and non-multi-tenant")
+		require.EqualValues(t, multiTenantUploadInfos, nonMultiTenantUploadInfos)
+
+		for id, uploadInfo := range nonMultiTenantUploadInfos {
+			require.Equal(t, uploadInfo.ID, reverseUploadIDs[id])
+			require.Equal(t, uploadInfo.SourceID, sourceID)
+			require.Equal(t, uploadInfo.DestinationID, destinationID)
+			require.Equal(t, uploadInfo.DestinationType, destinationType)
+			require.Equal(t, uploadInfo.CreatedAt.UTC(), now.UTC())
+			require.Equal(t, uploadInfo.UpdatedAt.UTC(), now.UTC())
+			require.Equal(t, uploadInfo.FirstEventAt.UTC(), firstEventAt.UTC())
+			require.Equal(t, uploadInfo.LastEventAt.UTC(), lastEventAt.UTC())
+		}
+		for _, uploadInfo := range nonMultiTenantUploadInfos[:26] {
+			require.Equal(t, uploadInfo.Status, model.Waiting)
+			require.Equal(t, uploadInfo.Error, "{}")
+			require.Zero(t, uploadInfo.LastExecAt)
+			require.Equal(t, uploadInfo.NextRetryTime.UTC(), now.UTC())
+			require.Equal(t, uploadInfo.Duration, now.Sub(time.Time{})/time.Second)
+			require.Zero(t, uploadInfo.Attempt)
+			require.False(t, uploadInfo.IsArchivedUpload)
+		}
+		for _, uploadInfo := range nonMultiTenantUploadInfos[26:51] {
+			require.Equal(t, uploadInfo.Status, model.Failed)
+			require.Equal(t, uploadInfo.Error, "test_exporting_error")
+			require.Equal(t, uploadInfo.LastExecAt.UTC(), lastExecAt.UTC())
+			require.Equal(t, uploadInfo.NextRetryTime.UTC(), now.UTC())
+			require.Equal(t, uploadInfo.Duration, time.Hour/time.Second)
+			require.Equal(t, uploadInfo.Attempt, int64(10))
+			require.False(t, uploadInfo.IsArchivedUpload)
+		}
+		for _, uploadInfo := range nonMultiTenantUploadInfos[51:76] {
+			require.Equal(t, uploadInfo.Status, model.Aborted)
+			require.Equal(t, uploadInfo.Error, "test_exporting_error")
+			require.Equal(t, uploadInfo.LastExecAt.UTC(), lastExecAt.UTC())
+			require.Zero(t, uploadInfo.NextRetryTime)
+			require.Equal(t, uploadInfo.Duration, time.Hour/time.Second)
+			require.Equal(t, uploadInfo.Attempt, int64(28))
+			require.False(t, uploadInfo.IsArchivedUpload)
+		}
+		for _, uploadInfo := range nonMultiTenantUploadInfos[76:] {
+			require.Equal(t, uploadInfo.Status, model.ExportedData)
+			require.Equal(t, uploadInfo.Error, "{}")
+			require.Zero(t, uploadInfo.LastExecAt)
+			require.Zero(t, uploadInfo.NextRetryTime)
+			require.Equal(t, uploadInfo.Duration, now.Sub(time.Time{})/time.Second)
+			require.Zero(t, uploadInfo.Attempt)
+			require.True(t, uploadInfo.IsArchivedUpload)
+		}
+	})
+
+	t.Run("few filters", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			options     model.SyncUploadOptions
+			expectedIDs []int64
+		}{
+			{
+				name: "only upload id",
+				options: model.SyncUploadOptions{
+					UploadID: 55,
+				},
+				expectedIDs: []int64{55},
+			},
+			{
+				name: "status is aborted",
+				options: model.SyncUploadOptions{
+					Status: model.Aborted,
+				},
+				expectedIDs: reverseUploadIDs[51:76],
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run("multi-tenant"+tc.name, func(t *testing.T) {
+				uploadInfos, totalUploads, err := repoUpload.SyncsInfoForMultiTenant(ctx, 1000, 0, tc.options)
+				require.NoError(t, err)
+				require.EqualValues(t, totalUploads, len(tc.expectedIDs))
+				require.Equal(t, tc.expectedIDs, lo.Map(uploadInfos, func(info model.UploadInfo, index int) int64 {
+					return info.ID
+				}))
+			})
+			t.Run("non-multi-tenant"+tc.name, func(t *testing.T) {
+				uploadInfos, totalUploads, err := repoUpload.SyncsInfoForNonMultiTenant(ctx, 1000, 0, tc.options)
+				require.NoError(t, err)
+				require.EqualValues(t, totalUploads, len(tc.expectedIDs))
+				require.Equal(t, tc.expectedIDs, lo.Map(uploadInfos, func(info model.UploadInfo, index int) int64 {
+					return info.ID
+				}))
+			})
+		}
+	})
+
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		filters := model.SyncUploadOptions{
+			SourceIDs:       []string{sourceID},
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+		}
+
+		multiTenantUploadInfos, multiTenantTotalUploads, err := repoUpload.SyncsInfoForMultiTenant(ctx, 1000, 0, filters)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Nil(t, multiTenantUploadInfos)
+		require.Zero(t, multiTenantTotalUploads)
+
+		nonMultiTenantUploadInfos, nonMultiTenantTotalUploads, err := repoUpload.SyncsInfoForNonMultiTenant(ctx, 1000, 0, filters)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Nil(t, nonMultiTenantUploadInfos)
+		require.Zero(t, nonMultiTenantTotalUploads)
+	})
+}
+
+func TestUploads_GetLatestUploadInfo(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	var uploadIDs []int64
+	for i := 0; i < 10; i++ {
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			Status:          model.GeneratingLoadFiles,
+			Priority:        (i + 1),
+		}, []*model.StagingFile{
+			{
+				ID:            stagingID,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+			},
+		})
+		require.NoError(t, err)
+
+		uploadIDs = append(uploadIDs, uploadID)
+	}
+
+	t.Run("known pipeline", func(t *testing.T) {
+		latestInfo, err := repoUpload.GetLatestUploadInfo(ctx, sourceID, destinationID)
+		require.NoError(t, err)
+
+		require.EqualValues(t, latestInfo.ID, len(uploadIDs))
+		require.EqualValues(t, latestInfo.Priority, uploadIDs[len(uploadIDs)-1])
+		require.EqualValues(t, latestInfo.Status, model.GeneratingLoadFiles)
+	})
+
+	t.Run("unknown pipeline", func(t *testing.T) {
+		latestInfo, err := repoUpload.GetLatestUploadInfo(ctx, "unknown_source_id", "unknown_destination_id")
+		require.ErrorIs(t, err, model.ErrUploadNotFound)
+		require.Nil(t, latestInfo)
+	})
+
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		latestInfo, err := repoUpload.GetLatestUploadInfo(ctx, sourceID, destinationID)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Nil(t, latestInfo)
 	})
 }
