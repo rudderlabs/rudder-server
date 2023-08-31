@@ -83,7 +83,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		_, err = r.Insert(cancelledCtx, &schema)
-		require.EqualError(t, err, errors.New("inserting schema: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("GetForNamespace", func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		_, err = r.GetForNamespace(cancelledCtx, sourceID, destinationID, namespace)
-		require.EqualError(t, err, errors.New("querying schemas: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
 		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound, notFound)
@@ -110,7 +110,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		_, err = r.GetNamespace(cancelledCtx, sourceID, destinationID)
-		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
 		expectedNamespace, err = r.GetNamespace(ctx, notFound, notFound)
@@ -132,7 +132,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
-		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
 		expectedTableNames, err = r.GetTablesForConnection(ctx,

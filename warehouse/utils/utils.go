@@ -107,10 +107,11 @@ const (
 
 // Object storages
 const (
-	S3        = "S3"
-	AzureBlob = "AZURE_BLOB"
-	GCS       = "GCS"
-	MINIO     = "MINIO"
+	S3                 = "S3"
+	AzureBlob          = "AZURE_BLOB"
+	GCS                = "GCS"
+	MINIO              = "MINIO"
+	DigitalOceanSpaces = "DIGITAL_OCEAN_SPACES"
 )
 
 // Cloud providers
