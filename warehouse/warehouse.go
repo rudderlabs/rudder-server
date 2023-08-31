@@ -350,25 +350,30 @@ func Start(ctx context.Context, app app.App) error {
 
 	RegisterAdmin(bcManager, pkgLogger)
 
+	grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
+	if err != nil {
+		return fmt.Errorf("cannot create grpc server: %w", err)
+	}
+
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
-		grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
-		if err != nil {
-			return fmt.Errorf("cannot create grpc server: %w", err)
-		}
+		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
+
 		g.Go(func() error {
 			grpcServer.Start(gCtx)
 			return nil
 		})
+		g.Go(func() error {
+			api := NewApi(
+				mode, config.Default, pkgLogger, stats.Default,
+				backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
+				bcManager, nil,
+			)
+			return api.Start(gCtx)
+		})
 
-		api := NewApi(
-			mode, config.Default, pkgLogger, stats.Default,
-			backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
-			bcManager, nil,
-		)
-		return api.Start(ctx)
+		return g.Wait()
 	}
-	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
@@ -452,10 +457,6 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
-		if err != nil {
-			return fmt.Errorf("cannot create grpc server: %w", err)
-		}
 		g.Go(func() error {
 			grpcServer.Start(gCtx)
 			return nil

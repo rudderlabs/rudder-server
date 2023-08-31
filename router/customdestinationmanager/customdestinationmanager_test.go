@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
@@ -143,4 +144,56 @@ func TestSendDataWithStreamDestination(t *testing.T) {
 	event := json.RawMessage{}
 	mockProducer.EXPECT().Produce(event, someDestination.Config).Times(1)
 	customManager.SendData(event, someDestination.ID)
+}
+
+func TestKVManagerInvocations(t *testing.T) {
+	initCustomerManager()
+	customManager := New("REDIS", Opts{}).(*CustomManagerT)
+	someDestination := backendconfig.DestinationT{
+		ID: "someDestinationID1",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "REDIS",
+		},
+	}
+	err := customManager.onNewDestination(someDestination)
+	assert.Nil(t, err)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("HSET", func(t *testing.T) {
+		event := json.RawMessage(`{
+			"message": {
+				"key": "someKey",
+				"value" : "someValue",
+				"hash": "someHash"
+			}
+		  }
+		`)
+		ctrl := gomock.NewController(t)
+		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().HSet("someHash", "someKey", "someValue").Times(1)
+		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
+		customManager.send(event, mockKVStoreManager, someDestination.Config)
+	})
+
+	t.Run("HMSET", func(t *testing.T) {
+		event := json.RawMessage(`{
+			"message": {
+				"key": "someKey",
+				"fields" : {
+					"field1": "value1",
+					"field2": "value2"
+				}
+			}
+		  }
+		`)
+		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().HMSet("someKey", map[string]interface{}{
+			"field1": "value1",
+			"field2": "value2",
+		}).Times(1)
+		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
+		customManager.send(event, mockKVStoreManager, someDestination.Config)
+	})
 }

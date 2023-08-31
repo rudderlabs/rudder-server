@@ -38,6 +38,7 @@ type archiver struct {
 		eventsLimit      func() int
 		minWorkerSleep   time.Duration
 		uploadFrequency  time.Duration
+		enabled          func() bool
 	}
 }
 
@@ -65,6 +66,9 @@ func New(
 		adaptivePayloadLimitFunc: func(i int64) int64 { return i },
 	}
 
+	a.config.enabled = func() bool {
+		return c.GetBool("archival.Enabled", true)
+	}
 	a.config.concurrency = func() int {
 		return c.GetInt("archival.ArchiveConcurrency", 10)
 	}
@@ -157,16 +161,18 @@ func (a *archiver) Start() error {
 		defer workerPool.Shutdown()
 		// pinger loop
 		for {
-			sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
-			if err != nil {
-				if ctx.Err() != nil {
-					return err
+			if a.config.enabled() {
+				sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
+				if err != nil {
+					if ctx.Err() != nil {
+						return err
+					}
+					a.log.Errorw("Failed to fetch sources", "error", err)
+					continue
 				}
-				a.log.Errorw("Failed to fetch sources", "error", err)
-				continue
-			}
-			for _, source := range sources {
-				workerPool.PingWorker(source)
+				for _, source := range sources {
+					workerPool.PingWorker(source)
+				}
 			}
 
 			select {
