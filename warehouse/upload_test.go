@@ -86,8 +86,6 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 }
 
 func TestColumnCountStat(t *testing.T) {
-	Init4()
-
 	var (
 		workspaceID     = "test-workspaceID"
 		destinationID   = "test-desinationID"
@@ -190,8 +188,6 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 	t.Parallel()
-
-	Init4()
 
 	var (
 		testNamespace       = "test_namespace"

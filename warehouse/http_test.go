@@ -42,8 +42,6 @@ import (
 )
 
 func TestHTTPApi(t *testing.T) {
-	Init4()
-
 	const (
 		workspaceID              = "test_workspace_id"
 		sourceID                 = "test_source_id"
@@ -954,7 +952,7 @@ func TestHTTPApi(t *testing.T) {
 
 			c := config.New()
 			c.Set("Warehouse.webPort", wenPort)
-			c.Set("Warehouse.runningMode", DegradedMode)
+			c.Set("Warehouse.runningMode", degradedMode)
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 

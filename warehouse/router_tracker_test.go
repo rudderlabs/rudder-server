@@ -270,6 +270,7 @@ func TestRouter_CronTracker(t *testing.T) {
 			statsFactory: memstats.New(),
 			dbHandle:     sqlquerywrapper.New(pgResource.DB),
 			logger:       logger.NOP,
+			conf:         config.Default,
 		}
 		r.warehouses = append(r.warehouses, warehouse)
 

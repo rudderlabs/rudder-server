@@ -311,7 +311,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 			jr.config.loadObjectFolder,
 			tableName,
 			jr.job.SourceID,
-			getBucketFolder(jr.job.UniqueLoadGenID, tableName),
+			jr.bucketFolder(jr.job.UniqueLoadGenID, tableName),
 		)
 	}
 
@@ -391,6 +391,10 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 	}
 
 	return output, nil
+}
+
+func (jr *jobRun) bucketFolder(batchID, tableName string) string {
+	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
 
 func (jr *jobRun) reader() (*gzip.Reader, error) {

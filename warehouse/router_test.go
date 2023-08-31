@@ -40,8 +40,6 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-	Init4()
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -911,10 +909,7 @@ func TestRouter(t *testing.T) {
 				_, err = pgResource.DB.Exec(string(sqlStatement))
 				require.NoError(t, err)
 
-				ctrl := gomock.NewController(t)
-
 				ctx := context.Background()
-				tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 				jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), repo.WithNow(func() time.Time {
 					// nowSQL := "'2022-12-06 22:00:00'"

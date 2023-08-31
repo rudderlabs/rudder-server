@@ -2,6 +2,8 @@ package warehouse
 
 import "github.com/rudderlabs/rudder-go-kit/config"
 
+const degradedMode = "degraded"
+
 func isStandAlone(mode string) bool {
 	switch mode {
 	case config.EmbeddedMode, config.EmbeddedMasterMode:

@@ -42,6 +42,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+const defaultUploadPriority = 100
+
 type router struct {
 	destType string
 

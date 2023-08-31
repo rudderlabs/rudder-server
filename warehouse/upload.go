@@ -197,7 +197,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		schemaHandle: schema.NewSchema(
 			f.dbHandle,
 			dto.Warehouse,
-			config.Default,
+			f.conf,
 			f.logger.Child("warehouse").Child("schema"),
 		),
 

@@ -21,8 +21,6 @@ import (
 )
 
 func TestRouter_CanCreateUpload(t *testing.T) {
-	Init4()
-
 	const (
 		sourceID        = "source_id"
 		destinationID   = "destination_id"

@@ -8,6 +8,9 @@ import (
 	"os"
 	"testing"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -86,6 +89,11 @@ func TestSlave(t *testing.T) {
 
 	workers := 4
 	workerJobs := 25
+
+	tenantManager := multitenant.New(
+		config.Default,
+		backendconfig.DefaultBackendConfig,
+	)
 
 	slave := newSlave(
 		config.Default,

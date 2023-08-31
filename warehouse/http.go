@@ -34,6 +34,8 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const triggerUploadQPName = "triggerUpload"
+
 type pendingEventsRequest struct {
 	SourceID  string `json:"source_id"`
 	TaskRunID string `json:"task_run_id"`
@@ -122,7 +124,7 @@ func (a *Api) Start(ctx context.Context) error {
 	if isStandAlone(a.mode) {
 		srvMux.Get("/health", a.healthHandler)
 	}
-	if a.config.runningMode != DegradedMode {
+	if a.config.runningMode != degradedMode {
 		if isMaster(a.mode) {
 			a.addMasterEndpoints(ctx, srvMux)
 
@@ -178,7 +180,7 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), a.config.healthTimeout)
 	defer cancel()
 
-	if a.config.runningMode != DegradedMode {
+	if a.config.runningMode != degradedMode {
 		if !checkHealth(ctx, a.notifier.GetDBHandle()) {
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return

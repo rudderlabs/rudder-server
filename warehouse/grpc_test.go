@@ -45,7 +45,6 @@ import (
 )
 
 func TestGRPC(t *testing.T) {
-	Init4()
 	validations.Init()
 	misc.Init()
 

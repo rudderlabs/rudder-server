@@ -35,7 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -43,102 +43,412 @@ import (
 )
 
 var (
-	application                app.App
-	dbHandle                   *sql.DB
-	wrappedDBHandle            *sqlquerywrapper.DB
-	dbHandleTimeout            time.Duration
-	notifierInstance           *notifier.Notifier
-	tenantManager              *multitenant.Manager
-	controlPlaneClient         *controlplane.Client
-	uploadFreqInS              int64
 	lastProcessedMarkerMap     map[string]int64
-	lastProcessedMarkerExp     = expvar.NewMap("lastProcessedMarkerMap")
+	lastProcessedMarkerExp     *expvar.Map
 	lastProcessedMarkerMapLock sync.RWMutex
-	bcManager                  *backendConfigManager
 	triggerUploadsMap          map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock      sync.RWMutex
-	pkgLogger                  logger.Logger
-	ShouldForceSetLowerVersion bool
-	asyncWh                    *jobs.AsyncJobWh
 )
 
-var (
-	host, user, password, dbname, sslMode, appName string
-	port                                           int
-)
+func init() {
+	lastProcessedMarkerMap = make(map[string]int64)
+	lastProcessedMarkerExp = expvar.NewMap("lastProcessedMarkerMap")
+	triggerUploadsMap = make(map[string]bool)
+}
 
-const defaultUploadPriority = 100
+type App struct {
+	app                app.App
+	conf               *config.Config
+	logger             logger.Logger
+	statsFactory       stats.Stats
+	bcConfig           backendconfig.BackendConfig
+	db                 *sqlmw.DB
+	notifier           *notifier.Notifier
+	tenantManager      *multitenant.Manager
+	controlPlaneClient *controlplane.Client
+	bcManager          *backendConfigManager
+	api                *Api
+	grpcServer         *GRPC
+	constraintsManager *constraintsManager
+	encodingFactory    *encoding.Factory
+	fileManagerFactory filemanager.Factory
+	jobsManager        *jobs.AsyncJobWh
 
-const (
-	DegradedMode        = "degraded"
-	triggerUploadQPName = "triggerUpload"
-)
+	appName string
+
+	config struct {
+		host     string
+		user     string
+		password string
+		database string
+		sslMode  string
+		port     int
+
+		warehouseMode              string
+		runningMode                string
+		shouldForceSetLowerVersion bool
+		dbQueryTimeout             time.Duration
+		maxOpenConnections         int
+
+		configBackendURL string
+		region           string
+	}
+}
 
 type (
 	WorkerIdentifierT string
 	JobID             int64
 )
 
-func Init4() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse")
+func NewApp(
+	app app.App,
+	conf *config.Config,
+	log logger.Logger,
+	statsFactory stats.Stats,
+	bcConfig backendconfig.BackendConfig,
+	fileManagerFactory filemanager.Factory,
+) *App {
+	a := &App{
+		app:                app,
+		conf:               conf,
+		logger:             log.Child("warehouse"),
+		statsFactory:       statsFactory,
+		bcConfig:           bcConfig,
+		fileManagerFactory: fileManagerFactory,
+	}
+
+	a.conf.RegisterDurationConfigVariable(5, &a.config.dbQueryTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+
+	a.config.host = conf.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	a.config.user = conf.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
+	a.config.password = conf.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu")
+	a.config.database = conf.GetString("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
+	a.config.sslMode = conf.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	a.config.port = conf.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
+	a.config.warehouseMode = conf.GetString("Warehouse.mode", "embedded")
+	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
+	a.config.shouldForceSetLowerVersion = conf.GetBool("SQLMigrator.forceSetLowerVersion", true)
+	a.config.maxOpenConnections = conf.GetInt("Warehouse.maxOpenConnections", 20)
+	a.config.configBackendURL = conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+	a.config.region = conf.GetString("region", "")
+
+	a.appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
+
+	return a
 }
 
-func loadConfig() {
-	// Port where WH is running
-	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
-	lastProcessedMarkerMap = map[string]int64{}
-	host = config.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	user = config.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
-	dbname = config.GetString("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
-	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
-	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	triggerUploadsMap = map[string]bool{}
-	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+func (a *App) Setup(ctx context.Context) error {
+	// do not setup warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone(a.config.runningMode) && !db.IsNormalMode() {
+		return nil
+	}
 
-	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-}
+	if err := a.setupDatabase(ctx); err != nil {
+		return fmt.Errorf("setting up database: %w", err)
+	}
 
-func getUploadFreqInS(syncFrequency string) int64 {
-	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
+	a.tenantManager = multitenant.New(
+		a.conf,
+		a.bcConfig,
+	)
+	a.controlPlaneClient = controlplane.NewClient(
+		a.config.configBackendURL,
+		a.bcConfig.Identity(),
+		controlplane.WithRegion(a.config.region),
+	)
+	a.bcManager = newBackendConfigManager(
+		a.conf,
+		a.db,
+		a.tenantManager,
+		a.logger.Child("wh_bc_manager"),
+	)
+	a.constraintsManager = newConstraintsManager(
+		a.conf,
+	)
+	a.encodingFactory = encoding.NewFactory(
+		a.conf,
+	)
+
+	workspaceIdentifier := fmt.Sprintf(`%s::%s`,
+		config.GetKubeNamespace(),
+		misc.GetMD5Hash(config.GetWorkspaceToken()),
+	)
+	a.notifier = notifier.New(
+		a.conf,
+		a.logger,
+		a.statsFactory,
+		workspaceIdentifier,
+	)
+	if err := a.notifier.Setup(ctx, a.connectionString()); err != nil {
+		return fmt.Errorf("cannot setup notifier: %w", err)
+	}
+
+	a.jobsManager = jobs.InitWarehouseJobsAPI(
+		ctx,
+		a.db.DB,
+		a.notifier,
+	)
+	jobs.WithConfig(a.jobsManager, a.conf)
+
+	var err error
+	a.grpcServer, err = NewGRPCServer(
+		a.conf,
+		a.logger,
+		a.db,
+		a.tenantManager,
+		a.bcManager,
+	)
 	if err != nil {
-		return uploadFreqInS
+		return fmt.Errorf("cannot create grpc server: %w", err)
 	}
-	return freqInMin * 60
+
+	a.api = NewApi(
+		a.config.warehouseMode,
+		a.conf,
+		a.logger,
+		a.statsFactory,
+		a.bcConfig,
+		a.db,
+		a.notifier,
+		a.tenantManager,
+		a.bcManager,
+		a.jobsManager,
+	)
+
+	return nil
 }
 
-func uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
-	freqInS := getUploadFreqInS(syncFrequency)
-	lastProcessedMarkerMapLock.RLock()
-	defer lastProcessedMarkerMapLock.RUnlock()
-	if lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
-		return true
+func (a *App) setupDatabase(ctx context.Context) error {
+	dsn := a.connectionString()
+
+	database, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return fmt.Errorf("could not open: %w", err)
 	}
-	return false
+	database.SetMaxOpenConns(a.config.maxOpenConnections)
+
+	isCompatible, err := validators.IsPostgresCompatible(ctx, database)
+	if err != nil {
+		return fmt.Errorf("could not check compatibility: %w", err)
+	} else if !isCompatible {
+		return errors.New("warehouse Service needs postgres version >= 10. Exiting")
+	}
+
+	if err := database.PingContext(ctx); err != nil {
+		return fmt.Errorf("could not ping: %w", err)
+	}
+
+	a.db = sqlmw.New(
+		database,
+		sqlmw.WithLogger(a.logger.Child("db")),
+		sqlmw.WithQueryTimeout(a.config.dbQueryTimeout),
+		sqlmw.WithStats(a.statsFactory),
+	)
+
+	err = a.setupTables()
+	if err != nil {
+		return fmt.Errorf("could not setup tables: %w", err)
+	}
+
+	return nil
 }
 
-func setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
-	lastProcessedMarkerMapLock.Lock()
-	defer lastProcessedMarkerMapLock.Unlock()
-	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
-	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
+func (a *App) connectionString() string {
+	if !a.checkForWarehouseEnvVars() {
+		return misc.GetConnectionString(a.conf)
+	}
+
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s application_name=%s",
+		a.config.host,
+		a.config.port,
+		a.config.user,
+		a.config.password,
+		a.config.database,
+		a.config.sslMode,
+		a.appName,
+	)
 }
 
-func getBucketFolder(batchID, tableName string) string {
-	return fmt.Sprintf(`%v-%v`, batchID, tableName)
+// checkForWarehouseEnvVars checks if the required database environment variables are set
+func (a *App) checkForWarehouseEnvVars() bool {
+	return a.conf.IsSet("WAREHOUSE_JOBS_DB_HOST") &&
+		a.conf.IsSet("WAREHOUSE_JOBS_DB_USER") &&
+		a.conf.IsSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		a.conf.IsSet("WAREHOUSE_JOBS_DB_PASSWORD")
+}
+
+func (a *App) setupTables() error {
+	m := &migrator.Migrator{
+		Handle:                     a.db.DB,
+		MigrationsTable:            "wh_schema_migrations",
+		ShouldForceSetLowerVersion: a.config.shouldForceSetLowerVersion,
+	}
+
+	operation := func() error {
+		return m.Migrate("warehouse")
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		a.logger.Warnf("retrying warehouse database migration in %s: %v", t, err)
+	})
+	if err != nil {
+		return fmt.Errorf("could not migrate: %w", err)
+	}
+
+	return nil
+}
+
+// Start starts the warehouse service
+func (a *App) Start(ctx context.Context) error {
+	if !isStandAloneSlave(a.config.runningMode) {
+		return errors.New("warehouse service cannot start, database connection is not setup")
+	}
+
+	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone(a.config.runningMode) && !db.IsNormalMode() {
+		a.logger.Infof("Skipping start of warehouse service...")
+		return nil
+	}
+
+	a.logger.Infof("WH: Starting Warehouse service...")
+
+	defer func() {
+		if r := recover(); r != nil {
+			a.logger.Fatal(r)
+			panic(r)
+		}
+	}()
+
+	RegisterAdmin(a.bcManager, a.logger)
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		a.tenantManager.Run(gCtx)
+		return nil
+	})
+	g.Go(func() error {
+		a.bcManager.Start(gCtx)
+		return nil
+	})
+
+	if a.config.runningMode == degradedMode {
+		a.logger.Infof("WH: Running warehouse service in degraded mode...")
+
+		g.Go(func() error {
+			a.grpcServer.Start(gCtx)
+			return nil
+		})
+		g.Go(func() error {
+			return a.api.Start(gCtx)
+		})
+
+		return g.Wait()
+	}
+
+	g.Go(func() error {
+		return a.notifier.Wait()
+	})
+
+	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
+	// A different DB for warehouse is used when:
+	// 1. MultiTenant (uses RDS)
+	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
+	if (isStandAlone(a.config.warehouseMode) && isMaster(a.config.warehouseMode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			reportingClient := a.app.Features().Reporting.Setup(a.bcConfig)
+			reportingClient.AddClient(gCtx, types.Config{
+				ConnInfo:   a.connectionString(),
+				ClientName: types.WarehouseReportingClient,
+			})
+			return nil
+		}))
+	}
+	if isStandAlone(a.config.warehouseMode) && isMaster(a.config.warehouseMode) {
+		// Report warehouse features
+		g.Go(func() error {
+			a.bcConfig.WaitForConfig(gCtx)
+
+			err := a.controlPlaneClient.SendFeatures(
+				gCtx,
+				info.WarehouseComponent.Name,
+				info.WarehouseComponent.Features,
+			)
+			if err != nil {
+				a.logger.Errorf("error sending warehouse features: %v", err)
+			}
+
+			// We don't want to exit if we fail to send features
+			return nil
+		})
+	}
+	if isSlave(a.config.warehouseMode) {
+		a.logger.Infof("WH: Starting warehouse slave...")
+
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			slave := newSlave(
+				a.conf,
+				a.logger,
+				a.statsFactory,
+				a.notifier,
+				a.bcManager,
+				a.constraintsManager,
+				a.encodingFactory,
+			)
+			return slave.setupSlave(gCtx)
+		}))
+	}
+	if isMaster(a.config.warehouseMode) {
+		a.logger.Infof("[WH]: Starting warehouse master...")
+
+		a.bcConfig.WaitForConfig(ctx)
+
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return a.notifier.RunMaintenanceWorker(gCtx)
+		}))
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return a.notifier.ClearJobs(gCtx)
+		}))
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return a.monitorDestRouters(gCtx)
+		}))
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			archive.CronArchiver(gCtx, archive.New(
+				a.conf,
+				a.logger,
+				a.statsFactory,
+				a.db.DB,
+				a.fileManagerFactory,
+				a.tenantManager,
+			))
+			return nil
+		}))
+		g.Go(func() error {
+			a.grpcServer.Start(gCtx)
+			return nil
+		})
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return a.jobsManager.InitAsyncJobRunner()
+		}))
+	}
+
+	g.Go(func() error {
+		return a.api.Start(gCtx)
+	})
+
+	return g.Wait()
 }
 
 // Gets the config from config backend and extracts enabled write keys
-func monitorDestRouters(ctx context.Context) error {
+func (a *App) monitorDestRouters(ctx context.Context) error {
 	dstToWhRouter := make(map[string]*router)
 
-	ch := tenantManager.WatchConfig(ctx)
+	ch := a.tenantManager.WatchConfig(ctx)
 	for configData := range ch {
-		err := onConfigDataEvent(ctx, configData, dstToWhRouter)
+		err := a.onConfigDataEvent(ctx, configData, dstToWhRouter)
 		if err != nil {
-			return err
+			return fmt.Errorf("config data event error: %v", err)
 		}
 	}
 
@@ -150,8 +460,9 @@ func monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router) error {
+func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router) error {
 	enabledDestinations := make(map[string]bool)
+
 	for _, wConfig := range configMap {
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
@@ -163,26 +474,26 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 
 				router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if ok {
-					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+					a.logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 					router.Enable()
 					continue
 				}
 
-				pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+				a.logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 
 				router, err := newRouter(
 					ctx,
-					application,
+					a.app,
 					destination.DestinationDefinition.Name,
-					config.Default,
-					pkgLogger,
-					stats.Default,
-					wrappedDBHandle,
-					notifierInstance,
-					tenantManager,
-					controlPlaneClient,
-					bcManager,
-					encoding.NewFactory(config.Default),
+					a.conf,
+					a.logger.Child("router"),
+					a.statsFactory,
+					a.db,
+					a.notifier,
+					a.tenantManager,
+					a.controlPlaneClient,
+					a.bcManager,
+					a.encodingFactory,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
@@ -196,7 +507,8 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 	for _, key := range keys {
 		if _, ok := enabledDestinations[key]; !ok {
 			if wh, ok := dstToWhRouter[key]; ok {
-				pkgLogger.Info("Disabling a existing warehouse destination: ", key)
+				a.logger.Info("Disabling a existing warehouse destination: ", key)
+
 				wh.Disable()
 			}
 		}
@@ -205,287 +517,53 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 	return nil
 }
 
-func setupTables(dbHandle *sql.DB) error {
-	m := &migrator.Migrator{
-		Handle:                     dbHandle,
-		MigrationsTable:            "wh_schema_migrations",
-		ShouldForceSetLowerVersion: ShouldForceSetLowerVersion,
+func uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
+	freqInS := uploadFreqInS(syncFrequency)
+
+	lastProcessedMarkerMapLock.RLock()
+	defer lastProcessedMarkerMapLock.RUnlock()
+
+	lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]
+	if ok && timeutil.Now().Unix()-lastExecTime < freqInS {
+		return false
 	}
 
-	operation := func() error {
-		return m.Migrate("warehouse")
-	}
+	return false
+}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Warnf("Failed to setup WH db tables: %v, retrying after %v", err, t)
-	})
+func uploadFreqInS(syncFrequency string) int64 {
+	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
 	if err != nil {
-		return fmt.Errorf("could not run warehouse database migrations: %w", err)
+		return config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	}
-	return nil
+	return freqInMin * 60
+}
+
+func setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
+	lastProcessedMarkerMapLock.Lock()
+	defer lastProcessedMarkerMapLock.Unlock()
+
+	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
+	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
 }
 
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
+
 	return triggerUploadsMap[wh.Identifier]
 }
 
 func triggerUpload(wh model.Warehouse) {
 	triggerUploadsMapLock.Lock()
 	defer triggerUploadsMapLock.Unlock()
-	pkgLogger.Infof("[WH]: Upload triggered for warehouse '%s'", wh.Identifier)
+
 	triggerUploadsMap[wh.Identifier] = true
 }
 
 func clearTriggeredUpload(wh model.Warehouse) {
 	triggerUploadsMapLock.Lock()
 	defer triggerUploadsMapLock.Unlock()
+
 	delete(triggerUploadsMap, wh.Identifier)
-}
-
-func getConnectionString() string {
-	if !CheckForWarehouseEnvVars() {
-		return misc.GetConnectionString(config.Default)
-	}
-	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s application_name=%s",
-		host, port, user, password, dbname, sslMode, appName)
-}
-
-// CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
-func CheckForWarehouseEnvVars() bool {
-	return config.IsSet("WAREHOUSE_JOBS_DB_HOST") &&
-		config.IsSet("WAREHOUSE_JOBS_DB_USER") &&
-		config.IsSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
-		config.IsSet("WAREHOUSE_JOBS_DB_PASSWORD")
-}
-
-func setupDB(ctx context.Context, connInfo string) error {
-	var err error
-	dbHandle, err = sql.Open("postgres", connInfo)
-	if err != nil {
-		return err
-	}
-	dbHandle.SetMaxOpenConns(config.GetInt("Warehouse.maxOpenConnections", 20))
-
-	isDBCompatible, err := validators.IsPostgresCompatible(ctx, dbHandle)
-	if err != nil {
-		return err
-	}
-
-	if !isDBCompatible {
-		err := errors.New("rudder Warehouse Service needs postgres version >= 10. Exiting")
-		pkgLogger.Error(err)
-		return err
-	}
-
-	if err = dbHandle.PingContext(ctx); err != nil {
-		return fmt.Errorf("could not ping WH db: %w", err)
-	}
-
-	wrappedDBHandle = sqlquerywrapper.New(
-		dbHandle,
-		sqlquerywrapper.WithLogger(pkgLogger.Child("dbHandle")),
-		sqlquerywrapper.WithQueryTimeout(dbHandleTimeout),
-	)
-
-	return setupTables(dbHandle)
-}
-
-// Setup prepares the database connection for warehouse service, verifies database compatibility and creates the required tables
-func Setup(ctx context.Context) error {
-	if !db.IsNormalMode() {
-		return nil
-	}
-	psqlInfo := getConnectionString()
-	if err := setupDB(ctx, psqlInfo); err != nil {
-		return fmt.Errorf("cannot setup warehouse db: %w", err)
-	}
-	return nil
-}
-
-// Start starts the warehouse service
-func Start(ctx context.Context, app app.App) error {
-	application = app
-
-	mode := config.GetString("Warehouse.mode", config.EmbeddedMode)
-
-	if dbHandle == nil && !isStandAloneSlave(mode) {
-		return errors.New("warehouse service cannot start, database connection is not setup")
-	}
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(mode) && !db.IsNormalMode() {
-		pkgLogger.Infof("Skipping start of warehouse service...")
-		return nil
-	}
-
-	pkgLogger.Infof("WH: Starting Warehouse service...")
-	psqlInfo := getConnectionString()
-
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Fatal(r)
-			panic(r)
-		}
-	}()
-
-	g, gCtx := errgroup.WithContext(ctx)
-
-	tenantManager = multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
-
-	g.Go(func() error {
-		tenantManager.Run(gCtx)
-		return nil
-	})
-
-	bcManager = newBackendConfigManager(
-		config.Default, wrappedDBHandle, tenantManager,
-		pkgLogger.Child("wh_bc_manager"),
-	)
-	g.Go(func() error {
-		bcManager.Start(gCtx)
-		return nil
-	})
-
-	RegisterAdmin(bcManager, pkgLogger)
-
-	grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
-	if err != nil {
-		return fmt.Errorf("cannot create grpc server: %w", err)
-	}
-
-	runningMode := config.GetString("Warehouse.runningMode", "")
-	if runningMode == DegradedMode {
-		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
-
-		g.Go(func() error {
-			grpcServer.Start(gCtx)
-			return nil
-		})
-		g.Go(func() error {
-			api := NewApi(
-				mode, config.Default, pkgLogger, stats.Default,
-				backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
-				bcManager, nil,
-			)
-			return api.Start(gCtx)
-		})
-
-		return g.Wait()
-	}
-
-	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifierInstance = notifier.New(config.Default, pkgLogger, stats.Default, workspaceIdentifier)
-	if err := notifierInstance.Setup(ctx, psqlInfo); err != nil {
-		return fmt.Errorf("cannot setup notifier: %w", err)
-	}
-	g.Go(func() error {
-		return notifierInstance.Wait()
-	})
-
-	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
-	// A different DB for warehouse is used when:
-	// 1. MultiTenant (uses RDS)
-	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone(mode) && isMaster(mode)) || (misc.GetConnectionString(config.Default) != psqlInfo) {
-		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reporting.AddClient(gCtx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
-			return nil
-		}))
-	}
-
-	if isStandAlone(mode) && isMaster(mode) {
-		// Report warehouse features
-		g.Go(func() error {
-			backendconfig.DefaultBackendConfig.WaitForConfig(gCtx)
-
-			c := controlplane.NewClient(
-				backendconfig.GetConfigBackendURL(),
-				backendconfig.DefaultBackendConfig.Identity(),
-			)
-
-			err := c.SendFeatures(gCtx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
-			if err != nil {
-				pkgLogger.Errorf("error sending warehouse features: %v", err)
-			}
-
-			// We don't want to exit if we fail to send features
-			return nil
-		})
-	}
-
-	if isSlave(mode) {
-		pkgLogger.Infof("WH: Starting warehouse slave...")
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			cm := newConstraintsManager(config.Default)
-			ef := encoding.NewFactory(config.Default)
-
-			slave := newSlave(config.Default, pkgLogger, stats.Default, notifierInstance, bcManager, cm, ef)
-			return slave.setupSlave(gCtx)
-		}))
-	}
-
-	if isMaster(mode) {
-		pkgLogger.Infof("[WH]: Starting warehouse master...")
-
-		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-
-		region := config.GetString("region", "")
-
-		controlPlaneClient = controlplane.NewClient(
-			backendconfig.GetConfigBackendURL(),
-			backendconfig.DefaultBackendConfig.Identity(),
-			controlplane.WithRegion(region),
-		)
-
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifierInstance.RunMaintenanceWorker(gCtx)
-		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifierInstance.ClearJobs(gCtx)
-		}))
-
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return monitorDestRouters(gCtx)
-		}))
-
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			archive.CronArchiver(gCtx, archive.New(
-				config.Default,
-				pkgLogger,
-				stats.Default,
-				dbHandle,
-				filemanager.New,
-				tenantManager,
-			))
-			return nil
-		}))
-
-		g.Go(func() error {
-			grpcServer.Start(gCtx)
-			return nil
-		})
-
-		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, notifierInstance)
-		jobs.WithConfig(asyncWh, config.Default)
-
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return asyncWh.InitAsyncJobRunner()
-		}))
-	}
-
-	g.Go(func() error {
-		api := NewApi(
-			mode, config.Default, pkgLogger, stats.Default,
-			backendconfig.DefaultBackendConfig, wrappedDBHandle, notifierInstance, tenantManager,
-			bcManager, asyncWh,
-		)
-		return api.Start(gCtx)
-	})
-
-	return g.Wait()
 }
