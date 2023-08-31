@@ -366,6 +366,8 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 		}
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	if pendingUploadCount+pendingStagingFilesCount == 0 {
 		return &proto.TriggerWhUploadsResponse{
 			StatusCode: http.StatusOK,
@@ -388,6 +390,8 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 		triggerUpload(warehouse)
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
 		Message:    triggeredSuccessfully,
@@ -406,6 +410,8 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	upload, err := g.uploadRepo.Get(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
@@ -423,6 +429,8 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
@@ -435,6 +443,8 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to trigger sync for id %d: %v", request.UploadId, err)
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
 		Message:    triggeredSuccessfully,
@@ -487,6 +497,8 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to retry: %v", err)
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	return &proto.RetryWHUploadsResponse{
 		StatusCode: http.StatusOK,
 		Count:      retryCount,
@@ -536,6 +548,8 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get counts to retry: %v", err)
 	}
 
+	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
+	// TODO: Also, get rid of the message in here as well.
 	return &proto.RetryWHUploadsResponse{
 		StatusCode: http.StatusOK,
 		Count:      retryCount,
@@ -583,9 +597,13 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to validate: %v", err)
 	}
+	if res.Error != "" {
+		return &proto.WHValidationResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to validate: %v", res.Error)
+	}
+
 	return &proto.WHValidationResponse{
-		Error: res.Error,
-		Data:  res.Data,
+		Data: res.Data,
 	}, nil
 }
 
@@ -659,8 +677,7 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 	if err != nil {
 		if errors.As(err, &invalidDestinationCredErr{}) {
 			return &proto.ValidateObjectStorageResponse{
-				IsValid: false,
-				Error:   err.Error(),
+				Error: err.Error(),
 			}, nil
 		}
 
@@ -670,7 +687,6 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 
 	return &proto.ValidateObjectStorageResponse{
 		IsValid: true,
-		Error:   "",
 	}, nil
 }
 

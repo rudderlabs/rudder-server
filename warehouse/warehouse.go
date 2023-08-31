@@ -368,8 +368,9 @@ func Start(ctx context.Context, app app.App) error {
 		)
 		return api.Start(ctx)
 	}
+	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifier, err := pgnotifier.New(workspaceIdentifier, psqlInfo)
+	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
