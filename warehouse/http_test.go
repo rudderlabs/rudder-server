@@ -177,7 +177,7 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP, nil)
+	bcManager := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP)
 
 	ctx, stopTest := context.WithCancel(context.Background())
 

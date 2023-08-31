@@ -369,17 +369,21 @@ func Start(ctx context.Context, app app.App) error {
 		return nil
 	})
 
-	grpc, err := NewGRPC(config.Default, pkgLogger, wrappedDBHandle, bcManager)
-	if err != nil {
-		return fmt.Errorf("grpc server failed to start: %v", err)
-	}
-
 	bcManager = newBackendConfigManager(
 		config.Default, wrappedDBHandle, tenantManager,
-		pkgLogger.Child("wh_bc_manager"), grpc,
+		pkgLogger.Child("wh_bc_manager"),
 	)
 	g.Go(func() error {
 		bcManager.Start(gCtx)
+		return nil
+	})
+
+	grpc, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
+	if err != nil {
+		return fmt.Errorf("grpc server failed to start: %v", err)
+	}
+	g.Go(func() error {
+		grpc.Start(gCtx)
 		return nil
 	})
 
@@ -387,15 +391,6 @@ func Start(ctx context.Context, app app.App) error {
 
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
-		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
-		if isMaster(mode) {
-			err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
-			if err != nil {
-				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
-				return err
-			}
-		}
-
 		api := NewApi(
 			mode, config.Default, pkgLogger, stats.Default,
 			backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
@@ -486,11 +481,6 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
-		if err != nil {
-			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
-			return err
-		}
 		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
 

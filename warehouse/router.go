@@ -581,21 +581,6 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return fmt.Errorf("handling priority for waiting uploads: %w", err)
 	}
 
-	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(ctx, warehouse.Source.ID, warehouse.Destination.ID)
-	if err != nil && !errors.Is(err, model.ErrUploadNotFound) {
-		return fmt.Errorf("getting latest upload info: %w", err)
-	}
-	if err != nil && latestInfo.Status == model.Waiting {
-		// If it is present do nothing else delete it
-		if _, inProgress := r.isUploadJobInProgress(warehouse, latestInfo.ID); !inProgress {
-			err := r.uploadRepo.DeleteWaiting(ctx, latestInfo.ID)
-			if err != nil {
-				r.logger.Error(err, "uploadID", latestInfo.ID, "warehouse", warehouse.Identifier)
-			}
-			priority = latestInfo.Priority // copy the priority from the latest upload job.
-		}
-	}
-
 	stagingFilesFetchStart := r.now()
 	stagingFilesList, err := r.stagingRepo.Pending(ctx, warehouse.Source.ID, warehouse.Destination.ID)
 	if err != nil {

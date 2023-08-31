@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"golang.org/x/exp/slices"
@@ -47,6 +48,7 @@ type GRPC struct {
 	isMultiWorkspace   bool
 	cpClient           cpclient.InternalControlPlane
 	connectionManager  *controlplane.ConnectionManager
+	tenantManager      *multitenant.Manager
 	bcManager          *backendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
@@ -66,14 +68,16 @@ type GRPC struct {
 	}
 }
 
-func NewGRPC(
+func NewGRPCServer(
 	conf *config.Config,
 	logger logger.Logger,
 	db *sqlmw.DB,
+	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
 ) (*GRPC, error) {
 	g := &GRPC{
 		logger:             logger.Child("grpc"),
+		tenantManager:      tenantManager,
 		bcManager:          bcManager,
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
@@ -127,8 +131,31 @@ func NewGRPC(
 	return g, nil
 }
 
-func (g *GRPC) Apply(url string, active bool) {
-	g.connectionManager.Apply(url, active)
+func (g *GRPC) Start(ctx context.Context) {
+	configCh := g.tenantManager.WatchConfig(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data, ok := <-configCh:
+			if !ok {
+				return
+			}
+			g.processData(data)
+		}
+	}
+}
+
+func (g *GRPC) processData(configData map[string]backendconfig.ConfigT) {
+	// Only 1 connection flag is enough, since they are all the same in multi-workspace environments
+	for _, wConfig := range configData {
+		connectionFlags := wConfig.ConnectionFlags
+		if val, ok := connectionFlags.Services["warehouse"]; ok {
+			g.connectionManager.Apply(connectionFlags.URL, val)
+			break
+		}
+	}
 }
 
 func (g *GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
@@ -226,7 +253,13 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 
 	if request.UploadId < 1 {
 		return &proto.WHUploadResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "upload_id is empty or should be greater than 0")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "upload_id should be greater than 0")
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
 	uploadInfos, _, err := g.uploadRepo.SyncsInfoForMultiTenant(ctx, 1, 0, model.SyncUploadOptions{
@@ -243,11 +276,6 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 
 	syncUploadInfo := uploadInfos[0]
 
-	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
-	if len(sourceIDs) == 0 {
-		return &proto.WHUploadResponse{},
-			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
-	}
 	if !slices.Contains(sourceIDs, syncUploadInfo.SourceID) {
 		return &proto.WHUploadResponse{},
 			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
@@ -303,7 +331,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
 	if len(sourceIDs) == 0 {
 		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no sources found for workspace: %v", request.WorkspaceId)
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
 	if request.DestinationId == "" {
@@ -325,14 +353,14 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	pendingUploadCount, err = g.uploadRepo.Count(ctx, filters...)
 	if err != nil {
 		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get penting uploads count: %v", err)
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending uploads count: %v", err)
 	}
 
 	if pendingUploadCount == 0 {
 		pendingStagingFilesCount, err = g.stagingRepo.CountPendingForDestination(ctx, request.DestinationId)
 		if err != nil {
 			return &proto.TriggerWhUploadsResponse{},
-				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get penting staging files count: %v", err)
+				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get pending staging files count: %v", err)
 		}
 	}
 
@@ -344,9 +372,9 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 
 	var wh []model.Warehouse
-	if request.SourceId != "" && request.DestinationId == "" {
-		wh = g.bcManager.WarehousesBySourceID(request.WorkspaceId)
-	} else if request.DestinationId != "" {
+	if request.SourceId != "" {
+		wh = g.bcManager.WarehousesBySourceID(request.SourceId)
+	} else {
 		wh = g.bcManager.WarehousesByDestID(request.DestinationId)
 	}
 	if len(wh) == 0 {
@@ -373,7 +401,7 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
 	if len(sourceIDs) == 0 {
 		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no sources found for workspace: %v", request.WorkspaceId)
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
 	upload, err := g.uploadRepo.Get(ctx, request.UploadId)
@@ -395,8 +423,10 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 
 	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
-		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no sync found for id %d", request.UploadId)
+		return &proto.TriggerWhUploadsResponse{
+			Message:    NoSuchSync,
+			StatusCode: http.StatusOK,
+		}, nil
 	}
 	if err != nil {
 		return &proto.TriggerWhUploadsResponse{},
@@ -523,7 +553,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 	err = json.Unmarshal(json.RawMessage(req.Body), &reqModel)
 	if err != nil {
 		return &proto.WHValidationResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body for")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body")
 	}
 
 	destination := reqModel.Destination
@@ -625,14 +655,15 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 
 	err = g.validateObjectStorage(ctx, validateRequest)
 	if err != nil {
-		if errors.Is(err, &invalidDestinationCredErr{}) {
+		if errors.As(err, &invalidDestinationCredErr{}) {
 			return &proto.ValidateObjectStorageResponse{
 				IsValid: false,
 				Error:   err.Error(),
 			}, nil
 		}
 
-		return &proto.ValidateObjectStorageResponse{}, fmt.Errorf("unable to handle validate storage request call: %s", err)
+		return &proto.ValidateObjectStorageResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to handle validate storage request call: %s", err)
 	}
 
 	return &proto.ValidateObjectStorageResponse{

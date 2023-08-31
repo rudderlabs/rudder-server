@@ -28,7 +28,6 @@ func newBackendConfigManager(
 	db *sqlquerywrapper.DB,
 	tenantManager *multitenant.Manager,
 	log logger.Logger,
-	grpc *GRPC,
 ) *backendConfigManager {
 	if c == nil {
 		c = config.Default
@@ -44,7 +43,6 @@ func newBackendConfigManager(
 		logger:               log,
 		initialConfigFetched: make(chan struct{}),
 		connectionsMap:       make(map[string]map[string]model.Warehouse),
-		grpc:                 grpc,
 	}
 	if c.GetBool("ENABLE_TUNNELLING", true) {
 		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
@@ -66,7 +64,6 @@ type backendConfigManager struct {
 	tenantManager              *multitenant.Manager
 	internalControlPlaneClient cpclient.InternalControlPlane
 	logger                     logger.Logger
-	grpc                       *GRPC
 
 	initialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
@@ -139,15 +136,11 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 
 	var (
 		warehouses           []model.Warehouse
-		connectionFlags      backendconfig.ConnectionFlags
 		sourceIDsByWorkspace = make(map[string][]string)
 		connectionsMap       = make(map[string]map[string]model.Warehouse)
 	)
 
 	for workspaceID, wConfig := range data {
-		// the last connection flags should be enough, since they are all the same in multi-workspace environments
-		connectionFlags = wConfig.ConnectionFlags
-
 		for _, source := range wConfig.Sources {
 			if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
 				sourceIDsByWorkspace[workspaceID] = make([]string, 0, len(wConfig.Sources))
@@ -210,10 +203,6 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 		sub <- warehouses
 	}
 	s.subscriptionsMu.Unlock()
-
-	if val, ok := connectionFlags.Services["warehouse"]; ok {
-		s.grpc.Apply(connectionFlags.URL, val)
-	}
 }
 
 // namespace gives the namespace for the warehouse in the following order
