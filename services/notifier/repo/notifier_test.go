@@ -458,7 +458,7 @@ func TestNotifierRepo(t *testing.T) {
 
 				failedClaims, _, err := ur.GetByBatchID(ctx, batchID)
 				require.NoError(t, err)
-				require.Equal(t, []string{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Job, index int) string {
+				require.Equal(t, []model.JobStatus{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Job, index int) model.JobStatus {
 					return item.Status
 				}))
 

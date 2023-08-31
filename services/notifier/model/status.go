@@ -1,9 +1,11 @@
 package model
 
+type JobStatus string
+
 const (
-	Waiting   = "waiting"
-	Executing = "executing"
-	Succeeded = "succeeded"
-	Failed    = "failed"
-	Aborted   = "aborted"
+	Waiting   JobStatus = "waiting"
+	Executing JobStatus = "executing"
+	Succeeded JobStatus = "succeeded"
+	Failed    JobStatus = "failed"
+	Aborted   JobStatus = "aborted"
 )

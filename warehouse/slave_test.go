@@ -140,7 +140,7 @@ func TestSlave(t *testing.T) {
 			ID:                  1,
 			BatchID:             batchID,
 			Payload:             payloadJson,
-			Status:              "waiting",
+			Status:              model.Waiting,
 			WorkspaceIdentifier: "test_workspace",
 			Type:                notifierModel.JobTypeUpload,
 		},

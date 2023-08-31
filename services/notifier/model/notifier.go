@@ -20,7 +20,7 @@ type Job struct {
 	WorkspaceIdentifier string
 
 	Attempt  int
-	Status   string
+	Status   JobStatus
 	Type     JobType
 	Priority int
 	Error    error

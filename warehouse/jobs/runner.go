@@ -243,7 +243,7 @@ func (a *AsyncJobWh) updateStatusJobPayloadsFromNotifierResponse(r *model.Publis
 		}
 
 		if output, ok := m[response.Id]; ok {
-			output.Status = resp.Status
+			output.Status = string(resp.Status)
 			if resp.Error != nil {
 				output.Error = fmt.Errorf(resp.Error.Error())
 			}

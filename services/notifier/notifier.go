@@ -3,8 +3,10 @@ package notifier
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/notifier/repo"
 	"math/rand"
 	"time"
 
@@ -15,10 +17,8 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
 
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
-	"github.com/rudderlabs/rudder-server/services/notifier/repo"
-
 	"github.com/allisson/go-pglock/v2"
+	"github.com/rudderlabs/rudder-server/services/notifier/model"
 	"github.com/spaolacci/murmur3"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -34,12 +34,24 @@ const (
 	module    = "pgnotifier"
 )
 
+type notifierRepo interface {
+	ResetForWorkspace(context.Context, string) error
+	Insert(context.Context, *model.PublishRequest, string, string) error
+	PendingByBatchID(context.Context, string) (int64, error)
+	DeleteByBatchID(context.Context, string) error
+	OrphanJobIDs(context.Context, int) ([]int64, error)
+	GetByBatchID(context.Context, string) ([]model.Job, model.JobMetadata, error)
+	Claim(context.Context, string) (*model.Job, model.JobMetadata, error)
+	OnClaimFailed(context.Context, *model.Job, error, int) error
+	OnClaimSuccess(context.Context, *model.Job, json.RawMessage) error
+}
+
 type Notifier struct {
 	conf                *config.Config
 	logger              logger.Logger
 	statsFactory        stats.Stats
 	db                  *sqlmw.DB
-	repo                *repo.Notifier
+	repo                notifierRepo
 	workspaceIdentifier string
 	batchIDGenerator    func() uuid.UUID
 	now                 func() time.Time
@@ -66,17 +78,17 @@ type Notifier struct {
 		queryTimeout               time.Duration
 	}
 	stats struct {
-		insertRecords      stats.Measurement
-		publish            stats.Measurement
-		publishTime        stats.Measurement
-		claimLag           stats.Measurement
-		trackBatchLag      stats.Measurement
-		claimSucceeded     stats.Measurement
-		claimSucceededTime stats.Measurement
-		claimFailed        stats.Measurement
-		claimFailedTime    stats.Measurement
-		claimUpdateFailed  stats.Measurement
-		abortedRecords     stats.Measurement
+		insertRecords      stats.Counter
+		publish            stats.Counter
+		publishTime        stats.Timer
+		claimLag           stats.Timer
+		trackBatchLag      stats.Timer
+		claimSucceeded     stats.Counter
+		claimSucceededTime stats.Timer
+		claimFailed        stats.Counter
+		claimFailedTime    stats.Timer
+		claimUpdateFailed  stats.Counter
+		abortedRecords     stats.Counter
 	}
 }
 
@@ -123,11 +135,11 @@ func New(
 	})
 	n.stats.claimSucceeded = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": model.Succeeded,
+		"status": string(model.Succeeded),
 	})
 	n.stats.claimFailed = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": model.Failed,
+		"status": string(model.Failed),
 	})
 	n.stats.claimUpdateFailed = n.statsFactory.NewStat("pgnotifier.claimUpdateFailed", stats.CountType)
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
@@ -141,11 +153,11 @@ func New(
 	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": model.Succeeded,
+		"status": string(model.Succeeded),
 	})
 	n.stats.claimFailedTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": model.Failed,
+		"status": string(model.Failed),
 	})
 	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,
