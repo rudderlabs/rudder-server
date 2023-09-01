@@ -46,6 +46,13 @@ type HttpRequestData struct {
 	ContentType   string
 }
 
+type EventDetails struct {
+	Type                string
+	CsutomerObjectId    string
+	Fields              []string
+	IdentifierFieldName string
+}
+
 /*
 *
 struct to unmarshal response of loginDetails

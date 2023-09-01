@@ -194,7 +194,6 @@ var _ = Describe("Eloqua test", func() {
 					URI: "/contacts/imports/384",
 				}, nil)
 			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(fmt.Errorf("some error while uploading the data"))
-			eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "unable to upload the data. some error while uploading the data",
 				ImportingJobIDs:     nil,
@@ -242,7 +241,6 @@ var _ = Describe("Eloqua test", func() {
 					URI: "/contacts/imports/384",
 				}, nil)
 			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			eloquaService.EXPECT().RunSync(gomock.Any()).Return("", fmt.Errorf("some error occurred while running the sync"))
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "unable to run the sync after uploading the file. some error occurred while running the sync",
@@ -290,10 +288,9 @@ var _ = Describe("Eloqua test", func() {
 					URI: "/contacts/imports/384",
 				}, nil)
 			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-			eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
 			var parameters common.ImportParameters
-			parameters.ImportId = "/syncs/384"
+			parameters.ImportId = "/syncs/384:/contacts/imports/384"
 			importParameters, err := stdjson.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
@@ -325,7 +322,7 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
-				ImportId: "/syncs/384",
+				ImportId: "/syncs/384:/contacts/imports/384",
 			}
 			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("", fmt.Errorf("some error occurred while fetching the sync status"))
 			expected := common.PollStatusResponse{
@@ -343,16 +340,16 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
-				ImportId: "/syncs/384",
+				ImportId: "/syncs/384:/contacts/imports/384",
 			}
 			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("success", nil)
+			eloquaService.EXPECT().DeleteImportDefinition(gomock.Any()).Return(nil)
 			expected := common.PollStatusResponse{
-				Complete:      true,
-				InProgress:    false,
-				StatusCode:    200,
-				HasFailed:     false,
-				HasWarning:    false,
-				FailedJobURLs: pollInput.ImportId,
+				Complete:   true,
+				InProgress: false,
+				StatusCode: 200,
+				HasFailed:  false,
+				HasWarning: false,
 			}
 			received := bulkUploader.Poll(pollInput)
 			Expect(received).To(Equal(expected))
@@ -362,7 +359,7 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
-				ImportId: "/syncs/384",
+				ImportId: "/syncs/384:/contacts/imports/384",
 			}
 			eloquaService.EXPECT().CheckSyncStatus(gomock.Any()).Return("pending", nil)
 			expected := common.PollStatusResponse{
@@ -382,7 +379,7 @@ var _ = Describe("Eloqua test", func() {
 		AfterEach(func() {
 			config.Reset()
 		})
-		It("TestEloquaFailedToGetRejectedData", func() {
+		It("TestEloquaErrorOccurredWhileUploading", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
@@ -391,38 +388,100 @@ var _ = Describe("Eloqua test", func() {
 				FailedJobURLs: "/syncs/384",
 				ImportingList: jobs,
 			}
-			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the failed events"))
+			metadata := common.EventStatMeta{
+				FailedKeys:    []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
+				SucceededKeys: []int64{},
+				FailedReasons: map[int64]string{
+					1016: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1021: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1022: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1014: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1015: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1017: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1018: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1019: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1020: "some error occurred please check the logs, using this syncId: /syncs/384",
+					1023: "some error occurred please check the logs, using this syncId: /syncs/384",
+				},
+			}
+			expected := common.GetUploadStatsResponse{
+				StatusCode: 200,
+				Metadata:   metadata,
+			}
+			received := bulkUploader.GetUploadStats(pollInput)
+			Expect(received).To(Equal(expected))
+		})
+
+		It("TestEloquaFailedToFetchRejectedData", func() {
+			ctrl := gomock.NewController(GinkgoT())
+			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
+			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+
+			pollInput := common.GetUploadStatsInput{
+				WarningJobURLs: "/syncs/384",
+				ImportingList:  jobs,
+			}
+
+			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the data"))
 			expected := common.GetUploadStatsResponse{
 				StatusCode: 500,
 			}
 			received := bulkUploader.GetUploadStats(pollInput)
 			Expect(received).To(Equal(expected))
 		})
-		// It("TestEloquaFailedToGetRejectedData", func() {
-		// 	ctrl := gomock.NewController(GinkgoT())
-		// 	eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
-		// 	bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+		It("TestEloquaFailedToFetchRejectedData", func() {
+			ctrl := gomock.NewController(GinkgoT())
+			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
+			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
 
-		// 	pollInput := common.GetUploadStatsInput{
-		// 		FailedJobURLs: "/syncs/384",
-		// 		ImportingList: jobs,
-		// 	}
-		// 	type RejectedItem struct {
-		// 		FieldValues   map[string]string `json:"fieldValues"`
-		// 		Message       string            `json:"message"`
-		// 		StatusCode    string            `json:"statusCode"`
-		// 		RecordIndex   int64             `json:"recordIndex"`
-		// 		InvalidFields []string          `json:"invalidFields"`
-		// 	}
+			pollInput := common.GetUploadStatsInput{
+				WarningJobURLs: "/syncs/384",
+				ImportingList:  jobs,
+			}
+			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(&eloqua.RejectResponse{
+				Count:        2,
+				TotalResults: 2,
+				Limit:        1000,
+				Offset:       0,
+				HasMore:      false,
+				Items: []eloqua.RejectedItem{
+					{
+						FieldValues: map[string]string{
+							"C_FirstName":    "test7@mail.com",
+							"C_EmailAddress": "Test7",
+						},
+						Message:       "Invalid email address.",
+						StatusCode:    "ELQ-00002",
+						RecordIndex:   5,
+						InvalidFields: []string{"C_EmailAddress"},
+					},
+					{
+						FieldValues: map[string]string{
+							"C_FirstName":    "Test12",
+							"C_EmailAddress": "test13@mail.com",
+						},
+						Message:       "Invalid email address.",
+						StatusCode:    "ELQ-00002",
+						RecordIndex:   10,
+						InvalidFields: []string{"C_EmailAddress"},
+					},
+				},
+			}, nil)
 
-		// 	eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(eloqua.RejectResponse{
-		// 		Items:
-		// 	}, nil)
-		// 	expected := common.GetUploadStatsResponse{
-		// 		StatusCode: 500,
-		// 	}
-		// 	received := bulkUploader.GetUploadStats(pollInput)
-		// 	Expect(received).To(Equal(expected))
-		// })
+			metadata := common.EventStatMeta{
+				FailedKeys:    []int64{1018, 1023},
+				SucceededKeys: []int64{1014, 1015, 1016, 1017, 1019, 1020, 1021, 1022},
+				FailedReasons: map[int64]string{
+					1018: "Invalid email address.",
+					1023: "Invalid email address.",
+				},
+			}
+			expected := common.GetUploadStatsResponse{
+				StatusCode: 200,
+				Metadata:   metadata,
+			}
+			received := bulkUploader.GetUploadStats(pollInput)
+			Expect(received).To(Equal(expected))
+		})
 	})
 })

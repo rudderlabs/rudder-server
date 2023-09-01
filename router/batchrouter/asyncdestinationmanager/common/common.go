@@ -19,7 +19,7 @@ type AsyncDestinationManager interface {
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
-var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
+var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS", "ELOQUA"}
 
 type PollStatusResponse struct {
 	Complete       bool

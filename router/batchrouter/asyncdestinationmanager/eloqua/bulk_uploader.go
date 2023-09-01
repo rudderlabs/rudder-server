@@ -27,7 +27,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		return createAsyncUploadErrorOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
 	}
 	defer file.Close()
-	eventType, customObjectId, fields, identifierFieldName, err := getEventDetails(file)
+	eventDetails, err := getEventDetails(file)
 	if err != nil {
 		return createAsyncUploadErrorOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
 	}
@@ -36,8 +36,8 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 	}
-	if eventType == "track" {
-		customObjectData.DynamicPart = customObjectId
+	if eventDetails.Type == "track" {
+		customObjectData.DynamicPart = eventDetails.CsutomerObjectId
 	}
 	eloquaFields, err := b.service.FetchFields(&customObjectData)
 	if err != nil {
@@ -49,7 +49,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		importingJobs: asyncDestStruct.ImportingJobIDs,
 	}
 
-	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, identifierFieldName)
+	importDefinitionBody, err := createBodyForImportDefinition(eventDetails.Type, eventDetails.Fields, eloquaFields, eventDetails.IdentifierFieldName)
 	if err != nil {
 		return createAsyncUploadErrorOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
@@ -62,10 +62,10 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 		Body:          strings.NewReader(string(marshalledData)),
-		DynamicPart:   customObjectId,
+		DynamicPart:   eventDetails.CsutomerObjectId,
 	}
 
-	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventType)
+	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventDetails.Type)
 	if err != nil {
 		return createAsyncUploadErrorOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
 	}
@@ -75,7 +75,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	filePAth, err := createCSVFile(fields, file, &uploadJobInfo)
+	filePAth, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo)
 	if err != nil {
 		return createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
@@ -202,13 +202,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		return uploadStatusResponse
 	}
 
-	eventStatMetaWithFailedJobs, err := parseFailedData(UploadStatsInput.FailedJobURLs, UploadStatsInput.ImportingList)
-	if err != nil {
-		b.logger.Error("Error while parsing rejected data", err)
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
+	eventStatMetaWithFailedJobs := parseFailedData(UploadStatsInput.FailedJobURLs, UploadStatsInput.ImportingList)
 	uploadStatusResponse := common.GetUploadStatsResponse{
 		StatusCode: 200,
 		Metadata:   *eventStatMetaWithFailedJobs,

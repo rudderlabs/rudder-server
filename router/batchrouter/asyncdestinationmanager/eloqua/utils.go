@@ -18,25 +18,35 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func getEventDetails(file *os.File) (string, string, []string, string, error) {
+const bufferSize = 5000 * 1024
+
+func getEventDetails(file *os.File) (*EventDetails, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
+	scanner.Buffer(nil, bufferSize)
+	eventDetails := EventDetails{}
 	if scanner.Scan() {
 		line := scanner.Text()
 		var data TransformedData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			return "", "", nil, "", fmt.Errorf("error in unmarshalling data, %v", err)
+			return &eventDetails, fmt.Errorf("error in unmarshalling data, %v", err)
 		}
 		if data.Message.Type == "track" && data.Message.CustomObjectId != "" {
-			return "track", data.Message.CustomObjectId, getKeys(data.Message.Data), data.Message.IdentifierFieldName, nil
+			eventDetails.Type = "track"
+			eventDetails.CsutomerObjectId = data.Message.CustomObjectId
+			eventDetails.Fields = getKeys(data.Message.Data)
+			eventDetails.IdentifierFieldName = data.Message.IdentifierFieldName
+			return &eventDetails, nil
 		} else if data.Message.Type == "identify" && data.Message.CustomObjectId == "contacts" {
-			return "identify", "", getKeys(data.Message.Data), data.Message.IdentifierFieldName, nil
+			eventDetails.Type = "identify"
+			eventDetails.Fields = getKeys(data.Message.Data)
+			eventDetails.IdentifierFieldName = data.Message.IdentifierFieldName
+			return &eventDetails, nil
 		} else {
-			return "", "", nil, "", fmt.Errorf("unable to find event format")
+			return nil, fmt.Errorf("unable to find event format")
 		}
 	}
-	return "", "", nil, "", fmt.Errorf("unable to scan data from the file")
+	return &eventDetails, fmt.Errorf("unable to scan data from the file")
 }
 
 func getKeys(m map[string]interface{}) []string {
@@ -50,7 +60,7 @@ func getKeys(m map[string]interface{}) []string {
 func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
+	scanner.Buffer(nil, bufferSize)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -129,20 +139,6 @@ func createBodyForImportDefinition(evenType string, fields []string, eloquaField
 	return nil, fmt.Errorf("unable to create body for import definition")
 }
 
-func difference(a, b []int64) []int64 {
-	mb := make(map[int64]struct{}, len(b))
-	for _, x := range b {
-		mb[x] = struct{}{}
-	}
-	var diff []int64
-	for _, x := range a {
-		if _, found := mb[x]; !found {
-			diff = append(diff, x)
-		}
-	}
-	return diff
-}
-
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service Eloqua) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
@@ -177,15 +173,16 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 			}
 		}
 	}
+	left, _ := lo.Difference(jobIDs, failedJobIDs)
 	eventStatMeta := common.EventStatMeta{
 		FailedKeys:    failedJobIDs,
 		FailedReasons: failedReasons,
-		SucceededKeys: difference(jobIDs, failedJobIDs),
+		SucceededKeys: left,
 	}
 	return &eventStatMeta, nil
 }
 
-func parseFailedData(syncId string, importingList []*jobsdb.JobT) (*common.EventStatMeta, error) {
+func parseFailedData(syncId string, importingList []*jobsdb.JobT) *common.EventStatMeta {
 	jobIDs := []int64{}
 	failedReasons := map[int64]string{}
 	for _, job := range importingList {
@@ -198,5 +195,5 @@ func parseFailedData(syncId string, importingList []*jobsdb.JobT) (*common.Event
 		FailedReasons: failedReasons,
 		SucceededKeys: []int64{},
 	}
-	return &eventStatMeta, nil
+	return &eventStatMeta
 }
