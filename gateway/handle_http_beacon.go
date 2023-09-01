@@ -3,6 +3,7 @@ package gateway
 import (
 	"net/http"
 
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -25,6 +26,14 @@ func (gw *Handle) beaconInterceptor(delegate http.HandlerFunc) http.HandlerFunc 
 		} else {
 			status := http.StatusUnauthorized
 			responseBody := response.NoWriteKeyInQueryParams
+			stat := gwstats.SourceStat{
+				Source:   "invalidWriteKey",
+				SourceID: "invalidWriteKey",
+				WriteKey: "invalidWriteKey",
+				ReqType:  "beacon",
+			}
+			stat.RequestFailed("invalidWriteKey")
+			stat.Report(gw.stats)
 			gw.logger.Infow("response",
 				"ip", misc.GetIPFromReq(r),
 				"path", r.URL.Path,
