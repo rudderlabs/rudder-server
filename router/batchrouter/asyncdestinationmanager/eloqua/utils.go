@@ -200,21 +200,3 @@ func parseFailedData(syncId string, importingList []*jobsdb.JobT) (*common.Event
 	}
 	return &eventStatMeta, nil
 }
-
-func createUploadData(file *os.File, uploaJobInfo *JobInfo) []map[string]interface{} {
-	_, _ = file.Seek(0, 0)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
-	var data1 []map[string]interface{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		var data TransformedData
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			fmt.Println("Error in unmarshalling data")
-		}
-		data1 = append(data1, data.Message.Data)
-	}
-	uploaJobInfo.succeededJobs = uploaJobInfo.importingJobs
-	uploaJobInfo.failedJobs = []int64{}
-	return data1
-}
