@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func createAsyncUploadOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func createAsyncUploadErrorOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	return common.AsyncUploadOutput{
 		FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
 		FailedReason:  fmt.Sprintf(errorString+"%v", err),
@@ -24,12 +24,12 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	destination := asyncDestStruct.Destination
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
-		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
 	}
 	defer file.Close()
 	eventType, customObjectId, fields, identifierFieldName, err := getEventDetails(file)
 	if err != nil {
-		return createAsyncUploadOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
 	}
 
 	customObjectData := HttpRequestData{
@@ -41,7 +41,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	eloquaFields, err := b.service.FetchFields(&customObjectData)
 	if err != nil {
-		return createAsyncUploadOutput("got error while fetching fields. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("got error while fetching fields. ", err, destination.ID, asyncDestStruct)
 	}
 
 	uploadJobInfo := JobInfo{
@@ -51,13 +51,13 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 
 	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, identifierFieldName)
 	if err != nil {
-		return createAsyncUploadOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
 	marshalledData, err := stdjson.Marshal(importDefinitionBody)
 	if err != nil {
-		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
-	fmt.Println("[ELOQUA]::importDefinition data: " + string(marshalledData))
+
 	importDefinitionData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
@@ -67,7 +67,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 
 	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventType)
 	if err != nil {
-		return createAsyncUploadOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
 	}
 
 	uploadDataData := HttpRequestData{
@@ -77,19 +77,19 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	filePAth, err := createCSVFile(fields, file, &uploadJobInfo)
 	if err != nil {
-		return createAsyncUploadOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
 	defer os.Remove(filePAth)
 	err = b.service.UploadData(&uploadDataData, filePAth)
 	if err != nil {
-		return createAsyncUploadOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
 	runSyncBody := map[string]interface{}{
 		"syncedInstanceUri": importDefinition.URI,
 	}
 	marshalledData, err = stdjson.Marshal(runSyncBody)
 	if err != nil {
-		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
 	runSyncData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
@@ -98,13 +98,13 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	syncURI, err := b.service.RunSync(&runSyncData)
 	if err != nil {
-		return createAsyncUploadOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
 	var parameters common.ImportParameters
 	parameters.ImportId = syncURI + ":" + importDefinition.URI
 	importParameters, err := stdjson.Marshal(parameters)
 	if err != nil {
-		return createAsyncUploadOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
+		return createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     uploadJobInfo.succeededJobs,
