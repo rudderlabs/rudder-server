@@ -1750,8 +1750,8 @@ github.com/rudderlabs/compose-test v0.1.2 h1:GTt8meEXkdOXPZWKW0r5mDRA5ddachR/pR+
 github.com/rudderlabs/compose-test v0.1.2/go.mod h1:J1UaMZXoXRGHE0+VLpHZ/0hp+1F2m5cmjOKcwaN5LOU=
 github.com/rudderlabs/parquet-go v0.0.2 h1:ZXRdZdimB0PdJtmxeSSxfI0fDQ3kZjwzBxRi6Ut1J8k=
 github.com/rudderlabs/parquet-go v0.0.2/go.mod h1:g6guum7o8uhj/uNhunnt7bw5Vabu/goI5i21/3fnxWQ=
-github.com/rudderlabs/rudder-go-kit v0.15.8-0.20230830145825-6c513b924d83 h1:iYIEH0JVNJGM4G98S4fPY2am6CpNfJ/xPVhMN0ixIKU=
-github.com/rudderlabs/rudder-go-kit v0.15.8-0.20230830145825-6c513b924d83/go.mod h1:hefbWyM4XKvxIdwQ5WYgylbA6NNJ5s0gJ1cUD/jRU20=
+github.com/rudderlabs/rudder-go-kit v0.15.8-0.20230901110544-93494c8e7eee h1:twHiUTkg5N0Yn5OrXgTuygk5HLdbp6B3B5weNWrp+9I=
+github.com/rudderlabs/rudder-go-kit v0.15.8-0.20230901110544-93494c8e7eee/go.mod h1:hefbWyM4XKvxIdwQ5WYgylbA6NNJ5s0gJ1cUD/jRU20=
 github.com/rudderlabs/sql-tunnels v0.1.4 h1:snnkUItx3nRCPGSouibkYzBpOcEiWhCVjRY95A0eMuk=
 github.com/rudderlabs/sql-tunnels v0.1.4/go.mod h1:C6O0M6C3V+pdVwjy3UvyPd+d5SeRvbBQfApm+67qNnI=
 github.com/russross/blackfriday v1.6.0/go.mod h1:ti0ldHuxg49ri4ksnFxlkCfN+hvslNlmVHqNRXXJNAY=
