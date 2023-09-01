@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -36,16 +37,16 @@ var (
 	}
 	currentDir, _ = os.Getwd()
 	jobs          = []*jobsdb.JobT{
-		&jobsdb.JobT{JobID: 1014},
-		&jobsdb.JobT{JobID: 1015},
-		&jobsdb.JobT{JobID: 1016},
-		&jobsdb.JobT{JobID: 1017},
-		&jobsdb.JobT{JobID: 1018},
-		&jobsdb.JobT{JobID: 1019},
-		&jobsdb.JobT{JobID: 1020},
-		&jobsdb.JobT{JobID: 1021},
-		&jobsdb.JobT{JobID: 1022},
-		&jobsdb.JobT{JobID: 1023},
+		{JobID: 1014},
+		{JobID: 1015},
+		{JobID: 1016},
+		{JobID: 1017},
+		{JobID: 1018},
+		{JobID: 1019},
+		{JobID: 1020},
+		{JobID: 1021},
+		{JobID: 1022},
+		{JobID: 1023},
 	}
 )
 
@@ -130,11 +131,11 @@ var _ = Describe("Eloqua test", func() {
 
 			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_EmailAddress",
 					},
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_FirstName",
 					},
@@ -173,11 +174,11 @@ var _ = Describe("Eloqua test", func() {
 
 			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_EmailAddress",
 					},
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_FirstName",
 					},
@@ -221,11 +222,11 @@ var _ = Describe("Eloqua test", func() {
 
 			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_EmailAddress",
 					},
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_FirstName",
 					},
@@ -269,11 +270,11 @@ var _ = Describe("Eloqua test", func() {
 
 			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
 				Items: []eloqua.Item{
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_EmailAddress",
 					},
-					eloqua.Item{
+					{
 						Statement:    "{{CustomObject[172].Field[976]}}",
 						InternalName: "C_FirstName",
 					},

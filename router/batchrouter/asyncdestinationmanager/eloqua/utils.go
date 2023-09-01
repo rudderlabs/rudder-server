@@ -10,11 +10,12 @@ import (
 	"path"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 )
 
 func getEventDetails(file *os.File) (string, string, []string, string, error) {
@@ -100,8 +101,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 }
 
 func createBodyForImportDefinition(evenType string, fields []string, eloquaFields *Fields, identifierFieldName string) (map[string]interface{}, error) {
-
-	var fieldStatement = make(map[string]string)
+	fieldStatement := make(map[string]string)
 	for _, val := range fields {
 		for _, val1 := range eloquaFields.Items {
 			if val1.InternalName == val {
@@ -186,7 +186,6 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 }
 
 func parseFailedData(syncId string, importingList []*jobsdb.JobT) (*common.EventStatMeta, error) {
-
 	jobIDs := []int64{}
 	failedReasons := map[int64]string{}
 	for _, job := range importingList {

@@ -12,7 +12,6 @@ import (
 )
 
 func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, error) {
-
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	if err != nil {
@@ -37,7 +36,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	return NewEloquaBulkUploader(destName, encodedAuthorizationString, baseEndpoint, eloqua), nil
 }
 
-func NewEloquaBulkUploader(destinationName string, authorization string, baseEndpoint string, eloqua Eloqua) *EloquaBulkUploader {
+func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, eloqua Eloqua) *EloquaBulkUploader {
 	return &EloquaBulkUploader{
 		destName:      destinationName,
 		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),

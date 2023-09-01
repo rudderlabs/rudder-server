@@ -19,8 +19,7 @@ type AsyncDestinationManager interface {
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
-type abc struct {
-}
+type abc struct{}
 
 func (a *abc) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	return AsyncUploadOutput{}

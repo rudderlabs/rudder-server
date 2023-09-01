@@ -6,8 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 func createAsyncUploadOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -181,7 +182,6 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 }
 
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-
 	if UploadStatsInput.WarningJobURLs != "" {
 		checkRejectedData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
@@ -214,7 +214,6 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		Metadata:   *eventStatMetaWithFailedJobs,
 	}
 	return uploadStatusResponse
-
 }
 
 // Deletes import definition from Eloqua itself

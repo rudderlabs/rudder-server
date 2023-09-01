@@ -10,8 +10,7 @@ import (
 	"strings"
 )
 
-type implementEloqua struct {
-}
+type implementEloqua struct{}
 
 func (e *implementEloqua) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
 	req, err := http.NewRequest(data.Method, data.Endpoint, data.Body)
@@ -35,7 +34,6 @@ func (e *implementEloqua) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, e
 }
 
 func (e *implementEloqua) GetBaseEndpoint(data *HttpRequestData) (string, error) {
-
 	data.Method = "GET"
 	data.Endpoint = "https://login.eloqua.com/id"
 
@@ -99,7 +97,6 @@ func (e *implementEloqua) CreateImportDefinition(data *HttpRequestData, eventTyp
 }
 
 func (e *implementEloqua) UploadData(data *HttpRequestData, filePath string) error {
-
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
