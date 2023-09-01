@@ -3,7 +3,9 @@ package warehouse
 import "testing"
 
 func TestApp(t *testing.T) {
-	t.Run("Graceful shutdown", func(t *testing.T) {})
+	t.Run("Graceful shutdown", func(t *testing.T) {
+
+	})
 	t.Run("degraded", func(t *testing.T) {})
 	t.Run("mode=embedded", func(t *testing.T) {})
 	t.Run("mode=embedded_master", func(t *testing.T) {})

@@ -15,6 +15,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// TODO: Move this to router struct instead of exposing it as globals.
 var (
 	scheduledTimesCache     map[string][]int
 	scheduledTimesCacheLock sync.RWMutex
@@ -34,12 +35,12 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	}
 
 	// return true if the upload was triggered
-	if isUploadTriggered(warehouse) {
+	if r.triggerStore.IsTriggered(warehouse.Identifier) {
 		return true, nil
 	}
 
 	if r.config.warehouseSyncFreqIgnore {
-		if uploadFrequencyExceeded(warehouse, "") {
+		if r.uploadFrequencyExceeded(warehouse, "") {
 			return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
 		}
 		return true, nil
@@ -56,7 +57,7 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
-		if uploadFrequencyExceeded(warehouse, syncFrequency) {
+		if r.uploadFrequencyExceeded(warehouse, syncFrequency) {
 			return false, fmt.Errorf("upload frequency exceeded")
 		} else {
 			return true, nil

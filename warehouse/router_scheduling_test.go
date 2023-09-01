@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"strconv"
 	"testing"
 	"time"
@@ -187,9 +188,11 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			w := model.Warehouse{
 				Identifier: "test_identifier",
 			}
-			triggerUpload(w)
 
 			r := router{}
+			r.triggerStore = trigger.NewStore()
+			r.triggerStore.Trigger(w.Identifier)
+
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.NoError(t, err)
 			require.True(t, canCreate)
@@ -203,6 +206,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
+				r.triggerStore = trigger.NewStore()
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.NoError(t, err)
@@ -213,10 +217,19 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				w := model.Warehouse{
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
-				setLastProcessedMarker(w, time.Now())
+
+				now := time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 
 				r := router{}
+				r.now = func() time.Time {
+					return now
+				}
+				r.config.uploadFreqInS = 1800
 				r.config.warehouseSyncFreqIgnore = true
+				r.lastProcessedMarkerMap = make(map[string]int64)
+				r.triggerStore = trigger.NewStore()
+
+				r.setLastProcessedMarker(w, now.Add(-time.Hour))
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.EqualError(t, err, "ignore sync freq: upload frequency exceeded")
@@ -227,10 +240,12 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				w := model.Warehouse{
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
-				setLastProcessedMarker(w, time.Now().Add(-time.Hour))
 
 				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
+				r.lastProcessedMarkerMap = make(map[string]int64)
+				r.triggerStore = trigger.NewStore()
+				r.setLastProcessedMarker(w, time.Now().Add(-time.Hour))
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.NoError(t, err)
@@ -252,6 +267,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			r := router{}
+			r.triggerStore = trigger.NewStore()
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 			}
@@ -270,6 +286,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			r := router{}
+			r.triggerStore = trigger.NewStore()
 			r.now = time.Now
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -284,10 +301,13 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					Config: map[string]interface{}{},
 				},
 			}
-			setLastProcessedMarker(w, time.Now())
 
 			r := router{}
 			r.now = time.Now
+			r.triggerStore = trigger.NewStore()
+			r.lastProcessedMarkerMap = make(map[string]int64)
+
+			r.setLastProcessedMarker(w, time.Now())
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.EqualError(t, err, "upload frequency exceeded")
@@ -370,13 +390,16 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 							},
 						},
 					}
-					setLastProcessedMarker(w, time.Now())
 
 					r := router{}
+					r.triggerStore = trigger.NewStore()
+					r.lastProcessedMarkerMap = make(map[string]int64)
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {
 						return tc.now
 					}
+
+					r.setLastProcessedMarker(w, time.Now())
 
 					canCreate, err := r.canCreateUpload(context.Background(), w)
 					if tc.wantErr != nil {
