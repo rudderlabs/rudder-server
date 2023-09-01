@@ -27,7 +27,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	eloquaData := HttpRequestData{
 		Authorization: encodedAuthorizationString,
 	}
-	eloqua := &implementEloqua{}
+	eloqua := NewEloquaImpl("2.0")
 	baseEndpoint, err := eloqua.GetBaseEndpoint(&eloquaData)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
