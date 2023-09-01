@@ -2141,7 +2141,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 		WorkspaceID:      workspaceID,
 	}
 
-	defer jd.getTimerStat("get_ds_time", &tags).RecordDuration()()
+	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
 
 	containsUnprocessed := lo.Contains(params.stateFilters, Unprocessed.State)
 	skipCacheResult := params.afterJobID != nil
@@ -3156,7 +3156,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
-		"get_jobs_time",
+		"jobsdb_get_jobs_time",
 		tags,
 	).RecordDuration()()
 
@@ -3268,7 +3268,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
 }
 
