@@ -10,6 +10,8 @@ import (
 
 	"github.com/tidwall/sjson"
 
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
+
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -67,6 +69,14 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 				}
 			}
 		} else {
+			stat := gwstats.SourceStat{
+				Source:   "NoWriteKeyInQueryParams",
+				SourceID: "NoWriteKeyInQueryParams",
+				WriteKey: "NoWriteKeyInQueryParams",
+				ReqType:  reqType,
+			}
+			stat.RequestFailed("NoWriteKeyInQueryParams")
+			stat.Report(gw.stats)
 			gw.logger.Infow("Error while handling request",
 				"ip", misc.GetIPFromReq(r),
 				"path", r.URL.Path,
