@@ -1,13 +1,13 @@
 package eloqua
 
 import (
-	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/samber/lo"
 )
 
 func createAsyncUploadOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -52,7 +52,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return createAsyncUploadOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
-	marshalledData, err := json.Marshal(importDefinitionBody)
+	marshalledData, err := stdjson.Marshal(importDefinitionBody)
 	if err != nil {
 		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
@@ -86,7 +86,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	runSyncBody := map[string]interface{}{
 		"syncedInstanceUri": importDefinition.URI,
 	}
-	marshalledData, err = json.Marshal(runSyncBody)
+	marshalledData, err = stdjson.Marshal(runSyncBody)
 	if err != nil {
 		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
@@ -124,6 +124,11 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 		Authorization: b.authorization,
 	}
 	uploadStatus, err := b.service.CheckSyncStatus(&checkSyncStatusData)
+	defer func() {
+		if lo.Contains([]string{"success", "error", "warning"}, uploadStatus) {
+			b.deleteImportDef(importIds[1])
+		}
+	}()
 	if err != nil {
 		return common.PollStatusResponse{
 			Complete:   false,
@@ -135,7 +140,6 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 	}
 	switch uploadStatus {
 	case "success":
-		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
 			Complete:   true,
 			InProgress: false,
@@ -144,7 +148,6 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 			HasWarning: false,
 		}
 	case "error":
-		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
 			Complete:      true,
 			InProgress:    false,
@@ -154,7 +157,6 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 			FailedJobURLs: importIds[0],
 		}
 	case "warning":
-		defer deleteImportDef(b, importIds[1])
 		return common.PollStatusResponse{
 			Complete:       true,
 			InProgress:     false,
@@ -163,11 +165,7 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 			HasWarning:     true,
 			WarningJobURLs: importIds[0],
 		}
-	case "pending":
-		return common.PollStatusResponse{
-			InProgress: true,
-		}
-	case "active":
+	case "pending", "active":
 		return common.PollStatusResponse{
 			InProgress: true,
 		}
@@ -217,4 +215,17 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 	}
 	return uploadStatusResponse
 
+}
+
+// Deletes import definition from Eloqua itself
+func (b *EloquaBulkUploader) deleteImportDef(importDefId string) {
+	deleteImportDefinitionData := HttpRequestData{
+		BaseEndpoint:  b.baseEndpoint,
+		Authorization: b.authorization,
+		DynamicPart:   importDefId,
+	}
+	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
+	if err != nil {
+		b.logger.Error("Error while deleting import definition", err)
+	}
 }

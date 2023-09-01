@@ -219,15 +219,3 @@ func createUploadData(file *os.File, uploaJobInfo *JobInfo) []map[string]interfa
 	uploaJobInfo.failedJobs = []int64{}
 	return data1
 }
-
-func deleteImportDef(b *EloquaBulkUploader, importDefId string) {
-	deleteImportDefinitionData := HttpRequestData{
-		BaseEndpoint:  b.baseEndpoint,
-		Authorization: b.authorization,
-		DynamicPart:   importDefId,
-	}
-	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
-	if err != nil {
-		b.logger.Error("Error while deleting import definition", err)
-	}
-}
