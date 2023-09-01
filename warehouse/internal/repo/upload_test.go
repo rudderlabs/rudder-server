@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
@@ -1707,7 +1708,7 @@ func TestUploads_GetLatestUploadInfo(t *testing.T) {
 
 	t.Run("unknown pipeline", func(t *testing.T) {
 		latestInfo, err := repoUpload.GetLatestUploadInfo(ctx, "unknown_source_id", "unknown_destination_id")
-		require.ErrorIs(t, err, model.ErrUploadNotFound)
+		require.ErrorIs(t, err, sql.ErrNoRows)
 		require.Nil(t, latestInfo)
 	})
 

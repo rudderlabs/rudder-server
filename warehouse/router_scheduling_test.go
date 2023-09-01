@@ -226,10 +226,10 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 				r.config.uploadFreqInS = 1800
 				r.config.warehouseSyncFreqIgnore = true
-				r.lastProcessedMarkerMap = make(map[string]int64)
+				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = trigger.NewStore()
 
-				r.setLastProcessedMarker(w, now.Add(-time.Hour))
+				r.updateCreateJobMarker(w, now.Add(-time.Hour))
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.EqualError(t, err, "ignore sync freq: upload frequency exceeded")
@@ -248,9 +248,9 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					return now
 				}
 				r.config.warehouseSyncFreqIgnore = true
-				r.lastProcessedMarkerMap = make(map[string]int64)
+				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = trigger.NewStore()
-				r.setLastProcessedMarker(w, now.Add(-time.Hour))
+				r.updateCreateJobMarker(w, now.Add(-time.Hour))
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.NoError(t, err)
@@ -310,9 +310,9 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r := router{}
 			r.now = time.Now
 			r.triggerStore = trigger.NewStore()
-			r.lastProcessedMarkerMap = make(map[string]int64)
+			r.createJobMarkerMap = make(map[string]time.Time)
 
-			r.setLastProcessedMarker(w, time.Now())
+			r.updateCreateJobMarker(w, time.Now())
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.EqualError(t, err, "upload frequency exceeded")
@@ -398,13 +398,13 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 					r := router{}
 					r.triggerStore = trigger.NewStore()
-					r.lastProcessedMarkerMap = make(map[string]int64)
+					r.createJobMarkerMap = make(map[string]time.Time)
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {
 						return tc.now
 					}
 
-					r.setLastProcessedMarker(w, time.Now())
+					r.updateCreateJobMarker(w, time.Now())
 
 					canCreate, err := r.canCreateUpload(context.Background(), w)
 					if tc.wantErr != nil {

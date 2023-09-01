@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
@@ -68,8 +69,8 @@ type router struct {
 	workerChannelMap     map[string]chan *UploadJob
 	workerChannelMapLock sync.RWMutex
 
-	lastProcessedMarkerMap     map[string]int64
-	lastProcessedMarkerMapLock sync.RWMutex
+	createJobMarkerMap     map[string]time.Time
+	createJobMarkerMapLock sync.RWMutex
 
 	inProgressMap     map[WorkerIdentifierT][]JobID
 	inProgressMapLock sync.RWMutex
@@ -151,7 +152,7 @@ func newRouter(
 	r.destType = destType
 	r.now = time.Now
 	r.triggerStore = triggerStore
-	r.lastProcessedMarkerMap = make(map[string]int64)
+	r.createJobMarkerMap = make(map[string]time.Time)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
@@ -629,7 +630,7 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return err
 	}
 
-	r.setLastProcessedMarker(warehouse, uploadStartAfter)
+	r.updateCreateJobMarker(warehouse, uploadStartAfter)
 
 	return nil
 }
@@ -637,7 +638,7 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse model.Warehouse) (int, error) {
 	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(ctx, warehouse.Source.ID, warehouse.Destination.ID)
 	if err != nil {
-		if errors.Is(err, model.ErrUploadNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return defaultUploadPriority, nil
 		}
 		return 0, err
@@ -713,11 +714,11 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
 	freqInS := r.uploadFreqInS(syncFrequency)
 
-	r.lastProcessedMarkerMapLock.RLock()
-	defer r.lastProcessedMarkerMapLock.RUnlock()
+	r.createJobMarkerMapLock.RLock()
+	defer r.createJobMarkerMapLock.RUnlock()
 
-	lastExecTime, ok := r.lastProcessedMarkerMap[warehouse.Identifier]
-	if ok && r.now().Unix()-lastExecTime < freqInS {
+	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
+	if ok && r.now().Sub(lastCreatedAt) > time.Duration(freqInS)*time.Second {
 		return true
 	}
 
@@ -732,11 +733,11 @@ func (r *router) uploadFreqInS(syncFrequency string) int64 {
 	return freqInMin * 60
 }
 
-func (r *router) setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
-	r.lastProcessedMarkerMapLock.Lock()
-	defer r.lastProcessedMarkerMapLock.Unlock()
+func (r *router) updateCreateJobMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
+	r.createJobMarkerMapLock.Lock()
+	defer r.createJobMarkerMapLock.Unlock()
 
-	r.lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
+	r.createJobMarkerMap[warehouse.Identifier] = lastProcessedTime
 }
 
 // Enable enables a router :)

@@ -155,6 +155,7 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
@@ -194,7 +195,8 @@ func TestRouter(t *testing.T) {
 		r.destType = destinationType
 		r.logger = logger.NOP
 		r.triggerStore = trigger.NewStore()
-		r.lastProcessedMarkerMap = make(map[string]int64)
+		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.createJobMarkerMap = make(map[string]time.Time)
 
 		t.Run("no staging files", func(t *testing.T) {
 			err = r.createJobs(ctx, warehouse)
@@ -240,7 +242,8 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("merge existing upload", func(t *testing.T) {
-				r.setLastProcessedMarker(warehouse, now.Add(-time.Hour))
+				r.setDestInProgress(warehouse, 1)
+				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -266,7 +269,7 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("upload triggered", func(t *testing.T) {
-				r.setLastProcessedMarker(warehouse, now.Add(-time.Hour))
+				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
 				r.triggerStore.Trigger(warehouse.Identifier)
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
@@ -362,7 +365,8 @@ func TestRouter(t *testing.T) {
 		r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 			"destinationType": r.destType,
 		})
-		r.lastProcessedMarkerMap = make(map[string]int64)
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = trigger.NewStore()
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -474,6 +478,8 @@ func TestRouter(t *testing.T) {
 		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 			"destType": r.destType,
 		})
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = trigger.NewStore()
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -613,6 +619,8 @@ func TestRouter(t *testing.T) {
 		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 			"destType": r.destType,
 		})
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = trigger.NewStore()
 
 		close(r.bcManager.initialConfigFetched)
 
@@ -760,6 +768,8 @@ func TestRouter(t *testing.T) {
 			r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 				"destType": r.destType,
 			})
+			r.createJobMarkerMap = make(map[string]time.Time)
+			r.triggerStore = trigger.NewStore()
 
 			close(r.bcManager.initialConfigFetched)
 
@@ -829,6 +839,8 @@ func TestRouter(t *testing.T) {
 			r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 				"destinationType": r.destType,
 			})
+			r.createJobMarkerMap = make(map[string]time.Time)
+			r.triggerStore = trigger.NewStore()
 
 			closeCh := make(chan struct{})
 
@@ -1041,6 +1053,8 @@ func TestRouter(t *testing.T) {
 		r.config.maxConcurrentUploadJobs = 1
 		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
 		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = trigger.NewStore()
 
 		go func() {
 			r.bcManager.Start(ctx)

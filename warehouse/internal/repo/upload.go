@@ -1038,7 +1038,7 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 		&latestUploadInfo.Priority,
 	)
 	if err == sql.ErrNoRows {
-		return nil, model.ErrUploadNotFound
+		return nil, fmt.Errorf("no latest upload found: %w", err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get latest upload info: %w", err)
