@@ -60,7 +60,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/minio/minio-go v6.0.14+incompatible
-	github.com/minio/minio-go/v7 v7.0.62
+	github.com/minio/minio-go/v7 v7.0.63
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo/v2 v2.12.0
