@@ -18,24 +18,26 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
+		var arctx *gwtypes.AuthRequestContext
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, reqType, arctx)
 		}()
 		writeKey, _, ok := r.BasicAuth()
 		if !ok || writeKey == "" {
-			stat := gwstats.SourceStat{
-				Source:   "noWriteKey",
-				SourceID: "noWriteKey",
-				WriteKey: "noWriteKey",
-				ReqType:  reqType,
-			}
-			stat.RequestFailed("noWriteKeyInBasicAuth")
-			stat.Report(gw.stats)
 			errorMessage = response.NoWriteKeyInBasicAuth
 			return
 		}
-		arctx := gw.authRequestContextForWriteKey(writeKey)
+		arctx = gw.authRequestContextForWriteKey(writeKey)
 		if arctx == nil {
+			stat := gwstats.SourceStat{
+				Source:   "invalidWriteKey",
+				SourceID: "invalidWriteKey",
+				WriteKey: writeKey,
+				ReqType:  reqType,
+			}
+			stat.RequestFailed("invalidWriteKey")
+			stat.Report(gw.stats)
 			errorMessage = response.InvalidWriteKey
 			return
 		}
@@ -55,9 +57,11 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
+		var arctx *gwtypes.AuthRequestContext
 		var errorMessage string
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, reqType, arctx)
 		}()
 
 		var writeKey string
@@ -67,18 +71,10 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			writeKey, _, _ = r.BasicAuth()
 		}
 		if writeKey == "" {
-			stat := gwstats.SourceStat{
-				Source:   "noWriteKey",
-				SourceID: "noWriteKey",
-				WriteKey: "noWriteKey",
-				ReqType:  reqType,
-			}
-			stat.RequestFailed("noWriteKeyInQueryParams")
-			stat.Report(gw.stats)
 			errorMessage = response.NoWriteKeyInQueryParams
 			return
 		}
-		arctx := gw.authRequestContextForWriteKey(writeKey)
+		arctx = gw.authRequestContextForWriteKey(writeKey)
 		if arctx == nil || arctx.SourceCategory != "webhook" {
 			errorMessage = response.InvalidWriteKey
 			return
@@ -99,23 +95,17 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
+		var arctx *gwtypes.AuthRequestContext
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, reqType, arctx)
 		}()
 		sourceID := r.Header.Get("X-Rudder-Source-Id")
 		if sourceID == "" {
-			stat := gwstats.SourceStat{
-				Source:   "noSourceID",
-				SourceID: "noSourceID",
-				WriteKey: "noSourceID",
-				ReqType:  reqType,
-			}
-			stat.RequestFailed("noSourceIdInHeader")
-			stat.Report(gw.stats)
 			errorMessage = response.NoSourceIdInHeader
 			return
 		}
-		arctx := gw.authRequestContextForSourceID(sourceID)
+		arctx = gw.authRequestContextForSourceID(sourceID)
 		if arctx == nil {
 			errorMessage = response.InvalidSourceID
 			return
@@ -138,6 +128,7 @@ func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc
 		s, ok := gw.sourceIDSourceMap[arctx.SourceID]
 		if !ok || !s.IsReplaySource() {
 			gw.handleHttpError(w, r, response.InvalidReplaySource)
+			gw.handleFailureStats(response.InvalidReplaySource, "replay", arctx)
 			return
 		}
 		delegate.ServeHTTP(w, r)
@@ -198,5 +189,50 @@ func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorM
 			"status", status,
 			"body", responseBody)
 		http.Error(w, responseBody, status)
+	}
+}
+
+func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtypes.AuthRequestContext) {
+	if errorMessage != "" {
+		var stat gwstats.SourceStat
+		switch errorMessage {
+		case response.NoWriteKeyInBasicAuth, response.NoWriteKeyInQueryParams:
+			stat = gwstats.SourceStat{
+				Source:   "noWriteKey",
+				SourceID: "noWriteKey",
+				WriteKey: "noWriteKey",
+				ReqType:  reqType,
+			}
+		case response.InvalidWriteKey:
+			stat = gwstats.SourceStat{
+				Source:   "noWriteKey",
+				SourceID: "noWriteKey",
+				WriteKey: "noWriteKey",
+				ReqType:  reqType,
+			}
+		case response.InvalidSourceID:
+			stat = gwstats.SourceStat{
+				SourceID: "InvalidSourceId",
+				WriteKey: "InvalidSourceId",
+				ReqType:  reqType,
+				Source:   "InvalidSourceId",
+			}
+		case response.NoSourceIdInHeader:
+			stat = gwstats.SourceStat{
+				SourceID: "noSourceIDInHeader",
+				WriteKey: "noSourceIDInHeader",
+				ReqType:  reqType,
+				Source:   "noSourceIDInHeader",
+			}
+		case response.SourceDisabled:
+			stat = gwstats.SourceStat{
+				SourceID: arctx.SourceID,
+				WriteKey: arctx.WriteKey,
+				ReqType:  reqType,
+				Source:   arctx.SourceTag(),
+			}
+		}
+		stat.RequestFailed(response.GetStatus(errorMessage))
+		stat.Report(gw.stats)
 	}
 }

@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.11.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.332
+	github.com/aws/aws-sdk-go v1.45.1
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -60,7 +60,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/minio/minio-go v6.0.14+incompatible
-	github.com/minio/minio-go/v7 v7.0.62
+	github.com/minio/minio-go/v7 v7.0.63
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo/v2 v2.12.0
