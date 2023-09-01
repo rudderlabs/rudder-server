@@ -3,6 +3,7 @@ package warehouse
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -100,6 +101,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
+		triggerStore := trigger.NewStore()
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +132,7 @@ func TestRouter(t *testing.T) {
 			cp,
 			bcm,
 			ef,
+			triggerStore,
 		)
 		require.NoError(t, err)
 
@@ -190,6 +193,8 @@ func TestRouter(t *testing.T) {
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
 		r.logger = logger.NOP
+		r.triggerStore = trigger.NewStore()
+		r.lastProcessedMarkerMap = make(map[string]int64)
 
 		t.Run("no staging files", func(t *testing.T) {
 			err = r.createJobs(ctx, warehouse)
@@ -235,7 +240,7 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("merge existing upload", func(t *testing.T) {
-				setLastProcessedMarker(warehouse, now.Add(-time.Hour))
+				r.setLastProcessedMarker(warehouse, now.Add(-time.Hour))
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -261,8 +266,8 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("upload triggered", func(t *testing.T) {
-				setLastProcessedMarker(warehouse, now.Add(-time.Hour))
-				triggerUpload(warehouse)
+				r.setLastProcessedMarker(warehouse, now.Add(-time.Hour))
+				r.triggerStore.Trigger(warehouse.Identifier)
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -357,6 +362,7 @@ func TestRouter(t *testing.T) {
 		r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 			"destinationType": r.destType,
 		})
+		r.lastProcessedMarkerMap = make(map[string]int64)
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)

@@ -4,11 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"expvar"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"os"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -32,29 +30,13 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var (
-	lastProcessedMarkerMap     map[string]int64
-	lastProcessedMarkerExp     *expvar.Map
-	lastProcessedMarkerMapLock sync.RWMutex
-	triggerUploadsMap          map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
-	triggerUploadsMapLock      sync.RWMutex
-)
-
-func init() {
-	lastProcessedMarkerMap = make(map[string]int64)
-	lastProcessedMarkerExp = expvar.NewMap("lastProcessedMarkerMap")
-	triggerUploadsMap = make(map[string]bool)
-}
 
 type App struct {
 	app                app.App
@@ -73,6 +55,7 @@ type App struct {
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	jobsManager        *jobs.AsyncJobWh
+	triggerStore       *trigger.Store
 
 	appName string
 
@@ -147,6 +130,8 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("setting up database: %w", err)
 	}
 
+	a.triggerStore = trigger.NewStore()
+
 	a.tenantManager = multitenant.New(
 		a.conf,
 		a.bcConfig,
@@ -197,6 +182,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.db,
 		a.tenantManager,
 		a.bcManager,
+		a.triggerStore,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot create grpc server: %w", err)
@@ -213,6 +199,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.tenantManager,
 		a.bcManager,
 		a.jobsManager,
+		a.triggerStore,
 	)
 
 	return nil
@@ -494,6 +481,7 @@ func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backen
 					a.controlPlaneClient,
 					a.bcManager,
 					a.encodingFactory,
+					a.triggerStore,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
@@ -515,55 +503,4 @@ func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backen
 	}
 
 	return nil
-}
-
-func uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
-	freqInS := uploadFreqInS(syncFrequency)
-
-	lastProcessedMarkerMapLock.RLock()
-	defer lastProcessedMarkerMapLock.RUnlock()
-
-	lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]
-	if ok && timeutil.Now().Unix()-lastExecTime < freqInS {
-		return false
-	}
-
-	return false
-}
-
-func uploadFreqInS(syncFrequency string) int64 {
-	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
-	if err != nil {
-		return config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	}
-	return freqInMin * 60
-}
-
-func setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
-	lastProcessedMarkerMapLock.Lock()
-	defer lastProcessedMarkerMapLock.Unlock()
-
-	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
-	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
-}
-
-func isUploadTriggered(wh model.Warehouse) bool {
-	triggerUploadsMapLock.RLock()
-	defer triggerUploadsMapLock.RUnlock()
-
-	return triggerUploadsMap[wh.Identifier]
-}
-
-func triggerUpload(wh model.Warehouse) {
-	triggerUploadsMapLock.Lock()
-	defer triggerUploadsMapLock.Unlock()
-
-	triggerUploadsMap[wh.Identifier] = true
-}
-
-func clearTriggeredUpload(wh model.Warehouse) {
-	triggerUploadsMapLock.Lock()
-	defer triggerUploadsMapLock.Unlock()
-
-	delete(triggerUploadsMap, wh.Identifier)
 }

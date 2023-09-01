@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +53,7 @@ type router struct {
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
+	triggerStore *trigger.Store
 
 	isEnabled atomic.Bool
 
@@ -64,6 +67,9 @@ type router struct {
 
 	workerChannelMap     map[string]chan *UploadJob
 	workerChannelMapLock sync.RWMutex
+
+	lastProcessedMarkerMap     map[string]int64
+	lastProcessedMarkerMapLock sync.RWMutex
 
 	inProgressMap     map[WorkerIdentifierT][]JobID
 	inProgressMapLock sync.RWMutex
@@ -83,6 +89,7 @@ type router struct {
 	notifier         *notifier.Notifier
 
 	config struct {
+		uploadFreqInS                     int64
 		noOfWorkers                       int
 		maxConcurrentUploadJobs           int
 		allowMultipleSourcesForJobsPickup bool
@@ -121,6 +128,7 @@ func newRouter(
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
 	encodingFactory *encoding.Factory,
+	triggerStore *trigger.Store,
 ) (*router, error) {
 	r := &router{}
 
@@ -142,6 +150,8 @@ func newRouter(
 	r.bcManager = bcManager
 	r.destType = destType
 	r.now = time.Now
+	r.triggerStore = triggerStore
+	r.lastProcessedMarkerMap = make(map[string]int64)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
@@ -172,6 +182,7 @@ func newRouter(
 
 	whName := warehouseutils.WHDestNameMap[destType]
 
+	r.conf.RegisterInt64ConfigVariable(1800, &r.config.uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	r.conf.RegisterIntConfigVariable(1, &r.config.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
@@ -618,7 +629,7 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return err
 	}
 
-	setLastProcessedMarker(warehouse, uploadStartAfter)
+	r.setLastProcessedMarker(warehouse, uploadStartAfter)
 
 	return nil
 }
@@ -657,7 +668,7 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	uploadTriggered := isUploadTriggered(warehouse)
+	uploadTriggered := r.triggerStore.IsTriggered(warehouse.Identifier)
 	if uploadTriggered {
 		priority = 50
 	}
@@ -693,10 +704,39 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 
 	// reset upload trigger if the upload was triggered
 	if uploadTriggered {
-		clearTriggeredUpload(warehouse)
+		r.triggerStore.ClearTrigger(warehouse.Identifier)
 	}
 
 	return nil
+}
+
+func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
+	freqInS := r.uploadFreqInS(syncFrequency)
+
+	r.lastProcessedMarkerMapLock.RLock()
+	defer r.lastProcessedMarkerMapLock.RUnlock()
+
+	lastExecTime, ok := r.lastProcessedMarkerMap[warehouse.Identifier]
+	if ok && r.now().Unix()-lastExecTime < freqInS {
+		return true
+	}
+
+	return false
+}
+
+func (r *router) uploadFreqInS(syncFrequency string) int64 {
+	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
+	if err != nil {
+		return r.config.uploadFreqInS
+	}
+	return freqInMin * 60
+}
+
+func (r *router) setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
+	r.lastProcessedMarkerMapLock.Lock()
+	defer r.lastProcessedMarkerMapLock.Unlock()
+
+	r.lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
 // Enable enables a router :)

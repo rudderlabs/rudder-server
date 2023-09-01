@@ -16,6 +16,4 @@ func TestApp(t *testing.T) {
 	t.Run("without env vars", func(t *testing.T) {})
 	t.Run("monitor routers", func(t *testing.T) {})
 	t.Run("upload frequency exceeded", func(t *testing.T) {})
-	t.Run("last processed marker", func(t *testing.T) {})
-	t.Run("trigger upload", func(t *testing.T) {})
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"net"
 	"net/http"
 	"strconv"
@@ -74,6 +75,7 @@ type Api struct {
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
+	triggerStore  *trigger.Store
 
 	config struct {
 		healthTimeout       time.Duration
@@ -95,6 +97,7 @@ func NewApi(
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
+	triggerStore *trigger.Store,
 ) *Api {
 	a := &Api{
 		mode:          mode,
@@ -106,6 +109,7 @@ func NewApi(
 		tenantManager: tenantManager,
 		bcManager:     bcManager,
 		asyncManager:  asyncManager,
+		triggerStore:  triggerStore,
 		stagingRepo:   repo.NewStagingFiles(db),
 		uploadRepo:    repo.NewUploads(db),
 		schemaRepo:    repo.NewWHSchemas(db),
@@ -327,7 +331,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, warehouse := range wh {
-			triggerUpload(warehouse)
+			a.triggerStore.Trigger(warehouse.Identifier)
 		}
 	}
 
@@ -386,7 +390,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, warehouse := range wh {
-		triggerUpload(warehouse)
+		a.triggerStore.Trigger(warehouse.Identifier)
 	}
 
 	w.WriteHeader(http.StatusOK)
