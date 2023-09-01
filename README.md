@@ -117,6 +117,6 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 ## License
 
-RudderStack server is released under the [**AGPLv3 License**](https://github.com/rudderlabs/rudder-server/blob/master/LICENSE).
+RudderStack server is released under the [**Elastic License 2.0**](https://www.elastic.co/licensing/elastic-license).
 
 Read [**our blog**](https://www.rudderstack.com/blog/rudderstacks-licensing-explained/) to know more about how our software is licensed.
