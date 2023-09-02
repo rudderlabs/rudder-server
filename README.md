@@ -28,7 +28,7 @@
     <img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server">
   </a>
   <a href="https://github.com/rudderlabs/rudder-server/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/rudderlabs/rudder-server">
+    <img src="https://img.shields.io/static/v1?label=license&message=ELv2&color=7447fc">
   </a>
 </p>
 
