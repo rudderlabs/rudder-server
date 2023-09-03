@@ -28,7 +28,7 @@
     <img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server">
   </a>
   <a href="https://github.com/rudderlabs/rudder-server/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/rudderlabs/rudder-server">
+    <img src="https://img.shields.io/static/v1?label=license&message=ELv2&color=7447fc">
   </a>
 </p>
 
@@ -117,6 +117,5 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 ## License
 
-RudderStack server is released under the [**AGPLv3 License**](https://github.com/rudderlabs/rudder-server/blob/master/LICENSE).
+RudderStack server is released under the [**Elastic License 2.0**](https://www.elastic.co/licensing/elastic-license).
 
-Read [**our blog**](https://www.rudderstack.com/blog/rudderstacks-licensing-explained/) to know more about how our software is licensed.
