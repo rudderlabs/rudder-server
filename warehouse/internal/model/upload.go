@@ -36,7 +36,10 @@ const (
 	Noop                      JobErrorType = "noop"
 )
 
-var ErrUploadNotFound = errors.New("upload not found")
+var (
+	ErrUploadNotFound = errors.New("upload not found")
+	ErrNoUploadsFound = errors.New("no uploads found")
+)
 
 type Upload struct {
 	ID          int64
