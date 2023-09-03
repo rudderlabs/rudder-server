@@ -247,6 +247,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.now = func() time.Time {
 					return now
 				}
+				r.config.uploadFreqInS = 1800
 				r.config.warehouseSyncFreqIgnore = true
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = trigger.NewStore()

@@ -334,10 +334,6 @@ func (a *App) Start(ctx context.Context) error {
 		return g.Wait()
 	}
 
-	g.Go(func() error {
-		return a.notifier.Wait()
-	})
-
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
@@ -422,6 +418,10 @@ func (a *App) Start(ctx context.Context) error {
 
 	g.Go(func() error {
 		return a.api.Start(gCtx)
+	})
+	g.Go(func() error {
+		<-ctx.Done()
+		return a.notifier.Shutdown()
 	})
 
 	return g.Wait()

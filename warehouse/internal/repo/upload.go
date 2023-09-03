@@ -697,6 +697,7 @@ func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offs
 		return syncUploadInfos, totalUploads, nil
 	}
 
+	// Getting the syncs count in case, we were not able to get the count
 	totalUploads, err = uploads.syncsCount(ctx, opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload count: %w", err)
@@ -1038,7 +1039,7 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 		&latestUploadInfo.Priority,
 	)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("no latest upload found: %w", err)
+		return nil, model.ErrNoUploadsFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get latest upload info: %w", err)
