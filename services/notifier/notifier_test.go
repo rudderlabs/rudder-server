@@ -76,7 +76,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NewLogger(), statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -136,7 +136,8 @@ func TestNotifier(t *testing.T) {
 			return n.RunMaintenanceWorker(gCtx)
 		})
 		g.Go(func() error {
-			return n.Wait()
+			<-groupCtx.Done()
+			return n.Shutdown()
 		})
 		g.Go(func() error {
 			failedResponses := make([]*model.Job, 0)
@@ -213,7 +214,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -263,7 +264,8 @@ func TestNotifier(t *testing.T) {
 			return n.RunMaintenanceWorker(gCtx)
 		})
 		g.Go(func() error {
-			return n.Wait()
+			<-groupCtx.Done()
+			return n.Shutdown()
 		})
 		require.NoError(t, g.Wait())
 	})
@@ -303,7 +305,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -326,7 +328,9 @@ func TestNotifier(t *testing.T) {
 
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
 				claimedWorkers := atomic.NewInt64(0)
+
 				blockSub := make(chan struct{})
+				defer close(blockSub)
 
 				for i := 0; i < subscriberWorkers; i++ {
 					slaveGroup.Go(func() error {
@@ -335,8 +339,9 @@ func TestNotifier(t *testing.T) {
 
 							if claimedWorkers.Load() < subscriberWorkers {
 								select {
-								case blockSub <- struct{}{}:
+								case <-blockSub:
 								case <-slaveCtx.Done():
+									return nil
 								}
 							}
 
@@ -364,7 +369,8 @@ func TestNotifier(t *testing.T) {
 			return n.RunMaintenanceWorker(gCtx)
 		})
 		g.Go(func() error {
-			return n.Wait()
+			<-groupCtx.Done()
+			return n.Shutdown()
 		})
 		require.NoError(t, g.Wait())
 	})
@@ -385,7 +391,7 @@ func TestNotifier(t *testing.T) {
 		c.Set("PGNOTIFIER_DB_PORT", port)
 		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
 
-		n := notifier.New(c, logger.NewLogger(), stats.Default, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 	})

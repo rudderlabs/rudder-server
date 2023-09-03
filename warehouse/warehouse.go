@@ -436,9 +436,6 @@ func Start(ctx context.Context, app app.App) error {
 	if err := notifierInstance.Setup(ctx, psqlInfo); err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
-	g.Go(func() error {
-		return notifierInstance.Wait()
-	})
 
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
 	// A different DB for warehouse is used when:
@@ -540,6 +537,10 @@ func Start(ctx context.Context, app app.App) error {
 			bcManager, asyncWh,
 		)
 		return api.Start(gCtx)
+	})
+	g.Go(func() error {
+		<-ctx.Done()
+		return notifierInstance.Shutdown()
 	})
 
 	return g.Wait()
