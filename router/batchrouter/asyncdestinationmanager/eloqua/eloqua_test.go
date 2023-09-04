@@ -411,7 +411,6 @@ var _ = Describe("Eloqua test", func() {
 			received := bulkUploader.GetUploadStats(pollInput)
 			Expect(received).To(Equal(expected))
 		})
-
 		It("TestEloquaFailedToFetchRejectedData", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
@@ -429,11 +428,10 @@ var _ = Describe("Eloqua test", func() {
 			received := bulkUploader.GetUploadStats(pollInput)
 			Expect(received).To(Equal(expected))
 		})
-		It("TestEloquaFailedToFetchRejectedData", func() {
+		It("TestEloquaSucceedToFetchRejectedData", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
-
 			pollInput := common.GetUploadStatsInput{
 				WarningJobURLs: "/syncs/384",
 				ImportingList:  jobs,
@@ -462,24 +460,54 @@ var _ = Describe("Eloqua test", func() {
 						},
 						Message:       "Invalid email address.",
 						StatusCode:    "ELQ-00002",
-						RecordIndex:   10,
+						RecordIndex:   9,
 						InvalidFields: []string{"C_EmailAddress"},
 					},
 				},
 			}, nil)
 
 			metadata := common.EventStatMeta{
-				FailedKeys:    []int64{1018, 1023},
-				SucceededKeys: []int64{1014, 1015, 1016, 1017, 1019, 1020, 1021, 1022},
+				FailedKeys:    []int64{1018, 1022},
+				SucceededKeys: []int64{1014, 1015, 1016, 1017, 1019, 1020, 1021, 1023},
 				FailedReasons: map[int64]string{
 					1018: "Invalid email address.",
-					1023: "Invalid email address.",
+					1022: "Invalid email address.",
 				},
 			}
 			expected := common.GetUploadStatsResponse{
 				StatusCode: 200,
 				Metadata:   metadata,
 			}
+			eloquaService.EXPECT().FetchFields(gomock.Any()).Return(&eloqua.Fields{
+				Items: []eloqua.Item{
+					{
+						Statement:    "{{CustomObject[172].Field[976]}}",
+						InternalName: "C_EmailAddress",
+					},
+					{
+						Statement:    "{{CustomObject[172].Field[976]}}",
+						InternalName: "C_FirstName",
+					},
+				},
+				TotalResults: 4,
+				Limit:        1000,
+				Offset:       0,
+				Count:        4,
+				HasMore:      false,
+			}, nil)
+			eloquaService.EXPECT().CreateImportDefinition(gomock.Any(), gomock.Any()).Return(
+				&eloqua.ImportDefinition{
+					URI: "/contacts/imports/384",
+				}, nil)
+			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
+			bulkUploader.Upload(&common.AsyncDestinationStruct{
+				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
+				FailedJobIDs:    []int64{},
+				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
+			})
 			received := bulkUploader.GetUploadStats(pollInput)
 			Expect(received).To(Equal(expected))
 		})

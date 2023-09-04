@@ -75,7 +75,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	filePAth, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo)
+	filePAth, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, b.jobToCSVMap)
 	if err != nil {
 		return createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
@@ -188,7 +188,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 			DynamicPart:   UploadStatsInput.WarningJobURLs,
 			Authorization: b.authorization,
 		}
-		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
+		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service, b.jobToCSVMap)
 		if err != nil {
 			b.logger.Error("Error while parsing rejected data", err)
 			return common.GetUploadStatsResponse{
@@ -206,6 +206,9 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 	uploadStatusResponse := common.GetUploadStatsResponse{
 		StatusCode: 200,
 		Metadata:   *eventStatMetaWithFailedJobs,
+	}
+	for k := range b.jobToCSVMap {
+		delete(b.jobToCSVMap, k)
 	}
 	return uploadStatusResponse
 }

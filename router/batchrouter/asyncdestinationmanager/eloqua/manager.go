@@ -45,5 +45,6 @@ func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, 
 		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
 		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
 		service:       eloqua,
+		jobToCSVMap:   map[int64]int64{},
 	}
 }

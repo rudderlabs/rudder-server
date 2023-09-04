@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -57,7 +56,7 @@ func getKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, error) {
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
@@ -66,7 +65,13 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 	if err != nil {
 		return "", err
 	}
-	path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
+	folderPath := path.Join(tmpDirPath, localTmpDirName)
+	_, e := os.Stat(folderPath)
+	if os.IsNotExist(e) {
+		folderPath, _ = os.MkdirTemp(folderPath, "")
+	}
+	path := path.Join(folderPath, uuid.NewString())
+	// path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
@@ -99,6 +104,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, left...)
 			break
 		}
+		jobIdRowMap[int64(index+1)] = uploadJobInfo.importingJobs[index]
 		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, uploadJobInfo.importingJobs[index])
 		index += 1
 		err = csvWriter.Write(values)
@@ -139,13 +145,11 @@ func createBodyForImportDefinition(evenType string, fields []string, eloquaField
 	return nil, fmt.Errorf("unable to create body for import definition")
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service Eloqua) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service Eloqua, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 	}
-	slices.Sort(jobIDs)
-	initialJOBId := jobIDs[0]
 	rejectResponse, err := service.CheckRejectedData(data)
 	if err != nil {
 		return nil, err
@@ -168,8 +172,8 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 				}
 			}
 			for _, val := range rejectResponse.Items {
-				failedJobIDs = append(failedJobIDs, val.RecordIndex+initialJOBId-1)
-				failedReasons[val.RecordIndex+initialJOBId-1] = val.Message
+				failedJobIDs = append(failedJobIDs, jobToCSVMap[val.RecordIndex])
+				failedReasons[jobToCSVMap[val.RecordIndex]] = val.Message
 			}
 		}
 	}

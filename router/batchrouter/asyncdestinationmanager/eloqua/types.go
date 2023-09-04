@@ -26,6 +26,7 @@ type EloquaBulkUploader struct {
 	fileSizeLimit int64
 	eventsLimit   int64
 	service       Eloqua
+	jobToCSVMap   map[int64]int64
 }
 type DestinationConfig struct {
 	CompanyName              string   `json:"companyName"`
