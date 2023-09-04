@@ -27,7 +27,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	eloquaData := HttpRequestData{
 		Authorization: encodedAuthorizationString,
 	}
-	eloqua := NewEloquaImpl("2.0")
+	eloqua := NewEloquaServiceImpl("2.0")
 	baseEndpoint, err := eloqua.GetBaseEndpoint(&eloquaData)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
@@ -36,7 +36,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	return NewEloquaBulkUploader(destName, encodedAuthorizationString, baseEndpoint, eloqua), nil
 }
 
-func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, eloqua Eloqua) *EloquaBulkUploader {
+func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, eloqua EloquaService) *EloquaBulkUploader {
 	return &EloquaBulkUploader{
 		destName:      destinationName,
 		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),

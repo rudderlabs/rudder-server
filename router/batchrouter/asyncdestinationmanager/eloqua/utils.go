@@ -116,28 +116,28 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	return csvFilePath, nil
 }
 
-func createBodyForImportDefinition(evenType string, fields []string, eloquaFields *Fields, identifierFieldName string) (map[string]interface{}, error) {
+func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fields) (map[string]interface{}, error) {
 	fieldStatement := make(map[string]string)
-	for _, val := range fields {
+	for _, val := range eventDetails.Fields {
 		for _, val1 := range eloquaFields.Items {
 			if val1.InternalName == val {
 				fieldStatement[val] = val1.Statement
 			}
 		}
 	}
-	if evenType == "identify" {
+	if eventDetails.Type == "identify" {
 		return map[string]interface{}{
 			"name":                    "Rudderstack-Contact-Import",
 			"fields":                  fieldStatement,
-			"identifierFieldName":     identifierFieldName,
+			"identifierFieldName":     eventDetails.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
-	} else if evenType == "track" {
+	} else if eventDetails.Type == "track" {
 		return map[string]interface{}{
 			"name":                    "Rudderstack-CustomObject-Import",
 			"updateRule":              "always",
 			"fields":                  fieldStatement,
-			"identifierFieldName":     identifierFieldName,
+			"identifierFieldName":     eventDetails.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
 	}
@@ -145,7 +145,7 @@ func createBodyForImportDefinition(evenType string, fields []string, eloquaField
 	return nil, fmt.Errorf("unable to create body for import definition")
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service Eloqua, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service EloquaService, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)

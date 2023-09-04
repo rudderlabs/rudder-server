@@ -7,7 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
-type Eloqua interface {
+type EloquaService interface {
 	GetBaseEndpoint(*HttpRequestData) (string, error)
 	FetchFields(*HttpRequestData) (*Fields, error)
 	CreateImportDefinition(*HttpRequestData, string) (*ImportDefinition, error)
@@ -25,7 +25,7 @@ type EloquaBulkUploader struct {
 	baseEndpoint  string
 	fileSizeLimit int64
 	eventsLimit   int64
-	service       Eloqua
+	service       EloquaService
 	jobToCSVMap   map[int64]int64
 }
 type DestinationConfig struct {

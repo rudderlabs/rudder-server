@@ -10,17 +10,17 @@ import (
 	"strings"
 )
 
-type implementEloqua struct {
+type EloquaServiceImpl struct {
 	bulkApi string
 }
 
-func NewEloquaImpl(version string) *implementEloqua {
-	return &implementEloqua{
+func NewEloquaServiceImpl(version string) *EloquaServiceImpl {
+	return &EloquaServiceImpl{
 		bulkApi: fmt.Sprintf("/api/bulk/%v", version),
 	}
 }
 
-func (e *implementEloqua) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
+func (e *EloquaServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
 	req, err := http.NewRequest(data.Method, data.Endpoint, data.Body)
 	if err != nil {
 		return nil, 500, err
@@ -41,7 +41,7 @@ func (e *implementEloqua) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, e
 	return body, res.StatusCode, err
 }
 
-func (e *implementEloqua) GetBaseEndpoint(data *HttpRequestData) (string, error) {
+func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, error) {
 	data.Method = http.MethodGet
 	data.Endpoint = "https://login.eloqua.com/id"
 
@@ -57,7 +57,7 @@ func (e *implementEloqua) GetBaseEndpoint(data *HttpRequestData) (string, error)
 	return loginDetailsResponse.Urls.Base, nil
 }
 
-func (e *implementEloqua) FetchFields(data *HttpRequestData) (*Fields, error) {
+func (e *EloquaServiceImpl) FetchFields(data *HttpRequestData) (*Fields, error) {
 	var endpoint string
 	if data.DynamicPart != "" {
 		endpoint = data.BaseEndpoint + e.bulkApi + "/customObjects/" + data.DynamicPart + "/fields"
@@ -81,7 +81,7 @@ func (e *implementEloqua) FetchFields(data *HttpRequestData) (*Fields, error) {
 	return &unmarshalledBody, nil
 }
 
-func (e *implementEloqua) CreateImportDefinition(data *HttpRequestData, eventType string) (*ImportDefinition, error) {
+func (e *EloquaServiceImpl) CreateImportDefinition(data *HttpRequestData, eventType string) (*ImportDefinition, error) {
 	var endpoint string
 	if eventType == "track" {
 		endpoint = data.BaseEndpoint + e.bulkApi + "/customObjects/" + data.DynamicPart + "/imports"
@@ -104,7 +104,7 @@ func (e *implementEloqua) CreateImportDefinition(data *HttpRequestData, eventTyp
 	return &unmarshalledBody, nil
 }
 
-func (e *implementEloqua) UploadData(data *HttpRequestData, filePath string) error {
+func (e *EloquaServiceImpl) UploadData(data *HttpRequestData, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -123,7 +123,7 @@ func (e *implementEloqua) UploadData(data *HttpRequestData, filePath string) err
 	return nil
 }
 
-func (e *implementEloqua) UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]interface{}) error {
+func (e *EloquaServiceImpl) UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]interface{}) error {
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/data"
 	data.Method = http.MethodPost
 	data.ContentType = "application/json"
@@ -139,7 +139,7 @@ func (e *implementEloqua) UploadDataWithoutCSV(data *HttpRequestData, uploadData
 	return nil
 }
 
-func (e *implementEloqua) RunSync(data *HttpRequestData) (string, error) {
+func (e *EloquaServiceImpl) RunSync(data *HttpRequestData) (string, error) {
 	data.Method = http.MethodPost
 	data.ContentType = "application/json"
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + "/syncs"
@@ -158,7 +158,7 @@ func (e *implementEloqua) RunSync(data *HttpRequestData) (string, error) {
 	return unmarshalledBody.Uri, nil
 }
 
-func (e *implementEloqua) CheckSyncStatus(data *HttpRequestData) (string, error) {
+func (e *EloquaServiceImpl) CheckSyncStatus(data *HttpRequestData) (string, error) {
 	data.Method = http.MethodGet
 	data.ContentType = "application/json"
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart
@@ -178,7 +178,7 @@ func (e *implementEloqua) CheckSyncStatus(data *HttpRequestData) (string, error)
 	return unmarshalledBody.Status, nil
 }
 
-func (e *implementEloqua) CheckRejectedData(data *HttpRequestData) (*RejectResponse, error) {
+func (e *EloquaServiceImpl) CheckRejectedData(data *HttpRequestData) (*RejectResponse, error) {
 	data.Method = http.MethodGet
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/rejects?offset=" + strconv.Itoa(data.Offset)
 	data.ContentType = "application/json"
@@ -197,7 +197,7 @@ func (e *implementEloqua) CheckRejectedData(data *HttpRequestData) (*RejectRespo
 	return &unmarshalledBody, nil
 }
 
-func (e *implementEloqua) DeleteImportDefinition(data *HttpRequestData) error {
+func (e *EloquaServiceImpl) DeleteImportDefinition(data *HttpRequestData) error {
 	data.Method = http.MethodDelete
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart
 	_, statusCode, err := e.MakeHTTPRequest(data)
