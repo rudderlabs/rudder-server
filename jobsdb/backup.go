@@ -139,7 +139,7 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 		operation := func() error {
 			if err := jd.uploadTableDump(ctx, wrkId, path); err != nil {
 				jd.logger.Errorw(
-					"failed backup upload",
+					"failed to upload jobs",
 					constants.WorkspaceID, wrkId,
 					constants.Err, err.Error(),
 				)
@@ -147,8 +147,8 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 					"backup_ds_failed",
 					stats.CountType,
 					stats.Tags{
-						constants.CustomVal: jd.tablePrefix,
-						"workspaceId":       wrkId,
+						constants.CustomVal:   jd.tablePrefix,
+						constants.WorkspaceID: wrkId,
 					},
 				).Increment()
 				return err
@@ -158,7 +158,7 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 		g.Go(misc.WithBugsnag(func() error {
 			return backoff.RetryNotify(operation, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(jd.config.GetInt("JobsDB.backup.maxRetries", 100))), func(err error, d time.Duration) {
 				jd.logger.Errorw(
-					"retrying backup upload",
+					"retrying uploading backup file",
 					constants.WorkspaceID, wrkId,
 					constants.Err, err.Error(),
 				)
