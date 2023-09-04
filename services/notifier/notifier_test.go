@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/samber/lo"
+
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -40,6 +42,8 @@ func setup(t testing.TB) *resource.PostgresResource {
 }
 
 func TestNotifier(t *testing.T) {
+	t.Parallel()
+
 	const (
 		workspaceIdentifier = "test_workspace_identifier"
 		workerID            = "test_worker"
@@ -81,14 +85,14 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, err)
 
 		const (
-			jobs              = 12
+			totalJobs         = 12
 			subscribers       = 8
 			subscriberWorkers = 4
 		)
 
-		publishResponses := make(chan *model.PublishResponse)
+		collectResponses := make(chan *model.PublishResponse)
 
-		for i := 0; i < jobs; i++ {
+		for i := 0; i < totalJobs; i++ {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
@@ -97,7 +101,7 @@ func TestNotifier(t *testing.T) {
 				require.True(t, ok)
 				require.NotNil(t, response)
 
-				publishResponses <- response
+				collectResponses <- response
 
 				response, ok = <-publishCh
 				require.False(t, ok)
@@ -140,30 +144,31 @@ func TestNotifier(t *testing.T) {
 			return n.Shutdown()
 		})
 		g.Go(func() error {
-			failedResponses := make([]*model.Job, 0)
-			succeededResponses := make([]*model.Job, 0)
+			responses := make([]model.Job, 0, totalJobs*len(publishRequest.Payloads))
 
-			for i := 0; i < jobs; i++ {
-				job := <-publishResponses
+			for i := 0; i < totalJobs; i++ {
+				job := <-collectResponses
 				require.NoError(t, job.Err)
 				require.EqualValues(t, job.JobMetadata, model.JobMetadata(publishRequest.PayloadMetadata))
 
-				for _, n := range job.Jobs {
-					if n.Error != nil {
-						failedResponses = append(failedResponses, &n)
-					} else {
-						succeededResponses = append(succeededResponses, &n)
-					}
-				}
+				responses = append(responses, job.Jobs...)
 			}
 
-			failedResCount := jobs * len(publishRequest.Payloads) / 4
-			succeededResCount := (3 * jobs * len(publishRequest.Payloads)) / 4
+			successCount := (3 * totalJobs * len(publishRequest.Payloads)) / 4
+			failureCount := totalJobs * len(publishRequest.Payloads) / 4
 
-			require.Equal(t, failedResCount, len(failedResponses))
-			require.Equal(t, succeededResCount, len(succeededResponses))
+			require.Len(t, lo.Filter(responses, func(item model.Job, index int) bool {
+				return item.Error == nil
+			}),
+				successCount,
+			)
+			require.Len(t, lo.Filter(responses, func(item model.Job, index int) bool {
+				return item.Error != nil
+			}),
+				failureCount,
+			)
 
-			close(publishResponses)
+			close(collectResponses)
 			groupCancel()
 
 			return nil
@@ -172,11 +177,11 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, n.ClearJobs(ctx))
 		require.EqualValues(t, statsStore.Get("pgnotifier.publish", stats.Tags{
 			"module": "pgnotifier",
-		}).LastValue(), jobs)
+		}).LastValue(), totalJobs)
 		require.EqualValues(t, statsStore.Get("pg_notifier_insert_records", stats.Tags{
 			"module":    "pgnotifier",
 			"queueName": "pg_notifier_queue",
-		}).LastValue(), jobs*len(publishRequest.Payloads))
+		}).LastValue(), totalJobs*len(publishRequest.Payloads))
 	})
 
 	t.Run("bigger batches and many subscribers", func(t *testing.T) {
