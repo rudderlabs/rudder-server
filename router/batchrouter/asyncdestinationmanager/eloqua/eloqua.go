@@ -173,7 +173,7 @@ func (e *implementEloqua) CheckSyncStatus(data *HttpRequestData) (string, error)
 	unmarshalledBody := SyncStatusResponse{}
 	err = json.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
-		return "nil", err
+		return "", err
 	}
 	return unmarshalledBody.Status, nil
 }

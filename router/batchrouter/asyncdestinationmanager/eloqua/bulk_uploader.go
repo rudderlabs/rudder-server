@@ -37,7 +37,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		Authorization: b.authorization,
 	}
 	if eventDetails.Type == "track" {
-		customObjectData.DynamicPart = eventDetails.CsutomerObjectId
+		customObjectData.DynamicPart = eventDetails.CustomObjectId
 	}
 	eloquaFields, err := b.service.FetchFields(&customObjectData)
 	if err != nil {
@@ -62,7 +62,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 		Body:          strings.NewReader(string(marshalledData)),
-		DynamicPart:   eventDetails.CsutomerObjectId,
+		DynamicPart:   eventDetails.CustomObjectId,
 	}
 
 	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventDetails.Type)

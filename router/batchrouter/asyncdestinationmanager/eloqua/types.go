@@ -49,7 +49,7 @@ type HttpRequestData struct {
 
 type EventDetails struct {
 	Type                string
-	CsutomerObjectId    string
+	CustomObjectId      string
 	Fields              []string
 	IdentifierFieldName string
 }

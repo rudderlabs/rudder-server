@@ -32,7 +32,7 @@ func getEventDetails(file *os.File) (*EventDetails, error) {
 		}
 		if data.Message.Type == "track" && data.Message.CustomObjectId != "" {
 			eventDetails.Type = "track"
-			eventDetails.CsutomerObjectId = data.Message.CustomObjectId
+			eventDetails.CustomObjectId = data.Message.CustomObjectId
 			eventDetails.Fields = getKeys(data.Message.Data)
 			eventDetails.IdentifierFieldName = data.Message.IdentifierFieldName
 			return &eventDetails, nil
@@ -89,7 +89,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		line = scanner.Text()
 		var data TransformedData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			fmt.Println("Error in unmarshalling data")
+			return "", err
 		}
 		var values []string
 		for _, field := range fields {
