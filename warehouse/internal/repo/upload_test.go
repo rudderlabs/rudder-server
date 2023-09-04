@@ -20,6 +20,8 @@ import (
 )
 
 func TestUploads_Count(t *testing.T) {
+	t.Parallel()
+
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -257,6 +259,8 @@ func TestUploads_Get(t *testing.T) {
 }
 
 func TestUploads_GetToProcess(t *testing.T) {
+	t.Parallel()
+
 	var (
 		workspaceID     = "workspace_id"
 		namespace       = "namespace"

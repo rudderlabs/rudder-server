@@ -398,7 +398,7 @@ func (n *Notifier) Subscribe(
 			if err != nil {
 				var pqErr *pq.Error
 
-				switch true {
+				switch {
 				case errors.Is(err, sql.ErrNoRows),
 					errors.Is(err, context.Canceled),
 					errors.Is(err, context.DeadlineExceeded),
@@ -516,7 +516,7 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 		if err != nil {
 			var pqErr *pq.Error
 
-			switch true {
+			switch {
 			case errors.Is(err, context.Canceled),
 				errors.Is(err, context.DeadlineExceeded),
 				errors.As(err, &pqErr) && pqErr.Code == "57014":

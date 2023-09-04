@@ -762,7 +762,7 @@ func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts m
 		len(filterArgs)+1,
 		len(filterArgs)+2,
 	)
-	stmtArgs := append(filterArgs, limit, offset)
+	stmtArgs := append([]interface{}{}, append(filterArgs, limit, offset)...)
 
 	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
 	if err != nil {
@@ -953,7 +953,7 @@ func (uploads *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int
 		len(filterArgs)+2,
 		filterQuery,
 	)
-	stmtArgs := append(filterArgs, model.Waiting, uploads.now())
+	stmtArgs := append([]interface{}{}, append(filterArgs, model.Waiting, uploads.now())...)
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {

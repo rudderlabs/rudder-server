@@ -157,7 +157,7 @@ func TestGRPC(t *testing.T) {
 		listener, err := net.Listen("tcp", tcpAddress)
 		require.NoError(t, err)
 
-		server := grpc.NewServer()
+		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 		proto.RegisterWarehouseServer(server, grpcServer)
 
 		g, gCtx := errgroup.WithContext(ctx)
