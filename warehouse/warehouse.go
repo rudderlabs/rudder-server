@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"os"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
@@ -121,8 +122,8 @@ func NewApp(
 }
 
 func (a *App) Setup(ctx context.Context) error {
-	// do not setup warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(a.config.runningMode) && !db.IsNormalMode() {
+	// do not set up warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
 		return nil
 	}
 
@@ -289,12 +290,8 @@ func (a *App) setupTables() error {
 
 // Start starts the warehouse service
 func (a *App) Start(ctx context.Context) error {
-	if !isStandAloneSlave(a.config.runningMode) {
-		return errors.New("warehouse service cannot start, database connection is not setup")
-	}
-
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(a.config.runningMode) && !db.IsNormalMode() {
+	if !isStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
 		a.logger.Infof("Skipping start of warehouse service...")
 		return nil
 	}
@@ -320,7 +317,7 @@ func (a *App) Start(ctx context.Context) error {
 		return nil
 	})
 
-	if a.config.runningMode == degradedMode {
+	if isDegraded(a.config.runningMode) {
 		a.logger.Infof("WH: Running warehouse service in degraded mode...")
 
 		g.Go(func() error {

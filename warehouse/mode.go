@@ -34,3 +34,7 @@ func isSlave(mode string) bool {
 func isStandAloneSlave(mode string) bool {
 	return mode == config.SlaveMode
 }
+
+func isDegraded(runningMode string) bool {
+	return runningMode == degradedMode
+}
