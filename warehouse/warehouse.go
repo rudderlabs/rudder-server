@@ -8,6 +8,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/admin"
+	api2 "github.com/rudderlabs/rudder-server/warehouse/api"
+	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/mode"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
+
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -49,10 +57,10 @@ type App struct {
 	notifier           *notifier.Notifier
 	tenantManager      *multitenant.Manager
 	controlPlaneClient *controlplane.Client
-	bcManager          *backendConfigManager
-	api                *Api
-	grpcServer         *GRPC
-	constraintsManager *constraintsManager
+	bcManager          *backend_config.BackendConfigManager
+	api                *api2.Api
+	grpcServer         *api2.GRPC
+	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	jobsManager        *jobs.AsyncJobWh
@@ -78,11 +86,6 @@ type App struct {
 		region           string
 	}
 }
-
-type (
-	WorkerIdentifierT string
-	JobID             int64
-)
 
 func NewApp(
 	app app.App,
@@ -123,7 +126,7 @@ func NewApp(
 
 func (a *App) Setup(ctx context.Context) error {
 	// do not set up warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
+	if !mode.IsStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
 		return nil
 	}
 
@@ -142,13 +145,13 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcConfig.Identity(),
 		controlplane.WithRegion(a.config.region),
 	)
-	a.bcManager = newBackendConfigManager(
+	a.bcManager = backend_config.New(
 		a.conf,
 		a.db,
 		a.tenantManager,
 		a.logger.Child("wh_bc_manager"),
 	)
-	a.constraintsManager = newConstraintsManager(
+	a.constraintsManager = constraints.New(
 		a.conf,
 	)
 	a.encodingFactory = encoding.NewFactory(
@@ -177,7 +180,7 @@ func (a *App) Setup(ctx context.Context) error {
 	jobs.WithConfig(a.jobsManager, a.conf)
 
 	var err error
-	a.grpcServer, err = NewGRPCServer(
+	a.grpcServer, err = api2.NewGRPCServer(
 		a.conf,
 		a.logger,
 		a.db,
@@ -189,7 +192,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("cannot create grpc server: %w", err)
 	}
 
-	a.api = NewApi(
+	a.api = api2.NewApi(
 		a.config.warehouseMode,
 		a.conf,
 		a.logger,
@@ -291,7 +294,7 @@ func (a *App) setupTables() error {
 // Start starts the warehouse service
 func (a *App) Start(ctx context.Context) error {
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
+	if !mode.IsStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
 		a.logger.Infof("Skipping start of warehouse service...")
 		return nil
 	}
@@ -305,7 +308,7 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}()
 
-	RegisterAdmin(a.bcManager, a.logger)
+	admin.RegisterAdmin(a.bcManager, a.logger)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -317,7 +320,7 @@ func (a *App) Start(ctx context.Context) error {
 		return nil
 	})
 
-	if isDegraded(a.config.runningMode) {
+	if mode.IsDegraded(a.config.runningMode) {
 		a.logger.Infof("WH: Running warehouse service in degraded mode...")
 
 		g.Go(func() error {
@@ -335,7 +338,7 @@ func (a *App) Start(ctx context.Context) error {
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
 	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone(a.config.warehouseMode) && isMaster(a.config.warehouseMode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
+	if (mode.IsStandAlone(a.config.warehouseMode) && mode.IsMaster(a.config.warehouseMode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			reportingClient := a.app.Features().Reporting.Setup(a.bcConfig)
 			reportingClient.AddClient(gCtx, types.Config{
@@ -345,7 +348,7 @@ func (a *App) Start(ctx context.Context) error {
 			return nil
 		}))
 	}
-	if isStandAlone(a.config.warehouseMode) && isMaster(a.config.warehouseMode) {
+	if mode.IsStandAlone(a.config.warehouseMode) && mode.IsMaster(a.config.warehouseMode) {
 		// Report warehouse features
 		g.Go(func() error {
 			a.bcConfig.WaitForConfig(gCtx)
@@ -363,11 +366,11 @@ func (a *App) Start(ctx context.Context) error {
 			return nil
 		})
 	}
-	if isSlave(a.config.warehouseMode) {
+	if mode.IsSlave(a.config.warehouseMode) {
 		a.logger.Infof("WH: Starting warehouse slave...")
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			slave := newSlave(
+			s := slave.New(
 				a.conf,
 				a.logger,
 				a.statsFactory,
@@ -376,10 +379,10 @@ func (a *App) Start(ctx context.Context) error {
 				a.constraintsManager,
 				a.encodingFactory,
 			)
-			return slave.setupSlave(gCtx)
+			return s.SetupSlave(gCtx)
 		}))
 	}
-	if isMaster(a.config.warehouseMode) {
+	if mode.IsMaster(a.config.warehouseMode) {
 		a.logger.Infof("[WH]: Starting warehouse master...")
 
 		a.bcConfig.WaitForConfig(ctx)
@@ -426,7 +429,7 @@ func (a *App) Start(ctx context.Context) error {
 
 // Gets the config from config backend and extracts enabled write keys
 func (a *App) monitorDestRouters(ctx context.Context) error {
-	dstToWhRouter := make(map[string]*router)
+	dstToWhRouter := make(map[string]*router.Router)
 
 	ch := a.tenantManager.WatchConfig(ctx)
 	for configData := range ch {
@@ -444,7 +447,7 @@ func (a *App) monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router) error {
+func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router.Router) error {
 	enabledDestinations := make(map[string]bool)
 
 	for _, wConfig := range configMap {
@@ -456,16 +459,16 @@ func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backen
 					continue
 				}
 
-				router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+				r, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if ok {
 					a.logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-					router.Enable()
+					r.Enable()
 					continue
 				}
 
 				a.logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 
-				router, err := newRouter(
+				r, err := router.New(
 					ctx,
 					a.app,
 					destination.DestinationDefinition.Name,
@@ -483,7 +486,7 @@ func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backen
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 				}
-				dstToWhRouter[destination.DestinationDefinition.Name] = router
+				dstToWhRouter[destination.DestinationDefinition.Name] = r
 			}
 		}
 	}

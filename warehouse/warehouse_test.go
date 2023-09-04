@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/mode"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -150,7 +152,7 @@ func TestApp(t *testing.T) {
 				},
 				{
 					name:        "degraded mode",
-					runningMode: degradedMode,
+					runningMode: mode.DegradedMode,
 				},
 			}
 
