@@ -160,7 +160,7 @@ func (g *GRPC) processData(configData map[string]backendconfig.ConfigT) {
 	}
 }
 
-func (g *GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+func (*GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
 	return wrapperspb.Bool(true), nil
 }
 
