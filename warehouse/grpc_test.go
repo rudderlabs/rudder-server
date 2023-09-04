@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"

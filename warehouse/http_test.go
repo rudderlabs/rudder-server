@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
@@ -735,11 +736,11 @@ func TestHTTPApi(t *testing.T) {
 
 	t.Run("endpoints", func(t *testing.T) {
 		t.Run("normal mode", func(t *testing.T) {
-			wenPort, err := kithelper.GetFreePort()
+			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
 			c := config.New()
-			c.Set("Warehouse.webPort", wenPort)
+			c.Set("Warehouse.webPort", webPort)
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 
@@ -752,7 +753,7 @@ func TestHTTPApi(t *testing.T) {
 				close(serverSetupCh)
 			}()
 
-			serverURL := fmt.Sprintf("http://localhost:%d", wenPort)
+			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health", func(t *testing.T) {
 				require.Eventually(t, func() bool {
@@ -932,11 +933,11 @@ func TestHTTPApi(t *testing.T) {
 		})
 
 		t.Run("degraded mode", func(t *testing.T) {
-			wenPort, err := kithelper.GetFreePort()
+			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
 			c := config.New()
-			c.Set("Warehouse.webPort", wenPort)
+			c.Set("Warehouse.webPort", webPort)
 			c.Set("Warehouse.runningMode", degradedMode)
 
 			srvCtx, stopServer := context.WithCancel(ctx)
@@ -950,7 +951,7 @@ func TestHTTPApi(t *testing.T) {
 				close(serverSetupCh)
 			}()
 
-			serverURL := fmt.Sprintf("http://localhost:%d", wenPort)
+			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health endpoint should work", func(t *testing.T) {
 				require.Eventually(t, func() bool {

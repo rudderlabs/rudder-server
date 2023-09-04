@@ -1,10 +1,12 @@
 package trigger_test
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
-	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 )
 
 func TestTrigger(t *testing.T) {

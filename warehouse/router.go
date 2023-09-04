@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/lib/pq"
 
@@ -717,11 +718,10 @@ func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequenc
 	defer r.createJobMarkerMapLock.RUnlock()
 
 	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
-	if ok && r.now().Sub(lastCreatedAt) > time.Duration(freqInS)*time.Second {
+	if !ok {
 		return true
 	}
-
-	return false
+	return r.now().Sub(lastCreatedAt) > time.Duration(freqInS)*time.Second
 }
 
 func (r *router) uploadFreqInS(syncFrequency string) int64 {
