@@ -117,5 +117,5 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 ## License
 
-RudderStack server is released under the [**Elastic License 2.0**](https://www.elastic.co/licensing/elastic-license).
+RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
 
