@@ -41,9 +41,9 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 
 	if r.config.warehouseSyncFreqIgnore {
 		if r.uploadFrequencyExceeded(warehouse, "") {
-			return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
+			return true, nil
 		}
-		return true, nil
+		return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
 	}
 
 	// gets exclude window start time and end time
@@ -58,9 +58,9 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
 		if r.uploadFrequencyExceeded(warehouse, syncFrequency) {
-			return false, fmt.Errorf("upload frequency exceeded")
-		} else {
 			return true, nil
+		} else {
+			return false, fmt.Errorf("upload frequency exceeded")
 		}
 	}
 

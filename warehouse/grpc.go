@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"net/http"
 	"os"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/code"

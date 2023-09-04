@@ -3,12 +3,13 @@ package warehouse
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/samber/lo"
 
@@ -156,7 +157,7 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+		now := time.Now()
 
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
@@ -185,7 +186,9 @@ func TestRouter(t *testing.T) {
 		}
 
 		r := router{}
-		r.now = time.Now
+		r.now = func() time.Time {
+			return now
+		}
 		r.dbHandle = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
@@ -244,7 +247,6 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("merge existing upload", func(t *testing.T) {
-				r.setDestInProgress(warehouse, 1)
 				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
