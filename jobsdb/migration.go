@@ -13,7 +13,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/constants"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -43,7 +42,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.migration.migrateDSTimeout)
 			defer cancel()
 			err := jd.doMigrateDS(timeoutCtx)
-			stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 			if err != nil {
 				return fmt.Errorf("failed to migrate ds: %w", err)
 			}
@@ -168,7 +167,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		})
 	})
 	if l != nil {
-		defer stats.Default.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix}).Since(lockStart)
+		defer stats.Default.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
@@ -294,7 +293,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	defer stats.Default.NewTaggedStat(
 		"jobsdb_compact_status_tables",
 		stats.TimerType,
-		stats.Tags{constants.CustomVal: jd.tablePrefix},
+		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 
 	if err := jd.WithTx(func(tx *Tx) error {

@@ -17,7 +17,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/constants"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -104,7 +103,7 @@ func (jd *Handle) backupDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
-			jd.logger.Errorw("failed to backup dataset", constants.Err, err.Error())
+			jd.logger.Errorw("failed to backup dataset", "error", err.Error())
 		}
 
 	}
@@ -140,15 +139,15 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 			if err := jd.uploadTableDump(ctx, wrkId, path); err != nil {
 				jd.logger.Errorw(
 					"failed to upload jobs",
-					constants.WorkspaceID, wrkId,
-					constants.Err, err.Error(),
+					"workspaceId", wrkId,
+					"error", err.Error(),
 				)
 				stats.Default.NewTaggedStat(
 					"backup_ds_failed",
 					stats.CountType,
 					stats.Tags{
-						constants.CustomVal:   jd.tablePrefix,
-						constants.WorkspaceID: wrkId,
+						"customVal":   jd.tablePrefix,
+						"workspaceId": wrkId,
 					},
 				).Increment()
 				return err
@@ -159,8 +158,8 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 			return backoff.RetryNotify(operation, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(jd.config.GetInt("JobsDB.backup.maxRetries", 100))), func(err error, d time.Duration) {
 				jd.logger.Errorw(
 					"retrying uploading backup file",
-					constants.WorkspaceID, wrkId,
-					constants.Err, err.Error(),
+					"workspaceId", wrkId,
+					"error", err.Error(),
 				)
 			})
 		}))
@@ -188,7 +187,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 		return nil
 	}
 
-	jd.logger.Infow("backing up table (failed only backup)", constants.TableName, tableName)
+	jd.logger.Infow("backing up table (failed only backup)", "tableName", tableName)
 
 	start := time.Now()
 	getFileName := func(workspaceID string) (string, error) {
@@ -214,15 +213,15 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 	if err != nil {
 		jd.logger.Errorw(
 			"failed to upload failedOnly jobs backup",
-			constants.TableName, tableName,
-			constants.Err, err.Error(),
+			"tableName", tableName,
+			"error", err.Error(),
 		)
 		return nil
 	}
 	stats.Default.NewTaggedStat(
 		"total_TableDump_TimeStat",
 		stats.TimerType,
-		stats.Tags{constants.CustomVal: jd.tablePrefix},
+		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 	return nil
 }
@@ -247,7 +246,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 		return nil
 	}
 
-	jd.logger.Infow("backing up table (jobs table)", constants.TableName, tableName)
+	jd.logger.Infow("backing up table (jobs table)", "tableName", tableName)
 
 	start := time.Now()
 
@@ -282,14 +281,14 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 	if err != nil {
 		jd.logger.Errorw(
 			"failed to upload jobs backup",
-			constants.TableName, tableName,
-			constants.Err, err,
+			"tableName", tableName,
+			"error", err,
 		)
 		return nil
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
-	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix}).Since(start)
+	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
 	return nil
 }
 
@@ -313,7 +312,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 		return nil
 	}
 
-	jd.logger.Infow("backing up table (status table)", constants.TableName, tableName)
+	jd.logger.Infow("backing up table (status table)", "tableName", tableName)
 
 	start := time.Now()
 
@@ -340,14 +339,14 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 	if err != nil {
 		jd.logger.Errorw(
 			"failed to upload jobStatus backup",
-			constants.TableName, tableName,
-			constants.Err, err.Error(),
+			"tableName", tableName,
+			"error", err.Error(),
 		)
 		return nil
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
-	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix}).Since(start)
+	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
 	return nil
 }
 
@@ -588,8 +587,8 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 				offset++
 				jd.logger.Debugw(
 					"getting storage preferences failed",
-					constants.WorkspaceID, workspaceID,
-					constants.Err, err.Error(),
+					"workspaceId", workspaceID,
+					"error", err.Error(),
 				)
 				continue
 			}
@@ -600,7 +599,7 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 				offset++
 				jd.logger.Debugw(
 					"skipping backup Preferences",
-					constants.WorkspaceID, workspaceID,
+					"workspaceId", workspaceID,
 					"preferences", preferences,
 				)
 				continue
@@ -668,7 +667,7 @@ func (jd *Handle) uploadTableDump(ctx context.Context, workspaceID, path string)
 	}
 	jd.logger.Debugw("backed up table dump",
 		"location", output.Location,
-		constants.WorkspaceID, workspaceID,
+		"workspaceId", workspaceID,
 	)
 	return nil
 }

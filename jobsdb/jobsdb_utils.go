@@ -9,7 +9,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/constants"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 )
 
@@ -160,7 +159,7 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 		stateFiltersTag := strings.Join(tags.StateFilters, "_")
 
 		if customValTag != "" {
-			statTagsMap[constants.CustomVal] = customValTag
+			statTagsMap["customVal"] = customValTag
 		}
 
 		if stateFiltersTag != "" {
