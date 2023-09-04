@@ -91,6 +91,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
+			Error:      asyncResponse.Error,
 		}
 	}
 	return asyncResponse
