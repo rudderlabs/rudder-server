@@ -59,6 +59,11 @@ var partitionKeyMap = map[string]string{
 	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
 }
 
+var mergeSourceCategoryMap = map[string]struct{}{
+	"cloud":           {},
+	"singer-protocol": {},
+}
+
 var (
 	usersTable              = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.UsersTable)
 	identifiesTable         = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.IdentifiesTable)
@@ -372,7 +377,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+	if sf.ShouldAppend() {
 		err = sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName, log)
 		if err != nil {
 			return tableLoadResp{}, err
@@ -815,6 +820,14 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
+// ShouldAppend returns true if the load table strategy is append mode and the source category is not in "mergeSourceCategoryMap"
+func (sf *Snowflake) ShouldAppend() bool {
+	sourceCategory := sf.Warehouse.Source.SourceDefinition.Category
+	_, isMergeCategory := mergeSourceCategoryMap[sourceCategory]
+
+	return !isMergeCategory && sf.config.loadTableStrategy == loadTableStrategyAppendMode
+}
+
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchema = sf.Uploader.GetTableSchemaInUpload(identifiesTable)
@@ -854,7 +867,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+	if sf.ShouldAppend() {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
 			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
