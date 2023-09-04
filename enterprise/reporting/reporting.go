@@ -228,9 +228,13 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	if err != nil && err != sql.ErrNoRows && err != context.DeadlineExceeded {
 		panic(err)
 	}
+	if err == context.DeadlineExceeded {
+		return nil, 0, fmt.Errorf("reporting query timeout")
+	}
+
 	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
-		return nil, 0, err
+		return nil, 0, nil
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
@@ -411,7 +415,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
-			if err != context.DeadlineExceeded {
+			if err == nil {
 				lastReportedAt = currentMs
 			}
 			select {
