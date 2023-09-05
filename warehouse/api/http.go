@@ -14,7 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -74,7 +74,7 @@ type Api struct {
 	notifier      *notifier.Notifier
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
-	bcManager     *backend_config.BackendConfigManager
+	bcManager     *bcm.BackendConfigManager
 	asyncManager  *jobs.AsyncJobWh
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
@@ -99,7 +99,7 @@ func NewApi(
 	db *sqlmw.DB,
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
-	bcManager *backend_config.BackendConfigManager,
+	bcManager *bcm.BackendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
 	triggerStore *trigger.Store,
 ) *Api {

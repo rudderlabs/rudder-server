@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
@@ -117,7 +117,7 @@ func TestRouter(t *testing.T) {
 		cp := controlplane.NewClient(s.URL, &identity.Namespace{},
 			controlplane.WithHTTPClient(s.Client()),
 		)
-		bcm := backend_config.New(config.Default, db, tenantManager, logger.NOP)
+		bcm := bcm.New(config.Default, db, tenantManager, logger.NOP)
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -730,7 +730,7 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
 		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-		r.bcManager = backend_config.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
+		r.bcManager = bcm.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			app:          mockApp,
@@ -879,7 +879,7 @@ func TestRouter(t *testing.T) {
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
 			r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-			r.bcManager = backend_config.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
+			r.bcManager = bcm.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
 				app:          mockApp,
@@ -1188,7 +1188,7 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
 		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
-		r.bcManager = backend_config.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
+		r.bcManager = bcm.New(r.conf, r.dbHandle, r.tenantManager, r.logger)
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = trigger.NewStore()
 

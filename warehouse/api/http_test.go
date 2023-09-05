@@ -14,7 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -177,7 +177,7 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := backend_config.New(config.Default, db, tenantManager, logger.NOP)
+	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP)
 
 	triggerStore := trigger.NewStore()
 

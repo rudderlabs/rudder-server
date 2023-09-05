@@ -1,4 +1,4 @@
-package backend_config
+package bcm
 
 import (
 	"context"

@@ -3,7 +3,7 @@ package slave
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
 	"github.com/rudderlabs/rudder-server/services/notifier/model"
@@ -30,7 +30,7 @@ type slave struct {
 	log                logger.Logger
 	stats              stats.Stats
 	notifier           slaveNotifier
-	bcManager          *backend_config.BackendConfigManager
+	bcManager          *bcm.BackendConfigManager
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 
@@ -44,7 +44,7 @@ func New(
 	logger logger.Logger,
 	stats stats.Stats,
 	notifier slaveNotifier,
-	bcManager *backend_config.BackendConfigManager,
+	bcManager *bcm.BackendConfigManager,
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 ) *slave {

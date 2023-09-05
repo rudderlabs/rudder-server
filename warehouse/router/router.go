@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/lib/pq"
 
@@ -92,7 +92,7 @@ type Router struct {
 	backgroundWait  func() error
 
 	tenantManager    *multitenant.Manager
-	bcManager        *backend_config.BackendConfigManager
+	bcManager        *bcm.BackendConfigManager
 	uploadJobFactory UploadJobFactory
 	notifier         *notifier.Notifier
 
@@ -134,7 +134,7 @@ func New(
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
-	bcManager *backend_config.BackendConfigManager,
+	bcManager *bcm.BackendConfigManager,
 	encodingFactory *encoding.Factory,
 	triggerStore *trigger.Store,
 ) (*Router, error) {

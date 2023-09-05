@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/types"
 
@@ -59,7 +59,7 @@ type slaveWorker struct {
 	log                logger.Logger
 	statsFactory       stats.Stats
 	notifier           slaveNotifier
-	bcManager          *backend_config.BackendConfigManager
+	bcManager          *bcm.BackendConfigManager
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
@@ -80,7 +80,7 @@ func newSlaveWorker(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	notifier slaveNotifier,
-	bcManager *backend_config.BackendConfigManager,
+	bcManager *bcm.BackendConfigManager,
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 	workerIdx int,

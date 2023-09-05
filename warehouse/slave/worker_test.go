@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
 	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
@@ -95,7 +95,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				notifier,
-				backend_config.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -204,7 +204,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				notifier,
-				backend_config.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -341,7 +341,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				notifier,
-				backend_config.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -417,7 +417,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				notifier,
-				backend_config.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -571,7 +571,7 @@ func TestSlaveWorker(t *testing.T) {
 		}).AnyTimes()
 
 		tenantManager := multitenant.New(config.Default, mockBackendConfig)
-		bcm := backend_config.New(config.Default, nil, tenantManager, logger.NOP)
+		bcm := bcm.New(config.Default, nil, tenantManager, logger.NOP)
 		ef := encoding.NewFactory(config.Default)
 
 		setupCh := make(chan struct{})

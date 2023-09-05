@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -24,7 +24,7 @@ import (
 )
 
 type Admin struct {
-	bcManager *backend_config.BackendConfigManager
+	bcManager *bcm.BackendConfigManager
 	logger    logger.Logger
 }
 
@@ -43,7 +43,7 @@ type ConfigurationTestOutput struct {
 	Error string
 }
 
-func RegisterAdmin(bcManager *backend_config.BackendConfigManager, logger logger.Logger) {
+func RegisterAdmin(bcManager *bcm.BackendConfigManager, logger logger.Logger) {
 	admin.RegisterAdminHandler("Warehouse", &Admin{
 		bcManager: bcManager,
 		logger:    logger.Child("admin"),

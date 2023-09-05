@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -103,7 +103,7 @@ func TestSlave(t *testing.T) {
 		logger.NOP,
 		stats.Default,
 		notifier,
-		backend_config.New(config.Default, nil, tenantManager, logger.NOP),
+		bcm.New(config.Default, nil, tenantManager, logger.NOP),
 		constraints.New(config.Default),
 		encoding.NewFactory(config.Default),
 	)

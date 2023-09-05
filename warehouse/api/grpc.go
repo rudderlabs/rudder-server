@@ -10,7 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/code"
@@ -55,7 +55,7 @@ type GRPC struct {
 	cpClient           cpclient.InternalControlPlane
 	connectionManager  *controlplane.ConnectionManager
 	tenantManager      *multitenant.Manager
-	bcManager          *backend_config.BackendConfigManager
+	bcManager          *bcm.BackendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
 	uploadRepo         *repo.Uploads
@@ -80,7 +80,7 @@ func NewGRPCServer(
 	logger logger.Logger,
 	db *sqlmw.DB,
 	tenantManager *multitenant.Manager,
-	bcManager *backend_config.BackendConfigManager,
+	bcManager *bcm.BackendConfigManager,
 	triggerStore *trigger.Store,
 ) (*GRPC, error) {
 	g := &GRPC{

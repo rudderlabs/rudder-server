@@ -11,8 +11,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/admin"
-	api2 "github.com/rudderlabs/rudder-server/warehouse/api"
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/api"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
@@ -32,7 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	bcConfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -44,7 +44,7 @@ import (
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type App struct {
@@ -52,14 +52,14 @@ type App struct {
 	conf               *config.Config
 	logger             logger.Logger
 	statsFactory       stats.Stats
-	bcConfig           backendconfig.BackendConfig
+	bcConfig           bcConfig.BackendConfig
 	db                 *sqlmw.DB
 	notifier           *notifier.Notifier
 	tenantManager      *multitenant.Manager
 	controlPlaneClient *controlplane.Client
-	bcManager          *backend_config.BackendConfigManager
-	api                *api2.Api
-	grpcServer         *api2.GRPC
+	bcManager          *bcm.BackendConfigManager
+	api                *api.Api
+	grpcServer         *api.GRPC
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
@@ -92,7 +92,7 @@ func NewApp(
 	conf *config.Config,
 	log logger.Logger,
 	statsFactory stats.Stats,
-	bcConfig backendconfig.BackendConfig,
+	bcConfig bcConfig.BackendConfig,
 	fileManagerFactory filemanager.Factory,
 ) *App {
 	a := &App{
@@ -145,7 +145,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcConfig.Identity(),
 		controlplane.WithRegion(a.config.region),
 	)
-	a.bcManager = backend_config.New(
+	a.bcManager = bcm.New(
 		a.conf,
 		a.db,
 		a.tenantManager,
@@ -180,7 +180,7 @@ func (a *App) Setup(ctx context.Context) error {
 	jobs.WithConfig(a.jobsManager, a.conf)
 
 	var err error
-	a.grpcServer, err = api2.NewGRPCServer(
+	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
 		a.logger,
 		a.db,
@@ -192,7 +192,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("cannot create grpc server: %w", err)
 	}
 
-	a.api = api2.NewApi(
+	a.api = api.NewApi(
 		a.config.warehouseMode,
 		a.conf,
 		a.logger,
@@ -447,7 +447,7 @@ func (a *App) monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router.Router) error {
+func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]bcConfig.ConfigT, dstToWhRouter map[string]*router.Router) error {
 	enabledDestinations := make(map[string]bool)
 
 	for _, wConfig := range configMap {
@@ -455,7 +455,7 @@ func (a *App) onConfigDataEvent(ctx context.Context, configMap map[string]backen
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 
-				if !slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if !slices.Contains(whutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 					continue
 				}
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -148,7 +148,7 @@ func TestGRPC(t *testing.T) {
 
 		triggerStore := trigger.NewStore()
 		tenantManager := multitenant.New(c, mockBackendConfig)
-		bcManager := backend_config.New(c, db, tenantManager, logger.NOP)
+		bcManager := bcm.New(c, db, tenantManager, logger.NOP)
 		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
