@@ -310,16 +310,17 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 			for destinationID := range destinationsMap {
 				_, ok := brt.asyncDestinationStruct[destinationID]
 				if !ok || brt.asyncDestinationStruct[destinationID].UploadInProgress {
+					fmt.Println("Inside asyncUploadWorker:Upload already in progress continuing ....")
 					continue
 				}
 
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-
 				timeout := uploadIntervalMap[destinationID]
+				fmt.Println("Inside asyncUploadWorker:", brt.asyncDestinationStruct[destinationID].Exists, brt.asyncDestinationStruct[destinationID].CanUpload, timeElapsed, timeout)
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					fmt.Println("Inside asyncUploadWorker -> start uploading:time, fileSize, number of jobs", time.Now(), brt.asyncDestinationStruct[destinationID].Size, len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs))
+					fmt.Println("Inside asyncUploadWorker:start uploading:time, fileSize, number of jobs", time.Now(), brt.asyncDestinationStruct[destinationID].Size, len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs))
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
