@@ -7,7 +7,7 @@ import (
 
 func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
 	defer jd.getTimerStat(
-		fmt.Sprintf("%s_total_time", c.name),
+		fmt.Sprintf("jobsdb_%s_total_time", c.name),
 		c.tags,
 	).RecordDuration()()
 
@@ -28,7 +28,7 @@ func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
 
 	if queueEnabled {
 		queuedAt := time.Now()
-		waitTimeStat := jd.getTimerStat(fmt.Sprintf("%s_wait_time", c.name), c.tags)
+		waitTimeStat := jd.getTimerStat(fmt.Sprintf("jobsdb_%s_wait_time", c.name), c.tags)
 		queueCap <- struct{}{}
 		defer func() { <-queueCap }()
 		waitTimeStat.Since(queuedAt)
