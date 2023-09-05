@@ -34,8 +34,6 @@ type SourceWorkerT struct {
 	uploader      filemanager.FileManager
 }
 
-var userTransformBatchSize int
-
 func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 	worker.log.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
@@ -72,7 +70,8 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			panic(err)
 		}
 	}
-	path := fmt.Sprintf(`%v%v%v`, tmpdirPath, dumpDownloadPathDirName, filePathTokens[len(filePathTokens)-1])
+	path := fmt.Sprintf(
+		`%v%v%v`, tmpdirPath, dumpDownloadPathDirName, filePathTokens[len(filePathTokens)-1])
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
@@ -119,7 +118,6 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		lineBytes := sc.Bytes()
 		copyLineBytes := make([]byte, len(lineBytes))
 		copy(copyLineBytes, lineBytes)
-
 		if transformationVersionID == "" {
 			timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
 			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
@@ -166,6 +164,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		transEvents = append(transEvents, transEvent)
 	}
 
+	userTransformBatchSize := config.GetInt("Processor.userTransformBatchSize", 200)
 	if transformationVersionID != "" {
 		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize)
 

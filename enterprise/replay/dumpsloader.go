@@ -99,15 +99,13 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 }
 
 func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
-	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
-	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
-	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
-	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
+	startTimeMilli := gwHandle.handle.startTime.Unix()
+	endTimeMilli := gwHandle.handle.endTime.Unix()
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)         // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	uploadMaxItems := config.GetInt("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	gwHandle.handle.log.Info("Fetching gw dump files list")
 	objects := make([]OrderedJobs, 0)
-
 	iter := filemanager.IterateFilesWithPrefix(ctx,
 		gwHandle.handle.prefix,
 		gwHandle.handle.startAfterKey,
@@ -116,12 +114,13 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	)
 	for iter.Next() {
 		object := iter.Get()
-		if strings.Contains(object.Key, "gw_jobs_") {
-			// Getting rid of migrated dump files (ex: gw_jobs_1_1)
+		filePath := object.Key
+		if strings.Contains(filePath, "gw_jobs_") {
 			key := object.Key
 			tokens := strings.Split(key, "gw_jobs_")
 			tokens = strings.Split(tokens[1], ".")
 			var idx int
+			var err error
 			if idx, err = strconv.Atoi(tokens[0]); err != nil {
 				continue
 			}
@@ -137,7 +136,6 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 				gwHandle.handle.log.Info("Falling back to comparing start and end time stamps with gw dump last modified.")
 				pass = object.LastModified.After(gwHandle.handle.startTime) && object.LastModified.Before(gwHandle.handle.endTime)
 			}
-
 			if pass {
 				job := jobsdb.JobT{
 					UUID:         uuid.New(),
@@ -148,18 +146,36 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 				}
 				objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 			}
+		} else {
+			fileName := strings.Split(filePath, "/")[len(strings.Split(filePath, "/"))-1]
+			firstEventAt, err := strconv.ParseInt(strings.Split(fileName, "_")[0], 10, 64)
+			if err != nil {
+				gwHandle.handle.log.Info("Failed to parse firstEventAt from file name: ", fileName)
+				continue
+			}
+			if firstEventAt >= startTimeMilli {
+				job := jobsdb.JobT{
+					UUID:         uuid.New(),
+					UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
+					Parameters:   []byte(`{}`),
+					CustomVal:    "replay",
+					EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
+				}
+				objects = append(objects, OrderedJobs{Job: &job, SortIndex: int(firstEventAt)})
+			}
 		}
-		if len(objects) >= int(uploadMaxItems) {
+
+		if len(objects) >= uploadMaxItems {
 			storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
 			objects = nil
 		}
 	}
+
 	if iter.Err() != nil {
 		panic(fmt.Errorf("Failed to iterate gw dump files with error: %w", iter.Err()))
 	}
 	if len(objects) != 0 {
 		storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
-		objects = nil
 	}
 
 	gwHandle.handle.log.Info("Dumps loader job is done")
@@ -170,8 +186,8 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]OrderedJobs, 0)
 	procHandle.handle.log.Info("Fetching proc err files list")
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
-	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)         // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	uploadMaxItems := config.GetInt("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	iter := filemanager.IterateFilesWithPrefix(ctx,
 		procHandle.handle.prefix,
@@ -205,7 +221,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 		}
-		if len(objects) >= int(uploadMaxItems) {
+		if len(objects) >= uploadMaxItems {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
 			objects = nil
 		}
