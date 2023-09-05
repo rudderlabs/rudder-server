@@ -319,6 +319,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
+					fmt.Println("Inside asyncUploadWorker -> start uploading:time, fileSize, number of jobs", time.Now(), brt.asyncDestinationStruct[destinationID].Size, len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs))
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
@@ -393,6 +394,7 @@ func getOriginalJobParameters(jobs []*jobsdb.JobT) map[int64]stdjson.RawMessage 
 }
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
+	fmt.Println("Inside sendJobsToStorage: Num of jobs and time: ", len(batchJobs.Jobs), time.Now())
 	destinationID := batchJobs.Connection.Destination.ID
 	if brt.disableEgress {
 		out := common.AsyncUploadOutput{

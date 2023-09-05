@@ -22,7 +22,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
 	authorization := destConfig.CompanyName + "\\" + destConfig.UserName + ":" + destConfig.Password
-	destName := destination.DestinationDefinition.Name
+	destName := destination.DestinationDefinition.Name + ":" + destination.Name
 	encodedAuthorizationString := "Basic " + base64.StdEncoding.EncodeToString([]byte(authorization))
 	eloquaData := HttpRequestData{
 		Authorization: encodedAuthorizationString,

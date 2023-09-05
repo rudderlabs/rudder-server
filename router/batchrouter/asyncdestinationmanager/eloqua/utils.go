@@ -113,6 +113,8 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		}
 		csvWriter.Flush()
 	}
+	fileInfo, _ := csvFile.Stat()
+	fmt.Println("[ELOQUA]:: uploading csv file size: ", fileInfo.Size())
 	return csvFilePath, nil
 }
 
