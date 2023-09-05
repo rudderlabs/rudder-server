@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/mode"
 
 	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"

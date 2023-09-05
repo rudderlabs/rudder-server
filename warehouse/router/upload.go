@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	warehouse2 "github.com/rudderlabs/rudder-server/warehouse/errors"
+	wErrors "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
@@ -132,7 +132,7 @@ type UploadJob struct {
 		tableCountQueryTimeout                           time.Duration
 	}
 
-	errorHandler    warehouse2.ErrorHandler
+	errorHandler    wErrors.ErrorHandler
 	encodingFactory *encoding.Factory
 
 	stats struct {
@@ -216,7 +216,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler:    warehouse2.ErrorHandler{whManager},
+		errorHandler:    wErrors.ErrorHandler{Manager: whManager},
 		encodingFactory: f.encodingFactory,
 	}
 
