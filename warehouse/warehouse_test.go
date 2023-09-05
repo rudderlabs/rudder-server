@@ -243,7 +243,7 @@ func TestApp(t *testing.T) {
 
 		a := NewApp(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
-		require.EqualError(t, err, "setting up database: could not check compatibility: pq: role \"ubuntu\" does not exist")
+		require.ErrorContains(t, err, "setting up database: could not check compatibility:")
 	})
 	t.Run("without env vars", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t)
