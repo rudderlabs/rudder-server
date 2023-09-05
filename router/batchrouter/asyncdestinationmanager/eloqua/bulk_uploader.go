@@ -23,7 +23,7 @@ func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, er
 }
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	fmt.Println("Started uploading data: ", time.Now())
+	fmt.Println("[ELOQUA]::Started uploading data: ", time.Now())
 	destination := asyncDestStruct.Destination
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
@@ -109,7 +109,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}
-	fmt.Println("Completed uploading data: ", time.Now())
+	fmt.Println("[ELOQUA]::Completed uploading data: ", time.Now())
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     uploadJobInfo.succeededJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
@@ -132,11 +132,11 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 	defer func() {
 		if lo.Contains([]string{"success", "error", "warning"}, uploadStatus) {
 			b.deleteImportDef(importIds[1])
+			fmt.Println("[ELOQUA]::Completed polling data: ", time.Now())
 		}
 		if err != nil || uploadStatus == "success" {
 			b.clearJobToCsvMap()
 		}
-		fmt.Println("Completed uploading data: ", time.Now())
 	}()
 	if err != nil {
 		return common.PollStatusResponse{
@@ -192,7 +192,7 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	defer func() {
 		b.clearJobToCsvMap()
-		fmt.Println("Completed getting status of the data: ", time.Now())
+		fmt.Println("[ELOQUA]::Completed getting status of the data: ", time.Now())
 	}()
 	if UploadStatsInput.WarningJobURLs != "" {
 		checkRejectedData := HttpRequestData{
