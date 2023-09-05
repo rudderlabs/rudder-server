@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
-
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 

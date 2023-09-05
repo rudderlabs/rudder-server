@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/admin"
 	api2 "github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
@@ -15,8 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
-
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
