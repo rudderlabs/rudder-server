@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
-
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+
+	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
 
 	"github.com/lib/pq"
 

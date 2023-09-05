@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
-
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+
+	"github.com/rudderlabs/rudder-server/warehouse/backend_config"
 
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/code"
