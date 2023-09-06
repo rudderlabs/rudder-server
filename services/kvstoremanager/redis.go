@@ -1,13 +1,14 @@
 package kvstoremanager
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/go-redis/redis"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -86,10 +87,11 @@ func (m *redisManagerT) Close() error {
 }
 
 func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) (err error) {
+	ctx := context.Background()
 	if m.clusterMode {
-		_, err = m.clusterClient.HMSet(key, fields).Result()
+		_, err = m.clusterClient.HMSet(ctx, key, fields).Result()
 	} else {
-		_, err = m.client.HMSet(key, fields).Result()
+		_, err = m.client.HMSet(ctx, key, fields).Result()
 	}
 	return err
 }
@@ -110,37 +112,41 @@ func (*redisManagerT) StatusCode(err error) int {
 }
 
 func (m *redisManagerT) DeleteKey(key string) (err error) {
+	ctx := context.Background()
 	if m.clusterMode {
-		_, err = m.clusterClient.Del(key).Result()
+		_, err = m.clusterClient.Del(ctx, key).Result()
 	} else {
-		_, err = m.client.Del(key).Result()
+		_, err = m.client.Del(ctx, key).Result()
 	}
 	return err
 }
 
 func (m *redisManagerT) HMGet(key string, fields ...string) (result []interface{}, err error) {
+	ctx := context.Background()
 	if m.clusterMode {
-		result, err = m.clusterClient.HMGet(key, fields...).Result()
+		result, err = m.clusterClient.HMGet(ctx, key, fields...).Result()
 	} else {
-		result, err = m.client.HMGet(key, fields...).Result()
+		result, err = m.client.HMGet(ctx, key, fields...).Result()
 	}
 	return result, err
 }
 
 func (m *redisManagerT) HGetAll(key string) (result map[string]string, err error) {
+	ctx := context.Background()
 	if m.clusterMode {
-		result, err = m.clusterClient.HGetAll(key).Result()
+		result, err = m.clusterClient.HGetAll(ctx, key).Result()
 	} else {
-		result, err = m.client.HGetAll(key).Result()
+		result, err = m.client.HGetAll(ctx, key).Result()
 	}
 	return result, err
 }
 
 func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
+	ctx := context.Background()
 	if m.clusterMode {
-		_, err = m.clusterClient.HSet(hash, key, value).Result()
+		_, err = m.clusterClient.HSet(ctx, hash, key, value).Result()
 	} else {
-		_, err = m.client.HSet(hash, key, value).Result()
+		_, err = m.client.HSet(ctx, hash, key, value).Result()
 	}
 	return err
 }
