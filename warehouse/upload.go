@@ -178,8 +178,10 @@ func init() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
+	ujCtx := warehouseutils.CtxWithUploadID(ctx, dto.Upload.ID)
+
 	uj := &UploadJob{
-		ctx:                  ctx,
+		ctx:                  ujCtx,
 		app:                  f.app,
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,

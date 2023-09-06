@@ -141,6 +141,7 @@ type Deltalake struct {
 		maxRetries             int
 		retryMinWait           time.Duration
 		retryMaxWait           time.Duration
+		maxErrorLength         int
 	}
 }
 
@@ -156,6 +157,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.config.maxRetries = conf.GetInt("Warehouse.deltalake.maxRetries", 10)
 	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
 	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
+	dl.config.maxErrorLength = conf.GetInt("Warehouse.deltalake.maxErrorLength", 64*1024) // 64 KB
 
 	return dl
 }
@@ -461,10 +463,19 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 
 	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("creating table: %w", err)
+		return fmt.Errorf("creating table: %w", d.TrimErrorMessage(err))
 	}
 
 	return nil
+}
+
+func (d *Deltalake) TrimErrorMessage(baseError error) error {
+	errorString := baseError.Error()
+
+	if len(errorString) <= d.config.maxErrorLength {
+		return baseError
+	}
+	return errors.New(errorString[:d.config.maxErrorLength])
 }
 
 // columnsWithDataTypes returns the columns with their data types.

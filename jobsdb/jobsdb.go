@@ -850,7 +850,7 @@ func (jd *Handle) workersAndAuxSetup() {
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
@@ -1818,27 +1818,76 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	}
 }
 
+type moreTokenLegacy struct {
+	retryAfterJobID       *int64
+	waitingAfterJobID     *int64
+	unprocessedAfterJobID *int64
+}
+
 type moreToken struct {
 	afterJobID *int64
 }
 
 func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
-	if params.JobsLimit == 0 {
-		return &MoreJobsResult{More: more}, nil
+
+	mtoken := &moreTokenLegacy{}
+	if more != nil {
+		var ok bool
+		if mtoken, ok = more.(*moreTokenLegacy); !ok {
+			return nil, fmt.Errorf("invalid token: %+v", more)
+		}
 	}
-	params.stateFilters = []string{Failed.State, Waiting.State, Unprocessed.State}
-	slices.Sort(params.stateFilters)
-	tags := statTags{
-		StateFilters:     params.stateFilters,
-		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
+	updateParams := func(params *GetQueryParams, jobs JobsResult, nextAfterJobID *int64) {
+		params.JobsLimit -= len(jobs.Jobs)
+		if params.EventsLimit > 0 {
+			params.EventsLimit -= jobs.EventsCount
+		}
+		if params.PayloadSizeLimit > 0 {
+			params.PayloadSizeLimit -= jobs.PayloadSize
+		}
+		params.afterJobID = nextAfterJobID
 	}
-	command := func() moreQueryResult {
-		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
+	var list []*JobT
+	params.afterJobID = mtoken.retryAfterJobID
+	toRetry, err := jd.GetFailed(ctx, params)
+	if err != nil {
+		return nil, err
 	}
-	res := executeDbRequest(jd, newReadDbRequest("jobs", &tags, command))
-	return res.MoreJobsResult, res.err
+	if len(toRetry.Jobs) > 0 {
+		retryAfterJobID := toRetry.Jobs[len(toRetry.Jobs)-1].JobID
+		mtoken.retryAfterJobID = &retryAfterJobID
+	}
+
+	list = append(list, toRetry.Jobs...)
+	if toRetry.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, toRetry, mtoken.waitingAfterJobID)
+
+	waiting, err := jd.GetWaiting(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(waiting.Jobs) > 0 {
+		waitingAfterJobID := waiting.Jobs[len(waiting.Jobs)-1].JobID
+		mtoken.waitingAfterJobID = &waitingAfterJobID
+	}
+	list = append(list, waiting.Jobs...)
+	if waiting.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, waiting, mtoken.unprocessedAfterJobID)
+
+	unprocessed, err := jd.GetUnprocessed(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(unprocessed.Jobs) > 0 {
+		unprocessedAfterJobID := unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID
+		mtoken.unprocessedAfterJobID = &unprocessedAfterJobID
+	}
+	list = append(list, unprocessed.Jobs...)
+	return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: unprocessed.LimitsReached}, More: mtoken}, nil
 }
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
@@ -2092,7 +2141,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 		WorkspaceID:      workspaceID,
 	}
 
-	defer jd.getTimerStat("get_ds_time", &tags).RecordDuration()()
+	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
 
 	containsUnprocessed := lo.Contains(params.stateFilters, Unprocessed.State)
 	skipCacheResult := params.afterJobID != nil
@@ -2138,6 +2187,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 		limitQuery = fmt.Sprintf(" LIMIT %d ", params.JobsLimit)
 	}
 
+	joinType := "LEFT"
+	joinTable := "v_last_" + ds.JobStatusTable
+
+	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
+		joinType = "INNER"
+	} else if slices.Equal(stateFilters, []string{Unprocessed.State}) {
+		// If we are querying only for unprocessed jobs, we should join with the status table instead of the view (performance reasons)
+		joinTable = ds.JobStatusTable
+	}
+
 	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
@@ -2150,10 +2209,10 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
 								FROM
 									%[1]q AS jobs
-									LEFT JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
-								    %[3]s
-									ORDER BY jobs.job_id %[4]s`,
-		ds.JobTable, ds.JobStatusTable, filterQuery, limitQuery)
+									%[2]s JOIN %[3]q job_latest_state ON jobs.job_id=job_latest_state.job_id
+								    %[4]s
+									ORDER BY jobs.job_id %[5]s`,
+		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
 
 	var args []interface{}
 
@@ -3097,7 +3156,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
-		"get_jobs_time",
+		"jobsdb_get_jobs_time",
 		tags,
 	).RecordDuration()()
 
@@ -3209,17 +3268,12 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
 }
 
 type queryResult struct {
 	JobsResult
-	err error
-}
-
-type moreQueryResult struct {
-	*MoreJobsResult
 	err error
 }
 
@@ -3230,13 +3284,6 @@ func queryResultWrapper(res *MoreJobsResult, err error) queryResult {
 	return queryResult{
 		JobsResult: res.JobsResult,
 		err:        err,
-	}
-}
-
-func moreQueryResultWrapper(res *MoreJobsResult, err error) moreQueryResult {
-	return moreQueryResult{
-		MoreJobsResult: res,
-		err:            err,
 	}
 }
 

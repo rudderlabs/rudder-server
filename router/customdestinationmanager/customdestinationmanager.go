@@ -131,9 +131,17 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 		streamProducer, _ := client.(common.StreamProducer)
 		statusCode, _, respBody = streamProducer.Produce(jsonData, config)
 	case KV:
+		var err error
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-		key, fields := kvstoremanager.EventToKeyValue(jsonData)
-		err := kvManager.HMSet(key, fields)
+		// if the event supports HSET operation then use HSET
+		if kvstoremanager.IsHSETCompatibleEvent(jsonData) {
+			hash, key, value := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
+			err = kvManager.HSet(hash, key, value)
+		} else {
+			key, fields := kvstoremanager.EventToKeyValue(jsonData)
+			err = kvManager.HMSet(key, fields)
+		}
+
 		statusCode = kvManager.StatusCode(err)
 		if err != nil {
 			respBody = err.Error()

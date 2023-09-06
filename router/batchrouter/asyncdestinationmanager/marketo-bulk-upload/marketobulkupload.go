@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 type MarketoBulkUploader struct {
@@ -79,6 +81,19 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasFailed:  true,
 		}
 	}
+
+	if asyncResponse.Error != "" {
+		b.logger.Errorw("[Batch Router] Failed to fetch status for",
+			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			"body", string(bodyBytes[:512]),
+			lf.Error, asyncResponse.Error,
+		)
+		return common.PollStatusResponse{
+			StatusCode: 500,
+			HasFailed:  true,
+			Error:      asyncResponse.Error,
+		}
+	}
 	return asyncResponse
 }
 
@@ -111,7 +126,14 @@ func (b *MarketoBulkUploader) generateFailedPayload(jobs []*jobsdb.JobT, importI
 }
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	failedJobUrl := UploadStatsInput.FailedJobURLs
+	var jobsURL string
+
+	if UploadStatsInput.FailedJobURLs != "" {
+		jobsURL = UploadStatsInput.FailedJobURLs
+	} else {
+		jobsURL = UploadStatsInput.WarningJobURLs
+	}
+
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
@@ -122,13 +144,13 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+failedJobUrl, payload, b.timeout)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+jobsURL, payload, b.timeout)
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
 			StatusCode: statusCode,
 		}
 	}
-	var failedJobsResponse map[string]interface{}
+	var failedJobsResponse common.GetUploadStatsResponse
 	err := json.Unmarshal(failedBodyBytes, &failedJobsResponse)
 	if err != nil {
 		b.logger.Errorf("Error in Unmarshalling Failed Jobs Response: %v", err)
@@ -137,44 +159,42 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	statusCode, ok := failedJobsResponse["status"].(int)
-	if !ok {
-		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
-	metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
-	if !ok {
-		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
+	if failedJobsResponse.Error != "" {
+		b.logger.Errorw("[Batch Router] Failed to fetch status for",
+			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			"body", string(failedBodyBytes),
+			lf.Error, failedJobsResponse.Error,
+		)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}
 	}
 
-	failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
-	warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
-	succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
-
-	if errFailed != nil || errWarning != nil || errSuccess != nil {
-		b.logger.Errorf("[Batch Router] Failed to get job IDs for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-		statusCode = 500
-	}
+	failedReasons := failedJobsResponse.Metadata.FailedReasons
+	warningReasons := failedJobsResponse.Metadata.WarningReasons
 
 	// Build the response body
 	return common.GetUploadStatsResponse{
-		StatusCode: statusCode,
+		StatusCode: failedJobsResponse.StatusCode,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    failedKeys,
-			WarningKeys:   warningKeys,
-			SucceededKeys: succeededKeys,
+			FailedKeys:     failedJobsResponse.Metadata.FailedKeys,
+			WarningKeys:    failedJobsResponse.Metadata.WarningKeys,
+			SucceededKeys:  failedJobsResponse.Metadata.SucceededKeys,
+			FailedReasons:  failedReasons,
+			WarningReasons: warningReasons,
 		},
 	}
 }
 
-func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, statusCode int) ([]int64, []int64) {
 	if len(keyMap) == 0 {
-		return []int64{}, importingJobIDs
+		if statusCode == http.StatusOK {
+			// putting in failed jobs list
+			return []int64{}, importingJobIDs
+		} else {
+			// putting in aborted jobs list
+			return importingJobIDs, []int64{}
+		}
 	}
 
 	_, ok := keyMap["successfulJobs"].([]interface{})
@@ -310,7 +330,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 				DestinationID: destinationID,
 			}
 		}
-		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, http.StatusOK)
 
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
@@ -336,16 +356,21 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, http.StatusBadRequest)
+		errorMessageFromTransformer := gjson.GetBytes(bodyBytes, "error").String()
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:  `Jobs flowed over the prescribed limit`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
+		}
+		if errorMessageFromTransformer != "" {
+			uploadResponse.FailedReason = errorMessageFromTransformer
+		} else {
+			uploadResponse.FailedReason = `Jobs flowed over the prescribed limit`
 		}
 	default:
 		uploadResponse = common.AsyncUploadOutput{
