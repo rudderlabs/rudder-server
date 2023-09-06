@@ -193,10 +193,11 @@ var defaultTransformerFeatures = `{
   }`
 
 type DestStatT struct {
-	numEvents              stats.Measurement
-	numOutputSuccessEvents stats.Measurement
-	numOutputFailedEvents  stats.Measurement
-	transformTime          stats.Measurement
+	numEvents               stats.Measurement
+	numOutputSuccessEvents  stats.Measurement
+	numOutputFailedEvents   stats.Measurement
+	numOutputFilteredEvents stats.Measurement
+	transformTime           stats.Measurement
 }
 
 type ParametersT struct {
@@ -231,6 +232,15 @@ type MetricMetadata struct {
 	transformationVersionID string
 	trackingPlanID          string
 	trackingPlanVersion     int
+}
+
+type NonSuccessfulTransformationMetrics struct {
+	failedJobs       []*jobsdb.JobT
+	failedMetrics    []*types.PUReportedMetric
+	failedCountMap   map[string]int64
+	filteredJobs     []*jobsdb.JobT
+	filteredMetrics  []*types.PUReportedMetric
+	filteredCountMap map[string]int64
 }
 
 type (
@@ -269,13 +279,18 @@ func (proc *Handle) newUserTransformationStat(sourceID, workspaceID string, dest
 	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
 	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, errTags)
+
+	filterTags := misc.CopyStringMap(tags)
+	filterTags["error"] = "filtered"
+	numOutputFilteredEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, filterTags)
 	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          transformTime,
+		numEvents:               numEvents,
+		numOutputSuccessEvents:  numOutputSuccessEvents,
+		numOutputFailedEvents:   numOutputFailedEvents,
+		numOutputFilteredEvents: numOutputFilteredEvents,
+		transformTime:           transformTime,
 	}
 }
 
@@ -291,13 +306,18 @@ func (proc *Handle) newDestinationTransformationStat(sourceID, workspaceID, tran
 	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
 	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, errTags)
+
+	filterTags := misc.CopyStringMap(tags)
+	filterTags["error"] = "filtered"
+	numOutputFilteredEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, filterTags)
 	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          destTransform,
+		numEvents:               numEvents,
+		numOutputSuccessEvents:  numOutputSuccessEvents,
+		numOutputFailedEvents:   numOutputFailedEvents,
+		numOutputFilteredEvents: numOutputFilteredEvents,
+		transformTime:           destTransform,
 	}
 }
 
@@ -311,13 +331,18 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
 	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, errTags)
+
+	filterTags := misc.CopyStringMap(tags)
+	filterTags["error"] = "filtered"
+	numOutputFilteredEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, filterTags)
 	eventFilterTime := proc.statsFactory.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          eventFilterTime,
+		numEvents:               numEvents,
+		numOutputSuccessEvents:  numOutputSuccessEvents,
+		numOutputFailedEvents:   numOutputFailedEvents,
+		numOutputFilteredEvents: numOutputFilteredEvents,
+		transformTime:           eventFilterTime,
 	}
 }
 
@@ -1171,14 +1196,32 @@ func (proc *Handle) updateMetricMaps(
 	}
 }
 
-func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
-	failedMetrics := make([]*types.PUReportedMetric, 0)
+func (proc *Handle) getNonSuccessfulMetrics(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) *NonSuccessfulTransformationMetrics {
+	m := &NonSuccessfulTransformationMetrics{}
+
+	var filtered, failed []transformer.TransformerResponse
+	for _, event := range response.FailedEvents {
+		if event.StatusCode == types.FilterEventCode {
+			filtered = append(filtered, event)
+		} else {
+			failed = append(failed, event)
+		}
+	}
+
+	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(filtered, jobsdb.Filtered.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
+	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(failed, jobsdb.Aborted.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
+
+	return m
+}
+
+func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.TransformerResponse, state string, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
+	metrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
-	failedCountMap := make(map[string]int64)
-	var failedEventsToStore []*jobsdb.JobT
-	for i := range response.FailedEvents {
-		failedEvent := &response.FailedEvents[i]
+	countMap := make(map[string]int64)
+	var jobs []*jobsdb.JobT
+	for i := range transformerResponses {
+		failedEvent := &transformerResponses[i]
 		messages := lo.Map(
 			failedEvent.Metadata.GetMessagesIDs(),
 			func(msgID string, _ int) types.SingularEventT {
@@ -1187,18 +1230,18 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 		)
 		payload, err := jsonfast.Marshal(messages)
 		if err != nil {
-			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal list of failed events: %v`, err)
+			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
 			continue
 		}
 
 		for _, message := range messages {
-			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, stage, func() json.RawMessage {
+			proc.updateMetricMaps(nil, countMap, connectionDetailsMap, statusDetailsMap, failedEvent, state, stage, func() json.RawMessage {
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
 					return []byte(`{}`)
 				}
 				sampleEvent, err := jsonfast.Marshal(message)
 				if err != nil {
-					proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+					proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
 					sampleEvent = []byte(`{}`)
 				}
 				return sampleEvent
@@ -1206,7 +1249,7 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 		}
 
 		proc.logger.Debugf(
-			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
+			"[Processor: getTransformationMetrics] Error [%d] for source %q and destination %q: %s",
 			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
 
@@ -1241,7 +1284,7 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 			UserID:       failedEvent.Metadata.RudderID,
 			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
 		}
-		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
+		jobs = append(jobs, &newFailedJob)
 
 		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
 			"destName":   commonMetaData.DestinationType,
@@ -1289,13 +1332,13 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 					PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
 					StatusDetail:      sd,
 				}
-				failedMetrics = append(failedMetrics, m)
+				metrics = append(metrics, m)
 			}
 		}
 	}
 	// REPORTING - END
 
-	return failedEventsToStore, failedMetrics, failedCountMap
+	return jobs, metrics, countMap
 }
 
 func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
@@ -1341,7 +1384,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}
 }
 
-func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap map[string]int64) []*types.PUReportedMetric {
+func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
@@ -1357,7 +1400,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 		}
 		successCount := successCountMap[key]
 		failedCount := failedCountMap[key]
-		diff := successCount + failedCount - inCount
+		filteredCount := filteredCountMap[key]
+		diff := successCount + failedCount + filteredCount - inCount
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &types.PUReportedMetric{
@@ -1681,6 +1725,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			inCountMetadataMap,
 			inCountMap,
 			outCountMap,
+			map[string]int64{},
 			map[string]int64{},
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
@@ -2244,14 +2289,15 @@ func (proc *Handle) transformSrcDest(
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.UserTransformerStage, trackingPlanEnabled, transformationEnabled)
-			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
-			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), failedJobs...)...)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
+			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
-			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
-			userTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
+			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
+			userTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
@@ -2265,10 +2311,12 @@ func (proc *Handle) transformSrcDest(
 					inCountMetadataMap,
 					inCountMap,
 					successCountMap,
-					failedCountMap,
+					nonSuccessMetrics.failedCountMap,
+					nonSuccessMetrics.filteredCountMap,
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
-				reportMetrics = append(reportMetrics, failedMetrics...)
+				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
+				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
 				reportMetrics = append(reportMetrics, diffMetrics...)
 
 				// successCountMap will be inCountMap for filtering events based on supported event types
@@ -2312,8 +2360,8 @@ func (proc *Handle) transformSrcDest(
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
-	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), failedJobs...)...)
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
+	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
@@ -2330,9 +2378,10 @@ func (proc *Handle) transformSrcDest(
 			}
 		}
 
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
 		reportMetrics = append(reportMetrics, successMetrics...)
-		reportMetrics = append(reportMetrics, failedMetrics...)
+		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
+		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
 		reportMetrics = append(reportMetrics, diffMetrics...)
 
 		// successCountMap will be inCountMap for destination transform
@@ -2343,7 +2392,8 @@ func (proc *Handle) transformSrcDest(
 	eventFilterStat := proc.newEventFilterStat(sourceID, workspaceID, destination)
 	eventFilterStat.numEvents.Count(eventFilterInCount)
 	eventFilterStat.numOutputSuccessEvents.Count(len(response.Events))
-	eventFilterStat.numOutputFailedEvents.Count(len(failedJobs))
+	eventFilterStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
+	eventFilterStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 	eventFilterStat.transformTime.Since(s)
 
 	// Filtering events based on the supported message types - END
@@ -2378,19 +2428,20 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
-			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
 				response, commonMetaData, eventsByMessageID,
 				transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled,
 			)
 			destTransformationStat.numEvents.Count(len(eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
-			destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
-			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), failedJobs...)...)
+			destTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
+			destTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
+			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
-			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 
 			// REPORTING - PROCESSOR metrics - START
 			if proc.isReportingEnabled() {
@@ -2415,9 +2466,10 @@ func (proc *Handle) transformSrcDest(
 					}
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
 
-				reportMetrics = append(reportMetrics, failedMetrics...)
+				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
+				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, diffMetrics...)
 			}
@@ -2537,7 +2589,6 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 
 	// filter unsupported message types
 	var resp transformer.TransformerResponse
-	var errMessage string
 	for i := range events {
 		event := &events[i]
 
@@ -2570,12 +2621,13 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 				messageEvent, typOk := event.Message["event"].(string)
 				if !typOk {
 					// add to FailedEvents
-					errMessage = "Invalid message event. Type assertion failed"
-					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: "Invalid message event. Type assertion failed"}
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
 				if !slices.Contains(supportedEvents.values, messageEvent) {
+					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: types.FilterEventCode, Metadata: event.Metadata, Error: "Event not supported"}
+					failedEvents = append(failedEvents, resp)
 					continue
 				}
 			}

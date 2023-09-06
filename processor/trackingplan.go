@@ -14,10 +14,11 @@ import (
 )
 
 type TrackingPlanStatT struct {
-	numEvents                  stats.Measurement
-	numValidationSuccessEvents stats.Measurement
-	numValidationFailedEvents  stats.Measurement
-	tpValidationTime           stats.Measurement
+	numEvents                   stats.Measurement
+	numValidationSuccessEvents  stats.Measurement
+	numValidationFailedEvents   stats.Measurement
+	numValidationFilteredEvents stats.Measurement
+	tpValidationTime            stats.Measurement
 }
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
@@ -113,19 +114,21 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 
 		var successMetrics []*types.PUReportedMetric
 		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.TrackingPlanValidationStage, true, false) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
-		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
+		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
-		validationStat.numValidationFailedEvents.Count(len(failedJobs))
+		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
+		validationStat.numValidationFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 		proc.logger.Debug("Validation output size", len(eventsToTransform))
 
-		validatedErrorJobs = append(validatedErrorJobs, failedJobs...)
+		validatedErrorJobs = append(validatedErrorJobs, nonSuccessMetrics.failedJobs...)
 
 		// REPORTING - START
 		if proc.isReportingEnabled() {
 			// There will be no diff metrics for tracking plan validation
 			validatedReportMetrics = append(validatedReportMetrics, successMetrics...)
-			validatedReportMetrics = append(validatedReportMetrics, failedMetrics...)
+			validatedReportMetrics = append(validatedReportMetrics, nonSuccessMetrics.failedMetrics...)
+			validatedReportMetrics = append(validatedReportMetrics, nonSuccessMetrics.filteredMetrics...)
 		}
 		// REPORTING - END
 
@@ -168,12 +171,14 @@ func (proc *Handle) newValidationStat(metadata *transformer.Metadata) *TrackingP
 	numEvents := proc.statsFactory.NewTaggedStat("proc_num_tp_input_events", stats.CountType, tags)
 	numValidationSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
 	numValidationFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
+	numValidationFilteredEvents := proc.statsFactory.NewTaggedStat("proc_num_tp_output_filtered_events", stats.CountType, tags)
 	tpValidationTime := proc.statsFactory.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
 
 	return &TrackingPlanStatT{
-		numEvents:                  numEvents,
-		numValidationSuccessEvents: numValidationSuccessEvents,
-		numValidationFailedEvents:  numValidationFailedEvents,
-		tpValidationTime:           tpValidationTime,
+		numEvents:                   numEvents,
+		numValidationSuccessEvents:  numValidationSuccessEvents,
+		numValidationFailedEvents:   numValidationFailedEvents,
+		numValidationFilteredEvents: numValidationFilteredEvents,
+		tpValidationTime:            tpValidationTime,
 	}
 }

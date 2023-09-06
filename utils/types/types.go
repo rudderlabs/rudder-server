@@ -11,6 +11,11 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
+const (
+	FilterEventCode   = 298
+	SuppressEventCode = 299
+)
+
 // SingularEventT single event structrue
 type SingularEventT map[string]interface{}
 
