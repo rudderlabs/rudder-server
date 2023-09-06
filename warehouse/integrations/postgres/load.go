@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"io"
 	"os"
 	"strings"
@@ -32,7 +33,7 @@ type loadUsersTableResponse struct {
 	usersError      error
 }
 
-func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
+func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	pg.logger.Infow("started loading",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
@@ -50,7 +51,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("loading table: %w", err)
+		return nil, err
 	}
 
 	pg.logger.Infow("completed loading",
@@ -63,7 +64,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 		logfield.TableName, tableName,
 	)
 
-	return nil
+	return nil, err
 }
 
 func (pg *Postgres) loadTable(

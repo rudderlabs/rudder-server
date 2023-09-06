@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"io"
 	"net"
 	"net/url"
@@ -20,7 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -32,7 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -46,7 +47,7 @@ const (
 
 const (
 	mssqlStringLengthLimit = 512
-	provider               = warehouseutils.MSSQL
+	provider               = whutils.MSSQL
 	tableNameLimit         = 127
 )
 
@@ -89,7 +90,7 @@ type MSSQL struct {
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
-	Uploader           warehouseutils.Uploader
+	Uploader           whutils.Uploader
 	connectTimeout     time.Duration
 	LoadFileDownLoader downloader.Downloader
 
@@ -114,15 +115,15 @@ type credentials struct {
 }
 
 var primaryKeyMap = map[string]string{
-	warehouseutils.UsersTable:      "id",
-	warehouseutils.IdentifiesTable: "id",
-	warehouseutils.DiscardsTable:   "row_id",
+	whutils.UsersTable:      "id",
+	whutils.IdentifiesTable: "id",
+	whutils.DiscardsTable:   "row_id",
 }
 
 var partitionKeyMap = map[string]string{
-	warehouseutils.UsersTable:      "id",
-	warehouseutils.IdentifiesTable: "id",
-	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
+	whutils.UsersTable:      "id",
+	whutils.IdentifiesTable: "id",
+	whutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
 var errorsMappings = []model.JobError{
@@ -190,24 +191,24 @@ func (ms *MSSQL) connect() (*sqlmw.DB, error) {
 
 func (ms *MSSQL) connectionCredentials() *credentials {
 	return &credentials{
-		host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		database: warehouseutils.GetConfigValue(dbName, ms.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ms.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ms.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+		host:     whutils.GetConfigValue(host, ms.Warehouse),
+		database: whutils.GetConfigValue(dbName, ms.Warehouse),
+		user:     whutils.GetConfigValue(user, ms.Warehouse),
+		password: whutils.GetConfigValue(password, ms.Warehouse),
+		port:     whutils.GetConfigValue(port, ms.Warehouse),
+		sslMode:  whutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.connectTimeout,
 	}
 }
 
 func (ms *MSSQL) defaultLogFields() []any {
 	return []any{
-		logfield.SourceID, ms.Warehouse.Source.ID,
-		logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, ms.Warehouse.Destination.ID,
-		logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
-		logfield.Namespace, ms.Namespace,
+		lf.SourceID, ms.Warehouse.Source.ID,
+		lf.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, ms.Warehouse.Destination.ID,
+		lf.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, ms.Warehouse.WorkspaceID,
+		lf.Namespace, ms.Namespace,
 	}
 }
 
@@ -223,7 +224,7 @@ func (*MSSQL) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) 
 	return
 }
 
-func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) (err error) {
 	for _, tb := range tableNames {
 		ms.logger.Infof("MSSQL: Cleaning up the table %q ", tb)
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
@@ -255,227 +256,360 @@ func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params wareh
 	return nil
 }
 
-func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
-	ms.logger.Infof("MSSQL: Starting load for table:%s", tableName)
-
-	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+func (ms *MSSQL) loadTable(
+	ctx context.Context,
+	tableName string,
+	tableSchemaInUpload model.TableSchema,
+	skipTempTableDelete bool,
+) (*types.LoadTableStats, string, error) {
+	log := ms.logger.With(
+		lf.SourceID, ms.Warehouse.Source.ID,
+		lf.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, ms.Warehouse.Destination.ID,
+		lf.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, ms.Warehouse.WorkspaceID,
+		lf.Namespace, ms.Namespace,
+		lf.TableName, tableName,
+	)
+	log.Infow("started loading")
 
 	fileNames, err := ms.LoadFileDownLoader.Download(ctx, tableName)
-	defer misc.RemoveFilePaths(fileNames...)
+	defer func() {
+		misc.RemoveFilePaths(fileNames...)
+	}()
 	if err != nil {
-		return
+		return nil, "", fmt.Errorf("downloading load files: %w", err)
+	}
+
+	// The use of prepared statements for creating temporary tables is not suitable in this context.
+	// Temporary tables in SQL Server have a limited scope and are automatically purged after the transaction commits.
+	// Therefore, creating normal tables is chosen as an alternative.
+	//
+	// For more information on this behavior:
+	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
+	// - Refer to Microsoft's documentation on temporary tables at
+	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
+	stagingTableName := whutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
+	)
+
+	createStagingTableStmt := fmt.Sprintf(`
+		SELECT
+		  TOP 0 * INTO %[1]s.%[2]s
+		FROM
+		  %[1]s.%[3]s;
+`,
+		ms.Namespace,
+		stagingTableName,
+		tableName,
+	)
+	log.Infow("creating temporary table", lf.StagingTableName, stagingTableName)
+
+	if _, err = ms.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+		log.Warnw("unable to create temporary table",
+			lf.StagingTableName, stagingTableName,
+			lf.Query, createStagingTableStmt,
+			lf.Error, err.Error(),
+		)
+		return nil, "", fmt.Errorf("creating temporary table: %w", err)
+	}
+
+	if !skipTempTableDelete {
+		defer func() {
+			ms.dropStagingTable(ctx, stagingTableName)
+		}()
 	}
 
 	txn, err := ms.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		ms.logger.Errorf("MSSQL: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
+		return nil, "", fmt.Errorf("begin transaction: %w", err)
 	}
-	// create temporary table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
-	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
-	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
-	// Hence falling back to creating normal tables
-	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
-
-	ms.logger.Debugf("MSSQL: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = txn.ExecContext(ctx, sqlStatement)
-	if err != nil {
-		ms.logger.Errorf("MSSQL: Error creating temporary table for table:%s: %v\n", tableName, err)
-		_ = txn.Rollback()
-		return
-	}
-	if !skipTempTableDelete {
-		defer ms.dropStagingTable(ctx, stagingTableName)
-	}
-
-	stmt, err := txn.PrepareContext(ctx, mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
-	if err != nil {
-		ms.logger.Errorf("MSSQL: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
-		_ = txn.Rollback()
-		return
-	}
-	for _, objectFileName := range fileNames {
-		var gzipFile *os.File
-		gzipFile, err = os.Open(objectFileName)
+	defer func() {
 		if err != nil {
-			ms.logger.Errorf("MSSQL: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
 			_ = txn.Rollback()
-			return
 		}
+	}()
 
-		var gzipReader *gzip.Reader
-		gzipReader, err = gzip.NewReader(gzipFile)
-		if err != nil {
-			ms.logger.Errorf("MSSQL: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
-			gzipFile.Close()
-			_ = txn.Rollback()
-			return
+	sortedColumnKeys := whutils.SortColumnKeysFromColumnMap(
+		tableSchemaInUpload,
+	)
+	copyInStmt := mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
+		sortedColumnKeys...,
+	)
+	log.Infow("copying data into staging table")
 
-		}
-		csvReader := csv.NewReader(gzipReader)
-		var csvRowsProcessedCount int
-		for {
-			var record []string
-			record, err = csvReader.Read()
-			if err != nil {
-				if err == io.EOF {
-					ms.logger.Debugf("MSSQL: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
-					break
-				}
-				ms.logger.Errorf("MSSQL: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-				_ = txn.Rollback()
-				return
-			}
-			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
-				ms.logger.Error(err)
-				_ = txn.Rollback()
-				return
-			}
-			var recordInterface []interface{}
-			for _, value := range record {
-				if strings.TrimSpace(value) == "" {
-					recordInterface = append(recordInterface, nil)
-				} else {
-					recordInterface = append(recordInterface, value)
-				}
-			}
-			var finalColumnValues []interface{}
-			for index, value := range recordInterface {
-				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
-				if value == nil {
-					ms.logger.Debugf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
-					finalColumnValues = append(finalColumnValues, nil)
-					continue
-				}
-				strValue := value.(string)
-				switch valueType {
-				case "int":
-					var convertedValue int
-					if convertedValue, err = strconv.Atoi(strValue); err != nil {
-						ms.logger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-						finalColumnValues = append(finalColumnValues, nil)
-					} else {
-						finalColumnValues = append(finalColumnValues, convertedValue)
-					}
-				case "float":
-					var convertedValue float64
-					if convertedValue, err = strconv.ParseFloat(strValue, 64); err != nil {
-						ms.logger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-						finalColumnValues = append(finalColumnValues, nil)
-					} else {
-						finalColumnValues = append(finalColumnValues, convertedValue)
-					}
-				case "datetime":
-					var convertedValue time.Time
-					// TODO : handling milli?
-					if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
-						ms.logger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-						finalColumnValues = append(finalColumnValues, nil)
-					} else {
-						finalColumnValues = append(finalColumnValues, convertedValue)
-					}
-					// TODO : handling all cases?
-				case "boolean":
-					var convertedValue bool
-					if convertedValue, err = strconv.ParseBool(strValue); err != nil {
-						ms.logger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-						finalColumnValues = append(finalColumnValues, nil)
-					} else {
-						finalColumnValues = append(finalColumnValues, convertedValue)
-					}
-				case "string":
-					// This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
-					// A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
-					// An alternate to this approach is to use nvarchar(instead of varchar)
-					if len(strValue) > mssqlStringLengthLimit {
-						strValue = strValue[:mssqlStringLengthLimit]
-					}
-					var byteArr []byte
-					if hasDiacritics(strValue) {
-						ms.logger.Debug("diacritics " + strValue)
-						byteArr = str2ucs2(strValue)
-						// This is needed as with above operation every character occupies 2 bytes
-						if len(byteArr) > mssqlStringLengthLimit {
-							byteArr = byteArr[:mssqlStringLengthLimit]
-						}
-						finalColumnValues = append(finalColumnValues, byteArr)
-					} else {
-						ms.logger.Debug("non-diacritic : " + strValue)
-						finalColumnValues = append(finalColumnValues, strValue)
-					}
-				default:
-					finalColumnValues = append(finalColumnValues, value)
-				}
-			}
-
-			_, err = stmt.ExecContext(ctx, finalColumnValues...)
-			if err != nil {
-				ms.logger.Errorf("MSSQL: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				_ = txn.Rollback()
-				return
-			}
-			csvRowsProcessedCount++
-		}
-		_ = gzipReader.Close()
-		gzipFile.Close()
-	}
-
-	_, err = stmt.ExecContext(ctx)
+	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {
-		_ = txn.Rollback()
-		ms.logger.Errorf("MSSQL: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		return
-
+		log.Warnw("unable to prepare copyIn statement",
+			lf.StagingTableName, stagingTableName,
+			lf.Query, copyInStmt,
+			lf.Error, err.Error(),
+		)
+		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
 	}
+
+	for _, fileName := range fileNames {
+		err = ms.loadDataIntoStagingTable(
+			ctx, log, stmt,
+			fileName, sortedColumnKeys,
+			tableSchemaInUpload,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
+		}
+	}
+
+	if _, err = stmt.ExecContext(ctx); err != nil {
+		return nil, "", fmt.Errorf("executing copyIn statement: %w", err)
+	}
+
 	// deduplication process
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
+
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
-	var additionalJoinClause string
-	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, ms.Namespace, tableName, "table_name", "column_name")
-	}
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, ms.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
-	ms.logger.Infof("MSSQL: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.ExecContext(ctx, sqlStatement)
-	if err != nil {
-		ms.logger.Errorf("MSSQL: Error deleting from original table for dedup: %v\n", err)
-		_ = txn.Rollback()
-		return
+
+	var additionalDeleteStmtClause string
+	if tableName == whutils.DiscardsTable {
+		additionalDeleteStmtClause = fmt.Sprintf(`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
+			ms.Namespace,
+			tableName,
+			"table_name",
+			"column_name",
+		)
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
-									SELECT %[3]s FROM (
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
-									) AS _ where _rudder_staging_row_number = 1
-									`, ms.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
-	ms.logger.Infof("MSSQL: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.ExecContext(ctx, sqlStatement)
+	deleteStmt := fmt.Sprintf(`
+		DELETE FROM
+		  %[1]q.%[2]q
+		FROM
+		  %[1]q.%[3]q AS _source
+		WHERE
+		  (
+			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
+		  );
+`,
+		ms.Namespace,
+		tableName,
+		stagingTableName,
+		primaryKey,
+		additionalDeleteStmtClause,
+	)
+	log.Infow("deleting from original table", lf.StagingTableName, stagingTableName)
 
+	r, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		ms.logger.Errorf("MSSQL: Error inserting into original table: %v\n", err)
-		_ = txn.Rollback()
-		return
+		log.Warnw("unable to delete from original table",
+			lf.Query, deleteStmt,
+			lf.Error, err.Error(),
+		)
+		return nil, "", fmt.Errorf("deleting from original table: %w", err)
+	}
+	rowsDeleted, err := r.RowsAffected()
+	if err != nil {
+		return nil, "", fmt.Errorf("deleted rows affected: %w", err)
+	}
+
+	quotedColumnNames := whutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
+	insertStmt := fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (%[3]s)
+		SELECT
+		  %[3]s
+		FROM
+		  (
+			SELECT
+			  *,
+			  ROW_NUMBER() OVER (
+				PARTITION BY %[5]s
+				ORDER BY
+				  received_at DESC
+			  ) AS _rudder_staging_row_number
+			FROM
+			  %[1]q.%[4]q
+		  ) AS _
+		WHERE
+		  _rudder_staging_row_number = 1;
+`,
+		ms.Namespace,
+		tableName,
+		quotedColumnNames,
+		stagingTableName,
+		partitionKey,
+	)
+	log.Infow("inserting into original table", lf.StagingTableName, stagingTableName)
+
+	r, err = txn.ExecContext(ctx, insertStmt)
+	if err != nil {
+		log.Warnw("unable to insert into original table",
+			lf.Query, insertStmt,
+			lf.Error, err.Error(),
+		)
+		return nil, "", fmt.Errorf("inserting into original table: %w", err)
+	}
+	rowsInserted, err := r.RowsAffected()
+	if err != nil {
+		return nil, "", fmt.Errorf("inserted rows affected: %w", err)
 	}
 
 	if err = txn.Commit(); err != nil {
-		ms.logger.Errorf("MSSQL: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		_ = txn.Rollback()
-		return
+		return nil, "", fmt.Errorf("commit transaction: %w", err)
 	}
 
-	ms.logger.Infof("MSSQL: Complete load for table:%s", tableName)
-	return
+	log.Infow("completed loading")
+
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted - rowsDeleted,
+		RowsUpdated:  rowsDeleted,
+	}, stagingTableName, nil
+}
+
+func (ms *MSSQL) loadDataIntoStagingTable(
+	ctx context.Context,
+	log logger.Logger,
+	stmt *sql.Stmt,
+	fileName string,
+	sortedColumnKeys []string,
+	tableSchemaInUpload model.TableSchema,
+) error {
+	gzipFile, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("opening file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipFile.Close()
+	}()
+
+	gzipReader, err := gzip.NewReader(gzipFile)
+	if err != nil {
+		return fmt.Errorf("reading file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+
+	csvReader := csv.NewReader(gzipReader)
+
+	for {
+		var record []string
+		record, err = csvReader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("reading file %s: %w", fileName, err)
+		}
+		if len(sortedColumnKeys) != len(record) {
+			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d, error: %w",
+				fileName,
+				len(record),
+				len(sortedColumnKeys),
+				err,
+			)
+		}
+
+		recordInterface := make([]interface{}, 0, len(record))
+		for _, value := range record {
+			if strings.TrimSpace(value) == "" {
+				recordInterface = append(recordInterface, nil)
+			} else {
+				recordInterface = append(recordInterface, value)
+			}
+		}
+
+		finalColumnValues := make([]interface{}, 0, len(record))
+		for index, value := range recordInterface {
+			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
+			if value == nil {
+				log.Debugw("found nil value", "type", valueType, "column", sortedColumnKeys[index])
+
+				finalColumnValues = append(finalColumnValues, nil)
+				continue
+			}
+
+			strValue := value.(string)
+
+			switch valueType {
+			case "int":
+				if convertedValue, err := strconv.Atoi(strValue); err != nil {
+					log.Warnw("mismatch in datatype", lf.ColumnType, valueType, lf.ColumnName, sortedColumnKeys[index], lf.ColumnValue, strValue, lf.Error, err)
+
+					finalColumnValues = append(finalColumnValues, nil)
+				} else {
+					finalColumnValues = append(finalColumnValues, convertedValue)
+				}
+			case "float":
+				if convertedValue, err := strconv.ParseFloat(strValue, 64); err != nil {
+					log.Warnw("mismatch in datatype", lf.ColumnType, valueType, lf.ColumnName, sortedColumnKeys[index], lf.ColumnValue, strValue, lf.Error, err)
+
+					finalColumnValues = append(finalColumnValues, nil)
+				} else {
+					finalColumnValues = append(finalColumnValues, convertedValue)
+				}
+			case "datetime":
+				// TODO : handling milli?
+				if convertedValue, err := time.Parse(time.RFC3339, strValue); err != nil {
+					log.Warnw("mismatch in datatype", lf.ColumnType, valueType, lf.ColumnName, sortedColumnKeys[index], lf.ColumnValue, strValue, lf.Error, err)
+
+					finalColumnValues = append(finalColumnValues, nil)
+				} else {
+					finalColumnValues = append(finalColumnValues, convertedValue)
+				}
+				// TODO : handling all cases?
+			case "boolean":
+				if convertedValue, err := strconv.ParseBool(strValue); err != nil {
+					log.Warnw("mismatch in datatype", lf.ColumnType, valueType, lf.ColumnName, sortedColumnKeys[index], lf.ColumnValue, strValue, lf.Error, err)
+
+					finalColumnValues = append(finalColumnValues, nil)
+				} else {
+					finalColumnValues = append(finalColumnValues, convertedValue)
+				}
+			case "string":
+				// Enabling diacritic support is essential to correctly handle characters with diacritics,
+				// such as Ü,ç, Ç, ©, ∆, ß, á, ù, ñ, ê. This ensures that these characters are processed
+				// and stored accurately in the database.
+
+				// The current approach serves as a substitute for a specific pull request (PR)
+				// that aimed to address this issue: https://github.com/denisenkom/go-mssqldb/pull/576/files.
+
+				// An alternate method to achieve diacritic support is to use 'nvarchar' data type instead of 'varchar'.
+				// However, the chosen approach may be more suitable for the current application's requirements.
+
+				if len(strValue) > mssqlStringLengthLimit {
+					strValue = strValue[:mssqlStringLengthLimit]
+				}
+
+				if !hasDiacritics(strValue) {
+					log.Debugw("non-diacritic", lf.ColumnType, valueType, lf.ColumnName, sortedColumnKeys[index], lf.ColumnValue, strValue)
+
+					finalColumnValues = append(finalColumnValues, strValue)
+				} else {
+					byteArr := str2ucs2(strValue)
+
+					// This is needed as with above operation every character occupies 2 bytes
+					if len(byteArr) > mssqlStringLengthLimit {
+						byteArr = byteArr[:mssqlStringLengthLimit]
+					}
+
+					finalColumnValues = append(finalColumnValues, byteArr)
+				}
+			default:
+				finalColumnValues = append(finalColumnValues, value)
+			}
+		}
+
+		_, err = stmt.ExecContext(ctx, finalColumnValues...)
+		if err != nil {
+			return fmt.Errorf("exec statement error: %w", err)
+		}
+	}
+	return nil
 }
 
 // Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
@@ -499,26 +633,26 @@ func hasDiacritics(str string) bool {
 }
 
 func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error) {
-	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
+	errorMap = map[string]error{whutils.IdentifiesTable: nil}
 	ms.logger.Infof("MSSQL: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := ms.loadTable(ctx, warehouseutils.IdentifiesTable, ms.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	_, identifyStagingTable, err := ms.loadTable(ctx, whutils.IdentifiesTable, ms.Uploader.GetTableSchemaInUpload(whutils.IdentifiesTable), true)
 	if err != nil {
-		errorMap[warehouseutils.IdentifiesTable] = err
+		errorMap[whutils.IdentifiesTable] = err
 		return
 	}
 
-	if len(ms.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+	if len(ms.Uploader.GetTableSchemaInUpload(whutils.UsersTable)) == 0 {
 		return
 	}
-	errorMap[warehouseutils.UsersTable] = nil
+	errorMap[whutils.UsersTable] = nil
 
-	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
+	unionStagingTableName := whutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+	stagingTableName := whutils.StagingTableName(provider, whutils.UsersTable, tableNameLimit)
 	defer ms.dropStagingTable(ctx, stagingTableName)
 	defer ms.dropStagingTable(ctx, unionStagingTableName)
 	defer ms.dropStagingTable(ctx, identifyStagingTable)
 
-	userColMap := ms.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := ms.Uploader.GetTableSchemaInWarehouse(whutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -549,12 +683,12 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 												(
 													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
 												)) a
-											`, ms.Namespace, ms.Namespace+"."+warehouseutils.UsersTable, ms.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), ms.Namespace+"."+unionStagingTableName)
+											`, ms.Namespace, ms.Namespace+"."+whutils.UsersTable, ms.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), ms.Namespace+"."+unionStagingTableName)
 
 	ms.logger.Debugf("MSSQL: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
 	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 
@@ -574,36 +708,36 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		ms.logger.Errorf("MSSQL: Error Creating staging table for users: %s\n", sqlStatement)
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 
 	// BEGIN TRANSACTION
 	tx, err := ms.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, primaryKey)
-	ms.logger.Infof("MSSQL: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.Namespace, whutils.UsersTable, ms.Namespace+"."+stagingTableName, primaryKey)
+	ms.logger.Infof("MSSQL: Dedup records for table:%s using staging table: %s\n", whutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		ms.logger.Errorf("MSSQL: Error deleting from original table for dedup: %v\n", err)
 		_ = tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
-	ms.logger.Infof("MSSQL: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.Namespace, whutils.UsersTable, ms.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	ms.logger.Infof("MSSQL: Inserting records for table:%s using staging table: %s\n", whutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 
 	if err != nil {
 		ms.logger.Errorf("MSSQL: Error inserting into users table from staging table: %v\n", err)
 		_ = tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 
@@ -611,7 +745,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	if err != nil {
 		ms.logger.Errorf("MSSQL: Error in transaction commit for users table: %v\n", err)
 		_ = tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
+		errorMap[whutils.UsersTable] = err
 		return
 	}
 	return
@@ -659,7 +793,7 @@ func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
 	return
 }
 
-func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
 	var (
 		query        string
 		queryBuilder strings.Builder
@@ -719,11 +853,11 @@ func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	return nil
 }
 
-func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader whutils.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+	ms.ObjectStorage = whutils.ObjectStorageType(whutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 	ms.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, ms.config.numWorkersDownloadLoadFiles)
 
 	if ms.DB, err = ms.connect(); err != nil {
@@ -747,7 +881,7 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
 		  AND table_name like '%s';
 	`,
 		ms.Namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+		fmt.Sprintf(`%s%%`, whutils.StagingTablePrefix(provider)),
 	)
 	rows, err := ms.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
@@ -798,7 +932,7 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 `
 	rows, err := ms.DB.QueryContext(ctx, sqlStatement,
 		sql.Named("schema", ms.Namespace),
-		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
+		sql.Named("prefix", fmt.Sprintf("%s%%", whutils.StagingTablePrefix(provider))),
 	)
 	if errors.Is(err, io.EOF) {
 		return schema, unrecognizedSchema, nil
@@ -824,9 +958,9 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 			if _, ok := unrecognizedSchema[tableName]; !ok {
 				unrecognizedSchema[tableName] = make(model.TableSchema)
 			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
+			unrecognizedSchema[tableName][columnName] = whutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			whutils.WHCounterStat(whutils.RudderMissingDatatype, &ms.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -840,9 +974,14 @@ func (ms *MSSQL) LoadUserTables(ctx context.Context) map[string]error {
 	return ms.loadUserTables(ctx)
 }
 
-func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) error {
-	_, err := ms.loadTable(ctx, tableName, ms.Uploader.GetTableSchemaInUpload(tableName), false)
-	return err
+func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+	loadTableStat, _, err := ms.loadTable(
+		ctx,
+		tableName,
+		ms.Uploader.GetTableSchemaInUpload(tableName),
+		false,
+	)
+	return loadTableStat, err
 }
 
 func (ms *MSSQL) Cleanup(ctx context.Context) {
@@ -884,8 +1023,8 @@ func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (in
 func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(
-		warehouseutils.MSSQL,
+	ms.ObjectStorage = whutils.ObjectStorageType(
+		whutils.MSSQL,
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)

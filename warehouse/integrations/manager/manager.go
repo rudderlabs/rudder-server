@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -31,7 +32,7 @@ type Manager interface {
 	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error)
-	LoadTable(ctx context.Context, tableName string) error
+	LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error)
 	LoadUserTables(ctx context.Context) map[string]error
 	LoadIdentityMergeRulesTable(ctx context.Context) error
 	LoadIdentityMappingsTable(ctx context.Context) error

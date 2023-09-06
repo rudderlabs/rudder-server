@@ -1119,7 +1119,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		}
 	}
 
-	err = job.whManager.LoadTable(job.ctx, tName)
+	_, err = job.whManager.LoadTable(job.ctx, tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
 		errorsString := misc.QuoteLiteral(err.Error())

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"io"
 	"net/url"
 	"os"
@@ -1032,9 +1033,9 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 	return
 }
 
-func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	err := ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
-	return err
+	return nil, err
 }
 
 func (ch *Clickhouse) Cleanup(context.Context) {

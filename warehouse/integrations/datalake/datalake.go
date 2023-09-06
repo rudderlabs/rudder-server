@@ -3,6 +3,7 @@ package datalake
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"regexp"
 	"time"
 
@@ -77,9 +78,9 @@ func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, colum
 	return d.SchemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
 }
 
-func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
+func (d *Datalake) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
-	return nil
+	return nil, nil
 }
 
 func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) (err error) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"regexp"
 	"strconv"
 	"strings"
@@ -558,16 +559,13 @@ func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.Al
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
+func (d *Deltalake) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
 	_, err := d.loadTable(ctx, tableName, uploadTableSchema, warehouseTableSchema, false)
-	if err != nil {
-		return fmt.Errorf("loading table: %w", err)
-	}
 
-	return nil
+	return nil, err
 }
 
 func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {

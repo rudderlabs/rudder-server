@@ -267,7 +267,7 @@ func TestLoadTable(t *testing.T) {
 					},
 				}
 
-				err = pg.LoadTable(ctx, tableName)
+				_, err = pg.LoadTable(ctx, tableName)
 				if tc.wantError != nil {
 					require.ErrorContains(t, err, tc.wantError.Error())
 					return
@@ -381,7 +381,7 @@ func TestLoadTable(t *testing.T) {
 					},
 				}
 
-				err = pg.LoadTable(ctx, tableName)
+				_, err = pg.LoadTable(ctx, tableName)
 				if tc.wantError != nil {
 					require.EqualError(t, err, tc.wantError.Error())
 					return
