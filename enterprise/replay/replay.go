@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/enterprise/replay/dumpsloader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -22,7 +23,7 @@ type Handler struct {
 	toDB                     *jobsdb.Handle
 	noOfWorkers              int
 	workers                  []*SourceWorkerT
-	dumpsLoader              *dumpsLoaderHandleT
+	dumpsLoader              *dumpsloader.dumpsLoaderHandleT
 	dbReadSize               int
 	tablePrefix              string
 	uploader                 filemanager.FileManager
@@ -147,7 +148,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+func (handle *Handler) Setup(ctx context.Context, config *config.Config, dumpsLoader *dumpsloader.dumpsLoaderHandleT, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	handle.log = log
 	handle.db = db
 	handle.toDB = toDB

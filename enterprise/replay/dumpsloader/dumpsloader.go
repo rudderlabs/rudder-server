@@ -1,4 +1,4 @@
-package replay
+package dumpsloader
 
 import (
 	"context"
@@ -238,46 +238,47 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	procHandle.handle.done = true
 }
 
-func (handle *dumpsLoaderHandleT) handleRecovery() {
+func (d *dumpsLoaderHandleT) handleRecovery() {
 	// remove dangling executing
-	handle.dbHandle.FailExecuting()
+	d.dbHandle.FailExecuting()
 }
 
 // Setup sets up dumps-loader.
-func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
-	var err error
-	handle.log = log
-	handle.dbHandle = db
-	handle.handleRecovery()
-
-	lastJob := handle.dbHandle.GetLastJob()
-	handle.startAfterKey = gjson.GetBytes(lastJob.EventPayload, "location").String()
-	handle.bucket = bucket
-	handle.uploader = uploader
-	startTimeStr := strings.TrimSpace(config.GetString("START_TIME", "2000-10-02T15:04:05.000Z"))
-	handle.startTime, err = time.Parse(misc.RFC3339Milli, startTimeStr)
-	if err != nil {
-		panic("invalid start time format provided")
+func Setup(ctx context.Context, config *config.Config, db *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) (*dumpsLoaderHandleT, error) {
+	handle := dumpsLoaderHandleT{
+		log:           log,
+		dbHandle:      db,
+		prefix:        strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", "")),
+		bucket:        bucket,
+		tablePrefix:   tablePrefix,
+		uploader:      uploader,
+		startAfterKey: gjson.GetBytes(db.GetLastJob(ctx).EventPayload, "location").String(),
 	}
-	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
-	handle.tablePrefix = tablePrefix
-	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
-	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}
-
+	parse, err := time.Parse(misc.RFC3339Milli, strings.TrimSpace(config.GetString("START_TIME", "2000-10-02T15:04:05.000Z")))
+	if err != nil {
+		return nil, err
+	}
+	handle.startTime = parse
 	endTimeStr := strings.TrimSpace(config.GetString("END_TIME", ""))
 	if endTimeStr == "" {
 		handle.endTime = time.Now()
 	} else {
 		handle.endTime, err = time.Parse(misc.RFC3339Milli, endTimeStr)
 		if err != nil {
-			panic(fmt.Errorf("invalid END_TIME. Err: %w", err))
+			return nil, fmt.Errorf("invalid END_TIME. Err: %w", err)
 		}
 	}
+	return &handle, nil
+}
 
-	switch tablePrefix {
+func (d *dumpsLoaderHandleT) Start(ctx context.Context) {
+	d.handleRecovery()
+	switch d.tablePrefix {
 	case "gw":
-		go handle.gwReplay.fetchDumpsList(ctx)
+		d.gwReplay = &GWReplayRequestHandler{tablePrefix: d.tablePrefix, handle: d}
+		go d.gwReplay.fetchDumpsList(ctx)
 	default:
-		go handle.procError.fetchDumpsList(ctx)
+		d.procError = &ProcErrorRequestHandler{tablePrefix: d.tablePrefix, handle: d}
+		go d.procError.fetchDumpsList(ctx)
 	}
 }

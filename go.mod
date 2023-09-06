@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.20
+go 1.21
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that

@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/enterprise/replay/dumpsloader"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -54,14 +55,15 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	tablePrefix := config.GetString("TO_REPLAY", "gw")
 	replayToDB := config.GetString("REPLAY_TO_DB", "gw")
 	m.Log.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
-	var dumpsLoader dumpsLoaderHandleT
 	uploader, bucket, err := initFileManager(ctx, config, m.Log)
 	if err != nil {
 		return err
 	}
 
-	dumpsLoader.Setup(ctx, replayDB, tablePrefix, uploader, bucket, m.Log)
-
+	dumpsLoader, err := dumpsloader.Setup(ctx, config, replayDB, tablePrefix, uploader, bucket, m.Log)
+	if err != nil {
+		return err
+	}
 	var replayer Handler
 	var toDB *jobsdb.Handle
 	switch replayToDB {
@@ -74,7 +76,11 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	default:
 		toDB = routerDB
 	}
-	_ = toDB.Start()
-	replayer.Setup(ctx, &dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, m.Log)
+	err = toDB.Start()
+	if err != nil {
+		return err
+	}
+	defer toDB.Stop()
+	replayer.Setup(ctx, config, dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, m.Log)
 	return nil
 }
