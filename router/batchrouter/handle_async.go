@@ -317,7 +317,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 				timeout := uploadIntervalMap[destinationID]
-				fmt.Println("Inside asyncUploadWorker:", brt.asyncDestinationStruct[destinationID].Exists, brt.asyncDestinationStruct[destinationID].CanUpload, timeElapsed, timeout)
+				// fmt.Println("Inside asyncUploadWorker:", brt.asyncDestinationStruct[destinationID].Exists, brt.asyncDestinationStruct[destinationID].CanUpload, timeElapsed, timeout)
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					fmt.Println("Inside asyncUploadWorker:start uploading:time, fileSize, number of jobs", time.Now(), brt.asyncDestinationStruct[destinationID].Size, len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs))
@@ -444,11 +444,12 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
 	defer func() { _ = file.Close() }()
-	var jobString string
+	// var jobString string
 	var overFlow bool
 	var overFlownJobs []*jobsdb.JobT
-	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
+	// writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	allowedSize := brt.maxPayloadSizeInBytes
+	fmt.Println("Inside sendJobToStorage: starting of the loop", time.Now())
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch &&
@@ -456,7 +457,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].Size < allowedSize {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
-			jobString = jobString + fileData + "\n"
+			file.WriteString(fileData + "\n")
+			// jobString = jobString + fileData + "\n"
 			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
@@ -465,7 +467,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			overFlownJobs = append(overFlownJobs, job)
 		}
 	}
-
+	fmt.Println("Inside sendJobToStorage: ending of the loop", time.Now())
 	if len(overFlownJobs) > 0 {
 		out := common.AsyncUploadOutput{
 			DestinationID: destinationID,
@@ -491,7 +493,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		brt.asyncDestinationStruct[destinationID].OriginalJobParameters[jobID] = originalJobParameter
 	}
 
-	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
+	// _, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
 	if overFlow {
 		brt.asyncDestinationStruct[destinationID].CanUpload = true
 	}
