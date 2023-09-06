@@ -56,14 +56,14 @@ func getKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, error) {
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, int64, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	folderPath := path.Join(tmpDirPath, localTmpDirName)
 	_, e := os.Stat(folderPath)
@@ -75,12 +75,12 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	err = csvWriter.Write(fields)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	csvWriter.Flush()
 	var line string
@@ -89,7 +89,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		line = scanner.Text()
 		var data TransformedData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			return "", err
+			return "", 0, err
 		}
 		var values []string
 		for _, field := range fields {
@@ -97,7 +97,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		}
 		fileInfo, err := csvFile.Stat()
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
 		if fileInfo.Size() > uploadJobInfo.fileSizeLimit {
 			left, _ := lo.Difference(uploadJobInfo.importingJobs, uploadJobInfo.succeededJobs)
@@ -109,11 +109,12 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		index += 1
 		err = csvWriter.Write(values)
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
 		csvWriter.Flush()
 	}
-	return csvFilePath, nil
+	fileInfo, _ := csvFile.Stat()
+	return csvFilePath, fileInfo.Size(), nil
 }
 
 func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fields) (map[string]interface{}, error) {

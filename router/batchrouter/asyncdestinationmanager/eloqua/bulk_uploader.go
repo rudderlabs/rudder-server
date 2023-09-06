@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -23,6 +25,10 @@ func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, er
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
+	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
@@ -76,12 +82,24 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	filePAth, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, b.jobToCSVMap)
+	filePAth, fileSize, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, b.jobToCSVMap)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
+	CSVFileSizeStat := stats.Default.NewTaggedStat("csv_file_size", stats.HistogramType,
+		map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+	CSVFileSizeStat.Observe(float64(fileSize))
 	defer os.Remove(filePAth)
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
+	startTime := time.Now()
 	err = b.service.UploadData(&uploadDataData, filePAth)
+	uploadTimeStat.Since(startTime)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
@@ -107,6 +125,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}
+	uploadRetryableStat.Count(len(uploadJobInfo.failedJobs))
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     uploadJobInfo.succeededJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
@@ -186,9 +205,22 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 }
 
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	var uploadStatusResponse common.GetUploadStatsResponse
 	defer func() {
 		b.clearJobToCsvMap()
+		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+		eventsAbortedStat.Count(len(uploadStatusResponse.Metadata.FailedKeys))
+
+		eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+		eventsSuccessStat.Count(len(uploadStatusResponse.Metadata.SucceededKeys))
 	}()
+
 	if UploadStatsInput.WarningJobURLs != "" {
 		checkRejectedData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
@@ -202,18 +234,14 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 				StatusCode: 500,
 			}
 		}
-		uploadStatusResponse := common.GetUploadStatsResponse{
-			StatusCode: 200,
-			Metadata:   *eventStatMetaWithRejectedSucceededJobs,
-		}
+		uploadStatusResponse.StatusCode = 200
+		uploadStatusResponse.Metadata = *eventStatMetaWithRejectedSucceededJobs
 		return uploadStatusResponse
 	}
 
 	eventStatMetaWithFailedJobs := parseFailedData(UploadStatsInput.FailedJobURLs, UploadStatsInput.ImportingList)
-	uploadStatusResponse := common.GetUploadStatsResponse{
-		StatusCode: 200,
-		Metadata:   *eventStatMetaWithFailedJobs,
-	}
+	uploadStatusResponse.StatusCode = 200
+	uploadStatusResponse.Metadata = *eventStatMetaWithFailedJobs
 	return uploadStatusResponse
 }
 
