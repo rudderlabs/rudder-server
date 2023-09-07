@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.14.0-preview-1](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.14.0-preview-1) (2023-09-07)
+
+
+### Features
+
+* onboard bulk upload destination eloqua   ([#3779](https://github.com/rudderlabs/rudder-server/issues/3779)) ([0a9954d](https://github.com/rudderlabs/rudder-server/commit/0a9954dee1163eadbea206a08ff80623217a5e4a))
+
+
+### Bug Fixes
+
+* redis cluster mode ([#3831](https://github.com/rudderlabs/rudder-server/issues/3831)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+* remove table name for load file ([#3837](https://github.com/rudderlabs/rudder-server/issues/3837)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+
+
+### Miscellaneous
+
+* add stats for archiver ([#3836](https://github.com/rudderlabs/rudder-server/issues/3836)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+* merge release 1.13.0 in main branch ([#3833](https://github.com/rudderlabs/rudder-server/issues/3833)) ([0e5a477](https://github.com/rudderlabs/rudder-server/commit/0e5a4770576b7631e2bc4b79056ce1850019b47a))
+* upgrade go version 1.21 ([#3838](https://github.com/rudderlabs/rudder-server/issues/3838)) ([a1075da](https://github.com/rudderlabs/rudder-server/commit/a1075da9f3db51a47fc6962b9249fff3300f3f88))
+
 ## [1.13.1](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.13.1) (2023-09-06)
 
 
