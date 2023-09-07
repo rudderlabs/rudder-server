@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -22,14 +23,19 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
 	authorization := destConfig.CompanyName + "\\" + destConfig.UserName + ":" + destConfig.Password
-	destName := destination.DestinationDefinition.Name
+	destName := destination.DestinationDefinition.Name + ":" + destination.Name
 	encodedAuthorizationString := "Basic " + base64.StdEncoding.EncodeToString([]byte(authorization))
 	eloquaData := HttpRequestData{
 		Authorization: encodedAuthorizationString,
 	}
 	eloqua := NewEloquaServiceImpl("2.0")
 	baseEndpoint, err := eloqua.GetBaseEndpoint(&eloquaData)
+	unableToGetBaseEndpointStat := stats.Default.NewTaggedStat("unable_to_get_base_endpoint", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": destName,
+	})
 	if err != nil {
+		unableToGetBaseEndpointStat.Count(1)
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
 	}
 
