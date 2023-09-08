@@ -1,7 +1,6 @@
 package cloudfunctions
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,6 +41,7 @@ func init() {
 
 type GoogleCloudFunctionProducer struct {
 	client *Client
+	config *Config
 }
 
 // NewProducer creates a producer based on destination config
@@ -67,13 +67,16 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		return nil, err
 	}
 	client := &Client{service, o}
+	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl}
 
-	return &GoogleCloudFunctionProducer{client}, err
+	return &GoogleCloudFunctionProducer{client, destConfig}, err
 }
 
-func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, destConfig Config) (statusCode int, respStatus, responseMessage string) {
-
+func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	destConfig := producer.config
 	parsedJSON := gjson.ParseBytes(jsonData)
+
+	fmt.Print(destConfig.FunctionEnvironment, destConfig.RequireAuthentication)
 	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
 		client := producer.client
 
@@ -88,7 +91,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, d
 		fmt.Print(functionName)
 
 		requestPayload := &cloudfunctions.CallFunctionRequest{
-			Data: `{"input_key": "input_value"}`,
+			Data: string(parsedJSON.String()),
 		}
 
 		// Make the HTTP request
@@ -132,7 +135,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, d
 	}
 
 	// Create a POST request
-	req, err := http.NewRequest("POST", destConfig.GoogleCloudFunctionUrl, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", destConfig.GoogleCloudFunctionUrl, strings.NewReader(parsedJSON.String()))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return
@@ -212,4 +215,9 @@ func getFunctionName(url string) (functionName string) {
 	functionName = "projects/" + PROJECT_ID + "/locations/" + REGION + "/functions/" + FUNCTION_NAME
 
 	return functionName
+}
+
+func (*GoogleCloudFunctionProducer) Close() error {
+	// no-op
+	return nil
 }
