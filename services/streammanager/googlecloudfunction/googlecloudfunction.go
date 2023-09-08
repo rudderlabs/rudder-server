@@ -76,7 +76,6 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	destConfig := producer.config
 	parsedJSON := gjson.ParseBytes(jsonData)
 
-	fmt.Print(destConfig.FunctionEnvironment, destConfig.RequireAuthentication)
 	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
 		client := producer.client
 
@@ -87,8 +86,6 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 		}
 
 		functionName := getFunctionName(destConfig.GoogleCloudFunctionUrl)
-
-		fmt.Print(functionName)
 
 		requestPayload := &cloudfunctions.CallFunctionRequest{
 			Data: string(parsedJSON.String()),
