@@ -2,6 +2,8 @@ package jobsdb
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -205,7 +207,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 
 	statusList, err := gather(jd.GetJobs, []string{Failed.State, Executing.State, Waiting.State, Unprocessed.State}, GetQueryParams{})
 	if err != nil {
-		return err
+		return fmt.Errorf("gathering job statuses: %w", err)
 	}
 
 	if len(statusList) > 0 {
@@ -226,8 +228,8 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 				jd.tablePrefix,
 				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
 			),
-		).Scan(&journalEntryCount); err != nil {
-			return err
+		).Scan(&journalEntryCount); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("cleaning up journal: %w", err)
 		}
 		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
 	}
