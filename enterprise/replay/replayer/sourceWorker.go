@@ -1,4 +1,4 @@
-package replay
+package replayer
 
 import (
 	"bufio"
@@ -125,7 +125,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+			if !(worker.replayHandler.startTime.Before(createdAt) && worker.replayHandler.endTime.After(createdAt)) {
 				continue
 			}
 			job := jobsdb.JobT{
@@ -184,7 +184,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+			if !(worker.replayHandler.startTime.Before(createdAt) && worker.replayHandler.endTime.After(createdAt)) {
 				continue
 			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])

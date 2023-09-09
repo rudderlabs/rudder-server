@@ -1,4 +1,4 @@
-package replay
+package replayer
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/replay/dumpsloader"
+	"github.com/rudderlabs/rudder-server/enterprise/replay/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -23,7 +24,9 @@ type Handler struct {
 	toDB                     *jobsdb.Handle
 	noOfWorkers              int
 	workers                  []*SourceWorkerT
-	dumpsLoader              *dumpsloader.dumpsLoaderHandleT
+	dumpsLoader              dumpsloader.DumpsLoader
+	startTime                time.Time
+	endTime                  time.Time
 	dbReadSize               int
 	tablePrefix              string
 	uploader                 filemanager.FileManager
@@ -73,7 +76,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 				}
 			}
 
-			if handle.dumpsLoader.done {
+			if handle.dumpsLoader.IsDone() {
 				breakLoop = true
 			}
 
@@ -148,7 +151,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, config *config.Config, dumpsLoader *dumpsloader.dumpsLoaderHandleT, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+func (handle *Handler) Setup(ctx context.Context, config *config.Config, dumpsLoader dumpsloader.DumpsLoader, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	handle.log = log
 	handle.db = db
 	handle.toDB = toDB
@@ -159,6 +162,9 @@ func (handle *Handler) Setup(ctx context.Context, config *config.Config, dumpsLo
 	handle.dbReadSize = config.GetInt("DB_READ_SIZE", 10)
 	handle.tablePrefix = tablePrefix
 	handle.initSourceWorkersChannel = make(chan bool)
+	startTime, endTime, _ := utils.GetStartAndEndTime(config)
+	handle.startTime = startTime
+	handle.endTime = endTime
 
 	go handle.initSourceWorkers(ctx)
 	go handle.generatorLoop(ctx)
