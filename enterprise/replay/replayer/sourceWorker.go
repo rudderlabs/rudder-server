@@ -28,7 +28,7 @@ type SourceWorkerT struct {
 	log           logger.Logger
 	channel       chan *jobsdb.JobT
 	workerID      int
-	replayHandler *Handler
+	replayHandler *Replayer
 	tablePrefix   string
 	transformer   transformer.Transformer
 	uploader      filemanager.FileManager
@@ -125,7 +125,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.startTime.Before(createdAt) && worker.replayHandler.endTime.After(createdAt)) {
+			if !(worker.replayHandler.config.startTime.Before(createdAt) && worker.replayHandler.config.endTime.After(createdAt)) {
 				continue
 			}
 			job := jobsdb.JobT{
@@ -184,7 +184,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.startTime.Before(createdAt) && worker.replayHandler.endTime.After(createdAt)) {
+			if !(worker.replayHandler.config.startTime.Before(createdAt) && worker.replayHandler.config.endTime.After(createdAt)) {
 				continue
 			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])

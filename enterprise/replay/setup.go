@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/replay/dumpsloader"
-	replayer2 "github.com/rudderlabs/rudder-server/enterprise/replay/replayer"
+	"github.com/rudderlabs/rudder-server/enterprise/replay/replayer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -67,7 +67,6 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	}
 	dumpsLoader.Start()
 	defer dumpsLoader.Stop()
-	var replayer replayer2.Handler
 	var toDB *jobsdb.Handle
 	switch replayToDB {
 	case "gw":
@@ -84,6 +83,10 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 		return err
 	}
 	defer toDB.Stop()
-	replayer.Setup(ctx, config, dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, m.Log)
-	return nil
+	setup, err := replayer.Setup(ctx, config, dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, m.Log)
+	if err != nil {
+		return err
+	}
+	setup.Start()
+	return setup.Stop()
 }

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/replay/dumpsloader"
 	"github.com/rudderlabs/rudder-server/enterprise/replay/utils"
@@ -17,23 +19,35 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
-type Handler struct {
+type Replay interface {
+	Start()
+	Stop() error
+}
+
+type Replayer struct {
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	g                        errgroup.Group
 	log                      logger.Logger
-	bucket                   string
 	db                       *jobsdb.Handle
 	toDB                     *jobsdb.Handle
-	noOfWorkers              int
-	workers                  []*SourceWorkerT
 	dumpsLoader              dumpsloader.DumpsLoader
-	startTime                time.Time
-	endTime                  time.Time
-	dbReadSize               int
-	tablePrefix              string
 	uploader                 filemanager.FileManager
+	config                   replayConfig
+	workers                  []*SourceWorkerT
 	initSourceWorkersChannel chan bool
 }
 
-func (handle *Handler) generatorLoop(ctx context.Context) {
+type replayConfig struct {
+	bucket      string
+	startTime   time.Time
+	endTime     time.Time
+	noOfWorkers int
+	dbReadSize  int
+	tablePrefix string
+}
+
+func (handle *Replayer) generatorLoop(ctx context.Context) {
 	handle.log.Infof("generator reading from replay_jobs_* started")
 	var breakLoop bool
 	select {
@@ -45,7 +59,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 	for {
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{"replay"},
-			JobsLimit:        handle.dbReadSize,
+			JobsLimit:        handle.config.dbReadSize,
 		}
 		jobsResult, err := handle.db.GetJobs(context.TODO(), []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
 		if err != nil {
@@ -63,7 +77,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 					[]string{jobsdb.Executing.State},
 					jobsdb.GetQueryParams{
 						CustomValFilters: []string{"replay"},
-						JobsLimit:        handle.dbReadSize,
+						JobsLimit:        handle.config.dbReadSize,
 					},
 				)
 				if err != nil {
@@ -99,7 +113,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		var toProcess []workerJobT
 
 		for _, job := range combinedList {
-			w := handle.workers[rand.Intn(handle.noOfWorkers)]
+			w := handle.workers[rand.Intn(handle.config.noOfWorkers)]
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				JobState:      jobsdb.Executing.State,
@@ -133,15 +147,15 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 	}
 }
 
-func (handle *Handler) initSourceWorkers(ctx context.Context) {
-	handle.workers = make([]*SourceWorkerT, handle.noOfWorkers)
-	for i := 0; i < handle.noOfWorkers; i++ {
+func (handle *Replayer) initSourceWorkers(ctx context.Context) {
+	handle.workers = make([]*SourceWorkerT, handle.config.noOfWorkers)
+	for i := 0; i < handle.config.noOfWorkers; i++ {
 		worker := &SourceWorkerT{
 			log:           handle.log,
-			channel:       make(chan *jobsdb.JobT, handle.dbReadSize),
+			channel:       make(chan *jobsdb.JobT, handle.config.dbReadSize),
 			workerID:      i,
 			replayHandler: handle,
-			tablePrefix:   handle.tablePrefix,
+			tablePrefix:   handle.config.tablePrefix,
 			uploader:      handle.uploader,
 		}
 		handle.workers[i] = worker
@@ -151,21 +165,46 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, config *config.Config, dumpsLoader dumpsloader.DumpsLoader, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
-	handle.log = log
-	handle.db = db
-	handle.toDB = toDB
-	handle.bucket = bucket
-	handle.uploader = uploader
-	handle.noOfWorkers = config.GetInt("WORKERS_PER_SOURCE", 4)
-	handle.dumpsLoader = dumpsLoader
-	handle.dbReadSize = config.GetInt("DB_READ_SIZE", 10)
-	handle.tablePrefix = tablePrefix
+func Setup(ctx context.Context, config *config.Config, dumpsLoader dumpsloader.DumpsLoader, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) (Replay, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	handle := &Replayer{
+		ctx:         ctx,
+		cancel:      cancel,
+		g:           errgroup.Group{},
+		log:         log,
+		db:          db,
+		toDB:        toDB,
+		dumpsLoader: dumpsLoader,
+		uploader:    uploader,
+		config: replayConfig{
+			bucket:      bucket,
+			tablePrefix: tablePrefix,
+			noOfWorkers: config.GetInt("WORKERS_PER_SOURCE", 4),
+			dbReadSize:  config.GetInt("DB_READ_SIZE", 10),
+		},
+	}
 	handle.initSourceWorkersChannel = make(chan bool)
-	startTime, endTime, _ := utils.GetStartAndEndTime(config)
-	handle.startTime = startTime
-	handle.endTime = endTime
+	startTime, endTime, err := utils.GetStartAndEndTime(config)
+	if err != nil {
+		return nil, err
+	}
+	handle.config.startTime = startTime
+	handle.config.endTime = endTime
+	return handle, nil
+}
 
-	go handle.initSourceWorkers(ctx)
-	go handle.generatorLoop(ctx)
+func (handle *Replayer) Start() {
+	handle.g.Go(func() error {
+		handle.initSourceWorkers(handle.ctx)
+		return nil
+	})
+	handle.g.Go(func() error {
+		handle.generatorLoop(handle.ctx)
+		return nil
+	})
+}
+
+func (handle *Replayer) Stop() error {
+	handle.cancel()
+	return handle.g.Wait()
 }
