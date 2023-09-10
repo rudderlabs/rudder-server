@@ -29,12 +29,22 @@ func reportViolations(validateEvent *transformer.TransformerResponse, trackingPl
 	validationErrors := validateEvent.ValidationErrors
 	output := validateEvent.Output
 
-	eventContext, castOk := output["context"].(map[string]interface{})
-	if castOk {
-		eventContext["trackingPlanId"] = trackingPlanId
-		eventContext["trackingPlanVersion"] = trackingPlanVersion
-		eventContext["violationErrors"] = validationErrors
+	eventContext, ok := output["context"]
+	if !ok || eventContext == nil {
+		context := make(map[string]interface{})
+		context["trackingPlanId"] = trackingPlanId
+		context["trackingPlanVersion"] = trackingPlanVersion
+		context["violationErrors"] = validationErrors
+		output["context"] = context
+		return
 	}
+	context, castOk := eventContext.(map[string]interface{})
+	if !castOk {
+		return
+	}
+	context["trackingPlanId"] = trackingPlanId
+	context["trackingPlanVersion"] = trackingPlanVersion
+	context["violationErrors"] = validationErrors
 }
 
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:

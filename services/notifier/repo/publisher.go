@@ -60,7 +60,7 @@ func (n *Notifier) Insert(
 			workspaceIdentifier,
 			publishRequest.Priority,
 			publishRequest.JobType,
-			version,
+			topic,
 			now.UTC(),
 			now.UTC(),
 		)

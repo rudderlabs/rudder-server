@@ -440,10 +440,11 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifierInstance.RunMaintenanceWorker(gCtx)
-		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifierInstance.ClearJobs(gCtx)
+			if err := notifierInstance.ClearJobs(gCtx); err != nil {
+				return fmt.Errorf("unable to clear notifier jobs: %w", err)
+			}
+
+			return notifierInstance.RunMaintenance(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -484,7 +485,7 @@ func Start(ctx context.Context, app app.App) error {
 		return api.Start(gCtx)
 	})
 	g.Go(func() error {
-		<-ctx.Done()
+		<-gCtx.Done()
 		return notifierInstance.Shutdown()
 	})
 

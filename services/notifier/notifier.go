@@ -58,10 +58,10 @@ type Notifier struct {
 	batchIDGenerator    func() uuid.UUID
 	now                 func() time.Time
 	background          struct {
-		group  *errgroup.Group
-		ctx    context.Context
-		cancel context.CancelFunc
-		wait   func() error
+		group       *errgroup.Group
+		groupCtx    context.Context
+		groupCancel context.CancelFunc
+		groupWait   func() error
 	}
 
 	config struct {
@@ -84,6 +84,7 @@ type Notifier struct {
 		publish            stats.Counter
 		publishTime        stats.Timer
 		claimLag           stats.Timer
+		trackBatch         stats.Counter
 		trackBatchLag      stats.Timer
 		claimSucceeded     stats.Counter
 		claimSucceededTime stats.Timer
@@ -91,6 +92,7 @@ type Notifier struct {
 		claimFailedTime    stats.Timer
 		claimUpdateFailed  stats.Counter
 		abortedRecords     stats.Counter
+		orphanJobs         stats.Counter
 	}
 }
 
@@ -126,8 +128,8 @@ func New(
 	n.conf.RegisterDurationConfigVariable(5000, &n.config.maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	n.conf.RegisterDurationConfigVariable(120, &n.config.jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 
-	n.stats.insertRecords = n.statsFactory.NewTaggedStat("pg_notifier_insert_records", stats.CountType, stats.Tags{
-		"module":    module,
+	n.stats.insertRecords = n.statsFactory.NewTaggedStat("pg_notifier.insert_records", stats.CountType, stats.Tags{
+		"module":    "pg_notifier",
 		"queueName": queueName,
 	})
 	n.stats.publish = n.statsFactory.NewTaggedStat("pgnotifier.publish", stats.CountType, stats.Tags{
@@ -148,6 +150,9 @@ func New(
 	n.stats.claimLag = n.statsFactory.NewTaggedStat("pgnotifier.claimLag", stats.TimerType, stats.Tags{
 		"module": module,
 	})
+	n.stats.trackBatch = n.statsFactory.NewTaggedStat("pgnotifier.trackBatchLag", stats.CountType, stats.Tags{
+		"module": module,
+	})
 	n.stats.trackBatchLag = n.statsFactory.NewTaggedStat("pgnotifier.trackBatchLag", stats.TimerType, stats.Tags{
 		"module": module,
 	})
@@ -159,7 +164,11 @@ func New(
 		"module": module,
 		"status": string(model.Failed),
 	})
-	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, stats.Tags{
+	n.stats.orphanJobs = n.statsFactory.NewTaggedStat("pg_notifier.orphanJobs", stats.CountType, stats.Tags{
+		"module":    module,
+		"queueName": queueName,
+	})
+	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier.aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,
 		"module":    "pg_notifier",
 		"queueName": queueName,
@@ -182,9 +191,9 @@ func (n *Notifier) Setup(
 	n.repo = repo.NewNotifier(n.db)
 
 	groupCtx, groupCancel := context.WithCancel(ctx)
-	n.background.group, n.background.ctx = errgroup.WithContext(groupCtx)
-	n.background.cancel = groupCancel
-	n.background.wait = n.background.group.Wait
+	n.background.group, n.background.groupCtx = errgroup.WithContext(groupCtx)
+	n.background.groupCancel = groupCancel
+	n.background.groupWait = n.background.group.Wait
 
 	return nil
 }
@@ -231,7 +240,6 @@ func (n *Notifier) setupDatabase(
 	if err := n.setupTables(); err != nil {
 		return fmt.Errorf("could not setup tables: %w", err)
 	}
-
 	return nil
 }
 
@@ -254,7 +262,6 @@ func (n *Notifier) setupTables() error {
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue: %w", err)
 	}
-
 	return nil
 }
 
@@ -292,8 +299,9 @@ func (n *Notifier) Publish(
 
 	n.logger.Infof("Inserted %d records into %s for batch: %s", len(publishRequest.Payloads), queueName, batchID)
 
+	n.stats.insertRecords.Count(len(publishRequest.Payloads))
+
 	defer func() {
-		n.stats.insertRecords.Count(len(publishRequest.Payloads))
 		n.stats.publishTime.Since(publishStartTime)
 		n.stats.publish.Increment()
 	}()
@@ -308,15 +316,17 @@ func (n *Notifier) trackBatch(
 ) <-chan *model.PublishResponse {
 	publishResCh := make(chan *model.PublishResponse)
 
+	n.stats.trackBatchLag.RecordDuration()()
+	n.stats.trackBatch.Increment()
+
 	n.background.group.Go(func() error {
 		defer close(publishResCh)
-		defer n.stats.trackBatchLag.RecordDuration()()
 
 		onUpdate := func(response *model.PublishResponse) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-n.background.ctx.Done():
+			case <-n.background.groupCtx.Done():
 				return
 			case publishResCh <- response:
 			}
@@ -326,7 +336,7 @@ func (n *Notifier) trackBatch(
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-n.background.ctx.Done():
+			case <-n.background.groupCtx.Done():
 				return nil
 			case <-time.After(n.config.trackBatchInterval):
 			}
@@ -366,7 +376,6 @@ func (n *Notifier) trackBatch(
 			return nil
 		}
 	})
-
 	return publishResCh
 }
 
@@ -420,7 +429,7 @@ func (n *Notifier) Subscribe(
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-n.background.ctx.Done():
+			case <-n.background.groupCtx.Done():
 				return nil
 			case <-time.After(pollSleep):
 			}
@@ -437,6 +446,9 @@ func (n *Notifier) claim(
 	claimStartTime := n.now()
 
 	claimedJob, metadata, err := n.repo.Claim(ctx, workerID)
+	if err == sql.ErrNoRows {
+		return nil, nil, fmt.Errorf("no jobs found: %w", err)
+	}
 	if err != nil {
 		n.stats.claimFailedTime.Since(claimStartTime)
 		n.stats.claimFailed.Increment()
@@ -479,9 +491,9 @@ func (n *Notifier) UpdateClaim(
 	}
 }
 
-// RunMaintenanceWorker re-triggers zombie jobs which were left behind by dead workers in executing state
+// RunMaintenance re-triggers zombie jobs which were left behind by dead workers in executing state
 // Since it's a blocking call, it should be run in a separate goroutine
-func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
+func (n *Notifier) RunMaintenance(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum64([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), n.db.DB)
 	if err != nil {
@@ -526,7 +538,10 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 			}
 		}
 
-		n.logger.Debugf("Re-triggered job ids: %v", orphanJobIDs)
+		if len(orphanJobIDs) > 0 {
+			n.logger.Infof("Re-triggered job ids: %v", orphanJobIDs)
+			n.stats.orphanJobs.Count(len(orphanJobIDs))
+		}
 
 		select {
 		case <-ctx.Done():
@@ -539,6 +554,7 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 // Shutdown waits for all the background jobs to be drained off.
 func (n *Notifier) Shutdown() error {
 	n.logger.Infof("Shutting down notifier")
-	n.background.cancel()
+
+	n.background.groupCancel()
 	return n.background.group.Wait()
 }

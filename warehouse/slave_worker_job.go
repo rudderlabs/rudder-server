@@ -413,7 +413,7 @@ func (jr *jobRun) writer(tableName string) (encoding.LoadFileWriter, error) {
 		return writer, nil
 	}
 
-	outputFilePath := jr.loadFilePath(tableName)
+	outputFilePath := jr.loadFilePath()
 
 	writer, err := jr.encodingFactory.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
 	if err != nil {
@@ -426,10 +426,9 @@ func (jr *jobRun) writer(tableName string) (encoding.LoadFileWriter, error) {
 	return writer, nil
 }
 
-func (jr *jobRun) loadFilePath(tableName string) string {
-	return fmt.Sprintf("%s%s.%s.%s.%s",
-		strings.TrimSuffix(jr.stagingFilePath, "json.gz"),
-		tableName,
+func (jr *jobRun) loadFilePath() string {
+	return fmt.Sprintf("%s.%s.%s.%s",
+		strings.TrimSuffix(jr.stagingFilePath, ".json.gz"),
 		jr.job.SourceID,
 		misc.FastUUID().String(),
 		warehouseutils.GetLoadFileFormat(jr.job.LoadFileType),
