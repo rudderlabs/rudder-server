@@ -420,8 +420,6 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 }
 
 func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
-	Init4()
-
 	testCases := []struct {
 		name           string
 		mockSchema     model.Schema
