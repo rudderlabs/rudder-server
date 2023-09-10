@@ -66,6 +66,9 @@ func TestNotifierRepo(t *testing.T) {
 		Priority:        50,
 	}
 
+	cancelledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
 	t.Run("Insert and get", func(t *testing.T) {
 		t.Run("create notifier", func(t *testing.T) {
 			batchID := uuid.New().String()
@@ -101,15 +104,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
+			jobs, jobMetadata, err := r.GetByBatchID(cancelledCtx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, jobs)
 			require.Nil(t, jobMetadata)
@@ -138,15 +138,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = r.DeleteByBatchID(ctx, batchID)
+			err = r.DeleteByBatchID(cancelledCtx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	})
@@ -219,15 +216,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = r.ResetForWorkspace(ctx, batchID)
+			err = r.ResetForWorkspace(cancelledCtx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 
@@ -261,15 +255,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			pendingCount, err := r.PendingByBatchID(ctx, batchID)
+			pendingCount, err := r.PendingByBatchID(cancelledCtx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Zero(t, pendingCount)
 		})
@@ -326,15 +317,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			jobIDs, err := r.OrphanJobIDs(ctx, 0)
+			jobIDs, err := r.OrphanJobIDs(cancelledCtx, 0)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, jobIDs)
 		})
@@ -355,35 +343,36 @@ func TestNotifierRepo(t *testing.T) {
 			err = r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			jobs, _, err := r.GetByBatchID(ctx, batchID)
-			require.NoError(t, err)
-
-			for i, job := range jobs {
-				claimedNotifier, metadata, err := ur.Claim(ctx, workerID+strconv.Itoa(i))
+			t.Run("with jobs", func(t *testing.T) {
+				jobs, _, err := r.GetByBatchID(ctx, batchID)
 				require.NoError(t, err)
-				require.EqualValues(t, metadata, json.RawMessage(`{"mid": "1"}`))
-				require.EqualValues(t, claimedNotifier.ID, job.ID)
-				require.EqualValues(t, claimedNotifier.Status, model.Executing)
-				require.EqualValues(t, claimedNotifier.WorkerID, workerID+strconv.Itoa(i))
-				require.EqualValues(t, claimedNotifier.LastExecTime.UTC(), uNow.UTC())
-			}
 
-			claimedNotifier, metadata, err := ur.Claim(ctx, workerID)
-			require.ErrorIs(t, err, sql.ErrNoRows)
-			require.Nil(t, claimedNotifier)
-			require.Nil(t, metadata)
+				for i, job := range jobs {
+					claimedNotifier, metadata, err := ur.Claim(ctx, workerID+strconv.Itoa(i))
+					require.NoError(t, err)
+					require.EqualValues(t, metadata, json.RawMessage(`{"mid": "1"}`))
+					require.EqualValues(t, claimedNotifier.ID, job.ID)
+					require.EqualValues(t, claimedNotifier.Status, model.Executing)
+					require.EqualValues(t, claimedNotifier.WorkerID, workerID+strconv.Itoa(i))
+					require.EqualValues(t, claimedNotifier.LastExecTime.UTC(), uNow.UTC())
+				}
+			})
+
+			t.Run("no jobs", func(t *testing.T) {
+				claimedNotifier, metadata, err := ur.Claim(ctx, workerID)
+				require.ErrorIs(t, err, sql.ErrNoRows)
+				require.Nil(t, claimedNotifier)
+				require.Nil(t, metadata)
+			})
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			claimedNotifier, metadata, err := ur.Claim(ctx, workerID)
+			claimedNotifier, metadata, err := ur.Claim(cancelledCtx, workerID)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, claimedNotifier)
 			require.Nil(t, metadata)
@@ -421,15 +410,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnClaimSuccess(ctx, &model.Job{ID: 1}, nil)
+			err = ur.OnClaimSuccess(cancelledCtx, &model.Job{ID: 1}, nil)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	})
@@ -489,15 +475,12 @@ func TestNotifierRepo(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			err := r.Insert(cancelledCtx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnClaimFailed(ctx, &model.Job{ID: 1}, errors.New("test_error"), 0)
+			err = ur.OnClaimFailed(cancelledCtx, &model.Job{ID: 1}, errors.New("test_error"), 0)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	})

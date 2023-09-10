@@ -21,7 +21,7 @@ type archiver struct {
 	jobsDB          jobsdb.JobsDB
 	storageProvider fileuploader.Provider
 	log             logger.Logger
-	statHandle      stats.Stats
+	stats           stats.Stats
 
 	archiveTrigger           func() <-chan time.Time
 	adaptivePayloadLimitFunc payload.AdaptiveLimiterFunc
@@ -53,7 +53,7 @@ func New(
 		jobsDB:          jobsDB,
 		storageProvider: storageProvider,
 		log:             logger.NewLogger().Child("archiver"),
-		statHandle:      statHandle,
+		stats:           statHandle,
 
 		archiveFrom: "gw",
 		archiveTrigger: func() <-chan time.Time {
@@ -108,21 +108,21 @@ func (a *archiver) Start() error {
 		&limiterGroup,
 		"arc_fetch",
 		a.config.concurrency(),
-		a.statHandle,
+		a.stats,
 	)
 	uploadLimit := kitsync.NewLimiter(
 		ctx,
 		&limiterGroup,
 		"arc_upload",
 		a.config.concurrency(),
-		a.statHandle,
+		a.stats,
 	)
 	statusUpdateLimit := kitsync.NewLimiter(
 		ctx,
 		&limiterGroup,
 		"arc_update",
 		a.config.concurrency(),
-		a.statHandle,
+		a.stats,
 	)
 
 	g.Go(func() error {
@@ -139,6 +139,7 @@ func (a *archiver) Start() error {
 					storageProvider:  a.storageProvider,
 					archiveFrom:      a.archiveFrom,
 					payloadLimitFunc: a.adaptivePayloadLimitFunc,
+					stats:            a.stats,
 				}
 				w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(ctx)
 				w.config.payloadLimit = a.config.payloadLimit
@@ -162,7 +163,9 @@ func (a *archiver) Start() error {
 		// pinger loop
 		for {
 			if a.config.enabled() {
+				start := time.Now()
 				sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
+				a.stats.NewStat("arc_active_partitions_time", stats.TimerType).Since(start)
 				if err != nil {
 					if ctx.Err() != nil {
 						return err
@@ -170,6 +173,7 @@ func (a *archiver) Start() error {
 					a.log.Errorw("Failed to fetch sources", "error", err)
 					continue
 				}
+				a.stats.NewStat("arc_active_partitions", stats.GaugeType).Gauge(len(sources))
 				for _, source := range sources {
 					workerPool.PingWorker(source)
 				}

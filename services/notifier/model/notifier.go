@@ -12,7 +12,16 @@ const (
 	JobTypeAsync  JobType = "async_job"
 )
 
-// Job a domain model for a notifier.
+type JobStatus string
+
+const (
+	Waiting   JobStatus = "waiting"
+	Executing JobStatus = "executing"
+	Succeeded JobStatus = "succeeded"
+	Failed    JobStatus = "failed"
+	Aborted   JobStatus = "aborted"
+)
+
 type Job struct {
 	ID                  int64
 	BatchID             string

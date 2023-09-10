@@ -1,6 +1,6 @@
 run:
   timeout: 7m
-  go: '1.20'
+  go: '1.21'
   skip-dirs:
     - enterprise
     - event-schema
@@ -13,9 +13,10 @@ linters:
     - govet
     - ineffassign
     - staticcheck
-    - structcheck
     - typecheck
     - unused
+    - unparam
+    - unconvert
     - varcheck
     - bodyclose
     - decorder
@@ -60,40 +61,11 @@ issues:
 
 linters-settings:
   depguard:
-    # Kind of list is passed in.
-    # Allowed values: allowlist|denylist
-    # Default: denylist
-    list-type: denylist
-    # Check the list against standard lib.
-    # Default: false
-    include-go-root: true
-    # A list of packages for the list type specified.
-    # Can accept both string prefixes and string glob patterns.
-    # Default: []
-    # packages:
-    #   - foo/hardcoded
-    # A list of packages for the list type specified.
-    # Specify an error message to output when a denied package is used.
-    # Default: []
-    # packages-with-error-message:
-    #   - foo/hardcoded: 'use bar/hardcoded instead'
-    # Specify rules by which the linter ignores certain files for consideration.
-    # Can accept both string prefixes and string glob patterns.
-    # The ! character in front of the rule is a special character
-    # which signals that the linter should negate the rule.
-    # This allows for more precise control, but it is only available for glob patterns.
-    # Default: []
-    # ignore-file-rules:
-    #   - "**/test_*.go"
-    # # Create additional guards that follow the same configuration pattern.
-    # # Results from all guards are aggregated together.
-    additional-guards:
-      - list-type: denylist
-        include-go-root: false
-        packages:
-          - github.com/gofrs/uuid
-        packages-with-error-message:
-          - github.com/gofrs/uuid: 'use github.com/google/uuid instead'
-        # Specify rules by which the linter ignores certain files for consideration.
-        ignore-file-rules:
-          - "**/uuid_test.go"
+    rules:
+      main:
+        files:
+          - $all
+          - "!**/uuid_test.go"
+        deny:
+          - pkg: "github.com/gofrs/uuid"
+            desc: 'use github.com/google/uuid instead'
