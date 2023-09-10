@@ -121,7 +121,6 @@ type UploadJob struct {
 		maxUploadBackoff                                 time.Duration
 		alwaysRegenerateAllLoadFiles                     bool
 		reportingEnabled                                 bool
-		generateTableLoadCountMetrics                    bool
 		disableGenerateTableLoadCountMetricsWorkspaceIDs []string
 		maxParallelLoadsWorkspaceIDs                     map[string]interface{}
 		columnsBatchSize                                 int
@@ -221,16 +220,9 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
 	uj.config.alwaysRegenerateAllLoadFiles = f.conf.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-	uj.config.generateTableLoadCountMetrics = f.conf.GetBool("Warehouse.generateTableLoadCountMetrics", true)
-	uj.config.disableGenerateTableLoadCountMetricsWorkspaceIDs = f.conf.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil)
 	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", warehouseutils.WHDestNameMap[uj.upload.DestinationType]), 100)
 	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[uj.upload.DestinationType]), nil)
 
-	if f.conf.IsSet("Warehouse.tableCountQueryTimeout") {
-		uj.config.tableCountQueryTimeout = f.conf.GetDuration("Warehouse.tableCountQueryTimeout", 30, time.Second)
-	} else {
-		uj.config.tableCountQueryTimeout = f.conf.GetDuration("Warehouse.tableCountQueryTimeoutInS", 30, time.Second)
-	}
 	if f.conf.IsSet("Warehouse.longRunningUploadStatThreshold") {
 		uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDuration("Warehouse.longRunningUploadStatThreshold", 120, time.Minute)
 	} else {
@@ -1044,30 +1036,6 @@ func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error)
 	return
 }
 
-func (job *UploadJob) getTotalCount(tName string) (int64, error) {
-	var (
-		total    int64
-		countErr error
-	)
-
-	operation := func() error {
-		ctx, cancel := context.WithTimeout(job.ctx, job.config.tableCountQueryTimeout)
-		defer cancel()
-
-		total, countErr = job.whManager.GetTotalCountInTable(ctx, tName)
-		return countErr
-	}
-
-	expBackoff := backoff.NewExponentialBackOff()
-	expBackoff.InitialInterval = 5 * time.Second
-	expBackoff.RandomizationFactor = 0
-	expBackoff.Reset()
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
-	err := backoff.Retry(operation, backoffWithMaxRetry)
-	return total, err
-}
-
 func (job *UploadJob) loadTable(tName string) (bool, error) {
 	alteredSchema, err := job.updateSchema(tName)
 	if err != nil {
@@ -1098,28 +1066,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		LastExecTime: &lastExecTime,
 	})
 
-	generateTableLoadCountVerificationsMetrics := job.config.generateTableLoadCountMetrics
-	if slices.Contains(job.config.disableGenerateTableLoadCountMetricsWorkspaceIDs, job.upload.WorkspaceID) {
-		generateTableLoadCountVerificationsMetrics = false
-	}
-
-	var totalBeforeLoad, totalAfterLoad int64
-	if generateTableLoadCountVerificationsMetrics {
-		var errTotalCount error
-		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
-		if errTotalCount != nil {
-			job.logger.Warnw("total count in table before loading",
-				logfield.SourceID, job.upload.SourceID,
-				logfield.DestinationID, job.upload.DestinationID,
-				logfield.DestinationType, job.upload.DestinationType,
-				logfield.WorkspaceID, job.upload.WorkspaceID,
-				logfield.Error, errTotalCount,
-				logfield.TableName, tName,
-			)
-		}
-	}
-
-	_, err = job.whManager.LoadTable(job.ctx, tName)
+	loadTableStat, err := job.whManager.LoadTable(job.ctx, tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -1129,34 +1076,25 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		})
 		return alteredSchema, fmt.Errorf("load table: %w", err)
 	}
+	if loadTableStat.RowsUpdated > 0 {
+		job.statsFactory.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+			"sourceID":       job.warehouse.Source.ID,
+			"sourceType":     job.warehouse.Source.SourceDefinition.Name,
+			"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
+			"destID":         job.warehouse.Destination.ID,
+			"destType":       job.warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId":    job.warehouse.WorkspaceID,
+			"tableName":      tName,
+		}).Count(int(loadTableStat.RowsUpdated))
+	}
 
-	func() {
-		if !generateTableLoadCountVerificationsMetrics {
-			return
-		}
-		var errTotalCount error
-		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
-		if errTotalCount != nil {
-			job.logger.Warnw("total count in table after loading",
-				logfield.SourceID, job.upload.SourceID,
-				logfield.DestinationID, job.upload.DestinationID,
-				logfield.DestinationType, job.upload.DestinationType,
-				logfield.WorkspaceID, job.upload.WorkspaceID,
-				logfield.Error, errTotalCount,
-				logfield.TableName, tName,
-			)
-			return
-		}
-		tableUpload, errEventCount := job.tableUploadsRepo.GetByUploadIDAndTableName(job.ctx, job.upload.ID, tName)
-		if errEventCount != nil {
-			return
-		}
+	tableUpload, errEventCount := job.tableUploadsRepo.GetByUploadIDAndTableName(job.ctx, job.upload.ID, tName)
+	if errEventCount != nil {
+		return alteredSchema, fmt.Errorf("get table upload: %w", errEventCount)
+	}
 
-		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + tableUpload.TotalEvents))
-		job.guageStat(`post_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
-	}()
+	job.guageStat(`post_load_table_rows_estimate`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(tableUpload.TotalEvents))
+	job.guageStat(`post_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(loadTableStat.RowsInserted))
 
 	status = model.TableUploadExported
 	_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tName, repo.TableUploadSetOptions{

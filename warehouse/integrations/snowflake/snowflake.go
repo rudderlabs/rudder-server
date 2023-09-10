@@ -7,11 +7,13 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/samber/lo"
 
@@ -384,8 +386,8 @@ func (sf *Snowflake) loadTable(
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	if sf.ShouldAppend() {
-		var rowsCopied int64
-		rowsCopied, err = sf.copyInto(
+		var rowsInserted int64
+		rowsInserted, err = sf.copyInto(
 			ctx, db, schemaIdentifier, tableName,
 			sortedColumnNames, tableName, log,
 		)
@@ -400,8 +402,7 @@ func (sf *Snowflake) loadTable(
 			stagingTable: tableName,
 		}
 		loadTableStats := &types.LoadTableStats{
-			RowsInserted: rowsCopied,
-			RowsUpdated:  int64(0),
+			RowsInserted: rowsInserted,
 		}
 		return loadTableStats, resp, nil
 	}
@@ -426,7 +427,7 @@ func (sf *Snowflake) loadTable(
 		sortedColumnNames, stagingTableName, log,
 	)
 	if err != nil {
-		return nil, tableLoadResp{}, err
+		return nil, tableLoadResp{}, fmt.Errorf("copy into: %w", err)
 	}
 
 	var (
@@ -608,7 +609,11 @@ func (sf *Snowflake) copyInto(
 		return 0, fmt.Errorf("getting sample load file location: %w", err)
 	}
 
-	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
+	loadFolder := whutils.GetObjectFolder(
+		sf.ObjectStorage,
+		csvObjectLocation,
+	)
+
 	copyStmt := fmt.Sprintf(
 		`COPY INTO
 			%s.%q(%v)
@@ -622,32 +627,52 @@ func (sf *Snowflake) copyInto(
 		loadFolder,
 		sf.authString(),
 	)
+	log.Infow("copy command")
 
-	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(copyStmt, map[string]string{
-		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-	})
-	if regexErr != nil {
-		sanitisedQuery = ""
-	}
-	log.Infow("copy command", lf.Query, sanitisedQuery)
-
-	r, err := db.ExecContext(ctx, copyStmt)
+	rows, err := db.QueryContext(ctx, copyStmt)
 	if err != nil {
-		log.Warnw("failure running COPY command",
-			lf.Query, sanitisedQuery,
-			lf.Error, err.Error(),
-		)
 		return 0, fmt.Errorf("copy into table: %w", err)
 	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
-	rowsCopied, err := r.RowsAffected()
+	columns, err := rows.Columns()
 	if err != nil {
-		return 0, fmt.Errorf("copy into table: getting rows affected: %w", err)
+		return 0, fmt.Errorf("getting columns: %w", err)
+	}
+	_, index, found := lo.FindIndexOf(columns, func(item string) bool {
+		return item == "rows_loaded"
+	})
+	if !found {
+		return 0, nil
 	}
 
-	return rowsCopied, nil
+	resultSet := make([]interface{}, len(columns))
+	resultSetPtrs := make([]interface{}, len(columns))
+	for i := 0; i < len(columns); i++ {
+		resultSetPtrs[i] = &resultSet[i]
+	}
+	rowsInserted := int64(0)
+
+	for rows.Next() {
+		if err := rows.Scan(resultSetPtrs...); err != nil {
+			return 0, fmt.Errorf("scanning row: %w", err)
+		}
+		countString, ok := resultSet[index].(string)
+		if !ok {
+			return 0, fmt.Errorf("count not a string")
+		}
+		count, err := strconv.Atoi(countString)
+		if err != nil {
+			return 0, fmt.Errorf("converting rows loaded: %w", err)
+		}
+		rowsInserted += int64(count)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterating over rows: %w", err)
+	}
+	return rowsInserted, nil
 }
 
 func (sf *Snowflake) mergeIntoStmt(
@@ -1452,22 +1477,6 @@ func (sf *Snowflake) LoadTable(ctx context.Context, tableName string) (*types.Lo
 		false,
 	)
 	return loadTableStat, err
-}
-
-func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
-	var (
-		total        int64
-		err          error
-		sqlStatement string
-	)
-	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM %[1]s.%[2]q;
-	`,
-		sf.schemaIdentifier(),
-		tableName,
-	)
-	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	return total, err
 }
 
 func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {

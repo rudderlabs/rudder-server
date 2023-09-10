@@ -3,8 +3,9 @@ package manager
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -40,7 +41,6 @@ type Manager interface {
 	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error
-	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error)
 	LoadTestTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)

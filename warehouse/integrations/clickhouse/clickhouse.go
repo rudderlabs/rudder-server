@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 	"io"
 	"net/url"
 	"os"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -1034,8 +1035,24 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 }
 
 func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	err := ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
-	return nil, err
+	preLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("pre load table count: %w", err)
+	}
+
+	err = ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
+	if err != nil {
+		return nil, fmt.Errorf("loading table: %w", err)
+	}
+
+	postLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("post load table count: %w", err)
+	}
+
+	return &types.LoadTableStats{
+		RowsInserted: postLoadTableCount - preLoadTableCount,
+	}, nil
 }
 
 func (ch *Clickhouse) Cleanup(context.Context) {
@@ -1060,7 +1077,7 @@ func (*Clickhouse) IsEmpty(context.Context, model.Warehouse) (empty bool, err er
 	return
 }
 
-func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (int64, error) {
 	var (
 		total        int64
 		err          error

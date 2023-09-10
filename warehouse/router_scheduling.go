@@ -24,7 +24,6 @@ var (
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
-	startUploadAlways.Store(true)
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule

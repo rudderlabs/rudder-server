@@ -161,17 +161,17 @@ func TestLoadTable(t *testing.T) {
 			{
 				name:            "load file not present",
 				additionalFiles: []string{"testdata/random.csv.gz"},
-				wantError:       errors.New("loading table: executing transaction: opening load file: open testdata/random.csv.gz: no such file or directory"),
+				wantError:       errors.New("loading table: executing transaction: loading data into staging table: opening load file: open testdata/random.csv.gz: no such file or directory"),
 			},
 			{
 				name:      "less records than expected",
 				mockFiles: []string{"less-records.csv.gz"},
-				wantError: errors.New("loading table: executing transaction: missing columns in csv file"),
+				wantError: errors.New("loading table: executing transaction: loading data into staging table: mismatch in number of columns"),
 			},
 			{
 				name:      "bad records",
 				mockFiles: []string{"bad.csv.gz"},
-				wantError: errors.New("loading table: executing transaction: exec statement: pq: invalid input syntax for type timestamp: \"1\""),
+				wantError: errors.New("loading table: executing transaction: executing copyIn statement: pq: invalid input syntax for type timestamp: \"1\""),
 			},
 			{
 				name:      "success",
