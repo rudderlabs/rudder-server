@@ -46,7 +46,7 @@ func (n *Notifier) Claim(
 		workerID,
 		model.Waiting,
 		model.Failed,
-		version,
+		topic,
 	)
 
 	var notifier model.Job
@@ -94,7 +94,7 @@ func (n *Notifier) OnClaimFailed(
 	_, err := n.db.ExecContext(ctx,
 		query,
 		maxAttempt,
-		n.now().UTC().Format(timeFormat),
+		n.now().Format(timeFormat),
 		misc.QuoteLiteral(claimError.Error()),
 		job.ID,
 	)
@@ -122,7 +122,7 @@ func (n *Notifier) OnClaimSuccess(
 		  id = $4;
 	`,
 		model.Succeeded,
-		n.now().UTC().Format(timeFormat),
+		n.now().Format(timeFormat),
 		string(payload),
 		job.ID,
 	)

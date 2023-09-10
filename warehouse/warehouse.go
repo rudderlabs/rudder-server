@@ -76,7 +76,7 @@ type App struct {
 		sslMode  string
 		port     int
 
-		warehouseMode              string
+		mode                       string
 		runningMode                string
 		shouldForceSetLowerVersion bool
 		dbQueryTimeout             time.Duration
@@ -104,7 +104,11 @@ func NewApp(
 		fileManagerFactory: fileManagerFactory,
 	}
 
-	a.conf.RegisterDurationConfigVariable(5, &a.config.dbQueryTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+	if a.conf.IsSet("Warehouse.dbHandleTimeout") {
+		a.config.dbQueryTimeout = a.conf.GetDuration("Warehouse.dbHandleTimeout", 5, time.Minute)
+	} else {
+		a.config.dbQueryTimeout = a.conf.GetDuration("Warehouse.dbHandleTimeoutInMin", 5, time.Minute)
+	}
 
 	a.config.host = conf.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	a.config.user = conf.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
@@ -112,7 +116,7 @@ func NewApp(
 	a.config.database = conf.GetString("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	a.config.sslMode = conf.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	a.config.port = conf.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
-	a.config.warehouseMode = conf.GetString("Warehouse.mode", "embedded")
+	a.config.mode = conf.GetString("Warehouse.mode", "embedded")
 	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
 	a.config.shouldForceSetLowerVersion = conf.GetBool("SQLMigrator.forceSetLowerVersion", true)
 	a.config.maxOpenConnections = conf.GetInt("Warehouse.maxOpenConnections", 20)
@@ -125,11 +129,6 @@ func NewApp(
 }
 
 func (a *App) Setup(ctx context.Context) error {
-	// do not set up warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
-		return nil
-	}
-
 	if err := a.setupDatabase(ctx); err != nil {
 		return fmt.Errorf("setting up database: %w", err)
 	}
@@ -193,7 +192,7 @@ func (a *App) Setup(ctx context.Context) error {
 	}
 
 	a.api = api.NewApi(
-		a.config.warehouseMode,
+		a.config.mode,
 		a.conf,
 		a.logger,
 		a.statsFactory,
@@ -294,12 +293,12 @@ func (a *App) setupTables() error {
 // Start starts the warehouse service
 func (a *App) Start(ctx context.Context) error {
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.warehouseMode) && !db.IsNormalMode() {
+	if !mode.IsStandAlone(a.config.mode) && !db.IsNormalMode() {
 		a.logger.Infof("Skipping start of warehouse service...")
 		return nil
 	}
 
-	a.logger.Infof("WH: Starting Warehouse service...")
+	a.logger.Infof("Starting Warehouse service...")
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -321,12 +320,14 @@ func (a *App) Start(ctx context.Context) error {
 	})
 
 	if mode.IsDegraded(a.config.runningMode) {
-		a.logger.Infof("WH: Running warehouse service in degraded mode...")
+		a.logger.Infof("Running warehouse service in degraded mode...")
 
-		g.Go(func() error {
-			a.grpcServer.Start(gCtx)
-			return nil
-		})
+		if mode.IsMaster(a.config.mode) {
+			g.Go(func() error {
+				a.grpcServer.Start(gCtx)
+				return nil
+			})
+		}
 		g.Go(func() error {
 			return a.api.Start(gCtx)
 		})
@@ -338,7 +339,7 @@ func (a *App) Start(ctx context.Context) error {
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
 	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (mode.IsStandAlone(a.config.warehouseMode) && mode.IsMaster(a.config.warehouseMode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
+	if (mode.IsStandAlone(a.config.mode) && mode.IsMaster(a.config.mode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			reportingClient := a.app.Features().Reporting.Setup(a.bcConfig)
 			reportingClient.AddClient(gCtx, types.Config{
@@ -348,7 +349,7 @@ func (a *App) Start(ctx context.Context) error {
 			return nil
 		}))
 	}
-	if mode.IsStandAlone(a.config.warehouseMode) && mode.IsMaster(a.config.warehouseMode) {
+	if mode.IsStandAlone(a.config.mode) && mode.IsMaster(a.config.mode) {
 		// Report warehouse features
 		g.Go(func() error {
 			a.bcConfig.WaitForConfig(gCtx)
@@ -359,15 +360,15 @@ func (a *App) Start(ctx context.Context) error {
 				info.WarehouseComponent.Features,
 			)
 			if err != nil {
-				a.logger.Errorf("error sending warehouse features: %v", err)
+				a.logger.Errorf("sending warehouse features: %v", err)
 			}
 
 			// We don't want to exit if we fail to send features
 			return nil
 		})
 	}
-	if mode.IsSlave(a.config.warehouseMode) {
-		a.logger.Infof("WH: Starting warehouse slave...")
+	if mode.IsSlave(a.config.mode) {
+		a.logger.Infof("Starting warehouse slave...")
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			s := slave.New(
@@ -382,17 +383,19 @@ func (a *App) Start(ctx context.Context) error {
 			return s.SetupSlave(gCtx)
 		}))
 	}
-	if mode.IsMaster(a.config.warehouseMode) {
-		a.logger.Infof("[WH]: Starting warehouse master...")
+	if mode.IsMaster(a.config.mode) {
+		a.logger.Infof("Starting warehouse master...")
 
 		a.bcConfig.WaitForConfig(ctx)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.notifier.RunMaintenanceWorker(gCtx)
+			if err := a.notifier.ClearJobs(gCtx); err != nil {
+				return fmt.Errorf("unable to clear notifier jobs: %w", err)
+			}
+
+			return a.notifier.RunMaintenance(gCtx)
 		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.notifier.ClearJobs(gCtx)
-		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return a.monitorDestRouters(gCtx)
 		}))
@@ -420,7 +423,7 @@ func (a *App) Start(ctx context.Context) error {
 		return a.api.Start(gCtx)
 	})
 	g.Go(func() error {
-		<-ctx.Done()
+		<-gCtx.Done()
 		return a.notifier.Shutdown()
 	})
 

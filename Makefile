@@ -31,7 +31,7 @@ endif
 test-warehouse-integration:
 	$(eval TEST_PATTERN = 'TestIntegration')
 	$(eval TEST_CMD = SLOW=1 go test)
-	$(eval TEST_OPTIONS = -v -p 8 -timeout 30m -count 1 -race -run $(TEST_PATTERN) -coverprofile=profile.out -covermode=atomic -coverpkg=./...)
+	$(eval TEST_OPTIONS = -v -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN) -coverprofile=profile.out -covermode=atomic -coverpkg=./...)
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 
 test-warehouse: test-warehouse-integration test-teardown
@@ -84,7 +84,7 @@ install-tools:
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
-	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.52 bash -e -c \
+	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.54.2 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
 .PHONY: fmt

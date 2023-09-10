@@ -21,7 +21,7 @@ import (
 
 type slaveNotifier interface {
 	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.ClaimJob
-	RunMaintenanceWorker(ctx context.Context) error
+	RunMaintenance(ctx context.Context) error
 	UpdateClaim(ctx context.Context, job *model.ClaimJob, response *model.ClaimJobResponse)
 }
 
