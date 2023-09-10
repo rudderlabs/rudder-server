@@ -30,4 +30,5 @@ const (
 	StagingTableName           = "stagingTableName"
 	TotalRows                  = "totalRows"
 	SampleDuplicateMessages    = "sampleDuplicateMessages"
+	WarehouseID                = "warehouseID"
 )

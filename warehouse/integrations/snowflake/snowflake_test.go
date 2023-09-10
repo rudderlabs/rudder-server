@@ -328,13 +328,16 @@ func TestIntegration(t *testing.T) {
 				cancel := bootstrap(t, tc.appendMode)
 				defer cancel()
 
+				cred := tc.cred
+				cred.Database = tc.database
+
 				urlConfig := sfdb.Config{
-					Account:   tc.cred.Account,
-					User:      tc.cred.User,
-					Role:      tc.cred.Role,
-					Password:  tc.cred.Password,
-					Database:  tc.database,
-					Warehouse: tc.cred.Warehouse,
+					Account:   cred.Account,
+					User:      cred.User,
+					Role:      cred.Role,
+					Password:  cred.Password,
+					Database:  cred.Database,
+					Warehouse: cred.Warehouse,
 				}
 
 				dsn, err := sfdb.DSN(&urlConfig)

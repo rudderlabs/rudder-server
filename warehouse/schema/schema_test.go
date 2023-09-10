@@ -1,4 +1,4 @@
-package warehouse
+package schema
 
 import (
 	"context"
@@ -6,276 +6,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/stretchr/testify/require"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-func TestHandleSchemaChange(t *testing.T) {
-	inputs := []struct {
-		name             string
-		existingDatatype string
-		currentDataType  string
-		value            any
-
-		newColumnVal any
-		convError    error
-	}{
-		{
-			name:             "should send int values if existing datatype is int, new datatype is float",
-			existingDatatype: "int",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     1,
-		},
-		{
-			name:             "should send float values if existing datatype is float, new datatype is int",
-			existingDatatype: "float",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     1.0,
-		},
-		{
-			name:             "should send string values if existing datatype is string, new datatype is boolean",
-			existingDatatype: "string",
-			currentDataType:  "boolean",
-			value:            false,
-			newColumnVal:     "false",
-		},
-		{
-			name:             "should send string values if existing datatype is string, new datatype is int",
-			existingDatatype: "string",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     "1",
-		},
-		{
-			name:             "should send string values if existing datatype is string, new datatype is float",
-			existingDatatype: "string",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     "1.501",
-		},
-		{
-			name:             "should send string values if existing datatype is string, new datatype is datetime",
-			existingDatatype: "string",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			newColumnVal:     "2022-05-05T00:00:00.000Z",
-		},
-		{
-			name:             "should send string values if existing datatype is string, new datatype is string",
-			existingDatatype: "string",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			newColumnVal:     `{"json":true}`,
-		},
-		{
-			name:             "should send json string values if existing datatype is json, new datatype is boolean",
-			existingDatatype: "json",
-			currentDataType:  "boolean",
-			value:            false,
-			newColumnVal:     "false",
-		},
-		{
-			name:             "should send json string values if existing datatype is jso, new datatype is int",
-			existingDatatype: "json",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     "1",
-		},
-		{
-			name:             "should send json string values if existing datatype is json, new datatype is float",
-			existingDatatype: "json",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     "1.501",
-		},
-		{
-			name:             "should send json string values if existing datatype is json, new datatype is json",
-			existingDatatype: "json",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
-		},
-		{
-			name:             "should send json string values if existing datatype is json, new datatype is string",
-			existingDatatype: "json",
-			currentDataType:  "string",
-			value:            "string value",
-			newColumnVal:     `"string value"`,
-		},
-		{
-			name:             "should send json string values if existing datatype is json, new datatype is array",
-			existingDatatype: "json",
-			currentDataType:  "array",
-			value:            []any{false, 1, "string value"},
-			newColumnVal:     []any{false, 1, "string value"},
-		},
-		{
-			name:             "existing datatype is boolean, new datatype is int",
-			existingDatatype: "boolean",
-			currentDataType:  "int",
-			value:            1,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is boolean, new datatype is float",
-			existingDatatype: "boolean",
-			currentDataType:  "float",
-			value:            1.501,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is boolean, new datatype is string",
-			existingDatatype: "boolean",
-			currentDataType:  "string",
-			value:            "string value",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is boolean, new datatype is datetime",
-			existingDatatype: "boolean",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is boolean, new datatype is json",
-			existingDatatype: "boolean",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is int, new datatype is boolean",
-			existingDatatype: "int",
-			currentDataType:  "boolean",
-			value:            false,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is int, new datatype is string",
-			existingDatatype: "int",
-			currentDataType:  "string",
-			value:            "string value",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is int, new datatype is datetime",
-			existingDatatype: "int",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is int, new datatype is json",
-			existingDatatype: "int",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is int, new datatype is float",
-			existingDatatype: "int",
-			currentDataType:  "float",
-			value:            1,
-			convError:        errIncompatibleSchemaConversion,
-		},
-		{
-			name:             "existing datatype is float, new datatype is boolean",
-			existingDatatype: "float",
-			currentDataType:  "boolean",
-			value:            false,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is float, new datatype is int",
-			existingDatatype: "float",
-			currentDataType:  "int",
-			value:            1.0,
-			convError:        errIncompatibleSchemaConversion,
-		},
-		{
-			name:             "existing datatype is float, new datatype is string",
-			existingDatatype: "float",
-			currentDataType:  "string",
-			value:            "string value",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is float, new datatype is datetime",
-			existingDatatype: "float",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is float, new datatype is json",
-			existingDatatype: "float",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is datetime, new datatype is boolean",
-			existingDatatype: "datetime",
-			currentDataType:  "boolean",
-			value:            false,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is datetime, new datatype is string",
-			existingDatatype: "datetime",
-			currentDataType:  "string",
-			value:            "string value",
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is datetime, new datatype is int",
-			existingDatatype: "datetime",
-			currentDataType:  "int",
-			value:            1,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is datetime, new datatype is float",
-			existingDatatype: "datetime",
-			currentDataType:  "float",
-			value:            1.501,
-			convError:        errSchemaConversionNotSupported,
-		},
-		{
-			name:             "existing datatype is datetime, new datatype is json",
-			existingDatatype: "datetime",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			convError:        errSchemaConversionNotSupported,
-		},
-	}
-	for _, ip := range inputs {
-		tc := ip
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			newColumnVal, convError := handleSchemaChange(
-				model.SchemaType(tc.existingDatatype),
-				model.SchemaType(tc.currentDataType),
-				tc.value,
-			)
-			require.Equal(t, newColumnVal, tc.newColumnVal)
-			require.ErrorIs(t, convError, tc.convError)
-		})
-	}
-}
 
 type mockSchemaRepo struct {
 	err       error
@@ -322,7 +60,7 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 		sourceID      = "test_source"
 		destID        = "test_dest"
 		namespace     = "test_namespace"
-		warehouseType = warehouseutils.RS
+		warehouseType = whutils.RS
 		uploadID      = 1
 	)
 
@@ -401,14 +139,15 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 
 			ctx := context.Background()
 
-			err := sch.updateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
+			err := sch.UpdateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			err = sch.fetchSchemaFromLocal(ctx)
+			localSchema, err := sch.GetLocalSchema(ctx)
+			require.Equal(t, tc.wantSchema, localSchema)
 			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
@@ -544,7 +283,7 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			fechSchemaRepo := mockFetchSchemaFromWarehouse{
+			fetchSchemaRepo := mockFetchSchemaFromWarehouse{
 				schemaInWarehouse:             tc.mockSchema,
 				unrecognizedSchemaInWarehouse: tc.mockSchema,
 				err:                           tc.mockErr,
@@ -569,13 +308,15 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 
 			ctx := context.Background()
 
-			err := sh.fetchSchemaFromWarehouse(ctx, &fechSchemaRepo)
+			schemaInWarehouse, unrecognizedSchemaInWarehouse, err := sh.FetchSchemaFromWarehouse(ctx, &fetchSchemaRepo)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
+			require.Equal(t, tc.expectedSchema, schemaInWarehouse)
 			require.Equal(t, tc.expectedSchema, sh.schemaInWarehouse)
+			require.Equal(t, tc.expectedSchema, unrecognizedSchemaInWarehouse)
 			require.Equal(t, tc.expectedSchema, sh.unrecognizedSchemaInWarehouse)
 		})
 	}
@@ -583,18 +324,17 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 
 func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 	testCases := []struct {
-		name          string
-		tableName     string
-		currentSchema model.Schema
-		uploadSchema  model.Schema
-		expected      warehouseutils.TableSchemaDiff
+		name              string
+		tableName         string
+		currentSchema     model.Schema
+		uploadTableSchema model.TableSchema
+		expected          whutils.TableSchemaDiff
 	}{
 		{
-			name:          "empty current and upload schema",
+			name:          "empty current and upload table schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema:  model.Schema{},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				ColumnMap:        model.TableSchema{},
 				UpdatedSchema:    model.TableSchema{},
 				AlteredColumnMap: model.TableSchema{},
@@ -604,12 +344,10 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 			name:          "empty current schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value",
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: true,
 				ColumnMap: model.TableSchema{
@@ -629,12 +367,10 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value-1",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           false,
 				TableToBeCreated: false,
 				ColumnMap:        model.TableSchema{},
@@ -653,12 +389,10 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
 				ColumnMap: model.TableSchema{
@@ -681,12 +415,10 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "text",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "text",
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
 				ColumnMap:        model.TableSchema{},
@@ -708,9 +440,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 
 			sch := Schema{
 				schemaInWarehouse: tc.currentSchema,
-				uploadSchema:      tc.uploadSchema,
 			}
-			diff := sch.generateTableSchemaDiff(tc.tableName)
+			diff := sch.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
@@ -862,19 +593,17 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 
 			sch := &Schema{
 				warehouse: model.Warehouse{
-					Type: warehouseutils.SNOWFLAKE,
+					Type: whutils.SNOWFLAKE,
 				},
 				skipDeepEqualSchemas: tc.skipDeepEquals,
-				localSchema:          tc.localSchema,
-				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, sch.hasSchemaChanged())
+			require.Equal(t, tc.expected, sch.hasSchemaChanged(tc.localSchema, tc.schemaInWarehouse))
 		})
 	}
 }
 
 func TestSchema_PrepareUploadSchema(t *testing.T) {
-	warehouseutils.Init()
+	whutils.Init()
 
 	const (
 		sourceID    = "test-source-id"
@@ -904,7 +633,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 	}{
 		{
 			name:          "error fetching staging schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas:   []model.Schema{},
 			mockErr:       errors.New("test error"),
 			wantError:     errors.New("consolidating staging files schema: getting staging files schema: test error"),
@@ -912,7 +641,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 
 		{
 			name:          "discards schema for bigquery",
-			warehouseType: warehouseutils.BQ,
+			warehouseType: whutils.BQ,
 			mockSchemas:   []model.Schema{},
 			expectedSchema: model.Schema{
 				"rudder_discards": model.TableSchema{
@@ -928,7 +657,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "discards schema for all destinations",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas:   []model.Schema{},
 			expectedSchema: model.Schema{
 				"rudder_discards": model.TableSchema{
@@ -943,7 +672,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users and identifies should have similar schema except for id and user_id",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1007,7 +736,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users have extra properties as compared to identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1075,7 +804,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users without identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"users": model.TableSchema{
@@ -1115,7 +844,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "unknown table in warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1159,7 +888,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "unknown properties in warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1203,7 +932,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "single staging schema with empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1237,7 +966,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "single staging schema with warehouse schema and text data type override",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1284,7 +1013,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:                "id resolution without merge schema",
-			warehouseType:       warehouseutils.BQ,
+			warehouseType:       whutils.BQ,
 			idResolutionEnabled: true,
 			mockSchemas: []model.Schema{
 				{
@@ -1320,7 +1049,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:                "id resolution with merge schema",
-			warehouseType:       warehouseutils.BQ,
+			warehouseType:       whutils.BQ,
 			idResolutionEnabled: true,
 			mockSchemas: []model.Schema{
 				{
@@ -1370,7 +1099,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1422,7 +1151,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with empty warehouse schema and text datatype",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1498,7 +1227,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with warehouse schema and text datatype",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1586,7 +1315,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with same table and empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1624,7 +1353,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with same table and warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1668,7 +1397,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with preference to first schema and empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1712,7 +1441,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with preference to warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1766,7 +1495,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "warehouse users have extra properties as compared to identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1899,13 +1628,13 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			err := sh.prepareUploadSchema(ctx, stagingFiles)
+			uploadSchema, err := sh.ConsolidateLocalSchemaWithStagingFiles(ctx, stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedSchema, sh.uploadSchema)
+			require.Equal(t, tc.expectedSchema, uploadSchema)
 		})
 	}
 }
