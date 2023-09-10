@@ -58,6 +58,56 @@ func TestReportViolations(t *testing.T) {
 		}
 	})
 
+	t.Run("Not propagating validation errors when context is not map", func(t *testing.T) {
+		var (
+			trackingPlanId      string
+			trackingPlanVersion int
+		)
+
+		response := transformer.Response{
+			Events: []transformer.TransformerResponse{
+				{
+					Metadata: transformer.Metadata{
+						MergedTpConfig: map[string]interface{}{
+							"propagateValidationErrors": "false",
+						},
+					},
+					Output: map[string]interface{}{
+						"context": "some context",
+					},
+				},
+			},
+			FailedEvents: []transformer.TransformerResponse{
+				{
+					Metadata: transformer.Metadata{
+						MergedTpConfig: map[string]interface{}{
+							"propagateValidationErrors": "true",
+						},
+					},
+					Output: map[string]interface{}{
+						"context": 1234,
+					},
+					ValidationErrors: []transformer.ValidationError{
+						{
+							Type: "Datatype-Mismatch",
+							Meta: map[string]string{
+								"schemaPath":  "#/properties/properties/properties/price/type",
+								"instacePath": "/properties/price",
+							},
+							Message: "must be number",
+						},
+					},
+				},
+			},
+		}
+
+		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
+		for _, event := range eventsFromTransformerResponse(&response) {
+			_, castOk := event.Output["context"].(map[string]interface{})
+			assert.False(t, castOk)
+		}
+	})
+
 	t.Run("Propagate validation errors", func(t *testing.T) {
 		response := transformer.Response{
 			Events: []transformer.TransformerResponse{
@@ -81,6 +131,26 @@ func TestReportViolations(t *testing.T) {
 						},
 					},
 				},
+				{
+					Metadata: transformer.Metadata{
+						MergedTpConfig: map[string]interface{}{
+							"propagateValidationErrors": "true",
+						},
+					},
+					Output: map[string]interface{}{
+						"context": nil,
+					},
+					ValidationErrors: []transformer.ValidationError{
+						{
+							Type: "Datatype-Mismatch",
+							Meta: map[string]string{
+								"schemaPath":  "#/properties/properties/properties/price/type",
+								"instacePath": "/properties/price",
+							},
+							Message: "must be number",
+						},
+					},
+				},
 			},
 			FailedEvents: []transformer.TransformerResponse{
 				{
@@ -92,6 +162,24 @@ func TestReportViolations(t *testing.T) {
 					Output: map[string]interface{}{
 						"context": map[string]interface{}{},
 					},
+					ValidationErrors: []transformer.ValidationError{
+						{
+							Type: "Datatype-Mismatch",
+							Meta: map[string]string{
+								"schemaPath":  "#/properties/properties/properties/price/type",
+								"instacePath": "/properties/price",
+							},
+							Message: "must be number",
+						},
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MergedTpConfig: map[string]interface{}{
+							"propagateValidationErrors": "true",
+						},
+					},
+					Output: map[string]interface{}{},
 					ValidationErrors: []transformer.ValidationError{
 						{
 							Type: "Datatype-Mismatch",

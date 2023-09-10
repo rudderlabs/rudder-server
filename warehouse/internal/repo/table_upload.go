@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -385,18 +387,17 @@ func (repo *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]mode
 		return nil, fmt.Errorf("table uploads for upload id: %w", err)
 	}
 
-	var tableUploadInfos []model.TableUploadInfo
-	for _, tableUpload := range tableUploads {
-		tableUploadInfos = append(tableUploadInfos, model.TableUploadInfo{
-			ID:         tableUpload.ID,
-			UploadID:   tableUpload.UploadID,
-			Name:       tableUpload.TableName,
-			Status:     tableUpload.Status,
-			Error:      tableUpload.Error,
-			LastExecAt: tableUpload.LastExecTime,
-			Count:      tableUpload.TotalEvents,
-			Duration:   int64(tableUpload.UpdatedAt.Sub(tableUpload.LastExecTime) / time.Second),
-		})
-	}
+	tableUploadInfos := lo.Map(tableUploads, func(item model.TableUpload, index int) model.TableUploadInfo {
+		return model.TableUploadInfo{
+			ID:         item.ID,
+			UploadID:   item.UploadID,
+			Name:       item.TableName,
+			Status:     item.Status,
+			Error:      item.Error,
+			LastExecAt: item.LastExecTime,
+			Count:      item.TotalEvents,
+			Duration:   int64(item.UpdatedAt.Sub(item.LastExecTime) / time.Second),
+		}
+	})
 	return tableUploadInfos, nil
 }

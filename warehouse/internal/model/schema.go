@@ -30,14 +30,3 @@ type WHSchema struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
-
-func (s Schema) Clone() Schema {
-	cp := make(Schema, len(s))
-	for k, v := range s {
-		cp[k] = make(TableSchema, len(v))
-		for kk, vv := range v {
-			cp[k][kk] = vv
-		}
-	}
-	return cp
-}
