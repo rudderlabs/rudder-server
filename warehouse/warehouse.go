@@ -360,10 +360,12 @@ func Start(ctx context.Context, app app.App) error {
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 
-		g.Go(func() error {
-			grpcServer.Start(gCtx)
-			return nil
-		})
+		if isMaster(mode) {
+			g.Go(func() error {
+				grpcServer.Start(gCtx)
+				return nil
+			})
+		}
 		g.Go(func() error {
 			api := NewApi(
 				mode, config.Default, pkgLogger, stats.Default,

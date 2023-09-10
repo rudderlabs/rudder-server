@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/samber/lo"
+
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc"
@@ -61,7 +63,7 @@ type GRPC struct {
 		region         string
 		cpRouterUseTLS bool
 		instanceID     string
-		configBackend  struct {
+		controlPlane   struct {
 			url      string
 			userName string
 			password string
@@ -87,19 +89,19 @@ func NewGRPCServer(
 		fileManagerFactory: filemanager.New,
 	}
 
-	g.config.region = conf.GetString("REGION", "")
+	g.config.region = conf.GetString("region", "")
 	g.config.cpRouterUseTLS = conf.GetBool("CP_ROUTER_USE_TLS", true)
 	g.config.instanceID = conf.GetString("INSTANCE_ID", "1")
-	g.config.configBackend.url = conf.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
-	g.config.configBackend.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
-	g.config.configBackend.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
+	g.config.controlPlane.url = conf.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
+	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
+	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
 	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
-		g.config.configBackend.url,
+		g.config.controlPlane.url,
 		cpclient.BasicAuth{
-			Username: g.config.configBackend.userName,
-			Password: g.config.configBackend.password,
+			Username: g.config.controlPlane.userName,
+			Password: g.config.controlPlane.password,
 		},
 	)
 
@@ -129,7 +131,6 @@ func NewGRPCServer(
 			proto.RegisterWarehouseServer(srv, g)
 		},
 	}
-
 	return g, nil
 }
 
@@ -217,27 +218,26 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get syncs info: %v", err)
 	}
 
-	var uploads []*proto.WHUploadResponse
-	for _, syncUploadInfo := range uploadInfos {
-		uploads = append(uploads, &proto.WHUploadResponse{
-			Id:               syncUploadInfo.ID,
-			SourceId:         syncUploadInfo.SourceID,
-			DestinationId:    syncUploadInfo.DestinationID,
-			DestinationType:  syncUploadInfo.DestinationType,
-			Namespace:        syncUploadInfo.Namespace,
-			Error:            syncUploadInfo.Error,
-			Attempt:          int32(syncUploadInfo.Attempt),
-			Status:           syncUploadInfo.Status,
-			CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
-			FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
-			LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
-			LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
-			NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
-			Duration:         int32(syncUploadInfo.Duration),
+	uploads := lo.Map(uploadInfos, func(item model.UploadInfo, index int) *proto.WHUploadResponse {
+		return &proto.WHUploadResponse{
+			Id:               item.ID,
+			SourceId:         item.SourceID,
+			DestinationId:    item.DestinationID,
+			DestinationType:  item.DestinationType,
+			Namespace:        item.Namespace,
+			Error:            item.Error,
+			Attempt:          int32(item.Attempt),
+			Status:           item.Status,
+			CreatedAt:        timestamppb.New(item.CreatedAt),
+			FirstEventAt:     timestamppb.New(item.FirstEventAt),
+			LastEventAt:      timestamppb.New(item.LastEventAt),
+			LastExecAt:       timestamppb.New(item.LastExecAt),
+			NextRetryTime:    timestamppb.New(item.NextRetryTime),
+			Duration:         int32(item.Duration),
 			Tables:           []*proto.WHTable{},
-			IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
-		})
-	}
+			IsArchivedUpload: item.IsArchivedUpload,
+		}
+	})
 
 	response := &proto.WHUploadsResponse{Uploads: uploads, Pagination: &proto.Pagination{
 		Limit:  limit,
@@ -289,19 +289,18 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get table infos: %s", err.Error())
 	}
 
-	var tables []*proto.WHTable
-	for _, syncTableInfo := range syncTableInfos {
-		tables = append(tables, &proto.WHTable{
-			Id:         syncTableInfo.ID,
-			UploadId:   syncTableInfo.UploadID,
-			Name:       syncTableInfo.Name,
-			Status:     syncTableInfo.Status,
-			Error:      syncTableInfo.Error,
+	tables := lo.Map(syncTableInfos, func(item model.TableUploadInfo, index int) *proto.WHTable {
+		return &proto.WHTable{
+			Id:         item.ID,
+			UploadId:   item.UploadID,
+			Name:       item.Name,
+			Status:     item.Status,
+			Error:      item.Error,
 			LastExecAt: timestamppb.New(syncUploadInfo.LastExecAt),
-			Count:      int32(syncTableInfo.Count),
-			Duration:   int32(syncTableInfo.Duration),
-		})
-	}
+			Count:      int32(item.Count),
+			Duration:   int32(item.Duration),
+		}
+	})
 
 	return &proto.WHUploadResponse{
 		Id:               syncUploadInfo.ID,
@@ -330,15 +329,15 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 		lf.DestinationID, request.DestinationId,
 	)
 
+	if request.DestinationId == "" {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination id is required")
+	}
+
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
 	if len(sourceIDs) == 0 {
 		return &proto.TriggerWhUploadsResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
-	}
-
-	if request.DestinationId == "" {
-		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination id is required")
 	}
 
 	var (
@@ -367,7 +366,6 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	// TODO: Also, get rid of the message in here as well.
 	if pendingUploadCount+pendingStagingFilesCount == 0 {
 		return &proto.TriggerWhUploadsResponse{
 			StatusCode: http.StatusOK,
@@ -383,7 +381,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 	if len(wh) == 0 {
 		return &proto.TriggerWhUploadsResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no warehouse found for sourceID: %s, destinationID: %s", request.SourceId, request.DestinationId)
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no warehouse found for sourceID: %s, destinationID: %s", request.SourceId, request.DestinationId)
 	}
 
 	for _, warehouse := range wh {
@@ -391,7 +389,6 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	// TODO: Also, get rid of the message in here as well.
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
 		Message:    triggeredSuccessfully,
@@ -411,7 +408,6 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	// TODO: Also, get rid of the message in here as well.
 	upload, err := g.uploadRepo.Get(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
@@ -430,7 +426,6 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	// TODO: Also, get rid of the message in here as well.
 	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
 	if errors.Is(err, model.ErrUploadNotFound) {
 		return &proto.TriggerWhUploadsResponse{
@@ -444,7 +439,6 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
-	// TODO: Also, get rid of the message in here as well.
 	return &proto.TriggerWhUploadsResponse{
 		StatusCode: http.StatusOK,
 		Message:    triggeredSuccessfully,
@@ -572,8 +566,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body")
 	}
 
-	destination := reqModel.Destination
-	if len(destination.Config) == 0 {
+	if len(reqModel.Destination.Config) == 0 {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination config is empty")
 	}
@@ -581,7 +574,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 	// adding ssh tunnelling info, given we have
 	// useSSH enabled from upstream
 	if g.config.enableTunnelling {
-		err = g.manageTunnellingSecrets(ctx, destination.Config)
+		err = g.manageTunnellingSecrets(ctx, reqModel.Destination.Config)
 		if err != nil {
 			return &proto.WHValidationResponse{},
 				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to fetch ssh keys: %v", err)
@@ -591,19 +584,18 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 	res, err := validations.Validate(ctx, &model.ValidationRequest{
 		Path:        req.Path,
 		Step:        req.Step,
-		Destination: &destination,
+		Destination: &reqModel.Destination,
 	})
 	if err != nil {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to validate: %v", err)
 	}
-
-	// TODO: We can get rid of the Error field in the response. Since it requires compatibility on the cp router side, leaving it as it is for now.
 	if res.Error != "" {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to validate: %v", res.Error)
 	}
 
+	// TODO: We can get rid of the Error field in the response. Since it requires compatibility on the cp router side, leaving it as it is for now.
 	return &proto.WHValidationResponse{
 		Data: res.Data,
 	}, nil
