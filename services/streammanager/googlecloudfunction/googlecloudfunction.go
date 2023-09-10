@@ -77,62 +77,58 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
-		client := producer.client
 
-		if client == nil {
-			respStatus = "Failure"
-			responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
-			return 400, respStatus, responseMessage
-		}
-
-		functionName := getFunctionName(destConfig.GoogleCloudFunctionUrl)
-
-		requestPayload := &cloudfunctions.CallFunctionRequest{
-			Data: string(parsedJSON.String()),
-		}
-
-		// Make the HTTP request
-		call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
-
-		response, err := call.Do()
-		if err != nil {
-			if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
-				fmt.Println("Function call was not executed (Not Modified)")
-			} else {
-				log.Fatalf("Failed to call function: %v", err)
-			}
-		}
-
-		// Process the response (sample response handling here).
-		if response != nil {
-			fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
-			// Handle response content as needed.
-		}
-		fmt.Println("Request successful!")
-
-		respStatus = "Success"
-		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: "
-		return 200, respStatus, responseMessage
+		return invokeAuthenticatedGen1Functions(producer.client, destConfig.GoogleCloudFunctionUrl, parsedJSON)
 	}
 
+	return invokeGen2AndUnauthenticatedFunctions(destConfig.GoogleCloudFunctionUrl, destConfig.Credentials, destConfig.RequireAuthentication, parsedJSON)
+}
+
+func invokeAuthenticatedGen1Functions(client *Client, functionUrl string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+	if client == nil {
+		respStatus = "Failure"
+		responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
+		return 400, respStatus, responseMessage
+	}
+
+	functionName := getFunctionName(functionUrl)
+
+	requestPayload := &cloudfunctions.CallFunctionRequest{
+		Data: string(parsedJSON.String()),
+	}
+
+	// Make the HTTP request
+	call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
+
+	response, err := call.Do()
+	fmt.Print(err)
+	if err != nil {
+		if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
+			fmt.Println("Function call was not executed (Not Modified)")
+		} else {
+			log.Fatalf("Failed to call function: %v", err)
+		}
+	}
+
+	// Process the response (sample response handling here).
+	if response != nil {
+		fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
+		// Handle response content as needed.
+	}
+	fmt.Println("Request successful!")
+
+	respStatus = "Success"
+	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: "
+	return 200, respStatus, responseMessage
+}
+
+func invokeGen2AndUnauthenticatedFunctions(functionUrl string, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
-	url := destConfig.GoogleCloudFunctionUrl // Replace with your actual audience URL
 
-	// Construct the GoogleCredentials object which obtains the default configuration from your
-	// working environment.
-	ts, err := idtoken.NewTokenSource(ctx, url, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
-	if err != nil {
-		fmt.Print("failed to create NewTokenSource: %w", err)
-	}
-
-	// Get the ID token, to make an authenticated call to the target audience.
-	token, err := ts.Token()
-	if err != nil {
-		fmt.Print("failed to receive token: %w", err)
-	}
+	jsonBytes := []byte(parsedJSON.String())
 
 	// Create a POST request
-	req, err := http.NewRequest("POST", destConfig.GoogleCloudFunctionUrl, strings.NewReader(parsedJSON.String()))
+	req, err := http.NewRequest("POST", functionUrl, strings.NewReader(string(jsonBytes)))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return
@@ -140,7 +136,17 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
-	if destConfig.RequireAuthentication {
+	if requireAuthentication {
+		ts, err := idtoken.NewTokenSource(ctx, functionUrl, option.WithCredentialsJSON([]byte(credentials)))
+		if err != nil {
+			fmt.Print("failed to create NewTokenSource: %w", err)
+		}
+
+		// Get the ID token, to make an authenticated call to the target audience.
+		token, err := ts.Token()
+		if err != nil {
+			fmt.Print("failed to receive token: %w", err)
+		}
 		req.Header.Add("Authorization", "Bearer "+token.AccessToken)
 	}
 
@@ -153,11 +159,11 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 
 	if resp.Status == "OK" {
 		respStatus = "Success"
-		responseMessage = "[GoogleSheets] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
+		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	}
 	fmt.Print(resp.Status)
-
 	return 200, respStatus, responseMessage
+
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
