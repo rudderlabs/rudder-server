@@ -44,7 +44,7 @@ func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifierModel.Clai
 	m.subscribeCh <- response
 }
 
-func (m *mockSlaveNotifier) RunMaintenanceWorker(context.Context) error {
+func (m *mockSlaveNotifier) RunMaintenance(context.Context) error {
 	return m.maintenanceErr
 }
 

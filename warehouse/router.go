@@ -636,12 +636,16 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 }
 
 func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse model.Warehouse) (int, error) {
-	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(ctx, warehouse.Source.ID, warehouse.Destination.ID)
+	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(
+		ctx,
+		warehouse.Source.ID,
+		warehouse.Destination.ID,
+	)
 	if err != nil {
 		if errors.Is(err, model.ErrNoUploadsFound) {
 			return defaultUploadPriority, nil
 		}
-		return 0, err
+		return 0, fmt.Errorf("getting latest upload info: %w", err)
 	}
 
 	if latestInfo.Status != model.Waiting {

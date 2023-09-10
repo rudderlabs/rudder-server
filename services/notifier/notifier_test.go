@@ -137,7 +137,7 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 		g.Go(func() error {
-			return n.RunMaintenanceWorker(gCtx)
+			return n.RunMaintenance(gCtx)
 		})
 		g.Go(func() error {
 			<-groupCtx.Done()
@@ -178,10 +178,101 @@ func TestNotifier(t *testing.T) {
 		require.EqualValues(t, statsStore.Get("pgnotifier.publish", stats.Tags{
 			"module": "pgnotifier",
 		}).LastValue(), totalJobs)
-		require.EqualValues(t, statsStore.Get("pg_notifier_insert_records", stats.Tags{
-			"module":    "pgnotifier",
+		require.EqualValues(t, statsStore.Get("pg_notifier.insert_records", stats.Tags{
+			"module":    "pg_notifier",
 			"queueName": "pg_notifier_queue",
 		}).LastValue(), totalJobs*len(publishRequest.Payloads))
+	})
+
+	t.Run("many publish jobs", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		const (
+			batchSize         = 1
+			jobs              = 25
+			subscribers       = 100
+			subscriberWorkers = 4
+		)
+
+		var payloads []json.RawMessage
+		for i := 0; i < batchSize; i++ {
+			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
+		}
+
+		publishRequest := &model.PublishRequest{
+			Payloads:        payloads,
+			JobType:         model.JobTypeUpload,
+			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
+			Priority:        50,
+		}
+
+		c := config.New()
+		c.Set("PgNotifier.maxAttempt", 1)
+		c.Set("PgNotifier.maxOpenConnections", 900)
+		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
+		c.Set("PgNotifier.maxPollSleep", "100ms")
+		c.Set("PgNotifier.jobOrphanTimeout", "120s")
+
+		groupCtx, groupCancel := context.WithCancel(ctx)
+		g, gCtx := errgroup.WithContext(groupCtx)
+
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
+		err := n.Setup(groupCtx, pgResource.DBDsn)
+		require.NoError(t, err)
+
+		publishResponses := make(chan *model.PublishResponse)
+
+		for i := 0; i < jobs; i++ {
+			g.Go(func() error {
+				publishCh, err := n.Publish(gCtx, publishRequest)
+				require.NoError(t, err)
+
+				publishResponses <- <-publishCh
+
+				return nil
+			})
+		}
+
+		for i := 0; i < subscribers; i++ {
+			g.Go(func() error {
+				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
+
+				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
+
+				for j := 0; j < subscriberWorkers; j++ {
+					slaveGroup.Go(func() error {
+						for job := range subscriberCh {
+							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+								Payload: json.RawMessage(`{"test": "payload"}`),
+							})
+						}
+						return nil
+					})
+				}
+				return slaveGroup.Wait()
+			})
+		}
+		g.Go(func() error {
+			for i := 0; i < jobs; i++ {
+				response := <-publishResponses
+				require.NoError(t, response.Err)
+				require.Len(t, response.Jobs, len(publishRequest.Payloads))
+			}
+			close(publishResponses)
+			groupCancel()
+			return nil
+		})
+		g.Go(func() error {
+			return n.RunMaintenance(gCtx)
+		})
+		g.Go(func() error {
+			<-groupCtx.Done()
+			return n.Shutdown()
+		})
+		require.NoError(t, g.Wait())
 	})
 
 	t.Run("bigger batches and many subscribers", func(t *testing.T) {
@@ -191,7 +282,7 @@ func TestNotifier(t *testing.T) {
 		ctx := context.Background()
 
 		const (
-			batchSize         = 1000
+			batchSize         = 500
 			jobs              = 1
 			subscribers       = 100
 			subscriberWorkers = 4
@@ -266,7 +357,7 @@ func TestNotifier(t *testing.T) {
 			return nil
 		})
 		g.Go(func() error {
-			return n.RunMaintenanceWorker(gCtx)
+			return n.RunMaintenance(gCtx)
 		})
 		g.Go(func() error {
 			<-groupCtx.Done()
@@ -275,7 +366,7 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, g.Wait())
 	})
 
-	t.Run("round robin and maintenance workers", func(t *testing.T) {
+	t.Run("round robin pickup and maintenance workers", func(t *testing.T) {
 		t.Parallel()
 
 		pgResource := setup(t)
@@ -305,16 +396,20 @@ func TestNotifier(t *testing.T) {
 		c.Set("PgNotifier.maxOpenConnections", 900)
 		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
 		c.Set("PgNotifier.maxPollSleep", "100ms")
-		c.Set("PgNotifier.jobOrphanTimeout", "5s")
+		c.Set("PgNotifier.jobOrphanTimeout", "3s")
 
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
+		statsStore := memstats.New()
+
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		publishResponses := make(chan *model.PublishResponse)
+
+		claimedWorkers := atomic.NewInt64(0)
 
 		for i := 0; i < jobs; i++ {
 			g.Go(func() error {
@@ -332,7 +427,6 @@ func TestNotifier(t *testing.T) {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-				claimedWorkers := atomic.NewInt64(0)
 
 				blockSub := make(chan struct{})
 				defer close(blockSub)
@@ -371,13 +465,17 @@ func TestNotifier(t *testing.T) {
 			return nil
 		})
 		g.Go(func() error {
-			return n.RunMaintenanceWorker(gCtx)
+			return n.RunMaintenance(gCtx)
 		})
 		g.Go(func() error {
 			<-groupCtx.Done()
 			return n.Shutdown()
 		})
 		require.NoError(t, g.Wait())
+		require.EqualValues(t, statsStore.Get("pg_notifier.orphanJobs", stats.Tags{
+			"module":    "pgnotifier",
+			"queueName": "pg_notifier_queue",
+		}).LastValue(), claimedWorkers.Load()-1)
 	})
 
 	t.Run("env vars", func(t *testing.T) {

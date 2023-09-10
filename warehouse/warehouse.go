@@ -320,10 +320,12 @@ func (a *App) Start(ctx context.Context) error {
 	if isDegraded(a.config.runningMode) {
 		a.logger.Infof("WH: Running warehouse service in degraded mode...")
 
-		g.Go(func() error {
-			a.grpcServer.Start(gCtx)
-			return nil
-		})
+		if isMaster(a.config.warehouseMode) {
+			g.Go(func() error {
+				a.grpcServer.Start(gCtx)
+				return nil
+			})
+		}
 		g.Go(func() error {
 			return a.api.Start(gCtx)
 		})
@@ -385,11 +387,13 @@ func (a *App) Start(ctx context.Context) error {
 		a.bcConfig.WaitForConfig(ctx)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.notifier.RunMaintenanceWorker(gCtx)
+			if err := a.notifier.ClearJobs(gCtx); err != nil {
+				return fmt.Errorf("unable to clear notifier jobs: %w", err)
+			}
+
+			return a.notifier.RunMaintenance(gCtx)
 		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.notifier.ClearJobs(gCtx)
-		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return a.monitorDestRouters(gCtx)
 		}))
@@ -417,7 +421,7 @@ func (a *App) Start(ctx context.Context) error {
 		return a.api.Start(gCtx)
 	})
 	g.Go(func() error {
-		<-ctx.Done()
+		<-gCtx.Done()
 		return a.notifier.Shutdown()
 	})
 
