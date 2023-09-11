@@ -1217,7 +1217,7 @@ func (*Deltalake) IsEmpty(context.Context, model.Warehouse) (bool, error) {
 func (d *Deltalake) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := d.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("connection timeout: %w", err)
+		return errors.New("connection timeout: verify the availability of the SQL warehouse/cluster on Databricks (this process may take up to 15 minutes). Once the SQL warehouse/cluster is ready, please attempt your connection again")
 	}
 	if err != nil {
 		return fmt.Errorf("pinging: %w", err)
