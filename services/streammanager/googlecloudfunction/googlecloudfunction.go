@@ -61,7 +61,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	}
 
 	service, err := generateService(destination, opts...)
-	// If err is not nil then retrun
+	// If err is not nil then return
 	if err != nil {
 		pkgLogger.Errorf("[GoogleCloudFunction] error  :: %w", err)
 		return nil, err
@@ -77,7 +77,6 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
-
 		return invokeAuthenticatedGen1Functions(producer.client, destConfig.GoogleCloudFunctionUrl, parsedJSON)
 	}
 
@@ -122,7 +121,7 @@ func invokeAuthenticatedGen1Functions(client *Client, functionUrl string, parsed
 	return 200, respStatus, responseMessage
 }
 
-func invokeGen2AndUnauthenticatedFunctions(functionUrl string, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func invokeGen2AndUnauthenticatedFunctions(functionUrl, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.String())
@@ -163,7 +162,6 @@ func invokeGen2AndUnauthenticatedFunctions(functionUrl string, credentials strin
 	}
 	fmt.Print(resp.Status)
 	return 200, respStatus, responseMessage
-
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
@@ -178,7 +176,6 @@ func generateService(destination *backendconfig.DestinationT, opts ...option.Cli
 }
 
 func getFunctionName(url string) (functionName string) {
-
 	// Define a regular expression pattern to match URLs between "https://" and dot (.)
 	pattern := `https://(.*?)\.`
 
