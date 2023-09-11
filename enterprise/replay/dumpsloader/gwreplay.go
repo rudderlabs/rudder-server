@@ -6,23 +6,27 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-server/enterprise/replay/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 func (g *gwReplayRequestHandler) Start() {
+	g.g = errgroup.Group{}
 	g.handleRecovery()
-	rruntime.Go(func() {
-		g.fetchDumpsList(g.handle.ctx)
+	g.g.Go(func() error {
+		return g.fetchDumpsList(g.handle.ctx)
 	})
 }
 
-func (g *gwReplayRequestHandler) Stop() {
+func (g *gwReplayRequestHandler) Stop() error {
 	g.handle.cancel()
+	return g.g.Wait()
 }
 
 func (g *gwReplayRequestHandler) IsDone() bool {
@@ -34,7 +38,7 @@ func (g *gwReplayRequestHandler) handleRecovery() {
 	g.handle.dbHandle.FailExecuting()
 }
 
-func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) {
+func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
 	startTimeMilli := g.handle.config.startTime.Unix()
 	endTimeMilli := g.handle.config.endTime.Unix()
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)         // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
@@ -63,7 +67,7 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 
 			// gw dump file name format gw_jobs_<table_index>.<start_job_id>.<end_job_id>.<min_created_at>_<max_created_at>.gz
 			// ex: gw_jobs_9710.974705928.974806056.1604871241214.1604872598504.gz
-			minJobCreatedAt, maxJobCreatedAt, err := getMinMaxCreatedAt(object.Key)
+			minJobCreatedAt, maxJobCreatedAt, err := utils.GetMinMaxCreatedAt(object.Key)
 			var pass bool
 			if err == nil {
 				pass = maxJobCreatedAt >= startTimeMilli && minJobCreatedAt <= endTimeMilli
@@ -102,18 +106,25 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 
 		if len(objects) >= uploadMaxItems {
-			storeJobs(ctx, objects, g.handle.dbHandle, g.handle.log)
+			err := storeJobs(ctx, objects, g.handle.dbHandle, g.handle.log)
+			if err != nil {
+				return err
+			}
 			objects = nil
 		}
 	}
 
 	if iter.Err() != nil {
-		panic(fmt.Errorf("failed to iterate gw dump files with error: %w", iter.Err()))
+		return fmt.Errorf("failed to iterate gw dump files with error: %w", iter.Err())
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, g.handle.dbHandle, g.handle.log)
+		err := storeJobs(ctx, objects, g.handle.dbHandle, g.handle.log)
+		if err != nil {
+			return err
+		}
 	}
 
 	g.handle.log.Info("Dumps loader job is done")
 	g.handle.done = true
+	return nil
 }

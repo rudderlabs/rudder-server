@@ -6,23 +6,26 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 func (p *procErrorRequestHandler) Start() {
+	p.g = errgroup.Group{}
 	p.handleRecovery()
-	rruntime.Go(func() {
-		p.fetchDumpsList(p.handle.ctx)
+	p.g.Go(func() error {
+		return p.fetchDumpsList(p.handle.ctx)
 	})
 }
 
-func (p *procErrorRequestHandler) Stop() {
+func (p *procErrorRequestHandler) Stop() error {
 	p.handle.cancel()
+	return p.g.Wait()
 }
 
 func (p *procErrorRequestHandler) IsDone() bool {
@@ -34,7 +37,7 @@ func (p *procErrorRequestHandler) handleRecovery() {
 	p.handle.dbHandle.FailExecuting()
 }
 
-func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) {
+func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) error {
 	objects := make([]OrderedJobs, 0)
 	p.handle.log.Info("Fetching proc err files list")
 	var err error
@@ -74,18 +77,25 @@ func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 		}
 		if len(objects) >= uploadMaxItems {
-			storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+			err := storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+			if err != nil {
+				return err
+			}
 			objects = nil
 		}
 
 	}
 	if iter.Err() != nil {
-		panic(fmt.Errorf("failed to iterate proc err files with error: %w", iter.Err()))
+		return fmt.Errorf("failed to iterate proc err files with error: %w", iter.Err())
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+		err := storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+		if err != nil {
+			return err
+		}
 	}
 
 	p.handle.log.Info("Dumps loader job is done")
 	p.handle.done = true
+	return nil
 }

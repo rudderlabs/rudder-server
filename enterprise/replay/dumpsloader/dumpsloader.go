@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -20,7 +21,7 @@ import (
 
 type DumpsLoader interface {
 	Start()
-	Stop()
+	Stop() error
 	IsDone() bool
 }
 
@@ -45,42 +46,16 @@ type dumpsConfig struct {
 
 // procErrorRequestHandler is an empty struct to capture Proc Error re-stream request handling functionality
 type procErrorRequestHandler struct {
+	g           errgroup.Group
 	tablePrefix string
 	handle      *dumpsLoaderHandle
 }
 
 // gwReplayRequestHandler is an empty struct to capture Gateway replay handling functionality
 type gwReplayRequestHandler struct {
+	g           errgroup.Group
 	tablePrefix string
 	handle      *dumpsLoaderHandle
-}
-
-func getMinMaxCreatedAt(key string) (int64, int64, error) {
-	var err error
-	var minJobCreatedAt, maxJobCreatedAt int64
-	keyTokens := strings.Split(key, "_")
-	if len(keyTokens) != 3 {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with _ gave tokens more than 3. Expected 3", key)
-	}
-	keyTokens = strings.Split(keyTokens[2], ".")
-	if len(keyTokens) > 7 {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens more than 7. Expected 6 or 7", keyTokens[2])
-	}
-
-	if len(keyTokens) < 6 { // for backward compatibility TODO: remove this check after some time
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens less than 6. Expected 6 or 7", keyTokens[2])
-	}
-	minJobCreatedAt, err = strconv.ParseInt(keyTokens[3], 10, 64)
-	if err != nil {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("ParseInt of %s failed with err: %w", keyTokens[3], err)
-	}
-
-	maxJobCreatedAt, err = strconv.ParseInt(keyTokens[4], 10, 64)
-	if err != nil {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("ParseInt of %s failed with err: %w", keyTokens[4], err)
-	}
-
-	return minJobCreatedAt, maxJobCreatedAt, nil
 }
 
 type OrderedJobs struct {
@@ -88,7 +63,7 @@ type OrderedJobs struct {
 	Job       *jobsdb.JobT
 }
 
-func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Handle, log logger.Logger) {
+func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Handle, log logger.Logger) error {
 	// sorting dumps list on index
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].SortIndex < objects[j].SortIndex
@@ -102,8 +77,9 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 	log.Info("Total dumps count : ", len(objects))
 	err := dbHandle.Store(ctx, jobs)
 	if err != nil {
-		panic(fmt.Errorf("failed to write dumps locations to DB with error: %w", err))
+		return fmt.Errorf("failed to write dumps locations to DB with error: %w", err)
 	}
+	return nil
 }
 
 // Setup sets up dumps-loader.
