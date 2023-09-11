@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/services/notifier/model"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // Claim claims a job for a worker.
@@ -42,7 +41,7 @@ func (n *Notifier) Claim(
 		  ) RETURNING `+notifierTableColumns+`;
 `,
 		model.Executing,
-		n.now().Format(timeFormat),
+		n.now(),
 		workerID,
 		model.Waiting,
 		model.Failed,
@@ -70,15 +69,15 @@ func (n *Notifier) OnClaimFailed(
 	claimError error,
 	maxAttempt int,
 ) error {
-	query := fmt.Sprintf(`
+	query := fmt.Sprint(`
 		UPDATE
-		  `+notifierTableName+`
+		  ` + notifierTableName + `
 		SET
 		  status =(
 			CASE WHEN attempt > $1 THEN CAST (
-			  '%[1]s' AS pg_notifier_status_type
+			  '` + model.Aborted + `' AS pg_notifier_status_type
 			) ELSE CAST(
-			  '%[2]s' AS pg_notifier_status_type
+			   '` + model.Failed + `'  AS pg_notifier_status_type
 			) END
 		  ),
 		  attempt = attempt + 1,
@@ -87,15 +86,13 @@ func (n *Notifier) OnClaimFailed(
 		WHERE
 		  id = $4;
 	`,
-		model.Aborted,
-		model.Failed,
 	)
 
 	_, err := n.db.ExecContext(ctx,
 		query,
 		maxAttempt,
-		n.now().Format(timeFormat),
-		misc.QuoteLiteral(claimError.Error()),
+		n.now(),
+		claimError.Error(),
 		job.ID,
 	)
 	if err != nil {
@@ -122,7 +119,7 @@ func (n *Notifier) OnClaimSuccess(
 		  id = $4;
 	`,
 		model.Succeeded,
-		n.now().Format(timeFormat),
+		n.now(),
 		string(payload),
 		job.ID,
 	)

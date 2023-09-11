@@ -33,7 +33,7 @@ func (n *Notifier) OrphanJobIDs(
 	  	) RETURNING id;
 `,
 		model.Waiting,
-		n.now().Format(timeFormat),
+		n.now(),
 		model.Executing,
 		intervalInSeconds,
 	)

@@ -449,7 +449,7 @@ func TestNotifierRepo(t *testing.T) {
 				}))
 
 				for i, notifier := range failedClaims {
-					require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
+					require.EqualValues(t, notifier.Error, errors.New("test_error"))
 					require.EqualValues(t, notifier.Attempt, i+1)
 					require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
 				}
@@ -469,7 +469,7 @@ func TestNotifierRepo(t *testing.T) {
 					require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
 					require.EqualValues(t, notifier.Status, model.Succeeded)
 					require.EqualValues(t, notifier.Attempt, i+1)
-					require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
+					require.EqualValues(t, notifier.Error, errors.New("test_error"))
 				}
 			})
 		})

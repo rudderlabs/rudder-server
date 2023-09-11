@@ -30,8 +30,7 @@ const (
 
 	notifierMetadataTableName = "pg_notifier_queue_metadata"
 
-	timeFormat = "2006-01-02 15:04:05"
-	topic      = "warehouse/v1"
+	topic = "warehouse/v1"
 )
 
 type Opt func(*Notifier)
