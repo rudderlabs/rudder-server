@@ -217,17 +217,22 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 
 	// 2. cleanup journal
 	{
-		deleteStmt := "with deletedRows as (DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id) select count(*) from deletedRows"
+		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY'"
 		var journalEntryCount int64
-		if err := jd.dbHandle.QueryRowContext(
+		res, err := jd.dbHandle.ExecContext(
 			ctx,
 			fmt.Sprintf(
 				deleteStmt,
 				jd.tablePrefix,
 				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
 			),
-		).Scan(&journalEntryCount); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("cleaning up journal: %w", err)
+		}
+		journalEntryCount, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("finding journal rows affected during cleanup: %w", err)
 		}
 		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
 	}
