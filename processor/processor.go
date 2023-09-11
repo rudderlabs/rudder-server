@@ -2232,7 +2232,8 @@ func (proc *Handle) transformSrcDest(
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.UserTransformerStage, trackingPlanEnabled, transformationEnabled)
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
-			proc.saveFailedJobs(failedJobs)
+			droppedJobs := proc.getDroppedJobs(response, eventList)
+			proc.saveFailedJobs(append(failedJobs, droppedJobs...))
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
@@ -2300,7 +2301,8 @@ func (proc *Handle) transformSrcDest(
 	var successCountMetadataMap map[string]MetricMetadata
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
-	proc.saveFailedJobs(failedJobs)
+	droppedJobs := proc.getDroppedJobs(response, eventsToTransform)
+	proc.saveFailedJobs(append(failedJobs, droppedJobs...))
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	// REPORTING - START
@@ -2370,8 +2372,8 @@ func (proc *Handle) transformSrcDest(
 			destTransformationStat.numEvents.Count(len(eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
 			destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
-
-			proc.saveFailedJobs(failedJobs)
+			droppedJobs := proc.getDroppedJobs(response, eventsToTransform)
+			proc.saveFailedJobs(append(failedJobs, droppedJobs...))
 
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
