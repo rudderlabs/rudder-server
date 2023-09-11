@@ -2,8 +2,6 @@ package jobsdb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -219,7 +217,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 
 	// 2. cleanup journal
 	{
-		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id"
+		deleteStmt := "with deletedRows as (DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id) select count(*) from deletedRows"
 		var journalEntryCount int64
 		if err := jd.dbHandle.QueryRowContext(
 			ctx,
@@ -228,7 +226,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 				jd.tablePrefix,
 				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
 			),
-		).Scan(&journalEntryCount); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		).Scan(&journalEntryCount); err != nil {
 			return fmt.Errorf("cleaning up journal: %w", err)
 		}
 		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
