@@ -27,6 +27,7 @@ type Config struct {
 	FunctionEnvironment    string `json:"functionEnvironment"`
 	RequireAuthentication  bool   `json:"requireAuthentication"`
 	GoogleCloudFunctionUrl string `json:"googleCloudFunctionUrl"`
+	FunctionName           string `json:"functionName"`
 }
 
 type Client struct {
@@ -67,8 +68,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		pkgLogger.Errorf("[GoogleCloudFunction] error  :: %w", err)
 		return nil, err
 	}
+
+	functionName := getFunctionName(config.GoogleCloudFunctionUrl)
+
 	client := &Client{service, o}
-	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl}
+	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl, functionName}
 
 	return &GoogleCloudFunctionProducer{client, destConfig}, err
 }
@@ -78,20 +82,18 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
-		return invokeAuthenticatedGen1Functions(producer.client, destConfig.GoogleCloudFunctionUrl, parsedJSON)
+		return invokeAuthenticatedGen1Functions(producer.client, destConfig.FunctionName, parsedJSON)
 	}
 
 	return invokeGen2AndUnauthenticatedFunctions(destConfig.GoogleCloudFunctionUrl, destConfig.Credentials, destConfig.RequireAuthentication, parsedJSON)
 }
 
-func invokeAuthenticatedGen1Functions(client *Client, functionUrl string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func invokeAuthenticatedGen1Functions(client *Client, functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
 		return 400, respStatus, responseMessage
 	}
-
-	functionName := getFunctionName(functionUrl)
 
 	requestPayload := &cloudfunctions.CallFunctionRequest{
 		Data: parsedJSON.String(),
