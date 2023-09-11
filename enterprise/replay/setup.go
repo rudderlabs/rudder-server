@@ -41,16 +41,27 @@ type Factory struct {
 	Log             logger.Logger
 }
 
+type Replay struct {
+	toDB        *jobsdb.Handle
+	dumpsLoader dumpsloader.DumpsLoader
+	replayer    replayer.Replay
+}
+
+type ReplayFactory interface {
+	Start() error
+	Stop() error
+}
+
 // Setup initializes Replay feature
-func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) error {
+func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (ReplayFactory, error) {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("replay")
 	}
 	if m.EnterpriseToken == "" {
-		return nil
+		return nil, errors.New("enterprise token is not set")
 	}
 	if !config.GetBool("Replay.enabled", types.DefaultReplayEnabled) {
-		return nil
+		return nil, errors.New("replay is not enabled")
 	}
 	m.Log.Info("[[ Replay ]] Setting up Replay")
 	tablePrefix := config.GetString("TO_REPLAY", "gw")
@@ -58,15 +69,13 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	m.Log.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
 	uploader, bucket, err := initFileManager(ctx, config, m.Log)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dumpsLoader, err := dumpsloader.Setup(ctx, config, replayDB, tablePrefix, uploader, bucket, m.Log)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	dumpsLoader.Start()
-	defer dumpsLoader.Stop()
 	var toDB *jobsdb.Handle
 	switch replayToDB {
 	case "gw":
@@ -78,15 +87,33 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	default:
 		toDB = routerDB
 	}
-	err = toDB.Start()
-	if err != nil {
-		return err
-	}
-	defer toDB.Stop()
 	setup, err := replayer.Setup(ctx, config, dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, m.Log)
 	if err != nil {
+		return nil, err
+	}
+	return &Replay{
+		toDB:        toDB,
+		dumpsLoader: dumpsLoader,
+		replayer:    setup,
+	}, nil
+}
+
+func (r *Replay) Start() error {
+	err := r.toDB.Start()
+	if err != nil {
 		return err
 	}
-	setup.Start()
-	return setup.Stop()
+	r.dumpsLoader.Start()
+	r.replayer.Start()
+	return nil
+}
+
+func (r *Replay) Stop() error {
+	err := r.replayer.Stop()
+	if err != nil {
+		return err
+	}
+	r.dumpsLoader.Stop()
+	r.toDB.Stop()
+	return nil
 }
