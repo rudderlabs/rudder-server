@@ -47,16 +47,17 @@ type replayConfig struct {
 	tablePrefix string
 }
 
-func (handle *Replayer) generatorLoop(ctx context.Context) {
+func (handle *Replayer) generatorLoop(ctx context.Context) error {
 	handle.log.Infof("generator reading from replay_jobs_* started")
 	var breakLoop bool
-	select {
-	case <-ctx.Done():
-		handle.log.Infof("generator reading from replay_jobs_* stopped:Context cancelled")
-		return
-	case <-handle.initSourceWorkersChannel:
-	}
 	for {
+		select {
+		case <-ctx.Done():
+			handle.log.Infof("generator reading from replay_jobs_* stopped:Context cancelled")
+			return nil
+		case <-handle.initSourceWorkersChannel:
+		}
+
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{"replay"},
 			JobsLimit:        handle.config.dbReadSize,
@@ -64,7 +65,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) {
 		jobsResult, err := handle.db.GetJobs(context.TODO(), []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
 		if err != nil {
 			handle.log.Errorf("Error getting to retry jobs: %v", err)
-			panic(err)
+			return err
 		}
 		combinedList := jobsResult.Jobs
 
@@ -82,7 +83,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) {
 				)
 				if err != nil {
 					handle.log.Errorf("Error getting executing jobs: %v", err)
-					panic(err)
+					return err
 				}
 				handle.log.Infof("breakLoop is set. Pending executing: %d", len(executingList.Jobs))
 				if len(executingList.Jobs) == 0 {
@@ -131,7 +132,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) {
 		// Mark the jobs as executing
 		err = handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		// Send the jobs to the jobQ
@@ -145,6 +146,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) {
 		handle.log.Infof("Closing worker channels")
 		close(worker.channel)
 	}
+	return nil
 }
 
 func (handle *Replayer) initSourceWorkers(ctx context.Context) {
@@ -165,7 +167,7 @@ func (handle *Replayer) initSourceWorkers(ctx context.Context) {
 			return nil
 		})
 	}
-	handle.initSourceWorkersChannel <- true
+	close(handle.initSourceWorkersChannel)
 }
 
 func Setup(ctx context.Context, config *config.Config, dumpsLoader dumpsloader.DumpsLoader, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) (Replay, error) {
@@ -202,8 +204,7 @@ func (handle *Replayer) Start() {
 		return nil
 	})
 	handle.g.Go(func() error {
-		handle.generatorLoop(handle.ctx)
-		return nil
+		return handle.generatorLoop(handle.ctx)
 	})
 }
 

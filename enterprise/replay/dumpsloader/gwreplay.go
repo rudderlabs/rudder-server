@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-server/enterprise/replay/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/config"

@@ -34,12 +34,16 @@ type SourceWorkerT struct {
 	uploader      filemanager.FileManager
 }
 
-func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
+func (worker *SourceWorkerT) workerProcess(ctx context.Context) error {
 	worker.log.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
 		worker.log.Debugf("job received: %s", job.EventPayload)
 
-		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
+		err := worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
+		if err != nil {
+			worker.log.Errorf("failed to replay job with error: %w", err)
+			return err
+		}
 
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -51,14 +55,15 @@ func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 			Parameters:    []byte(`{}`), // check
 			JobParameters: job.Parameters,
 		}
-		err := worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		err = worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
-func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) {
+func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) error {
 	filePathTokens := strings.Split(filePath, "/")
 
 	var err error
@@ -67,7 +72,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	if tmpdirPath == "" {
 		tmpdirPath, err = os.UserHomeDir()
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 	path := fmt.Sprintf(
@@ -75,29 +80,29 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	file, err := os.Create(path)
 	if err != nil {
-		panic(err) // Cannot open file to write
+		return err // Cannot open file to write
 	}
 
 	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
-		panic(err) // failed to download
+		return err // failed to download
 	}
 	worker.log.Debugf("file downloaded at %s", path)
 	defer func() { _ = file.Close() }()
 
 	rawf, err := os.Open(path)
 	if err != nil {
-		panic(err) // failed to open file
+		return err // failed to open file
 	}
 
 	reader, err := gzip.NewReader(rawf)
 	if err != nil {
-		panic(err) // failed to read gzip file
+		return err // failed to read gzip file
 	}
 
 	sc := bufio.NewScanner(reader)
@@ -212,13 +217,15 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	err = os.Remove(path)
 	if err != nil {
 		worker.log.Errorf("[%s]: failed to remove file with error: %w", err)
+		return err
 	}
+	return nil
 }
 
 const (
