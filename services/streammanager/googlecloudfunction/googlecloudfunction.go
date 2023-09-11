@@ -15,10 +15,11 @@ import (
 
 	"google.golang.org/api/option"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/tidwall/gjson"
 )
 
 type Config struct {
@@ -60,7 +61,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		option.WithCredentialsJSON([]byte(config.Credentials)),
 	}
 
-	service, err := generateService(destination, opts...)
+	service, err := generateService(opts...)
 	// If err is not nil then return
 	if err != nil {
 		pkgLogger.Errorf("[GoogleCloudFunction] error  :: %w", err)
@@ -93,7 +94,7 @@ func invokeAuthenticatedGen1Functions(client *Client, functionUrl string, parsed
 	functionName := getFunctionName(functionUrl)
 
 	requestPayload := &cloudfunctions.CallFunctionRequest{
-		Data: string(parsedJSON.String()),
+		Data: parsedJSON.String(),
 	}
 
 	// Make the HTTP request
@@ -155,6 +156,7 @@ func invokeGen2AndUnauthenticatedFunctions(functionUrl, credentials string, requ
 		fmt.Println("Error making request:", err)
 		return
 	}
+	defer resp.Body.Close()
 
 	if resp.Status == "OK" {
 		respStatus = "Success"
@@ -165,7 +167,7 @@ func invokeGen2AndUnauthenticatedFunctions(functionUrl, credentials string, requ
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
-func generateService(destination *backendconfig.DestinationT, opts ...option.ClientOption) (*cloudfunctions.Service, error) {
+func generateService(opts ...option.ClientOption) (*cloudfunctions.Service, error) {
 	ctx := context.Background()
 
 	cloudFunctionService, err := cloudfunctions.NewService(ctx, opts...)
