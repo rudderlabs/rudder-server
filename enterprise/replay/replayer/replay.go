@@ -160,7 +160,10 @@ func (handle *Replayer) initSourceWorkers(ctx context.Context) {
 		}
 		handle.workers[i] = worker
 		worker.transformer = transformer.NewTransformer(config.Default, handle.log, stats.Default)
-		go worker.workerProcess(ctx)
+		handle.g.Go(func() error {
+			worker.workerProcess(ctx)
+			return nil
+		})
 	}
 	handle.initSourceWorkersChannel <- true
 }
