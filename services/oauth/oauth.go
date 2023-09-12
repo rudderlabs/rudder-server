@@ -124,7 +124,7 @@ const (
 	AUTH_STATUS_INACTIVE = "AUTH_STATUS_INACTIVE"
 
 	// Identifier for invalid_grant or access_denied errors(during refreshing the token)
-	REF_TOKEN_INVALID_GRANT = "refresh_token_invalid_grant"
+	REF_TOKEN_INVALID_GRANT = "ref_token_invalid_grant"
 )
 
 // This struct only exists for marshalling and sending payload to control-plane
