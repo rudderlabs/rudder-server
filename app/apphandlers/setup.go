@@ -75,8 +75,8 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 }
 
 func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
-	enableProcessor := config.GetBool("enableProcessor", false)
-	enableRouter := config.GetBool("enableRouter", false)
+	enableProcessor := config.GetBool("enableProcessor", true)
+	enableRouter := config.GetBool("enableRouter", true)
 	forceStaticMode := config.GetBool("forceStaticModeProvider", false)
 
 	var modeProvider cluster.ChangeEventProvider
