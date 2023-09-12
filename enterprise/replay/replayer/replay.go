@@ -3,6 +3,7 @@ package replayer
 import (
 	"context"
 	"math/rand"
+	"regexp"
 	"sort"
 	"time"
 
@@ -159,11 +160,15 @@ func (handle *Replayer) initSourceWorkers(ctx context.Context) {
 			replayHandler: handle,
 			tablePrefix:   handle.config.tablePrefix,
 			uploader:      handle.uploader,
+			archiverRegex: regexp.MustCompile(`([^\/]+)\/([^\/]+)\/([^\/]+)\/([^\/]+)\/\d{4}-\d{2}-\d{2}\/\d+\/([^\/ ]+)\/\d+_\d+_\w+\.json\.gz`),
 		}
 		handle.workers[i] = worker
 		worker.transformer = transformer.NewTransformer(config.Default, handle.log, stats.Default)
 		handle.g.Go(func() error {
-			worker.workerProcess(ctx)
+			err := worker.workerProcess(ctx)
+			if err != nil {
+				return err
+			}
 			return nil
 		})
 	}
