@@ -3,59 +3,60 @@ package replayer
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
 
-type originalPayload struct {
-	createdAt string          `json:"createdAt"`
-	messageID string          `json:"messageId"`
-	payload   json.RawMessage `json:"payload"`
-	userID    string          `json:"userId"`
+type OriginalPayload struct {
+	CreatedAt time.Time       `json:"createdAt"`
+	MessageID string          `json:"messageId"`
+	Payload   json.RawMessage `json:"payload"`
+	UserID    string          `json:"userId"`
 }
-type desiredPayload struct {
-	createdAt    string  `json:"created_at"`
-	customVal    string  `json:"custom_val"`
-	eventCount   int     `json:"event_count"`
-	eventPayload payload `json:"event_payload"`
-	expireAt     string  `json:"expire_at"`
-	jobID        int     `json:"job_id"`
-	parameters   params  `json:"parameters"`
-	userID       string  `json:"user_id"`
-	uuid         string  `json:"uuid"`
-	workspaceID  string  `json:"workspace_id"`
+type DesiredPayload struct {
+	CreatedAt    time.Time `json:"created_at"`
+	CustomVal    string    `json:"custom_val"`
+	EventCount   int       `json:"event_count"`
+	EventPayload Payload   `json:"event_payload"`
+	ExpireAt     string    `json:"expire_at"`
+	JobID        int       `json:"job_id"`
+	Parameters   Params    `json:"parameters"`
+	UserID       string    `json:"user_id"`
+	UUID         string    `json:"uuid"`
+	WorkspaceID  string    `json:"workspace_id"`
 }
-type payload struct {
-	batch      json.RawMessage `json:"batch"`
-	receivedAt string          `json:"receivedAt"`
-	requestIP  string          `json:"requestIP"`
-	writeKey   string          `json:"writeKey"`
+type Payload struct {
+	Batch      json.RawMessage `json:"batch"`
+	ReceivedAt string          `json:"receivedAt"`
+	RequestIP  string          `json:"requestIP"`
+	WriteKey   string          `json:"writeKey"`
 }
-type params struct {
-	sourceID        string `json:"source_id"`
-	sourceJobRunID  string `json:"source_job_run_id"`
-	sourceTaskRunID string `json:"source_task_run_id"`
+type Params struct {
+	SourceID        string `json:"source_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
 }
 
 func transformArchivalToBackup(input []byte, path string) ([]byte, error) {
-	var originalPayload originalPayload
+	var originalPayload OriginalPayload
 	err := json.Unmarshal(input, &originalPayload)
 	if err != nil {
 		return nil, err
 	}
 	sourceId := strings.Split(path, "/")[0]
-	desiredPayload := desiredPayload{
-		createdAt: originalPayload.createdAt,
-		customVal: "GW",
-		eventPayload: payload{
-			batch: originalPayload.payload,
+	desiredPayload := DesiredPayload{
+		CreatedAt: originalPayload.CreatedAt,
+		CustomVal: "GW",
+		EventPayload: Payload{
+			Batch: originalPayload.Payload,
 		},
-		uuid: uuid.Must(uuid.NewRandom()).String(),
-		parameters: params{
-			sourceID: sourceId,
+		UUID: uuid.Must(uuid.NewRandom()).String(),
+		Parameters: Params{
+			SourceID: sourceId,
 		},
-		eventCount: 1,
-		userID:     originalPayload.userID,
+		EventCount: 1,
+		UserID:     originalPayload.UserID,
 	}
 	desiredJSON, err := json.Marshal(desiredPayload)
 	if err != nil {
