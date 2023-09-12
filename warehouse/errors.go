@@ -1,7 +1,6 @@
 package warehouse
 
 import (
-	"fmt"
 	"strings"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -9,15 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
-
-type InvalidDestinationCredErr struct {
-	Base      error
-	Operation string
-}
-
-func (err InvalidDestinationCredErr) Error() string {
-	return fmt.Sprintf("Invalid destination creds, failed for operation: %s with err: \n%s", err.Operation, err.Base.Error())
-}
 
 type ErrorHandler struct {
 	Manager manager.Manager
