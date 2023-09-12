@@ -46,9 +46,43 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 	return config.GetDurationVar(720, time.Hour, "Router."+destID+".jobRetention", "Router.jobRetention")
 }
 
-func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*DestinationWithSources) (bool, string) {
+type JobParameters struct {
+	SourceID                string      `json:"source_id"`
+	DestinationID           string      `json:"destination_id"`
+	ReceivedAt              string      `json:"received_at"`
+	TransformAt             string      `json:"transform_at"`
+	SourceTaskRunID         string      `json:"source_task_run_id"`
+	SourceJobID             string      `json:"source_job_id"`
+	SourceJobRunID          string      `json:"source_job_run_id"`
+	SourceDefinitionID      string      `json:"source_definition_id"`
+	DestinationDefinitionID string      `json:"destination_definition_id"`
+	SourceCategory          string      `json:"source_category"`
+	RecordID                interface{} `json:"record_id"`
+	MessageID               string      `json:"message_id"`
+	EventName               string      `json:"event_name"`
+	EventType               string      `json:"event_type"`
+	WorkspaceID             string      `json:"workspaceId"`
+	RudderAccountID         string      `json:"rudderAccountId"`
+}
+
+// ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails
+func (jp *JobParameters) ParseReceivedAtTime() time.Time {
+	receivedAt, _ := time.Parse(misc.RFC3339Milli, jp.ReceivedAt)
+	return receivedAt
+}
+
+type AbortConfigs struct {
+	ToAbortDestinationIDs string
+	// source
+	// connection
+	// jobRunID
+	// ...
+}
+
+func ToBeDrained(job *jobsdb.JobT, jobParams JobParameters, abortConfig AbortConfigs, destinationsMap map[string]*DestinationWithSources) (bool, string) {
 	// drain if job is older than the destination's retention time
 	createdAt := job.CreatedAt
+	destID := jobParams.DestinationID
 	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
 		return true, "job expired"
 	}
@@ -57,12 +91,18 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 		return true, "destination is disabled"
 	}
 
+	toAbortDestinationIDs := abortConfig.ToAbortDestinationIDs
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
 		if slices.Contains(abortIDs, destID) {
 			return true, "destination configured to abort"
 		}
 	}
+
+	// toAbortSourceIDS
+	// toAbortConnection(sourceID, destID)
+	// toAbortJobRunID/TaskRunID
+	// ...
 
 	return false, ""
 }

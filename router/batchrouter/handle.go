@@ -478,7 +478,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 			}
 		}
 	}
-	var sampleParameters JobParameters
+	var sampleParameters router_utils.JobParameters
 	err = json.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
@@ -592,7 +592,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			errorResp = []byte(errorRespString)
 		}
 
-		var parameters JobParameters
+		var parameters router_utils.JobParameters
 		err = json.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))

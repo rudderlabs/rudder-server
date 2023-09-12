@@ -283,7 +283,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, workerJobStatus := range *workerJobStatuses {
-		var parameters JobParameters
+		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
 		if err != nil {
 			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
@@ -474,7 +474,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrContextCancelled
 	}
 
-	var parameters JobParameters
+	var parameters routerutils.JobParameters
 	if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return nil, types.ErrParamsUnmarshal
@@ -545,7 +545,7 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.

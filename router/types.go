@@ -11,30 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// JobParameters struct holds source id and destination id of a job
-type JobParameters struct {
-	SourceID                string      `json:"source_id"`
-	DestinationID           string      `json:"destination_id"`
-	ReceivedAt              string      `json:"received_at"`
-	TransformAt             string      `json:"transform_at"`
-	SourceTaskRunID         string      `json:"source_task_run_id"`
-	SourceJobID             string      `json:"source_job_id"`
-	SourceJobRunID          string      `json:"source_job_run_id"`
-	SourceDefinitionID      string      `json:"source_definition_id"`
-	DestinationDefinitionID string      `json:"destination_definition_id"`
-	SourceCategory          string      `json:"source_category"`
-	RecordID                interface{} `json:"record_id"`
-	MessageID               string      `json:"message_id"`
-	WorkspaceID             string      `json:"workspaceId"`
-	RudderAccountID         string      `json:"rudderAccountId"`
-}
-
-// ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails
-func (jp *JobParameters) ParseReceivedAtTime() time.Time {
-	receivedAt, _ := time.Parse(misc.RFC3339Milli, jp.ReceivedAt)
-	return receivedAt
-}
-
 type workerJobStatus struct {
 	userID string
 	worker *worker

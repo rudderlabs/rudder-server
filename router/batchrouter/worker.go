@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -75,7 +74,9 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
-			if drain, reason := router_utils.ToBeDrained(job, destWithSources.Destination.ID, brt.toAbortDestinationIDs.Load(), destinationsMap); drain {
+			var params router_utils.JobParameters
+			_ = json.Unmarshal(job.Parameters, &params)
+			if drain, reason := router_utils.ToBeDrained(job, params, router_utils.AbortConfigs{ToAbortDestinationIDs: brt.toAbortDestinationIDs.Load()}, destinationsMap); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -105,7 +106,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					drainStatsbyDest[destWithSources.Destination.ID].Reasons = append(drainStatsbyDest[destWithSources.Destination.ID].Reasons, reason)
 				}
 			} else {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+				sourceID := params.SourceID
 				if _, ok := jobsBySource[sourceID]; !ok {
 					jobsBySource[sourceID] = []*jobsdb.JobT{}
 				}
