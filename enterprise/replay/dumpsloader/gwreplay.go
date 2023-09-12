@@ -57,7 +57,7 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
 		filePath := object.Key
 		if strings.Contains(filePath, "gw_jobs_") {
 			startTimeMilli := g.handle.config.startTime.UnixNano() / int64(time.Millisecond)
-			endTimeMilli := g.handle.config.endTime.Unix() / int64(time.Millisecond)
+			endTimeMilli := g.handle.config.endTime.UnixNano() / int64(time.Millisecond)
 			key := object.Key
 			tokens := strings.Split(key, "gw_jobs_")
 			tokens = strings.Split(tokens[1], ".")
