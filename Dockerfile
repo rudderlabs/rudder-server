@@ -33,7 +33,7 @@ FROM alpine:${ALPINE_VERSION}
 
 RUN apk update && apk add tzdata
 RUN apk -U --no-cache upgrade && \
-    apk add --no-cache ca-certificates postgresql-client curl bash
+    apk add --no-cache ca-certificates curl bash
 
 COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
@@ -41,10 +41,6 @@ COPY --from=builder rudder-server/build/regulation-worker .
 COPY --from=builder rudder-server/devtool .
 
 COPY build/docker-entrypoint.sh /
-COPY build/wait-for /
-COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
-COPY scripts/generate-event /scripts/generate-event
-COPY scripts/batch.json /scripts/batch.json
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server"]
