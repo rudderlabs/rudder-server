@@ -18,6 +18,7 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -151,11 +152,16 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
 
+	orderGroupKeyFn := func(job *jobsdb.JobT) string { return job.LastJobStatus.JobState }
+	if config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition and option after successful rollout of sinle query
+		orderGroupKeyFn = func(job *jobsdb.JobT) string { return "same" }
+	}
 	iterator := jobiterator.New(
 		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize),
 		rt.getJobsFn(ctx),
 		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance),
 		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries),
+		jobiterator.WithOrderGroupKeyFn(orderGroupKeyFn),
 	)
 
 	if !iterator.HasNext() {
