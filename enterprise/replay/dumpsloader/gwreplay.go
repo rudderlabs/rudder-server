@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -40,8 +41,6 @@ func (g *gwReplayRequestHandler) handleRecovery() {
 }
 
 func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
-	startTimeMilli := g.handle.config.startTime.Unix()
-	endTimeMilli := g.handle.config.endTime.Unix()
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)         // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
@@ -57,6 +56,8 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
 		object := iter.Get()
 		filePath := object.Key
 		if strings.Contains(filePath, "gw_jobs_") {
+			startTimeMilli := g.handle.config.startTime.UnixNano() / int64(time.Millisecond)
+			endTimeMilli := g.handle.config.endTime.Unix() / int64(time.Millisecond)
 			key := object.Key
 			tokens := strings.Split(key, "gw_jobs_")
 			tokens = strings.Split(tokens[1], ".")
@@ -88,6 +89,7 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
 				objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 			}
 		} else {
+			startTimeMilli := g.handle.config.startTime.Unix()
 			fileName := strings.Split(filePath, "/")[len(strings.Split(filePath, "/"))-1]
 			firstEventAt, err := strconv.ParseInt(strings.Split(fileName, "_")[0], 10, 64)
 			if err != nil {
