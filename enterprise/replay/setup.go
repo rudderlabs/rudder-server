@@ -113,7 +113,10 @@ func (r *Replay) Stop() error {
 	if err != nil {
 		return err
 	}
-	r.dumpsLoader.Stop()
+	err = r.dumpsLoader.Stop()
+	if err != nil {
+		return err
+	}
 	r.toDB.Stop()
 	return nil
 }
