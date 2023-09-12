@@ -11,8 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"

@@ -205,7 +205,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 
 	statusList, err := gather(jd.GetJobs, []string{Failed.State, Executing.State, Waiting.State, Unprocessed.State}, GetQueryParams{})
 	if err != nil {
-		return err
+		return fmt.Errorf("gathering job statuses: %w", err)
 	}
 
 	if len(statusList) > 0 {
@@ -217,17 +217,22 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 
 	// 2. cleanup journal
 	{
-		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id"
+		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY'"
 		var journalEntryCount int64
-		if err := jd.dbHandle.QueryRowContext(
+		res, err := jd.dbHandle.ExecContext(
 			ctx,
 			fmt.Sprintf(
 				deleteStmt,
 				jd.tablePrefix,
 				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
 			),
-		).Scan(&journalEntryCount); err != nil {
-			return err
+		)
+		if err != nil {
+			return fmt.Errorf("cleaning up journal: %w", err)
+		}
+		journalEntryCount, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("finding journal rows affected during cleanup: %w", err)
 		}
 		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
 	}

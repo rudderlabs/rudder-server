@@ -1244,6 +1244,9 @@ func TestMaxAgeCleanup(t *testing.T) {
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
+	// run cleanup once with an empty db
+	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
+
 	// store some jobs
 	require.NoError(
 		t,
@@ -1279,6 +1282,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
 	triggerJobCleanup <- time.Now()
 	triggerJobCleanup <- time.Now()
 
