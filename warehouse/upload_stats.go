@@ -75,7 +75,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(
+	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
@@ -119,7 +119,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(
+	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
@@ -163,7 +163,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := repo.NewStagingFiles(job.dbHandle).FirstEventForUpload(job.ctx, job.upload)
+	firstEventAt, err := repo.NewStagingFiles(job.db).FirstEventForUpload(job.ctx, job.upload)
 	if err != nil {
 		job.logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -189,7 +189,7 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
 	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
 	var timeTakenInS time.Duration
-	err = job.dbHandle.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
+	err = job.db.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
 	if err != nil {
 		job.logger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
 		return

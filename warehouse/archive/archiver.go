@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"time"
 
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/iancoleman/strcase"
@@ -48,7 +50,7 @@ type uploadRecord struct {
 }
 
 type Archiver struct {
-	db            *sql.DB
+	db            *sqlmw.DB
 	stats         stats.Stats
 	log           logger.Logger
 	conf          *config.Config
@@ -69,7 +71,7 @@ func New(
 	conf *config.Config,
 	log logger.Logger,
 	stat stats.Stats,
-	db *sql.DB,
+	db *sqlmw.DB,
 	fileManager filemanager.Factory,
 	tenantManager *multitenant.Manager,
 ) *Archiver {
@@ -148,7 +150,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		tablearchiver.OffsetAction,
 	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
-		DbHandle:      a.db,
+		DbHandle:      a.db.DB,
 		Pagination:    a.config.backupRowsBatchSize,
 		QueryTemplate: tmpl,
 		OutputPath:    path,
@@ -361,7 +363,11 @@ func (a *Archiver) Do(ctx context.Context) error {
 	return nil
 }
 
-func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uploadRecord) ([]int64, error) {
+func (a *Archiver) getStagingFilesData(
+	ctx context.Context,
+	txn *sqlmw.Tx,
+	u *uploadRecord,
+) ([]int64, error) {
 	stmt := fmt.Sprintf(`
 		SELECT
 		  id
@@ -403,7 +409,10 @@ func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uplo
 }
 
 func (a *Archiver) deleteLoadFileRecords(
-	ctx context.Context, txn *sql.Tx, stagingFileIDs []int64, hasUsedRudderStorage bool,
+	ctx context.Context,
+	txn *sqlmw.Tx,
+	stagingFileIDs []int64,
+	hasUsedRudderStorage bool,
 ) error {
 	stmt := fmt.Sprintf(`
 		DELETE FROM %s

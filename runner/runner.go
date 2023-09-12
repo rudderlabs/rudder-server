@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -40,7 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -80,6 +83,7 @@ type Runner struct {
 	application               app.App
 	releaseInfo               ReleaseInfo
 	warehouseMode             string
+	warehouseApp              *warehouse.App
 	enableSuppressUserFeature bool
 	logger                    logger.Logger
 	appHandler                apphandlers.AppHandler
@@ -213,7 +217,16 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}
 	}
 	if r.canStartWarehouse() {
-		if err := warehouse.Setup(ctx); err != nil {
+		r.warehouseApp = warehouse.NewApp(
+			r.application,
+			config.Default,
+			r.logger,
+			stats.Default,
+			backendconfig.DefaultBackendConfig,
+			filemanager.New,
+		)
+
+		if err := r.warehouseApp.Setup(ctx); err != nil {
 			r.logger.Errorf("Unable to prepare warehouse database: %s", err)
 			return 1
 		}
@@ -266,7 +279,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if r.canStartWarehouse() {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			if err := warehouse.Start(ctx, r.application); err != nil {
+			if err := r.warehouseApp.Start(ctx); err != nil {
 				return fmt.Errorf("warehouse service routine: %w", err)
 			}
 			return nil
@@ -329,7 +342,6 @@ func runAllInit() {
 	backendconfig.Init()
 	warehouseutils.Init()
 	pgnotifier.Init()
-	warehouse.Init4()
 	validations.Init()
 	webhook.Init()
 	asyncdestinationmanager.Init()

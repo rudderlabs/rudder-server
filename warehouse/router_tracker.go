@@ -27,7 +27,7 @@ func (r *router) CronTracker(ctx context.Context) error {
 		r.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {
-			if err := r.Track(ctx, &warehouse, config.Default); err != nil {
+			if err := r.Track(ctx, &warehouse, r.conf); err != nil {
 				return fmt.Errorf(
 					"cron tracker failed for source: %s, destination: %s with error: %w",
 					warehouse.Source.ID,
@@ -123,7 +123,7 @@ func (r *router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 		timeWindow / time.Minute,
 	}
 
-	err := r.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
+	err := r.db.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -162,7 +162,7 @@ func (r *router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 		createdAt.Time.Format(misc.RFC3339Milli),
 	}
 
-	err = r.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&exists)
+	err = r.db.QueryRowContext(ctx, query, queryArgs...).Scan(&exists)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("fetching last upload status for source: %s and destination: %s: %w", source.ID, destination.ID, err)
 	}

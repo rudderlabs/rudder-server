@@ -105,12 +105,12 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnoti
 	for {
 		select {
 		case <-ctx.Done():
-			sw.log.Infof("[WH]: Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
+			sw.log.Infof("Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
 			return
 		case claimedJob := <-notificationChan:
 			sw.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			sw.log.Debugf("[WH]: Successfully claimed job:%d by slave worker-%d-%s & job type %s",
+			sw.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
 				claimedJob.ID,
 				sw.workerIdx,
 				slaveID,
@@ -124,7 +124,7 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnoti
 				sw.processClaimedUploadJob(ctx, claimedJob)
 			}
 
-			sw.log.Infof("[WH]: Successfully processed job:%d by slave worker-%d-%s",
+			sw.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
 				claimedJob.ID,
 				sw.workerIdx,
 				slaveID,
@@ -191,7 +191,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory, sw.encodingFactory)
 
-	sw.log.Debugf("[WH]: Starting processing staging file: %v at %s for %s",
+	sw.log.Debugf("Starting processing staging file: %v at %s for %s",
 		job.StagingFileID,
 		job.StagingFileLocation,
 		jr.identifier,
@@ -258,7 +258,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 		)
 
 		if err := json.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
-			jr.logger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			jr.logger.Errorf("Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
 		}
 
@@ -358,7 +358,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable])
 					if err != nil {
-						jr.logger.Errorf("[WH]: Failed to write to discards: %v", err)
+						jr.logger.Errorf("Failed to write to discards: %v", err)
 					}
 
 					jr.tableEventCountMap[discardsTable]++
@@ -390,7 +390,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 		jr.tableEventCountMap[tableName]++
 	}
 
-	jr.logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	jr.logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
@@ -411,7 +411,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob pgnotifier.Claim) {
 	handleErr := func(err error, claim pgnotifier.Claim) {
-		sw.log.Errorf("[WH]: Error processing claim: %v", err)
+		sw.log.Errorf("Error processing claim: %v", err)
 
 		sw.notifier.UpdateClaimedEvent(&claimedJob, &pgnotifier.ClaimResponse{
 			Err: err,
@@ -486,7 +486,7 @@ func (sw *slaveWorker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPa
 			StartTime: metadata.StartTime,
 		})
 	default:
-		err = errors.New("invalid AsyncJobType")
+		err = errors.New("invalid asyncJob type")
 	}
 	if err != nil {
 		return result, err

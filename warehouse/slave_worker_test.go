@@ -84,6 +84,8 @@ func TestSlaveWorker(t *testing.T) {
 				subscribeCh: subscribeCh,
 			}
 
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+
 			slaveWorker := newSlaveWorker(
 				config.Default,
 				logger.NOP,
@@ -181,6 +183,8 @@ func TestSlaveWorker(t *testing.T) {
 			notifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
+
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -307,6 +311,8 @@ func TestSlaveWorker(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.s3_datalake.columnCountLimit", 10)
 
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+
 			slaveWorker := newSlaveWorker(
 				c,
 				logger.NOP,
@@ -371,6 +377,8 @@ func TestSlaveWorker(t *testing.T) {
 			notifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
+
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -633,7 +641,7 @@ func TestSlaveWorker(t *testing.T) {
 					sourceID:      sourceID,
 					destinationID: destinationID,
 					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid AsyncJobType"),
+					expectedError: errors.New("invalid asyncJob type"),
 				},
 				{
 					name:          "invalid parameters",

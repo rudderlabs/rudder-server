@@ -2,9 +2,10 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"time"
+
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -24,9 +25,9 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWh struct {
-	dbHandle              *sql.DB
+	db                    *sqlmw.DB
 	enabled               bool
-	pgnotifier            *pgnotifier.PGNotifier
+	notifier              *pgnotifier.PGNotifier
 	context               context.Context
 	logger                logger.Logger
 	maxBatchSizeToProcess int

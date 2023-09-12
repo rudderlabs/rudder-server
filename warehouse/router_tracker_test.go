@@ -158,7 +158,7 @@ func TestRouter_Track(t *testing.T) {
 				},
 				nowSQL:       nowSQL,
 				statsFactory: store,
-				dbHandle:     sqlquerywrapper.New(pgResource.DB),
+				db:           sqlquerywrapper.New(pgResource.DB),
 				logger:       logger.NOP,
 			}
 
@@ -268,8 +268,9 @@ func TestRouter_CronTracker(t *testing.T) {
 			},
 			nowSQL:       "ABC",
 			statsFactory: memstats.New(),
-			dbHandle:     sqlquerywrapper.New(pgResource.DB),
+			db:           sqlquerywrapper.New(pgResource.DB),
 			logger:       logger.NOP,
+			conf:         config.Default,
 		}
 		r.warehouses = append(r.warehouses, warehouse)
 

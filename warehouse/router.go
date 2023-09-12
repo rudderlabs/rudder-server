@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strings"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/rudderlabs/rudder-server/warehouse/trigger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -40,13 +44,21 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+const defaultUploadPriority = 100
+
+type (
+	WorkerIdentifierT string
+	JobID             int64
+)
+
 type router struct {
 	destType string
 
-	dbHandle     *sqlquerywrapper.DB
+	db           *sqlquerywrapper.DB
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
+	triggerStore *trigger.Store
 
 	isEnabled atomic.Bool
 
@@ -60,6 +72,9 @@ type router struct {
 
 	workerChannelMap     map[string]chan *UploadJob
 	workerChannelMapLock sync.RWMutex
+
+	createJobMarkerMap     map[string]time.Time
+	createJobMarkerMapLock sync.RWMutex
 
 	inProgressMap     map[WorkerIdentifierT][]JobID
 	inProgressMapLock sync.RWMutex
@@ -79,6 +94,7 @@ type router struct {
 	notifier         *pgnotifier.PGNotifier
 
 	config struct {
+		uploadFreqInS                     int64
 		noOfWorkers                       int
 		maxConcurrentUploadJobs           int
 		allowMultipleSourcesForJobsPickup bool
@@ -112,11 +128,12 @@ func newRouter(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
-	pgNotifier *pgnotifier.PGNotifier,
+	notifier *pgnotifier.PGNotifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
 	encodingFactory *encoding.Factory,
+	triggerStore *trigger.Store,
 ) (*router, error) {
 	r := &router{}
 
@@ -126,18 +143,20 @@ func newRouter(
 	r.logger = logger.Child(destType)
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
-	r.dbHandle = db
+	r.db = db
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
 
-	r.notifier = pgNotifier
+	r.notifier = notifier
 	r.tenantManager = tenantManager
 	r.bcManager = bcManager
 	r.destType = destType
 	r.now = time.Now
+	r.triggerStore = triggerStore
+	r.createJobMarkerMap = make(map[string]time.Time)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
@@ -151,8 +170,8 @@ func newRouter(
 		conf:                 r.conf,
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,
-		dbHandle:             r.dbHandle,
-		pgNotifier:           r.notifier,
+		db:                   r.db,
+		notifier:             r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
@@ -168,6 +187,7 @@ func newRouter(
 
 	whName := warehouseutils.WHDestNameMap[destType]
 
+	r.conf.RegisterInt64ConfigVariable(1800, &r.config.uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	r.conf.RegisterIntConfigVariable(1, &r.config.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
@@ -391,12 +411,14 @@ loop:
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
+			var pqErr *pq.Error
 
+			switch {
+			case errors.Is(err, context.Canceled),
+				errors.Is(err, context.DeadlineExceeded),
+				errors.As(err, &pqErr) && pqErr.Code == "57014":
 				break loop
-			} else {
+			default:
 				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
 
 				panic(err)
@@ -612,7 +634,7 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return err
 	}
 
-	setLastProcessedMarker(warehouse, uploadStartAfter)
+	r.updateCreateJobMarker(warehouse, uploadStartAfter)
 
 	return nil
 }
@@ -655,7 +677,7 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	uploadTriggered := isUploadTriggered(warehouse)
+	uploadTriggered := r.triggerStore.IsTriggered(warehouse.Identifier)
 	if uploadTriggered {
 		priority = 50
 	}
@@ -691,10 +713,38 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 
 	// reset upload trigger if the upload was triggered
 	if uploadTriggered {
-		clearTriggeredUpload(warehouse)
+		r.triggerStore.ClearTrigger(warehouse.Identifier)
 	}
 
 	return nil
+}
+
+func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
+	freqInS := r.uploadFreqInS(syncFrequency)
+
+	r.createJobMarkerMapLock.RLock()
+	defer r.createJobMarkerMapLock.RUnlock()
+
+	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
+	if !ok {
+		return true
+	}
+	return r.now().Sub(lastCreatedAt) > time.Duration(freqInS)*time.Second
+}
+
+func (r *router) uploadFreqInS(syncFrequency string) int64 {
+	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
+	if err != nil {
+		return r.config.uploadFreqInS
+	}
+	return freqInMin * 60
+}
+
+func (r *router) updateCreateJobMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
+	r.createJobMarkerMapLock.Lock()
+	defer r.createJobMarkerMapLock.Unlock()
+
+	r.createJobMarkerMap[warehouse.Identifier] = lastProcessedTime
 }
 
 // Enable enables a router :)

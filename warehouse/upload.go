@@ -71,11 +71,11 @@ type tableNameT string
 
 type UploadJobFactory struct {
 	app                  app.App
-	dbHandle             *sqlquerywrapper.DB
+	db                   *sqlquerywrapper.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *pgnotifier.PGNotifier
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -85,13 +85,13 @@ type UploadJobFactory struct {
 type UploadJob struct {
 	app                  app.App
 	ctx                  context.Context
-	dbHandle             *sqlmiddleware.DB
+	db                   *sqlmiddleware.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *pgnotifier.PGNotifier
 	schemaHandle         *Schema
 	conf                 *config.Config
 	logger               logger.Logger
@@ -183,20 +183,20 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj := &UploadJob{
 		ctx:                  ujCtx,
 		app:                  f.app,
-		dbHandle:             f.dbHandle,
+		db:                   f.db,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
-		pgNotifier:           f.pgNotifier,
+		notifier:             f.notifier,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,
 		logger:               f.logger,
 		statsFactory:         f.statsFactory,
-		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
+		tableUploadsRepo:     repo.NewTableUploads(f.db),
 		schemaHandle: NewSchema(
-			f.dbHandle,
+			f.db,
 			dto.Warehouse,
-			config.Default,
+			f.conf,
 		),
 
 		upload:         dto.Upload,
@@ -204,7 +204,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		stagingFiles:   dto.StagingFiles,
 		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
 
-		pendingTableUploadsRepo: repo.NewUploads(f.dbHandle),
+		pendingTableUploadsRepo: repo.NewUploads(f.db),
 		pendingTableUploads:     []model.PendingTableUpload{},
 
 		alertSender: alerta.NewClient(
@@ -399,14 +399,14 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		misc.IntArrayToString(job.stagingFileIDs, ","),
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	)
-	if err := job.dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
+	if err := job.db.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
 		job.logger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
 	}
 	return total.Int64
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
-	rowsInStagingFiles, err := repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(ctx, job.upload)
+	rowsInStagingFiles, err := repo.NewStagingFiles(job.db).TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
@@ -671,7 +671,7 @@ func (job *UploadJob) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(job.ctx, job.upload)
+			rowCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, job.upload)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -803,7 +803,7 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.New(
 		job.warehouse,
-		job.dbHandle,
+		job.db,
 		job,
 		job.upload.ID,
 		job.whManager,
@@ -1420,7 +1420,7 @@ func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (error
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings) {
-	timings, err := repo.NewUploads(job.dbHandle).UploadTimings(job.ctx, job.upload.ID)
+	timings, err := repo.NewUploads(job.db).UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
 		job.logger.Error("error getting timing, scrapping them", err)
 	}
@@ -1446,7 +1446,7 @@ func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
 		warehouseutils.WarehouseUploadsTable,
 		job.upload.ID,
 	)
-	err := job.dbHandle.QueryRowContext(job.ctx, sqlStatement).Scan(&firstTiming)
+	err := job.db.QueryRowContext(job.ctx, sqlStatement).Scan(&firstTiming)
 	if err != nil {
 		return
 	}
@@ -1480,7 +1480,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
+		txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 		if err != nil {
 			return err
 		}
@@ -1563,7 +1563,7 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 	if opts.Txn != nil {
 		querier = opts.Txn
 	} else {
-		querier = job.dbHandle
+		querier = job.db
 	}
 	_, err := querier.ExecContext(job.ctx, sqlStatement, values...)
 	return err
@@ -1683,14 +1683,14 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		{Column: "updated_at", Value: job.now()},
 	}
 
-	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
+	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
 		return "", fmt.Errorf("unable to start transaction: %w", err)
 	}
 	if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
-	inputCount, _ := repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(job.ctx, upload)
+	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	})
@@ -1823,7 +1823,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
 	}
-	rows, err := job.dbHandle.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
+	rows, err := job.db.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
 	if err == sql.ErrNoRows {
 		err = nil
 		return
@@ -1915,7 +1915,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 	)
 
 	job.logger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
-	rows, err := job.dbHandle.QueryContext(ctx, sqlStatement)
+	rows, err := job.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err))
 	}

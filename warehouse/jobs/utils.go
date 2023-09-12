@@ -18,7 +18,7 @@ func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayload, st
 	return asyncJobStatusMap
 }
 
-// convert to pgNotifier Payload and return the array of payloads
+// convert to notifier Payload and return the array of payloads
 func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayload) ([]pgnotifier.JobPayload, error) {
 	var messages []pgnotifier.JobPayload
 	for _, job := range asyncJobPayloads {

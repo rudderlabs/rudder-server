@@ -231,7 +231,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 		schema := &job.Upload.UploadSchema
 
-		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
+		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
 		messagePayload := pgnotifier.MessagePayload{
 			Jobs:    messages,
 			JobType: "upload",
@@ -239,7 +239,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 		ch, err := lf.Notifier.Publish(ctx, messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
 		if err != nil {
-			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)
+			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)
 		}
 		// set messages to nil to release mem allocated
 		messages = nil
@@ -247,7 +247,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
 			responses := <-ch
-			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from PgNotifier",
+			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from notifier",
 				"startId", startId,
 				"endID", endId,
 				logfield.DestinationID, destType,
@@ -257,7 +257,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by pgnotifier is set on corresponding staging_file
+				// 1. any error returned by notifier is set on corresponding staging_file
 				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
@@ -272,7 +272,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				var output []WorkerJobResponse
 				err = json.Unmarshal(resp.Output, &output)
 				if err != nil {
-					return fmt.Errorf("unmarshalling response from pgnotifier: %w", err)
+					return fmt.Errorf("unmarshalling response from notifier: %w", err)
 				}
 				if len(output) == 0 {
 					lf.Logger.Errorf("[WH]: No LoadFiles returned by wh worker")
