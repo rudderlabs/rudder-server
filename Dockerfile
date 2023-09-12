@@ -40,6 +40,9 @@ COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
 COPY --from=builder rudder-server/build/regulation-worker .
 COPY --from=builder rudder-server/devtool .
 
+COPY build/wait-for /
+COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
+
 COPY build/docker-entrypoint.sh /
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
