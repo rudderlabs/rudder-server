@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
@@ -388,12 +389,12 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		"reporting_metrics_lag_minutes", stats.GaugeType, stats.Tags{"client": clientName},
 	)
 
-	lastReportedAt := time.Now().UTC().Unix() / 60
+	lastReportedAt := atomic.NewInt64(time.Now().UTC().Unix() / 60)
 	go func() {
 		// for monitoring reports pileups
 		for {
 			currentMs := time.Now().UTC().Unix() / 60
-			lagMinutes := int(currentMs - lastReportedAt)
+			lagMinutes := int(currentMs - lastReportedAt.Load())
 
 			reportingLag.Gauge(lagMinutes)
 
@@ -420,7 +421,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			if err == nil {
-				lastReportedAt = currentMs
+				lastReportedAt.Store(currentMs)
 			}
 			select {
 			case <-ctx.Done():
@@ -431,7 +432,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			continue
 		}
 
-		lastReportedAt = reportedAt
+		lastReportedAt.Store(reportedAt)
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
