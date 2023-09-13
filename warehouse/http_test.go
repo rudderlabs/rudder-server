@@ -186,7 +186,7 @@ func TestHTTPApi(t *testing.T) {
 
 	sourcesManager := jobs.New(
 		ctx,
-		db.DB,
+		db,
 		&notifier,
 	)
 	jobs.WithConfig(sourcesManager, config.Default)
@@ -877,9 +877,9 @@ func TestHTTPApi(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, http.StatusOK, resp.StatusCode)
 
-					defer func() {
+					t.Cleanup(func() {
 						httputil.CloseResponse(resp)
-					}()
+					})
 				}
 			})
 
