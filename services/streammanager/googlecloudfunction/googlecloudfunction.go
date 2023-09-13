@@ -57,11 +57,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	var config Config
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] Error while marshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[GoogleCloudFunction] Error while marshalling destination config: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: error in GoogleCloudFunction while unmarshalling destination config:: %w", err)
+		return nil, fmt.Errorf("[GoogleCloudFunction] Error in GoogleCloudFunction while unmarshalling destination config: %w", err)
 	}
 
 	opts := []option.ClientOption{
@@ -77,7 +77,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	service, err := generateService(opts...)
 	// If err is not nil then return
 	if err != nil {
-		pkgLogger.Errorf("error in generation of service  :: %w", err)
+		pkgLogger.Errorf("Error in generation of service: %w", err)
 		return nil, err
 	}
 
@@ -145,8 +145,8 @@ func invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCod
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, destConfig.GoogleCloudFunctionUrl, strings.NewReader(string(jsonBytes)))
 	if err != nil {
-		pkgLogger.Errorf("Error creating request: %v", err)
-		return
+		pkgLogger.Errorf("Failed to create httpRequest for Gen2 Fn: %w", err)
+		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Gen2 Fn: %s", err.Error())
 	}
 
 	// Set the appropriate headers
@@ -154,13 +154,15 @@ func invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCod
 	if destConfig.RequireAuthentication {
 		ts, err := idtoken.NewTokenSource(ctx, destConfig.GoogleCloudFunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
 		if err != nil {
-			fmt.Print("failed to create NewTokenSource: %w", err)
+			pkgLogger.Errorf("failed to create NewTokenSource: %w", err)
+			return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create NewTokenSource: %s", err.Error())
 		}
 
 		// Get the ID token, to make an authenticated call to the target audience.
 		token, err := ts.Token()
 		if err != nil {
-			fmt.Print("failed to receive token: %w", err)
+			pkgLogger.Errorf("failed to receive token: %w", err)
+			return http.StatusInternalServerError, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
 		}
 		req.Header.Add("Authorization", "Bearer "+token.AccessToken)
 	}
