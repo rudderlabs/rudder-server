@@ -93,9 +93,10 @@ var (
 	pkgLogger         logger.Logger
 )
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
-	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
+	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS")
 	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
 }
 

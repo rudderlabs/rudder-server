@@ -50,6 +50,7 @@ func Init() {
 	loadConfig()
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &JobRetention, true, time.Hour, "Router.jobRetention")
 }
