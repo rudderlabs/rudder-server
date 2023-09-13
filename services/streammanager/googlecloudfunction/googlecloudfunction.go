@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"google.golang.org/api/cloudfunctions/v1"
@@ -38,8 +39,12 @@ type Client struct {
 
 var pkgLogger logger.Logger
 
-func init() {
+func Init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("GoogleCloudFunction")
+}
+
+func init() {
+	Init()
 }
 
 type GoogleCloudFunctionProducer struct {
@@ -72,7 +77,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	service, err := generateService(opts...)
 	// If err is not nil then return
 	if err != nil {
-		pkgLogger.Errorf("[GoogleCloudFunction] error  :: %w", err)
+		pkgLogger.Errorf("error in generation of service  :: %w", err)
 		return nil, err
 	}
 
@@ -92,13 +97,13 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 		return invokeGen1Functions(producer.client, destConfig.FunctionName, parsedJSON)
 	}
 
-	return invokeGen2Functions(destConfig.GoogleCloudFunctionUrl, destConfig.Credentials, destConfig.RequireAuthentication, parsedJSON)
+	return invokeGen2Functions(destConfig, parsedJSON)
 }
 
 func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	if client == nil {
 		respStatus = "Failure"
-		responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
+		responseMessage = "[GoogleCloudFunction]:: Failed to initialize client"
 		return 400, respStatus, responseMessage
 	}
 
@@ -110,12 +115,11 @@ func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.R
 	call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
 
 	response, err := call.Do()
-
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + serviceMessage
-		pkgLogger.Errorf("[GOOGLE_CLOUD_FUNCTION] error while calling the Gen1 function :: %v", err)
+		pkgLogger.Errorf("error while calling the Gen1 function :: %v", err)
 		return statCode, respStatus, responseMessage
 	}
 
@@ -130,25 +134,25 @@ func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.R
 
 	respStatus = "Success"
 	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
-	return 200, respStatus, responseMessage
+	return http.StatusOK, respStatus, responseMessage
 }
 
-func invokeGen2Functions(functionUrl, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.String())
 
 	// Create a POST request
-	req, err := http.NewRequest("POST", functionUrl, strings.NewReader(string(jsonBytes)))
+	req, err := http.NewRequest(http.MethodPost, destConfig.GoogleCloudFunctionUrl, strings.NewReader(string(jsonBytes)))
 	if err != nil {
-		fmt.Println("Error creating request:", err)
+		pkgLogger.Errorf("Error creating request: %v", err)
 		return
 	}
 
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
-	if requireAuthentication {
-		ts, err := idtoken.NewTokenSource(ctx, functionUrl, option.WithCredentialsJSON([]byte(credentials)))
+	if destConfig.RequireAuthentication {
+		ts, err := idtoken.NewTokenSource(ctx, destConfig.GoogleCloudFunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
 		if err != nil {
 			fmt.Print("failed to create NewTokenSource: %w", err)
 		}
@@ -165,13 +169,13 @@ func invokeGen2Functions(functionUrl, credentials string, requireAuthentication 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		responseMessage = err.Error()
-		statusCode = 400
+		statusCode = http.StatusBadRequest
 		if errors.Is(err, context.DeadlineExceeded) {
-			statusCode = 504
+			statusCode = http.StatusGatewayTimeout
 		}
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + responseMessage
-		pkgLogger.Errorf("[GOOGLE_CLOUD_FUNCTION] error while calling the Gen2 function :: %v", err)
+		pkgLogger.Errorf("error while calling the Gen2 function :: %v", err)
 		return statusCode, respStatus, responseMessage
 	}
 	defer resp.Body.Close()
@@ -180,8 +184,7 @@ func invokeGen2Functions(functionUrl, credentials string, requireAuthentication 
 		respStatus = "Success"
 		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	}
-	fmt.Print(resp.Status)
-	return 200, respStatus, responseMessage
+	return http.StatusOK, respStatus, responseMessage
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
@@ -215,24 +218,23 @@ func getFunctionName(url string) (functionName string) {
 
 	// Combine the first two elements
 	splitValues := strings.Split(resultArray[0], "-")
-	// Join the first two values with "-" and assign to REGION
-	REGION := strings.Join(splitValues[:2], "-")
+	// Join the first two values with "-" and assign to region
+	region := strings.Join(splitValues[:2], "-")
 
-	// Join the rest of the values with "-" and assign to PROJECT_ID
-	PROJECT_ID := strings.Join(splitValues[2:], "-")
+	// Join the rest of the values with "-" and assign to projectId
+	projectId := strings.Join(splitValues[2:], "-")
 
-	var FUNCTION_NAME string
+	var gcFnName string
 
 	index := strings.Index(url, "cloudfunctions.net/")
 
+	pkgLogger.Debugf("Match found: %b", strconv.FormatBool(index != -1))
 	if index != -1 {
 		// Extract the substring after "cloudfunctions.net/"
-		FUNCTION_NAME = url[index+len("cloudfunctions.net/"):]
-	} else {
-		fmt.Println("No match found")
+		gcFnName = url[index+len("cloudfunctions.net/"):]
 	}
 
-	functionName = "projects/" + PROJECT_ID + "/locations/" + REGION + "/functions/" + FUNCTION_NAME
+	functionName = "projects/" + projectId + "/locations/" + region + "/functions/" + gcFnName
 
 	return functionName
 }
