@@ -25,11 +25,17 @@ import (
 )
 
 type Config struct {
-	Credentials            string `json:"credentials"`
-	FunctionEnvironment    string `json:"functionEnvironment"`
-	RequireAuthentication  bool   `json:"requireAuthentication"`
-	GoogleCloudFunctionUrl string `json:"googleCloudFunctionUrl"`
-	FunctionName           string `json:"functionName"`
+	Credentials            string     `json:"credentials"`
+	FunctionEnvironment    string     `json:"functionEnvironment"`
+	RequireAuthentication  bool       `json:"requireAuthentication"`
+	GoogleCloudFunctionUrl string     `json:"googleCloudFunctionUrl"`
+	FunctionName           string     `json:"functionName"`
+	TestConfig             TestConfig `json:"testConfig"`
+}
+
+type TestConfig struct {
+	Credentials  string `json:"crdentials"`
+	FunctionName string `json:"functionName"`
 }
 
 type Client struct {
@@ -84,7 +90,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	functionName := getFunctionName(config.GoogleCloudFunctionUrl)
 
 	client := &Client{service, o}
-	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl, functionName}
+	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl, functionName, config.TestConfig}
 
 	return &GoogleCloudFunctionProducer{client, destConfig}, err
 }
