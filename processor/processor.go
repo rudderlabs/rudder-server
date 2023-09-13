@@ -139,7 +139,7 @@ type Handle struct {
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
 		archivalEnabled           bool
-		eventSchemaV2AllSources   bool
+		eventAuditEnabled         bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -598,7 +598,6 @@ func (proc *Handle) loadConfig() {
 	// EventSchemas2 feature.
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
 	config.RegisterBoolConfigVariable(true, &proc.config.archivalEnabled, true, "archival.Enabled")
-	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
@@ -716,6 +715,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
 			destinationIDtoTypeMap = make(map[string]string)
+			eventAuditEnabled      = false
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -731,6 +731,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
+			eventAuditEnabled = wConfig.Settings.EventAuditEnabled
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
@@ -738,6 +739,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
+		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -1481,8 +1483,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			},
 			)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
-				// source has schemas enabled or if we override schemas for all sources
-				(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
+				proc.config.eventAuditEnabled &&
 				// TODO: could use source.SourceDefinition.Category instead?
 				commonMetadataFromSingularEvent.SourceJobRunID == "" {
 				if payload := payloadFunc(); payload != nil {
