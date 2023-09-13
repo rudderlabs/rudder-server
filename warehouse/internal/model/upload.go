@@ -36,7 +36,10 @@ const (
 	Noop                      JobErrorType = "noop"
 )
 
-var ErrUploadNotFound = errors.New("upload not found")
+var (
+	ErrUploadNotFound = errors.New("upload not found")
+	ErrNoUploadsFound = errors.New("no uploads found")
+)
 
 type Upload struct {
 	ID          int64
@@ -138,4 +141,28 @@ func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
 type AlterTableResponse struct {
 	IsDependent bool // true if the column is dependent on another view or rules, false otherwise
 	Query       string
+}
+
+type RetryOptions struct {
+	WorkspaceID     string
+	SourceIDs       []string
+	DestinationID   string
+	DestinationType string
+	IntervalInHours int64
+	UploadIds       []int64
+	ForceRetry      bool
+}
+
+type SyncUploadOptions struct {
+	SourceIDs       []string
+	DestinationID   string
+	DestinationType string
+	Status          string
+	UploadID        int64
+}
+
+type LatestUploadInfo struct {
+	ID       int64
+	Status   string
+	Priority int
 }
