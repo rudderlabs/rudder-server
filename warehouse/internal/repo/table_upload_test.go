@@ -45,7 +45,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		err = r.Insert(cancelledCtx, uploadID, tables)
-		require.EqualError(t, err, fmt.Errorf("begin transaction: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("GetByUploadID", func(t *testing.T) {
@@ -69,8 +69,55 @@ func TestTableUploadRepo(t *testing.T) {
 
 		t.Log("cancelled context")
 		tableUploads, err = r.GetByUploadID(cancelledCtx, uploadID)
-		require.EqualError(t, err, fmt.Errorf("querying table uploads: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, tableUploads)
+	})
+
+	t.Run("SyncsInfo", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			updatedAt := now.Add(10 * time.Second)
+			updatedRepo := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+				return updatedAt
+			}))
+
+			lastExecAt := now.Add(5 * time.Second)
+
+			syncsInfos, err := updatedRepo.SyncsInfo(ctx, uploadID)
+			require.NoError(t, err)
+			require.Len(t, syncsInfos, len(tables))
+
+			for i := range syncsInfos {
+				syncsInfos[i].ID = int64(i + 1)
+				syncsInfos[i].UploadID = uploadID
+				syncsInfos[i].Name = tables[i]
+				syncsInfos[i].Status = model.TableUploadWaiting
+
+				require.NoError(t, updatedRepo.Set(ctx, uploadID, tables[i], repo.TableUploadSetOptions{
+					LastExecTime: &lastExecAt,
+				}))
+			}
+
+			syncsInfos, err = updatedRepo.SyncsInfo(ctx, uploadID)
+			require.NoError(t, err)
+			require.Len(t, syncsInfos, len(tables))
+
+			for i := range syncsInfos {
+				syncsInfos[i].LastExecAt = lastExecAt
+				syncsInfos[i].Duration = int64(updatedAt.Sub(lastExecAt) / time.Second)
+			}
+		})
+
+		t.Run("invalid sync id", func(t *testing.T) {
+			syncsInfos, err := r.SyncsInfo(ctx, int64(-1))
+			require.NoError(t, err)
+			require.Empty(t, syncsInfos)
+		})
+
+		t.Run("context cancelled", func(t *testing.T) {
+			syncsInfos, err := r.SyncsInfo(cancelledCtx, uploadID)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Empty(t, syncsInfos)
+		})
 	})
 
 	t.Run("GetByUploadIDAndTableName", func(t *testing.T) {
@@ -94,7 +141,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 		t.Log("context cancelled")
 		tableUpload, err = r.GetByUploadIDAndTableName(cancelledCtx, uploadID, "table_name")
-		require.EqualError(t, err, fmt.Errorf("querying table uploads: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, tableUpload)
 	})
 
@@ -111,7 +158,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 		t.Log("context cancelled")
 		exists, err = r.ExistsForUploadID(cancelledCtx, uploadID)
-		require.EqualError(t, err, fmt.Errorf("checking if table upload exists: context canceled").Error())
+		require.ErrorIs(t, err, context.Canceled)
 		require.False(t, exists)
 	})
 
@@ -139,7 +186,7 @@ func TestTableUploadRepo(t *testing.T) {
 			err := r.Set(cancelledCtx, uploadID, table, repo.TableUploadSetOptions{
 				Status: &status,
 			})
-			require.EqualError(t, err, fmt.Errorf("set: context canceled").Error())
+			require.ErrorIs(t, err, context.Canceled)
 		})
 
 		t.Run("set status", func(t *testing.T) {
@@ -279,7 +326,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 			t.Run("cancelled context", func(t *testing.T) {
 				err = r.PopulateTotalEventsFromStagingFileIDs(cancelledCtx, uploadID, tablename, stagingIDs)
-				require.EqualError(t, err, fmt.Errorf("set total events: context canceled").Error())
+				require.ErrorIs(t, err, context.Canceled)
 			})
 
 			t.Run("no rows affected", func(t *testing.T) {
@@ -318,7 +365,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 			t.Run("cancelled context", func(t *testing.T) {
 				totalEvents, err := r.TotalExportedEvents(cancelledCtx, uploadID, []string{})
-				require.EqualError(t, err, fmt.Errorf("counting total exported events: context canceled").Error())
+				require.ErrorIs(t, err, context.Canceled)
 				require.Equal(t, int64(0), totalEvents)
 			})
 

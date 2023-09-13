@@ -21,6 +21,13 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
+var syncStatusMap = map[string]string{
+	"success": model.ExportedData,
+	"waiting": model.Waiting,
+	"aborted": model.Aborted,
+	"failed":  "%failed%",
+}
+
 const (
 	uploadsTableName = warehouseutils.WarehouseUploadsTable
 
@@ -440,7 +447,7 @@ func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (mode
 
 func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
 	_, err := uploads.db.ExecContext(ctx,
-		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,
+		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2;`,
 		uploadID, model.Waiting,
 	)
 	if err != nil {
@@ -679,4 +686,363 @@ func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destination
 	}
 
 	return createdAt.Time, nil
+}
+
+func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	syncUploadInfos, totalUploads, err := uploads.syncsInfo(ctx, limit, offset, opts, true)
+	if err != nil {
+		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
+	}
+	if len(syncUploadInfos) != 0 {
+		return syncUploadInfos, totalUploads, nil
+	}
+
+	// Getting the syncs count in case, we were not able to get the count
+	totalUploads, err = uploads.syncsCount(ctx, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("syncs upload count: %w", err)
+	}
+
+	return syncUploadInfos, totalUploads, nil
+}
+
+func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	syncUploadInfos, _, err := uploads.syncsInfo(ctx, limit, offset, opts, false)
+	if err != nil {
+		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
+	}
+
+	totalUploads, err := uploads.syncsCount(ctx, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("syncs upload count: %w", err)
+	}
+
+	return syncUploadInfos, totalUploads, nil
+}
+
+func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
+	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
+
+	countOverClause := "0 AS total_uploads"
+	if countOver {
+		countOverClause = "COUNT(*) OVER() AS total_uploads"
+	}
+
+	stmt := fmt.Sprintf(`
+		SELECT
+			id,
+			source_id,
+			destination_id,
+			destination_type,
+			namespace,
+			status,
+			error,
+			created_at,
+			first_event_at,
+			last_event_at,
+			last_exec_at,
+			updated_at,
+			timings,
+			metadata->>'nextRetryTime',
+			metadata->>'archivedStagingAndLoadFiles',
+			%s
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			1 = 1 %s
+		ORDER BY
+		  	id DESC
+		LIMIT
+			$%d
+		OFFSET
+			$%d;
+	`,
+		countOverClause,
+		filterQuery,
+		len(filterArgs)+1,
+		len(filterArgs)+2,
+	)
+	stmtArgs := append([]interface{}{}, append(filterArgs, limit, offset)...)
+
+	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("syncs upload info: %w", err)
+	}
+
+	var uploadInfos []model.UploadInfo
+	var totalUploads int64
+
+	for rows.Next() {
+		var uploadInfo model.UploadInfo
+
+		var timings model.Timings
+		var timingsRaw []byte
+		var nextRetryTime sql.NullString
+		var archivedStagingAndLoadFiles sql.NullBool
+		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
+
+		err := rows.Scan(
+			&uploadInfo.ID,
+			&uploadInfo.SourceID,
+			&uploadInfo.DestinationID,
+			&uploadInfo.DestinationType,
+			&uploadInfo.Namespace,
+			&uploadInfo.Status,
+			&uploadInfo.Error,
+			&uploadInfo.CreatedAt,
+			&firstEventAt,
+			&lastEventAt,
+			&lastExecAt,
+			&updatedAt,
+			&timingsRaw,
+			&nextRetryTime,
+			&archivedStagingAndLoadFiles,
+			&totalUploads,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("syncs upload info: scanning row: %w", err)
+		}
+		if firstEventAt.Valid {
+			uploadInfo.FirstEventAt = firstEventAt.Time
+		}
+		if lastEventAt.Valid {
+			uploadInfo.LastEventAt = lastEventAt.Time
+		}
+		if lastExecAt.Valid {
+			uploadInfo.LastExecAt = lastExecAt.Time
+		}
+		if updatedAt.Valid {
+			uploadInfo.UpdatedAt = updatedAt.Time
+		}
+		if archivedStagingAndLoadFiles.Valid {
+			uploadInfo.IsArchivedUpload = archivedStagingAndLoadFiles.Bool
+		}
+		gjson.Parse(uploadInfo.Error).ForEach(func(key, value gjson.Result) bool {
+			uploadInfo.Attempt += gjson.Get(value.String(), "attempt").Int()
+			return true
+		})
+		if uploadInfo.Status != model.ExportedData && uploadInfo.Status != model.Aborted && nextRetryTime.Valid {
+			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTime.String); err == nil {
+				uploadInfo.NextRetryTime = nextRetryTime
+			}
+		}
+
+		// set duration as time between updatedAt and lastExec recorded timings for ongoing/retrying uploads
+		// set diff between lastExec and current time
+		if uploadInfo.Status == model.ExportedData || uploadInfo.Status == model.Aborted {
+			uploadInfo.Duration = uploadInfo.UpdatedAt.Sub(uploadInfo.LastExecAt) / time.Second
+		} else {
+			uploadInfo.Duration = uploads.now().Sub(uploadInfo.LastExecAt) / time.Second
+		}
+
+		// set error only for failed uploads. skip for retried and then successful uploads
+		if uploadInfo.Status != model.ExportedData && len(timingsRaw) > 0 {
+			_ = json.Unmarshal(timingsRaw, &timings)
+
+			errs := gjson.Get(
+				uploadInfo.Error,
+				fmt.Sprintf("%s.errors", model.GetLastFailedStatus(timings)),
+			).Array()
+			if len(errs) > 0 {
+				uploadInfo.Error = errs[len(errs)-1].String()
+			}
+		}
+
+		uploadInfos = append(uploadInfos, uploadInfo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("syncs upload info: iterating rows: %w", err)
+	}
+
+	return uploadInfos, totalUploads, nil
+}
+
+func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []interface{}) {
+	var queryFilters string
+	var queryArgs []interface{}
+
+	if suo.SourceIDs != nil {
+		queryFilters += fmt.Sprintf(" AND source_id = ANY($%d)", len(queryArgs)+1)
+		queryArgs = append(queryArgs, pq.Array(suo.SourceIDs))
+	}
+	if suo.DestinationID != "" {
+		queryFilters += fmt.Sprintf(" AND destination_id = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, suo.DestinationID)
+	}
+	if suo.DestinationType != "" {
+		queryFilters += fmt.Sprintf(" AND destination_type = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, suo.DestinationType)
+	}
+	if suo.Status != "" {
+		queryFilters += fmt.Sprintf(" AND status LIKE $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, syncStatusMap[suo.Status])
+	}
+	if suo.UploadID != 0 {
+		queryFilters += fmt.Sprintf(" AND id = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, suo.UploadID)
+	}
+
+	return queryFilters, queryArgs
+}
+
+func (uploads *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) (int64, error) {
+	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
+
+	var totalUploads int64
+	err := uploads.db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT
+		  	COUNT(*)
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			1 = 1 %s
+	`,
+		filterQuery,
+	),
+		filterArgs...,
+	).Scan(&totalUploads)
+	if err != nil {
+		return 0, fmt.Errorf("syncs upload info count: %w", err)
+	}
+	return totalUploads, nil
+}
+
+func (uploads *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
+	r, err := uploads.db.ExecContext(ctx, `
+		UPDATE
+			`+uploadsTableName+`
+		SET
+			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
+			status = $1,
+			updated_at = $2
+		WHERE
+			id = $3;
+`,
+		model.Waiting,
+		uploads.now(),
+		uploadID,
+	)
+	if err != nil {
+		return fmt.Errorf("trigger uploads: update: %w", err)
+	}
+
+	rowsAffected, err := r.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("trigger uploads: rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("trigger uploads: no rows affected")
+	}
+	return nil
+}
+
+func (uploads *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, error) {
+	filterQuery, filterArgs := retryQueryArgs(&opts)
+
+	stmt := fmt.Sprintf(`
+		UPDATE
+			`+uploadsTableName+`
+		SET
+			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
+			status = $%d,
+			updated_at = $%d
+		WHERE
+			1 = 1 %s;
+`,
+		len(filterArgs)+1,
+		len(filterArgs)+2,
+		filterQuery,
+	)
+	stmtArgs := append([]interface{}{}, append(filterArgs, model.Waiting, uploads.now())...)
+
+	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("trigger uploads: update: %w", err)
+	}
+	return r.RowsAffected()
+}
+
+func retryQueryArgs(ro *model.RetryOptions) (string, []interface{}) {
+	var queryFilters string
+	var queryArgs []interface{}
+
+	if ro.WorkspaceID != "" {
+		queryFilters += fmt.Sprintf(" AND workspace_id = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, ro.WorkspaceID)
+	}
+	if ro.SourceIDs != nil {
+		queryFilters += fmt.Sprintf(" AND source_id = ANY($%d)", len(queryArgs)+1)
+		queryArgs = append(queryArgs, pq.Array(ro.SourceIDs))
+	}
+	if ro.DestinationID != "" {
+		queryFilters += fmt.Sprintf(" AND destination_id = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, ro.DestinationID)
+	}
+	if ro.DestinationType != "" {
+		queryFilters += fmt.Sprintf(" AND destination_type = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, ro.DestinationType)
+	}
+	if !ro.ForceRetry {
+		queryFilters += fmt.Sprintf(" AND status = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, model.Aborted)
+	}
+	if len(ro.UploadIds) != 0 {
+		queryFilters += fmt.Sprintf(" AND id = ANY($%d)", len(queryArgs)+1)
+		queryArgs = append(queryArgs, pq.Array(ro.UploadIds))
+	} else {
+		queryFilters += fmt.Sprintf(" AND created_at > NOW() - $%d * INTERVAL '1 HOUR'", len(queryArgs)+1)
+		queryArgs = append(queryArgs, ro.IntervalInHours)
+	}
+	return queryFilters, queryArgs
+}
+
+func (uploads *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int64, error) {
+	filterQuery, filterArgs := retryQueryArgs(&opts)
+
+	stmt := fmt.Sprintf(`
+		SELECT COUNT(*) FROM
+			`+uploadsTableName+`
+		WHERE
+			1 = 1 %s;
+`,
+		filterQuery,
+	)
+
+	var totalUploads int64
+	err := uploads.db.QueryRowContext(ctx, stmt, filterArgs...).Scan(&totalUploads)
+	if err != nil {
+		return 0, fmt.Errorf("count uploads to retry: %w", err)
+	}
+	return totalUploads, nil
+}
+
+func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
+	var latestUploadInfo model.LatestUploadInfo
+	err := uploads.db.QueryRowContext(ctx, `
+		SELECT
+		  	id,
+		  	status,
+		  	COALESCE(metadata ->> 'priority', '100')::int
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			source_id = $1 AND destination_id = $2
+		ORDER BY
+			id DESC
+		LIMIT 1;
+`,
+		sourceID,
+		destinationID,
+	).Scan(
+		&latestUploadInfo.ID,
+		&latestUploadInfo.Status,
+		&latestUploadInfo.Priority,
+	)
+	if err == sql.ErrNoRows {
+		return nil, model.ErrNoUploadsFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get latest upload info: %w", err)
+	}
+	return &latestUploadInfo, nil
 }

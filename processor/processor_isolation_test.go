@@ -227,6 +227,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
 	config.Set("Router.toAbortDestinationIDs", destinationID)
+	config.Set("archival.Enabled", false)
 
 	config.Set("Processor.isolationMode", string(spec.isolationMode))
 
