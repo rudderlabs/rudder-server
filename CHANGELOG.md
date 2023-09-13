@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.14.0-preview-2](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.14.0-preview-2) (2023-09-13)
+
+
+### Features
+
+* onboard bulk upload destination eloqua   ([#3779](https://github.com/rudderlabs/rudder-server/issues/3779)) ([0a9954d](https://github.com/rudderlabs/rudder-server/commit/0a9954dee1163eadbea206a08ff80623217a5e4a))
+
+
+### Bug Fixes
+
+* error while cleaning up old jobs: sql: no rows in result set ([#3850](https://github.com/rudderlabs/rudder-server/issues/3850)) ([1f87a26](https://github.com/rudderlabs/rudder-server/commit/1f87a261bd616a1961c8ed95f172be3d38f18eac))
+* redis cluster mode ([#3831](https://github.com/rudderlabs/rudder-server/issues/3831)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+* remove table name for load file ([#3837](https://github.com/rudderlabs/rudder-server/issues/3837)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+* send reportedAt in milliseconds for error reporting ([#3857](https://github.com/rudderlabs/rudder-server/issues/3857)) ([7ec96c9](https://github.com/rudderlabs/rudder-server/commit/7ec96c96fa06d7a974f6b13786f65a6f4683a364))
+
+
+### Miscellaneous
+
+* add stats for archiver ([#3836](https://github.com/rudderlabs/rudder-server/issues/3836)) ([3b90266](https://github.com/rudderlabs/rudder-server/commit/3b90266778dc99430823e7ef4c8fcf692c90f8ba))
+* cleanup grpc ([#3814](https://github.com/rudderlabs/rudder-server/issues/3814)) ([594828e](https://github.com/rudderlabs/rudder-server/commit/594828e8618df0cedff982ffaae36435afa50b9d))
+* **deps:** bump golang.org/x/oauth2 from 0.11.0 to 0.12.0 ([#3839](https://github.com/rudderlabs/rudder-server/issues/3839)) ([c4c49fe](https://github.com/rudderlabs/rudder-server/commit/c4c49fef80ee4016aab0f6e3d99684d822846b16))
+* merge release 1.13.0 in main branch ([#3833](https://github.com/rudderlabs/rudder-server/issues/3833)) ([0e5a477](https://github.com/rudderlabs/rudder-server/commit/0e5a4770576b7631e2bc4b79056ce1850019b47a))
+* upgrade compose test ([#3847](https://github.com/rudderlabs/rudder-server/issues/3847)) ([3a34e06](https://github.com/rudderlabs/rudder-server/commit/3a34e066c2b48505f193ef78f411f48186d110a5))
+* upgrade go version 1.21 ([#3838](https://github.com/rudderlabs/rudder-server/issues/3838)) ([a1075da](https://github.com/rudderlabs/rudder-server/commit/a1075da9f3db51a47fc6962b9249fff3300f3f88))
+* use single query for getting jobs ([#3820](https://github.com/rudderlabs/rudder-server/issues/3820)) ([2aff3b2](https://github.com/rudderlabs/rudder-server/commit/2aff3b238a8f82e19a005b2f54056736637686e5))
+
 ## [1.13.2](https://github.com/rudderlabs/rudder-server/compare/v1.13.1...v1.13.2) (2023-09-12)
 
 
