@@ -3,9 +3,10 @@ package cloudfunctions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -111,22 +112,24 @@ func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.R
 	response, err := call.Do()
 
 	if err != nil {
-		if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
-			fmt.Println("Function call was not executed (Not Modified)")
-		} else {
-			log.Fatalf("Failed to call function: %v", err)
-		}
+		statCode, serviceMessage := handleServiceError(err)
+		respStatus = "Failure"
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + serviceMessage
+		pkgLogger.Errorf("[GOOGLE_CLOUD_FUNCTION] error while calling the Gen1 function :: %v", err)
+		return statCode, respStatus, responseMessage
 	}
 
+	// ---------- To be Removed
 	// Process the response (sample response handling here).
 	if response != nil {
 		fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
 		// Handle response content as needed.
 	}
 	fmt.Println("Request successful!")
+	// -----------
 
 	respStatus = "Success"
-	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: "
+	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	return 200, respStatus, responseMessage
 }
 
@@ -161,8 +164,15 @@ func invokeGen2Functions(functionUrl, credentials string, requireAuthentication 
 	// Make the request using the client
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return
+		responseMessage = err.Error()
+		statusCode = 400
+		if errors.Is(err, context.DeadlineExceeded) {
+			statusCode = 504
+		}
+		respStatus = "Failure"
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + responseMessage
+		pkgLogger.Errorf("[GOOGLE_CLOUD_FUNCTION] error while calling the Gen2 function :: %v", err)
+		return statusCode, respStatus, responseMessage
 	}
 	defer resp.Body.Close()
 
@@ -225,6 +235,24 @@ func getFunctionName(url string) (functionName string) {
 	functionName = "projects/" + PROJECT_ID + "/locations/" + REGION + "/functions/" + FUNCTION_NAME
 
 	return functionName
+}
+
+// handleServiceError is created for fail safety, if in any case when err type is not googleapi.Error
+// server should not crash with a type error.
+func handleServiceError(err error) (statusCode int, responseMessage string) {
+	statusCode = 500
+	responseMessage = err.Error()
+
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		statusCode = 504
+	}
+
+	if reflect.TypeOf(err).String() == "*googleapi.Error" {
+		serviceErr := err.(*googleapi.Error)
+		statusCode = serviceErr.Code
+		responseMessage = serviceErr.Message
+	}
+	return statusCode, responseMessage
 }
 
 func (*GoogleCloudFunctionProducer) Close() error {
