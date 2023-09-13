@@ -384,15 +384,19 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+	reportingLag := stats.Default.NewTaggedStat(
+		"reporting_metrics_lag_minutes", stats.GaugeType, stats.Tags{"client": clientName},
+	)
 
 	lastReportedAt := time.Now().UTC().Unix() / 60
 	go func() {
-		// for montering reports pileups
+		// for monitoring reports pileups
 		for {
 			currentMs := time.Now().UTC().Unix() / 60
-			stats.Default.NewTaggedStat(
-				"reporting_metrics_ lag_minutes", stats.GaugeType, stats.Tags{"client": clientName},
-			).Gauge(int(currentMs - lastReportedAt))
+			lagMinutes := int(currentMs - lastReportedAt)
+
+			reportingLag.Gauge(lagMinutes)
+
 			select {
 			case <-ctx.Done():
 				break
