@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.2](https://github.com/rudderlabs/rudder-server/compare/v1.13.1...v1.13.2) (2023-09-12)
+
+
+### Bug Fixes
+
+* send reportedAt for error-reporting in milliseconds ([29ea342](https://github.com/rudderlabs/rudder-server/commit/29ea342939951cd39e14c5e921f7b4e23601b99c))
+* send reportedAt in milliseconds for error reporting ([#3857](https://github.com/rudderlabs/rudder-server/issues/3857)) ([29ea342](https://github.com/rudderlabs/rudder-server/commit/29ea342939951cd39e14c5e921f7b4e23601b99c))
+
+
+### Miscellaneous
+
+* fix reporting tests ([b241a79](https://github.com/rudderlabs/rudder-server/commit/b241a79c487c3c83bd9c5d4038536f6418dda7f4))
+* upgrade compose test ([#3847](https://github.com/rudderlabs/rudder-server/issues/3847)) ([8333c35](https://github.com/rudderlabs/rudder-server/commit/8333c353153f1fc9e378653abb41a6451f016a75))
+
 ## [1.13.1](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.13.1) (2023-09-06)
 
 
