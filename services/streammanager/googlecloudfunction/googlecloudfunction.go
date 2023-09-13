@@ -59,7 +59,13 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	}
 
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON([]byte(config.Credentials)),
+		option.WithoutAuthentication(),
+	}
+
+	if config.RequireAuthentication {
+		opts = []option.ClientOption{
+			option.WithCredentialsJSON([]byte(config.Credentials)),
+		}
 	}
 
 	service, err := generateService(opts...)
@@ -81,14 +87,14 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	destConfig := producer.config
 	parsedJSON := gjson.ParseBytes(jsonData)
 
-	if destConfig.FunctionEnvironment == "gen1" && destConfig.RequireAuthentication {
-		return invokeAuthenticatedGen1Functions(producer.client, destConfig.FunctionName, parsedJSON)
+	if destConfig.FunctionEnvironment == "gen1" {
+		return invokeGen1Functions(producer.client, destConfig.FunctionName, parsedJSON)
 	}
 
-	return invokeGen2AndUnauthenticatedFunctions(destConfig.GoogleCloudFunctionUrl, destConfig.Credentials, destConfig.RequireAuthentication, parsedJSON)
+	return invokeGen2Functions(destConfig.GoogleCloudFunctionUrl, destConfig.Credentials, destConfig.RequireAuthentication, parsedJSON)
 }
 
-func invokeAuthenticatedGen1Functions(client *Client, functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleCloudFunction] error  :: Failed to initialize GoogleCloudFunction client"
@@ -103,7 +109,7 @@ func invokeAuthenticatedGen1Functions(client *Client, functionName string, parse
 	call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
 
 	response, err := call.Do()
-	fmt.Print(err)
+
 	if err != nil {
 		if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == http.StatusNotModified {
 			fmt.Println("Function call was not executed (Not Modified)")
@@ -124,7 +130,7 @@ func invokeAuthenticatedGen1Functions(client *Client, functionName string, parse
 	return 200, respStatus, responseMessage
 }
 
-func invokeGen2AndUnauthenticatedFunctions(functionUrl, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func invokeGen2Functions(functionUrl, credentials string, requireAuthentication bool, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.String())
