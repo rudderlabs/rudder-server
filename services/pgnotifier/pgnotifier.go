@@ -26,8 +26,8 @@ var (
 	queueName          string
 	maxAttempt         int
 	trackBatchInterval time.Duration
-	maxPollSleep       *config.Atomic[time.Duration]
-	jobOrphanTimeout   *config.Atomic[time.Duration]
+	maxPollSleep       *config.Reloadable[time.Duration]
+	jobOrphanTimeout   *config.Reloadable[time.Duration]
 	pkgLogger          logger.Logger
 )
 
@@ -108,10 +108,10 @@ func loadPGNotifierConfig() {
 	pgNotifierDBPort = config.GetInt("PGNOTIFIER_DB_PORT", 5432)
 	pgNotifierDBPassword = config.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
 	pgNotifierDBSSLMode = config.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
-	config.RegisterIntVar(3, &maxAttempt, 1, "PgNotifier.maxAttempt")
+	maxAttempt = config.GetIntVar(3, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	maxPollSleep = config.RegisterAtomicDurationVar(5000, time.Millisecond, "PgNotifier.maxPollSleep")
-	jobOrphanTimeout = config.RegisterAtomicDurationVar(120, time.Second, "PgNotifier.jobOrphanTimeout")
+	maxPollSleep = config.GetReloadableDurationVar(5000, time.Millisecond, "PgNotifier.maxPollSleep")
+	jobOrphanTimeout = config.GetReloadableDurationVar(120, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
 // New Given default connection info return pg notifier object from it
