@@ -12,6 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -26,6 +27,7 @@ type worker struct {
 	jobsDB           jobsdb.JobsDB
 	payloadLimitFunc payload.AdaptiveLimiterFunc
 	storageProvider  fileuploader.Provider
+	stats            stats.Stats
 	lifecycle        struct {
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -122,6 +124,7 @@ start:
 		log.Errorw("failed to mark successful upload status", "error", err)
 		panic(err)
 	}
+	w.stats.NewTaggedStat("arc_uploaded_jobs", stats.CountType, map[string]string{"workspaceId": workspaceID, "sourceId": w.sourceID}).Count(len(jobs))
 	if !limitReached {
 		return true
 	}
@@ -226,7 +229,8 @@ func (w *worker) markStatus(
 	jobs []*jobsdb.JobT, state string, response []byte,
 ) error {
 	defer w.updateLimiter.Begin(w.sourceID)()
-	return misc.RetryWithNotify(
+	workspaceID := jobs[0].WorkspaceId
+	if err := misc.RetryWithNotify(
 		w.lifecycle.ctx,
 		w.config.uploadFrequency,
 		w.config.jobsdbMaxRetries(),
@@ -238,6 +242,7 @@ func (w *worker) markStatus(
 						JobID:         job.JobID,
 						JobState:      state,
 						ErrorResponse: response,
+						Parameters:    []byte(`{}`),
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
@@ -250,7 +255,11 @@ func (w *worker) markStatus(
 		func(attempt int) {
 			w.log.Warnw("failed to mark jobs' status", "attempt", attempt)
 		},
-	)
+	); err != nil {
+		return err
+	}
+	w.stats.NewTaggedStat("arc_processed_jobs", stats.CountType, map[string]string{"workspaceId": workspaceID, "sourceId": w.sourceID, "state": state}).Count(len(jobs))
+	return nil
 }
 
 func errJSON(err error) []byte {

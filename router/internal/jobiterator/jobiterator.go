@@ -26,18 +26,26 @@ func WithDiscardedPercentageTolerance(discardedPercentageTolerance int) Iterator
 	}
 }
 
+// WithOrderGroupKeyFn sets the orderGroupKeyFn
+func WithOrderGroupKeyFn(orderGroupKeyFn func(*jobsdb.JobT) string) IteratorOptFn {
+	return func(ji *Iterator) {
+		ji.orderGroupKeyFn = orderGroupKeyFn
+	}
+}
+
 // Iterator is a job iterator with support for fetching more than the original set of jobs requested,
 // in case some of these jobs get discarded, according to the configured discarded percentage tolerance.
 type Iterator struct {
 	params                       jobsdb.GetQueryParams
 	maxQueries                   int
 	discardedPercentageTolerance int
+	orderGroupKeyFn              func(*jobsdb.JobT) string
 	getJobsFn                    func(context.Context, jobsdb.GetQueryParams, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error)
 	state                        struct {
 		// running iterator state
 		jobs        []*jobsdb.JobT
 		idx         int
-		previousJob *jobsdb.JobT
+		previousJob map[string]*jobsdb.JobT
 
 		// closed indicates whether the iterator has reached the end or not
 		closed bool
@@ -73,8 +81,10 @@ func New(params jobsdb.GetQueryParams, getJobsFn func(context.Context, jobsdb.Ge
 		maxQueries:                   100,
 		discardedPercentageTolerance: 0,
 		getJobsFn:                    getJobsFn,
+		orderGroupKeyFn:              func(job *jobsdb.JobT) string { return job.LastJobStatus.JobState },
 	}
 	ji.state.jobsLimit = params.JobsLimit
+	ji.state.previousJob = map[string]*jobsdb.JobT{}
 	for _, opt := range opts {
 		opt(ji)
 	}
@@ -148,10 +158,11 @@ func (ji *Iterator) Next() *jobsdb.JobT {
 	idx := ji.state.idx
 	ji.state.idx++
 	nextJob := ji.state.jobs[idx]
-	if previousJob := ji.state.previousJob; previousJob != nil && previousJob.JobID > nextJob.JobID {
-		panic(fmt.Errorf("job iterator encountered out of order jobs: previousJobID: %d, nextJobID: %d", previousJob.JobID, nextJob.JobID))
+	orderGroupKey := ji.orderGroupKeyFn(nextJob)
+	if previousJob, ok := ji.state.previousJob[orderGroupKey]; ok && previousJob.JobID > nextJob.JobID {
+		panic(fmt.Errorf("job iterator encountered out of order jobs for group key %s: previousJobID: %d, nextJobID: %d", orderGroupKey, previousJob.JobID, nextJob.JobID))
 	}
-	ji.state.previousJob = nextJob
+	ji.state.previousJob[orderGroupKey] = nextJob
 	return nextJob
 }
 

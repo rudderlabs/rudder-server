@@ -191,15 +191,44 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
 	var limitsReached bool
-	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
-		return brt.jobsDB.GetToProcess(ctx, queryParams, nil)
-	}, brt.sendQueryRetryStats)
-	if err != nil {
-		brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
-		panic(err)
+
+	if config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition after successful rollout of sinle query
+		toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
+		}, brt.sendQueryRetryStats)
+		if err != nil {
+			brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
+			panic(err)
+		}
+		jobs = toProcess.Jobs
+		limitsReached = toProcess.LimitsReached
+	} else {
+		toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return brt.jobsDB.GetFailed(ctx, queryParams)
+		}, brt.sendQueryRetryStats)
+		if err != nil {
+			brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
+			panic(err)
+		}
+		jobs = toRetry.Jobs
+		limitsReached = toRetry.LimitsReached
+		if !limitsReached {
+			queryParams.JobsLimit -= len(toRetry.Jobs)
+			if queryParams.PayloadSizeLimit > 0 {
+				queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+			}
+			unprocessed, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				return brt.jobsDB.GetUnprocessed(ctx, queryParams)
+			}, brt.sendQueryRetryStats)
+			if err != nil {
+				brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
+				panic(err)
+			}
+			jobs = append(jobs, unprocessed.Jobs...)
+			limitsReached = unprocessed.LimitsReached
+		}
 	}
-	jobs = toProcess.Jobs
-	limitsReached = toProcess.LimitsReached
+
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID

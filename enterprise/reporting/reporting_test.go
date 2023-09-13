@@ -603,7 +603,7 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                dbErrs[0].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
-				ReportedAt: dbErrs[0].ReportedAt,
+				ReportedAt: dbErrs[0].ReportedAt * 60 * 1000,
 			},
 			Errors: []types.EDErrorDetails{
 				{
@@ -637,7 +637,7 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                dbErrs[3].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
-				ReportedAt: dbErrs[3].ReportedAt,
+				ReportedAt: dbErrs[3].ReportedAt * 60 * 1000,
 			},
 			Errors: []types.EDErrorDetails{
 				{
@@ -664,7 +664,7 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                dbErrs[4].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
-				ReportedAt: dbErrs[4].ReportedAt,
+				ReportedAt: dbErrs[4].ReportedAt * 60 * 1000,
 			},
 			Errors: []types.EDErrorDetails{
 				{

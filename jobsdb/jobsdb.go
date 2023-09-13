@@ -850,7 +850,7 @@ func (jd *Handle) workersAndAuxSetup() {
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
@@ -1818,11 +1818,87 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	}
 }
 
+type moreTokenLegacy struct {
+	retryAfterJobID       *int64
+	waitingAfterJobID     *int64
+	unprocessedAfterJobID *int64
+}
+
 type moreToken struct {
 	afterJobID *int64
 }
 
+// getToProcessLegacy returns jobs that are in failed, waiting and unprocessed states using three separate queries
+//
+// Deprecated: shall be removed after successful rollout
+func (jd *Handle) getToProcessLegacy(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+
+	mtoken := &moreTokenLegacy{}
+	if more != nil {
+		var ok bool
+		if mtoken, ok = more.(*moreTokenLegacy); !ok {
+			return nil, fmt.Errorf("invalid token: %+v", more)
+		}
+	}
+	updateParams := func(params *GetQueryParams, jobs JobsResult, nextAfterJobID *int64) {
+		params.JobsLimit -= len(jobs.Jobs)
+		if params.EventsLimit > 0 {
+			params.EventsLimit -= jobs.EventsCount
+		}
+		if params.PayloadSizeLimit > 0 {
+			params.PayloadSizeLimit -= jobs.PayloadSize
+		}
+		params.afterJobID = nextAfterJobID
+	}
+	var list []*JobT
+	params.afterJobID = mtoken.retryAfterJobID
+	toRetry, err := jd.GetFailed(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(toRetry.Jobs) > 0 {
+		retryAfterJobID := toRetry.Jobs[len(toRetry.Jobs)-1].JobID
+		mtoken.retryAfterJobID = &retryAfterJobID
+	}
+
+	list = append(list, toRetry.Jobs...)
+	if toRetry.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, toRetry, mtoken.waitingAfterJobID)
+
+	waiting, err := jd.GetWaiting(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(waiting.Jobs) > 0 {
+		waitingAfterJobID := waiting.Jobs[len(waiting.Jobs)-1].JobID
+		mtoken.waitingAfterJobID = &waitingAfterJobID
+	}
+	list = append(list, waiting.Jobs...)
+	if waiting.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, waiting, mtoken.unprocessedAfterJobID)
+
+	unprocessed, err := jd.GetUnprocessed(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(unprocessed.Jobs) > 0 {
+		unprocessedAfterJobID := unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID
+		mtoken.unprocessedAfterJobID = &unprocessedAfterJobID
+	}
+	list = append(list, unprocessed.Jobs...)
+	return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: unprocessed.LimitsReached}, More: mtoken}, nil
+}
+
 func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+
+	if !jd.config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition after successful rollout of sinle query
+		return jd.getToProcessLegacy(ctx, params, more)
+	}
+
 	if params.JobsLimit == 0 {
 		return &MoreJobsResult{More: more}, nil
 	}
@@ -1837,7 +1913,7 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.MoreJobsResult, res.err
 }
 
@@ -2073,7 +2149,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
+func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	stateFilters := params.stateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -2086,31 +2162,42 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 	}
 
 	tags := statTags{
-		StateFilters:     params.stateFilters,
+		StateFilters:     stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      workspaceID,
 	}
 
-	defer jd.getTimerStat("get_ds_time", &tags).RecordDuration()()
+	stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
+		return !jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+	})
 
-	containsUnprocessed := lo.Contains(params.stateFilters, Unprocessed.State)
+	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
+
+	containsUnprocessed := lo.Contains(stateFilters, Unprocessed.State)
 	skipCacheResult := params.afterJobID != nil
-	var cacheTx *cache.NoResultTx[ParameterFilterT]
+	cacheTx := map[string]*cache.NoResultTx[ParameterFilterT]{}
 	if !skipCacheResult {
-		cacheTx = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters)
+		for _, state := range stateFilters {
+			// avoid setting result as noJobs if
+			//  (1) state is unprocessed and
+			//  (2) jobsdb owner is a reader and
+			//  (3) ds is the right most one
+			if state == Unprocessed.State && jd.ownerType == Read && lastDS {
+				continue
+			}
+			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+		}
 	}
 
 	var filterConditions []string
-	if len(stateFilters) > 0 {
-		additionalPredicates := lo.FilterMap(stateFilters, func(s string, _ int) (string, bool) {
-			return "(job_latest_state.job_id IS NULL)", s == Unprocessed.State
-		})
-		stateQuery := constructQueryOR("job_latest_state.job_state", lo.Filter(stateFilters, func(s string, _ int) bool {
-			return s != Unprocessed.State
-		}), additionalPredicates...)
-		filterConditions = append(filterConditions, stateQuery)
-	}
+	additionalPredicates := lo.FilterMap(stateFilters, func(s string, _ int) (string, bool) {
+		return "(job_latest_state.job_id IS NULL)", s == Unprocessed.State
+	})
+	stateQuery := constructQueryOR("job_latest_state.job_state", lo.Filter(stateFilters, func(s string, _ int) bool {
+		return s != Unprocessed.State
+	}), additionalPredicates...)
+	filterConditions = append(filterConditions, stateQuery)
 
 	if params.afterJobID != nil {
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.job_id > %d", *params.afterJobID))
@@ -2138,6 +2225,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 		limitQuery = fmt.Sprintf(" LIMIT %d ", params.JobsLimit)
 	}
 
+	joinType := "LEFT"
+	joinTable := "v_last_" + ds.JobStatusTable
+
+	if !containsUnprocessed { // If we are not querying for unprocessed jobs, we can use an inner join
+		joinType = "INNER"
+	} else if slices.Equal(stateFilters, []string{Unprocessed.State}) {
+		// If we are querying only for unprocessed jobs, we should join with the status table instead of the view (performance reasons)
+		joinTable = ds.JobStatusTable
+	}
+
 	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
@@ -2150,10 +2247,10 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
 								FROM
 									%[1]q AS jobs
-									LEFT JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
-								    %[3]s
-									ORDER BY jobs.job_id %[4]s`,
-		ds.JobTable, ds.JobStatusTable, filterQuery, limitQuery)
+									%[2]s JOIN %[3]q job_latest_state ON jobs.job_id=job_latest_state.job_id
+								    %[4]s
+									ORDER BY jobs.job_id %[5]s`,
+		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
 
 	var args []interface{}
 
@@ -2195,7 +2292,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 	var limitsReached bool
 	var eventCount int
 	var payloadSize int64
-
+	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
 		var job JobT
 		var jsState sql.NullString
@@ -2214,6 +2311,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 			return JobsResult{}, false, err
 		}
 		if jsState.Valid {
+			resultsetStates[jsState.String] = struct{}{}
 			job.LastJobStatus.JobState = jsState.String
 			job.LastJobStatus.AttemptNum = int(jsAttemptNum.Int64)
 			job.LastJobStatus.ExecTime = jsExecTime.Time
@@ -2221,6 +2319,8 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 			job.LastJobStatus.ErrorCode = jsErrorCode.String
 			job.LastJobStatus.ErrorResponse = jsErrorResponse
 			job.LastJobStatus.Parameters = jsParameters
+		} else {
+			resultsetStates[Unprocessed.State] = struct{}{}
 		}
 		job.LastJobStatus.JobParameters = job.Parameters
 
@@ -2251,12 +2351,13 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, params GetQueryPar
 	}
 
 	if !skipCacheResult {
-		dsList := jd.getDSList()
-
-		// if query contains unprocessed and jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
-		skipCacheCommit := containsUnprocessed && jd.ownerType == Read && ds.Index == dsList[len(dsList)-1].Index
-		if len(jobList) == 0 && !skipCacheCommit {
-			cacheTx.Commit()
+		for state, cacheTx := range cacheTx {
+			// we are committing the cache Tx only if
+			// (a) no jobs are returned by the query or
+			// (b) the state is not present in the resultset and limits have not been reached
+			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
+				cacheTx.Commit()
+			}
 		}
 	}
 
@@ -3097,7 +3198,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
-		"get_jobs_time",
+		"jobsdb_get_jobs_time",
 		tags,
 	).RecordDuration()()
 
@@ -3146,7 +3247,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
 		}
-		jobs, dsHit, err := jd.getJobsDS(ctx, ds, params)
+		jobs, dsHit, err := jd.getJobsDS(ctx, ds, len(dsList)-1 == idx, params)
 		if err != nil {
 			return nil, err
 		}
@@ -3209,17 +3310,12 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
 }
 
 type queryResult struct {
 	JobsResult
-	err error
-}
-
-type moreQueryResult struct {
-	*MoreJobsResult
 	err error
 }
 
@@ -3231,6 +3327,11 @@ func queryResultWrapper(res *MoreJobsResult, err error) queryResult {
 		JobsResult: res.JobsResult,
 		err:        err,
 	}
+}
+
+type moreQueryResult struct {
+	*MoreJobsResult
+	err error
 }
 
 func moreQueryResultWrapper(res *MoreJobsResult, err error) moreQueryResult {
