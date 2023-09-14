@@ -60,3 +60,26 @@ func TestTrigger(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+func BenchmarkTrigger(b *testing.B) {
+	store := trigger.NewStore()
+
+	var wg sync.WaitGroup
+	wg.Add(b.N * 3)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		go func() {
+			defer wg.Done()
+			store.Trigger("concurrent")
+		}()
+		go func() {
+			defer wg.Done()
+			_ = store.IsTriggered("concurrent")
+		}()
+		go func() {
+			defer wg.Done()
+			store.ClearTrigger("concurrent")
+		}()
+	}
+}

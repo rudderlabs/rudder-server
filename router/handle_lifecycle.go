@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -65,37 +66,7 @@ func (rt *Handle) Setup(
 	rt.destType = destType
 
 	rt.reloadableConfig = &reloadableConfig{}
-	config.RegisterDurationConfigVariable(90, &rt.reloadableConfig.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(2, &rt.reloadableConfig.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
-	config.RegisterIntConfigVariable(20, &rt.reloadableConfig.noOfJobsToBatchInAWorker, true, 1, []string{"Router." + rt.destType + "." + "noOfJobsToBatchInAWorker", "Router." + "noOfJobsToBatchInAWorker"}...)
-	config.RegisterIntConfigVariable(3, &rt.reloadableConfig.maxFailedCountForJob, true, 1, []string{"Router." + rt.destType + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}...)
-	config.RegisterInt64ConfigVariable(100*bytesize.MB, &rt.reloadableConfig.payloadLimit, true, 1, []string{"Router." + rt.destType + "." + "PayloadLimit", "Router." + "PayloadLimit"}...)
-	config.RegisterDurationConfigVariable(3600, &rt.reloadableConfig.routerTimeout, true, time.Second, []string{"Router." + rt.destType + "." + "routerTimeout", "Router." + "routerTimeout"}...)
-	config.RegisterDurationConfigVariable(180, &rt.reloadableConfig.retryTimeWindow, true, time.Minute, []string{"Router." + rt.destType + "." + "retryTimeWindow", "Router." + rt.destType + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}...)
-	config.RegisterIntConfigVariable(10, &rt.reloadableConfig.maxDSQuerySize, true, 1, []string{"Router." + rt.destType + "." + "maxDSQuery", "Router." + "maxDSQuery"}...)
-	config.RegisterIntConfigVariable(50, &rt.reloadableConfig.jobIteratorMaxQueries, true, 1, "Router.jobIterator.maxQueries")
-	config.RegisterIntConfigVariable(10, &rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance, true, 1, "Router.jobIterator.discardedPercentageTolerance")
-	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.savePayloadOnError, true, []string{"Router." + rt.destType + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}...)
-	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.transformerProxy, true, []string{"Router." + rt.destType + "." + "transformerProxy", "Router." + "transformerProxy"}...)
-	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.skipRtAbortAlertForTransformation, true, []string{"Router." + rt.destType + "." + "skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf"}...)
-	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.skipRtAbortAlertForDelivery, true, []string{"Router." + rt.destType + "." + "skipRtAbortAlertForDelivery", "Router.skipRtAbortAlertForDelivery"}...)
-	config.RegisterIntConfigVariable(10000, &rt.reloadableConfig.jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
-	config.RegisterIntConfigVariable(1000, &rt.reloadableConfig.updateStatusBatchSize, true, 1, "Router.updateStatusBatchSize")
-	config.RegisterDurationConfigVariable(1000, &rt.reloadableConfig.readSleep, true, time.Millisecond, []string{"Router.readSleep", "Router.readSleepInMS"}...)
-	config.RegisterDurationConfigVariable(5, &rt.reloadableConfig.jobsBatchTimeout, true, time.Second, []string{"Router.jobsBatchTimeout", "Router.jobsBatchTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(5, &rt.reloadableConfig.maxStatusUpdateWait, true, time.Second, []string{"Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS"}...)
-	config.RegisterDurationConfigVariable(10, &rt.reloadableConfig.minRetryBackoff, true, time.Second, []string{"Router.minRetryBackoff", "Router.minRetryBackoffInS"}...)
-	config.RegisterDurationConfigVariable(300, &rt.reloadableConfig.maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff", "Router.maxRetryBackoffInS"}...)
-	config.RegisterStringConfigVariable("", &rt.reloadableConfig.toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
-	config.RegisterDurationConfigVariable(2, &rt.reloadableConfig.pickupFlushInterval, true, time.Second, "Router.pickupFlushInterval")
-	config.RegisterDurationConfigVariable(2000, &rt.reloadableConfig.failingJobsPenaltySleep, true, time.Millisecond, []string{"Router.failingJobsPenaltySleep"}...)
-	config.RegisterFloat64ConfigVariable(0.6, &rt.reloadableConfig.failingJobsPenaltyThreshold, true, []string{"Router.failingJobsPenaltyThreshold"}...)
-
-	config.RegisterDurationConfigVariable(60, &rt.diagnosisTickerTime, false, time.Second, []string{"Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS"}...)
-
-	netClientTimeoutKeys := []string{"Router." + rt.destType + "." + "httpTimeout", "Router." + rt.destType + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
-	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
-	config.RegisterDurationConfigVariable(600, &rt.transformerTimeout, false, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout")
+	rt.setupReloadableVars()
 	rt.crashRecover()
 	rt.responseQ = make(chan workerJobStatus, rt.reloadableConfig.jobQueryBatchSize)
 	if rt.netHandle == nil {
@@ -120,7 +91,7 @@ func (rt *Handle) Setup(
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
 	rt.workerInputBufferSize = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
 
-	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destType+"."+"enableBatching")
+	rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
 
 	rt.drainConcurrencyLimit = getRouterConfigInt("drainedConcurrencyLimit", destType, 1)
 	rt.barrierConcurrencyLimit = getRouterConfigInt("barrierConcurrencyLimit", destType, 100)
@@ -274,6 +245,41 @@ func (rt *Handle) Setup(
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
 	})
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (rt *Handle) setupReloadableVars() {
+	config.RegisterDurationConfigVariable(90, &rt.reloadableConfig.jobsDBCommandTimeout, true, time.Second, "JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
+	config.RegisterIntConfigVariable(2, &rt.reloadableConfig.jobdDBMaxRetries, true, 1, "JobsDB.Router.MaxRetries", "JobsDB.MaxRetries")
+	config.RegisterIntConfigVariable(20, &rt.reloadableConfig.noOfJobsToBatchInAWorker, true, 1, "Router."+rt.destType+".noOfJobsToBatchInAWorker", "Router.noOfJobsToBatchInAWorker")
+	config.RegisterIntConfigVariable(3, &rt.reloadableConfig.maxFailedCountForJob, true, 1, "Router."+rt.destType+".maxFailedCountForJob", "Router.maxFailedCountForJob")
+	config.RegisterInt64ConfigVariable(100*bytesize.MB, &rt.reloadableConfig.payloadLimit, true, 1, "Router."+rt.destType+".PayloadLimit", "Router.PayloadLimit")
+	config.RegisterDurationConfigVariable(3600, &rt.reloadableConfig.routerTimeout, true, time.Second, "Router."+rt.destType+".routerTimeout", "Router.routerTimeout")
+	config.RegisterDurationConfigVariable(180, &rt.reloadableConfig.retryTimeWindow, true, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router."+rt.destType+".retryTimeWindowInMins", "Router.retryTimeWindow", "Router.retryTimeWindowInMins")
+	config.RegisterIntConfigVariable(10, &rt.reloadableConfig.maxDSQuerySize, true, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")
+	config.RegisterIntConfigVariable(50, &rt.reloadableConfig.jobIteratorMaxQueries, true, 1, "Router.jobIterator.maxQueries")
+	config.RegisterIntConfigVariable(10, &rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance, true, 1, "Router.jobIterator.discardedPercentageTolerance")
+	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.savePayloadOnError, true, "Router."+rt.destType+".savePayloadOnError", "Router.savePayloadOnError")
+	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.transformerProxy, true, "Router."+rt.destType+".transformerProxy", "Router.transformerProxy")
+	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.skipRtAbortAlertForTransformation, true, "Router."+rt.destType+".skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf")
+	config.RegisterBoolConfigVariable(false, &rt.reloadableConfig.skipRtAbortAlertForDelivery, true, "Router."+rt.destType+".skipRtAbortAlertForDelivery", "Router.skipRtAbortAlertForDelivery")
+	config.RegisterIntConfigVariable(10000, &rt.reloadableConfig.jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
+	config.RegisterIntConfigVariable(1000, &rt.reloadableConfig.updateStatusBatchSize, true, 1, "Router.updateStatusBatchSize")
+	config.RegisterDurationConfigVariable(1000, &rt.reloadableConfig.readSleep, true, time.Millisecond, "Router.readSleep", "Router.readSleepInMS")
+	config.RegisterDurationConfigVariable(5, &rt.reloadableConfig.jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeout", "Router.jobsBatchTimeoutInSec")
+	config.RegisterDurationConfigVariable(5, &rt.reloadableConfig.maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS")
+	config.RegisterDurationConfigVariable(10, &rt.reloadableConfig.minRetryBackoff, true, time.Second, "Router.minRetryBackoff", "Router.minRetryBackoffInS")
+	config.RegisterDurationConfigVariable(300, &rt.reloadableConfig.maxRetryBackoff, true, time.Second, "Router.maxRetryBackoff", "Router.maxRetryBackoffInS")
+	config.RegisterStringConfigVariable("", &rt.reloadableConfig.toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
+	config.RegisterDurationConfigVariable(2, &rt.reloadableConfig.pickupFlushInterval, true, time.Second, "Router.pickupFlushInterval")
+	config.RegisterDurationConfigVariable(2000, &rt.reloadableConfig.failingJobsPenaltySleep, true, time.Millisecond, "Router.failingJobsPenaltySleep")
+	config.RegisterFloat64ConfigVariable(0.6, &rt.reloadableConfig.failingJobsPenaltyThreshold, true, "Router.failingJobsPenaltyThreshold")
+	config.RegisterDurationConfigVariable(60, &rt.diagnosisTickerTime, false, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
+	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second,
+		"Router."+rt.destType+".httpTimeout",
+		"Router."+rt.destType+".httpTimeoutInS",
+		"Router.httpTimeout", "Router.httpTimeoutInS")
+	config.RegisterDurationConfigVariable(600, &rt.transformerTimeout, false, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout")
 }
 
 func (rt *Handle) Start() {

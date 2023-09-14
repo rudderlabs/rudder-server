@@ -86,6 +86,7 @@ func newSlaveWorker(
 	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
 
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 	conf.RegisterIntConfigVariable(10240, &s.config.maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 
 	tags := stats.Tags{

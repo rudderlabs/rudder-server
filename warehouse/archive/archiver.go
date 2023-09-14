@@ -58,10 +58,10 @@ type Archiver struct {
 	tenantManager *multitenant.Manager
 
 	config struct {
-		archiveUploadRelatedRecords bool
-		uploadsArchivalTimeInDays   int
-		archiverTickerTime          time.Duration
-		backupRowsBatchSize         int
+		archiveUploadRelatedRecords *config.Reloadable[bool]
+		uploadsArchivalTimeInDays   *config.Reloadable[int]
+		archiverTickerTime          *config.Reloadable[time.Duration]
+		backupRowsBatchSize         *config.Reloadable[int]
 	}
 
 	archiveFailedStat stats.Measurement
@@ -84,10 +84,10 @@ func New(
 		tenantManager: tenantManager,
 	}
 
-	conf.RegisterBoolConfigVariable(true, &a.config.archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
-	conf.RegisterIntConfigVariable(5, &a.config.uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
-	conf.RegisterIntConfigVariable(100, &a.config.backupRowsBatchSize, true, 1, "Warehouse.Archiver.backupRowsBatchSize")
-	conf.RegisterDurationConfigVariable(360, &a.config.archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 6 hours
+	a.config.archiveUploadRelatedRecords = a.conf.GetReloadableBoolVar(true, "Warehouse.archiveUploadRelatedRecords")
+	a.config.uploadsArchivalTimeInDays = a.conf.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
+	a.config.backupRowsBatchSize = a.conf.GetReloadableIntVar(100, 1, "Warehouse.Archiver.backupRowsBatchSize")
+	a.config.archiverTickerTime = a.conf.GetReloadableDurationVar(360, time.Minute, "Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin") // default 6 hours
 
 	a.archiveFailedStat = a.stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType)
 
@@ -151,7 +151,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      a.db.DB,
-		Pagination:    a.config.backupRowsBatchSize,
+		Pagination:    a.config.backupRowsBatchSize.Load(),
 		QueryTemplate: tmpl,
 		OutputPath:    path,
 		FileManager:   fManager,
@@ -222,7 +222,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
 
 	rows, err := a.db.QueryContext(ctx, sqlStatement,
-		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays),
+		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays.Load()),
 		model.ExportedData,
 		pq.Array(skipWorkspaceIDs),
 	)

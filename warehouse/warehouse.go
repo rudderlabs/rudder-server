@@ -111,7 +111,7 @@ func NewApp(
 	a.config.port = conf.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	a.config.mode = conf.GetString("Warehouse.mode", "embedded")
 	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
-	a.config.shouldForceSetLowerVersion = conf.GetBool("SQLMigrator.forceSetLowerVersion", true)
+	a.config.shouldForceSetLowerVersion = conf.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion")
 	a.config.maxOpenConnections = conf.GetInt("Warehouse.maxOpenConnections", 20)
 	a.config.configBackendURL = conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	a.config.region = conf.GetString("region", "")

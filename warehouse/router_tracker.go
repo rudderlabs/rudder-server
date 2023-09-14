@@ -49,7 +49,11 @@ func (r *router) CronTracker(ctx context.Context) error {
 // Track tracks the status of the warehouse uploads for the corresponding cases:
 // 1. Staging files is not picked.
 // 2. Upload job is struck
-func (r *router) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
+func (r *router) Track(
+	ctx context.Context,
+	warehouse *model.Warehouse,
+	config *config.Config,
+) error {
 	var (
 		createdAt         sql.NullTime
 		exists            bool

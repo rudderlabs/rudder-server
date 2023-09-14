@@ -199,7 +199,7 @@ var (
 	kafkaBatchSize                       = defaultBatchSize
 	kafkaBatchingEnabled                 bool
 	kafkaCompression                     client.Compression
-	allowReqsWithoutUserIDAndAnonymousID bool
+	allowReqsWithoutUserIDAndAnonymousID *config.Reloadable[bool]
 
 	kafkaStats managerStats
 	pkgLogger  logger
@@ -223,27 +223,16 @@ func Init() {
 		}
 	}
 
-	config.RegisterDurationConfigVariable(
-		10, &kafkaDialTimeout, false, time.Second,
-		[]string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...,
+	kafkaDialTimeout = config.GetDurationVar(10, time.Second, "Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec")
+	kafkaReadTimeout = config.GetDurationVar(2, time.Second, "Router.kafkaReadTimeout", "Router.kafkaReadTimeoutInSec")
+	kafkaWriteTimeout = config.GetDurationVar(2, time.Second, "Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec")
+	kafkaBatchTimeout = config.GetDurationVar(
+		int64(defaultBatchTimeout)/int64(time.Second), time.Second,
+		"Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec",
 	)
-	config.RegisterDurationConfigVariable(
-		2, &kafkaReadTimeout, false, time.Second,
-		[]string{"Router.kafkaReadTimeout", "Router.kafkaReadTimeoutInSec"}...,
-	)
-	config.RegisterDurationConfigVariable(
-		2, &kafkaWriteTimeout, false, time.Second,
-		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
-	)
-	config.RegisterDurationConfigVariable(
-		int64(defaultBatchTimeout)/int64(time.Second), &kafkaBatchTimeout, false, time.Second,
-		[]string{"Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec"}...,
-	)
-	config.RegisterIntConfigVariable(defaultBatchSize, &kafkaBatchSize, false, 1, "Router.kafkaBatchSize")
-	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
-	config.RegisterBoolConfigVariable(
-		false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID",
-	)
+	kafkaBatchSize = config.GetIntVar(defaultBatchSize, 1, "Router.kafkaBatchSize")
+	kafkaBatchingEnabled = config.GetBoolVar(false, "Router.KAFKA.enableBatching")
+	allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 
@@ -581,7 +570,7 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 			continue
 		}
 		userID, ok := data["userId"].(string)
-		if !ok && !allowReqsWithoutUserIDAndAnonymousID {
+		if !ok && !allowReqsWithoutUserIDAndAnonymousID.Load() {
 			kafkaStats.missingUserID.Increment()
 			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
 			continue

@@ -205,13 +205,9 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Processor.maxHTTPIdleConnections", 5)
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
-
 	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	trans.config.userTransformationURL = conf.GetString("USER_TRANSFORM_URL", trans.config.destTransformationURL)
-
-	conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
-	conf.RegisterBoolConfigVariable(false, &trans.config.failOnUserTransformTimeout, true, "Processor.Transformer.failOnUserTransformTimeout")
-	conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
+	trans.setupReloadableVars()
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -232,6 +228,13 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	}
 
 	return &trans
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (trans *handle) setupReloadableVars() {
+	trans.conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
+	trans.conf.RegisterBoolConfigVariable(false, &trans.config.failOnUserTransformTimeout, true, "Processor.Transformer.failOnUserTransformTimeout")
+	trans.conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
 }
 
 // Transform function is used to invoke destination transformer API
