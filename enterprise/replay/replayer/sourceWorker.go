@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -33,7 +32,6 @@ type SourceWorkerT struct {
 	tablePrefix   string
 	transformer   transformer.Transformer
 	uploader      filemanager.FileManager
-	archiverRegex *regexp.Regexp
 }
 
 func (worker *SourceWorkerT) workerProcess(ctx context.Context) error {
@@ -120,12 +118,12 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	var transEvents []transformer.TransformerEvent
 	transformationVersionID := config.GetString("TRANSFORMATION_VERSION_ID", "")
-	regexMatch := worker.archiverRegex.MatchString(filePath)
+	regexMatch := strings.Contains(filePath, "gw_jobs_") || strings.Contains(filePath, "rudder-proc-err-logs")
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		copyLineBytes := make([]byte, len(lineBytes))
 		copy(copyLineBytes, lineBytes)
-		if regexMatch {
+		if !regexMatch {
 			copyLineBytes, err = transformArchivalToBackup(copyLineBytes, filePath)
 			if err != nil {
 				worker.log.Errorf("failed to transform archival to backup: %s", err)

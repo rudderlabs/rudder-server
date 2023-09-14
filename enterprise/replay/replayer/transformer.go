@@ -40,11 +40,16 @@ type Params struct {
 
 func transformArchivalToBackup(input []byte, path string) ([]byte, error) {
 	var originalPayload OriginalPayload
+	var sourceId string
 	err := json.Unmarshal(input, &originalPayload)
 	if err != nil {
 		return nil, err
 	}
-	sourceId := strings.Split(path, "/")[0]
+	if len(strings.Split(path, "/")) == 7 {
+		sourceId = strings.Split(path, "/")[1]
+	} else {
+		sourceId = strings.Split(path, "/")[0]
+	}
 	desiredPayload := DesiredPayload{
 		CreatedAt: originalPayload.CreatedAt,
 		CustomVal: "GW",
