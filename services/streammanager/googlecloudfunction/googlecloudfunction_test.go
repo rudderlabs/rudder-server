@@ -1,6 +1,7 @@
 package cloudfunctions
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,6 +79,7 @@ func TestNewProduceForGen2WithInvalidData(t *testing.T) {
 	assert.Contains(t, responseMessage, "Bad Request")
 }
 
+
 func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(validData))
@@ -102,6 +104,35 @@ func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	assert.Contains(t, responseMessage, "Message Payload inserted with messageId")
 }
 
+func TestNewProduceForGen2WithAuthenticationAndGetTokenFailed(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+		_, err := w.Write([]byte("sample respMsg"))
+		if err != nil {
+			panic(err)
+		}
+	}))
+
+	ctrl := gomock.NewController(t)
+	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
+	conf := &Config{
+		FunctionEnvironment:   "gen2",
+		RequireAuthentication: true,
+		FunctionUrl:           testSrv.URL,
+	}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	mockClient.EXPECT().
+		GetToken(gomock.Any(), testSrv.URL, gomock.Any()).
+		Return(nil, errors.New("token is failed to generate")).MaxTimes(1)
+	statusCode, responseStatus, responseMessage := producer.Produce(
+		[]byte(validData),
+		map[string]string{})
+	assert.Equal(t, 401, statusCode)
+	assert.Equal(t, "Failure", responseStatus)
+	assert.Contains(t, responseMessage, "Failed to receive token")
+}
 func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer someAccessToken" {

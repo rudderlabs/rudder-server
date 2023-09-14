@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/cloudfunctions/v1"
@@ -29,17 +30,23 @@ import (
 )
 
 type Config struct {
-	Credentials           string     `json:"credentials"`
-	FunctionEnvironment   string     `json:"functionEnvironment"`
-	RequireAuthentication bool       `json:"requireAuthentication"`
-	FunctionUrl           string     `json:"googleCloudFunctionUrl"`
-	FunctionName          string     `json:"functionName"`
-	TestConfig            TestConfig `json:"testConfig"`
+	Credentials           string        `json:"credentials"`
+	FunctionEnvironment   string        `json:"functionEnvironment"`
+	RequireAuthentication bool          `json:"requireAuthentication"`
+	FunctionUrl           string        `json:"googleCloudFunctionUrl"`
+	FunctionName          string        `json:"functionName"`
+	Token                 *oauth2.Token `json:"token"`
+	TokenCreatedAt        time.Time     `json:"tokenCreatedAt"`
 }
 
-type TestConfig struct {
-	Credentials  string `json:"crdentials"`
-	FunctionName string `json:"functionName"`
+func (config *Config) shouldGenerateToken() bool {
+	if !config.RequireAuthentication {
+		return false
+	}
+	if config.Token == nil {
+		return true
+	}
+	return time.Since(config.TokenCreatedAt) > 55*time.Minute
 }
 
 var pkgLogger logger.Logger
@@ -83,6 +90,19 @@ func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUr
 	return ts.Token()
 }
 
+func getConfig(config Config, client GoogleCloudFunctionClient) (*Config, error) {
+	if config.RequireAuthentication {
+		token, err := client.GetToken(context.Background(), config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials)))
+		if err != nil {
+			return nil, err
+		}
+		config.Token = token
+		config.TokenCreatedAt = time.Now()
+	}
+	config.FunctionName = getFunctionName(config.FunctionUrl)
+	return &config, nil
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GoogleCloudFunctionProducer, error) {
 	var config Config
@@ -112,12 +132,15 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		return nil, err
 	}
 
-	functionName := getFunctionName(config.FunctionUrl)
-
-	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.FunctionUrl, functionName, config.TestConfig}
+	client := &GoogleCloudFunctionClientImpl{service: service.Projects.Locations.Functions}
+	destConfig, err := getConfig(config, client)
+	if err != nil {
+		pkgLogger.Errorf("Error in getting config: %w", err)
+		return nil, err
+	}
 
 	return &GoogleCloudFunctionProducer{
-		client: &GoogleCloudFunctionClientImpl{service: service.Projects.Locations.Functions},
+		client: client,
 		opts:   o,
 		config: destConfig,
 	}, err
@@ -181,12 +204,14 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
-	if destConfig.RequireAuthentication {
+	if destConfig.shouldGenerateToken() {
 		token, err := producer.client.GetToken(ctx, destConfig.FunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
 		if err != nil {
 			pkgLogger.Errorf("failed to receive token: %w", err)
-			return http.StatusInternalServerError, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
+			return http.StatusUnauthorized, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
 		}
+		destConfig.Token = token
+		destConfig.TokenCreatedAt = time.Now()
 		req.Header.Add("Authorization", "Bearer "+token.AccessToken)
 	}
 
