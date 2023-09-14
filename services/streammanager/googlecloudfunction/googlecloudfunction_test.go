@@ -80,7 +80,10 @@ func TestNewProduceForGen2WithInvalidData(t *testing.T) {
 
 func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("sample respMsg"))
+		_, err := w.Write([]byte(validData))
+		if err != nil {
+			panic(err)
+		}
 	}))
 
 	ctrl := gomock.NewController(t)
@@ -104,7 +107,10 @@ func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		}
-		w.Write([]byte("sample respMsg"))
+		_, err := w.Write([]byte("sample respMsg"))
+		if err != nil {
+			panic(err)
+		}
 	}))
 
 	ctrl := gomock.NewController(t)
