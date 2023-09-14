@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.13.2](https://github.com/rudderlabs/rudder-server/compare/v1.13.1...v1.13.2) (2023-09-12)
+
+
+### Bug Fixes
+
+* send reportedAt for error-reporting in milliseconds ([29ea342](https://github.com/rudderlabs/rudder-server/commit/29ea342939951cd39e14c5e921f7b4e23601b99c))
+* send reportedAt in milliseconds for error reporting ([#3857](https://github.com/rudderlabs/rudder-server/issues/3857)) ([29ea342](https://github.com/rudderlabs/rudder-server/commit/29ea342939951cd39e14c5e921f7b4e23601b99c))
+
+
+### Miscellaneous
+
+* fix reporting tests ([b241a79](https://github.com/rudderlabs/rudder-server/commit/b241a79c487c3c83bd9c5d4038536f6418dda7f4))
+* upgrade compose test ([#3847](https://github.com/rudderlabs/rudder-server/issues/3847)) ([8333c35](https://github.com/rudderlabs/rudder-server/commit/8333c353153f1fc9e378653abb41a6451f016a75))
+
+## [1.13.1](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.13.1) (2023-09-06)
+
+
+### Bug Fixes
+
+* redis cluster mode ([#3831](https://github.com/rudderlabs/rudder-server/issues/3831)) ([3a5e974](https://github.com/rudderlabs/rudder-server/commit/3a5e97469f26ddec72eada47b0a460ff35d1c384))
+* remove table name for load file ([#3837](https://github.com/rudderlabs/rudder-server/issues/3837)) ([54bf914](https://github.com/rudderlabs/rudder-server/commit/54bf9143053a2b10240bced430b9fd29510e8fb5))
+
+
+### Miscellaneous
+
+* add stats for archiver ([#3836](https://github.com/rudderlabs/rudder-server/issues/3836)) ([7b559a0](https://github.com/rudderlabs/rudder-server/commit/7b559a0c92924a95c2c7ebe16848655b3ea746fe))
+
 ## [1.13.0](https://github.com/rudderlabs/rudder-server/compare/v1.12.1...v1.13.0) (2023-09-05)
 
 
