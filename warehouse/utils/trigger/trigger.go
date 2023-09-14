@@ -9,9 +9,7 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	return &Store{
-		identifiersMap: sync.Map{},
-	}
+	return &Store{}
 }
 
 func (s *Store) IsTriggered(identifier string) bool {

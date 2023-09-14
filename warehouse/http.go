@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"

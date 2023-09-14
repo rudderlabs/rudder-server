@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"

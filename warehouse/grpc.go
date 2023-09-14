@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/samber/lo"
 

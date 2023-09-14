@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/trigger"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTrigger(t *testing.T) {
