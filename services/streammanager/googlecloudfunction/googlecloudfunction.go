@@ -208,7 +208,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 		pkgLogger.Errorf("error while calling the Gen2 function :: %v", err)
 		return statusCode, respStatus, responseMessage
 	}
-	
+
 	if resp.StatusCode == http.StatusOK {
 		respStatus = "Success"
 		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()

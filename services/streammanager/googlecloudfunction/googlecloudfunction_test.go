@@ -19,10 +19,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-// var (
-// 	sampleDeliveryStreamName = "sampleDeliveryStream"
-// 	sampleMessage            = "sample respMsg"
-// )
+var (
+	validData = "{\"type\": \"track\", \"event\": \"checkout started\"}"
+	err       = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Bad Request</pre>\n</body>\n</html>\n"
+)
 
 func TestNewProducerForGen1(t *testing.T) {
 	destinationConfig := map[string]interface{}{
@@ -92,7 +92,7 @@ func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	}
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
 	statusCode, responseStatus, responseMessage := producer.Produce(
-		[]byte("{\"type\": \"track\", \"event\": \"checkout started\"}"),
+		[]byte(validData),
 		map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
@@ -119,7 +119,7 @@ func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 		GetToken(gomock.Any(), testSrv.URL, gomock.Any()).
 		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).MaxTimes(1)
 	statusCode, responseStatus, responseMessage := producer.Produce(
-		[]byte("{\"type\": \"track\", \"event\": \"checkout started\"}"),
+		[]byte(validData),
 		map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
@@ -141,7 +141,7 @@ func TestProduceWithInvalidAndValidData(t *testing.T) {
 		EXPECT().
 		InvokeGen1Function(conf.FunctionName, requestPayload).
 		Return(&cloudfunctions.CallFunctionResponse{
-			Error: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Bad Request</pre>\n</body>\n</html>\n",
+			Error: err,
 			ServerResponse: googleapi.ServerResponse{
 				HTTPStatusCode: http.StatusOK,
 			},
@@ -161,7 +161,7 @@ func TestProduceWithInvalidAndValidData(t *testing.T) {
 		EXPECT().
 		InvokeGen1Function(conf.FunctionName, requestPayload).
 		Return(&cloudfunctions.CallFunctionResponse{
-			Error: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Bad Request</pre>\n</body>\n</html>\n",
+			Error: err,
 			ServerResponse: googleapi.ServerResponse{
 				HTTPStatusCode: http.StatusOK,
 			},
@@ -173,9 +173,9 @@ func TestProduceWithInvalidAndValidData(t *testing.T) {
 	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
 
 	// Valid Data
-	sampleEventJson = []byte("{\"type\": \"track\", \"event\": \"checkout started\"}")
+	sampleEventJson = []byte(validData)
 	requestPayload = &cloudfunctions.CallFunctionRequest{
-		Data: "{\"type\": \"track\", \"event\": \"checkout started\"}",
+		Data: validData,
 	}
 	mockClient.
 		EXPECT().
