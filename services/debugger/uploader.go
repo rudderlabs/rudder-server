@@ -55,6 +55,7 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("debugger")
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (uploader *uploaderImpl[E]) Setup() {
 	// Number of events that are batched before sending events to control plane
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")

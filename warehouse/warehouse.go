@@ -83,6 +83,7 @@ func Init4() {
 	pkgLogger = logger.NewLogger().Child("warehouse")
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	// Port where WH is running
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -94,8 +95,8 @@ func loadConfig() {
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	triggerUploadsMap = map[string]bool{}
-	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+	ShouldForceSetLowerVersion = config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion")
+	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, "Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin")
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }

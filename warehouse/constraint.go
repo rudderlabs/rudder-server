@@ -64,6 +64,8 @@ func newConstraintsManager(conf *config.Config) *constraintsManager {
 			},
 		},
 	}
+
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 	conf.RegisterBoolConfigVariable(true, &cm.enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
 
 	return cm
