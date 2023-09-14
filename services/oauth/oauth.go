@@ -463,7 +463,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	authStatusInactiveUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, workspaceId, destinationId)
 	authStatusInactiveCpReq := &ControlPlaneRequestT{
 		Url:         authStatusInactiveUrl,
-		Method:      http.MethodPost,
+		Method:      http.MethodPut,
 		Body:        `{"authStatus": "inactive"}`,
 		ContentType: "application/json",
 		destName:    destination.DestinationDefinition.Name,
