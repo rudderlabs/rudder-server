@@ -52,7 +52,7 @@ func Test_Timeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf(" %+v", err)
 	}
-	producer.client.opts = common.Opts{Timeout: 1 * time.Microsecond}
+	producer.opts = common.Opts{Timeout: 1 * time.Microsecond}
 	json := `{
 		"key1": "value1",
 		"key2": "value2",

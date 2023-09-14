@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../../mocks/services/streammanager/googlecloudfunction/mock_googlecloudfunction.go -package mock_googlecloudfunction github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction GoogleCloudFunctionClient
+
 package cloudfunctions
 
 import (
@@ -11,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/oauth2"
 	"google.golang.org/api/cloudfunctions/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/idtoken"
@@ -38,11 +41,6 @@ type TestConfig struct {
 	FunctionName string `json:"functionName"`
 }
 
-type Client struct {
-	service *cloudfunctions.Service
-	opts    common.Opts
-}
-
 var pkgLogger logger.Logger
 
 func Init() {
@@ -54,8 +52,34 @@ func init() {
 }
 
 type GoogleCloudFunctionProducer struct {
-	client *Client
+	client GoogleCloudFunctionClient
+	opts   common.Opts
 	config *Config
+}
+
+type GoogleCloudFunctionClient interface {
+	InvokeGen1Function(name string, callfunctionrequest *cloudfunctions.CallFunctionRequest) (*cloudfunctions.CallFunctionResponse, error)
+	GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error)
+}
+
+type GoogleCloudFunctionClientImpl struct {
+	service *cloudfunctions.ProjectsLocationsFunctionsService
+}
+
+func (c *GoogleCloudFunctionClientImpl) InvokeGen1Function(name string, callfunctionrequest *cloudfunctions.CallFunctionRequest) (*cloudfunctions.CallFunctionResponse, error) {
+	call := c.service.Call(name, callfunctionrequest)
+	return call.Do()
+}
+
+func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
+	ts, err := idtoken.NewTokenSource(ctx, functionUrl, opts...)
+	if err != nil {
+		pkgLogger.Errorf("failed to create NewTokenSource: %w", err)
+		return nil, err
+	}
+
+	// Get the ID token, to make an authenticated call to the target audience.
+	return ts.Token()
 }
 
 // NewProducer creates a producer based on destination config
@@ -89,10 +113,13 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 
 	functionName := getFunctionName(config.GoogleCloudFunctionUrl)
 
-	client := &Client{service, o}
 	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl, functionName, config.TestConfig}
 
-	return &GoogleCloudFunctionProducer{client, destConfig}, err
+	return &GoogleCloudFunctionProducer{
+		client: &GoogleCloudFunctionClientImpl{service: service.Projects.Locations.Functions},
+		opts:   o,
+		config: destConfig,
+	}, err
 }
 
 func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
@@ -100,14 +127,14 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 	if destConfig.FunctionEnvironment == "gen1" {
-		return invokeGen1Functions(producer.client, destConfig.FunctionName, parsedJSON)
+		return producer.invokeGen1Functions(destConfig.FunctionName, parsedJSON)
 	}
 
-	return invokeGen2Functions(destConfig, parsedJSON)
+	return producer.invokeGen2Functions(destConfig, parsedJSON)
 }
 
-func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
-	if client == nil {
+func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+	if producer.client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleCloudFunction]:: Failed to initialize client"
 		return 400, respStatus, responseMessage
@@ -118,9 +145,7 @@ func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.R
 	}
 
 	// Make the HTTP request
-	call := client.service.Projects.Locations.Functions.Call(functionName, requestPayload)
-
-	response, err := call.Do()
+	response, err := producer.client.InvokeGen1Function(functionName, requestPayload)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -143,7 +168,7 @@ func invokeGen1Functions(client *Client, functionName string, parsedJSON gjson.R
 	return http.StatusOK, respStatus, responseMessage
 }
 
-func invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.String())
@@ -158,14 +183,7 @@ func invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCod
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
 	if destConfig.RequireAuthentication {
-		ts, err := idtoken.NewTokenSource(ctx, destConfig.GoogleCloudFunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
-		if err != nil {
-			pkgLogger.Errorf("failed to create NewTokenSource: %w", err)
-			return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create NewTokenSource: %s", err.Error())
-		}
-
-		// Get the ID token, to make an authenticated call to the target audience.
-		token, err := ts.Token()
+		token, err := producer.client.GetToken(ctx, destConfig.GoogleCloudFunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
 		if err != nil {
 			pkgLogger.Errorf("failed to receive token: %w", err)
 			return http.StatusInternalServerError, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
