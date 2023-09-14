@@ -728,9 +728,9 @@ func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequenc
 	freqInS := r.uploadFreqInS(syncFrequency)
 
 	r.createJobMarkerMapLock.RLock()
-	defer r.createJobMarkerMapLock.RUnlock()
-
 	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
+	r.createJobMarkerMapLock.RUnlock()
+
 	if !ok {
 		return true
 	}

@@ -59,9 +59,8 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
 		if r.uploadFrequencyExceeded(warehouse, syncFrequency) {
 			return true, nil
-		} else {
-			return false, fmt.Errorf("upload frequency exceeded")
 		}
+		return false, fmt.Errorf("upload frequency exceeded")
 	}
 
 	prevScheduledTime := prevScheduledTime(syncFrequency, syncStartAt, r.now())

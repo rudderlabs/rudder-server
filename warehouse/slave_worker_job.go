@@ -390,7 +390,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 }
 
 func (jr *jobRun) bucketFolder(batchID, tableName string) string {
-	return fmt.Sprintf(`%v-%v`, batchID, tableName)
+	return batchID + "-" + tableName
 }
 
 func (jr *jobRun) reader() (*gzip.Reader, error) {

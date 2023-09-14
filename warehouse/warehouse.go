@@ -283,8 +283,8 @@ func (a *App) migrate() error {
 	return nil
 }
 
-// Start starts the warehouse service
-func (a *App) Start(ctx context.Context) error {
+// Run runs the warehouse service
+func (a *App) Run(ctx context.Context) error {
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone(a.config.mode) && !db.IsNormalMode() {
 		a.logger.Info("Skipping start of warehouse service...")
@@ -403,7 +403,7 @@ func (a *App) Start(ctx context.Context) error {
 			return nil
 		})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.sourcesManager.Start()
+			return a.sourcesManager.Run()
 		}))
 	}
 
