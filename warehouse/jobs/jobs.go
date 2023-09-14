@@ -62,3 +62,5 @@ func (*WhAsyncJob) GetLoadFileType() string {
 func (*WhAsyncJob) GetFirstLastEvent() (time.Time, time.Time) {
 	return time.Now(), time.Now()
 }
+
+func (*WhAsyncJob) CanAppend() bool { return false }

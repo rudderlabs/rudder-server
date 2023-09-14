@@ -232,6 +232,7 @@ type KeyValue struct {
 	Value interface{}
 }
 
+//go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
 	GetSchemaInWarehouse() model.Schema
 	GetLocalSchema(ctx context.Context) (model.Schema, error)
@@ -246,6 +247,7 @@ type Uploader interface {
 	GetLoadFileGenStartTIme() time.Time
 	GetLoadFileType() string
 	GetFirstLastEvent() (time.Time, time.Time)
+	CanAppend() bool
 }
 
 type GetLoadFilesOptions struct {
