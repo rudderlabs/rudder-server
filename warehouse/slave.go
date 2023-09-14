@@ -54,6 +54,7 @@ func newSlave(
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
 
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 	conf.RegisterIntConfigVariable(4, &s.config.noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 
 	return s

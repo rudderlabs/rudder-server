@@ -15,13 +15,12 @@ func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 }
 
 func (handler *NormalModeHandler) HasThresholdReached() bool {
-	config.RegisterIntConfigVariable(5, &maxCrashes, false, 1, "recovery.normal.crashThreshold")
-	config.RegisterIntConfigVariable(300, &duration, false, 1, "recovery.normal.durationInS")
+	maxCrashes = config.GetIntVar(5, 1, "recovery.normal.crashThreshold")
+	duration = config.GetIntVar(300, 1, "recovery.normal.durationInS")
 	return CheckOccurrences(handler.recoveryData.StartTimes, maxCrashes, duration)
 }
 
-func (*NormalModeHandler) Handle() {
-}
+func (*NormalModeHandler) Handle() {}
 
 type NormalModeHandler struct {
 	recoveryData *RecoveryDataT

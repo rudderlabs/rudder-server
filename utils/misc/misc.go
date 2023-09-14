@@ -98,7 +98,7 @@ func init() {
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
-	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
+	errorStorePath = config.GetStringVar("/tmp/error_store.json", "recovery.errorStorePath")
 	reservedFolderPaths = GetReservedFolderPaths()
 }
 
