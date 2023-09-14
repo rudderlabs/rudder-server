@@ -451,6 +451,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 	},
+	Settings: backendconfig.Settings{
+		EventAuditEnabled: true,
+	},
 }
 
 func initProcessor() {
