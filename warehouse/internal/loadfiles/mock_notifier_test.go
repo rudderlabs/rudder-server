@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/stretchr/testify/require"
 
@@ -20,8 +20,8 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.PublishRequest) (<-chan *notifierModel.PublishResponse, error) {
-	var responses notifierModel.PublishResponse
+func (n *mockNotifier) Publish(_ context.Context, payload *notifier.PublishRequest) (<-chan *notifier.PublishResponse, error) {
+	var responses notifier.PublishResponse
 	for _, p := range payload.Payloads {
 		var req loadfiles.WorkerJobRequest
 		err := json.Unmarshal(p, &req)
@@ -54,20 +54,20 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.Publish
 			errString = err.Error()
 		}
 
-		status := notifierModel.Succeeded
+		status := notifier.Succeeded
 		if req.StagingFileLocation == "" {
 			errString = "staging file location is empty"
-			status = notifierModel.Aborted
+			status = notifier.Aborted
 		}
 
-		responses.Jobs = append(responses.Jobs, notifierModel.Job{
+		responses.Jobs = append(responses.Jobs, notifier.Job{
 			Payload: out,
 			Error:   errors.New(errString),
 			Status:  status,
 		})
 	}
 
-	ch := make(chan *notifierModel.PublishResponse, 1)
+	ch := make(chan *notifier.PublishResponse, 1)
 	ch <- &responses
 	return ch, nil
 }

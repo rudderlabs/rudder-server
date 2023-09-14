@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -28,16 +28,16 @@ import (
 )
 
 type mockSlaveNotifier struct {
-	subscribeCh    chan *notifierModel.ClaimJobResponse
-	publishCh      chan *notifierModel.ClaimJob
+	subscribeCh    chan *notifier.ClaimJobResponse
+	publishCh      chan *notifier.ClaimJob
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifierModel.ClaimJob {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifier.ClaimJob {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifierModel.ClaimJob, response *notifierModel.ClaimJobResponse) {
+func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifier.ClaimJob, response *notifier.ClaimJobResponse) {
 	m.subscribeCh <- response
 }
 
@@ -74,12 +74,12 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan *notifierModel.ClaimJob)
-	subscriberCh := make(chan *notifierModel.ClaimJobResponse)
+	publishCh := make(chan *notifier.ClaimJob)
+	subscriberCh := make(chan *notifier.ClaimJobResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
-	notifier := &mockSlaveNotifier{
+	slaveNotifier := &mockSlaveNotifier{
 		publishCh:   publishCh,
 		subscribeCh: subscriberCh,
 	}
@@ -91,7 +91,7 @@ func TestSlave(t *testing.T) {
 		config.Default,
 		logger.NOP,
 		stats.Default,
-		notifier,
+		slaveNotifier,
 		newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 		newConstraintsManager(config.Default),
 		encoding.NewFactory(config.Default),
@@ -129,14 +129,14 @@ func TestSlave(t *testing.T) {
 	payloadJson, err := json.Marshal(p)
 	require.NoError(t, err)
 
-	claim := &notifierModel.ClaimJob{
-		Job: &notifierModel.Job{
+	claim := &notifier.ClaimJob{
+		Job: &notifier.Job{
 			ID:                  1,
 			BatchID:             uuid.New().String(),
 			Payload:             payloadJson,
 			Status:              model.Waiting,
 			WorkspaceIdentifier: "test_workspace",
-			Type:                notifierModel.JobTypeUpload,
+			Type:                notifier.JobTypeUpload,
 		},
 	}
 

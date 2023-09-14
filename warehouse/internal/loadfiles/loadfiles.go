@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	stdjson "encoding/json"
 
@@ -38,7 +38,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(ctx context.Context, payload *notifierModel.PublishRequest) (ch <-chan *notifierModel.PublishResponse, err error)
+	Publish(ctx context.Context, payload *notifier.PublishRequest) (ch <-chan *notifier.PublishResponse, err error)
 }
 
 type StageFileRepo interface {
@@ -249,9 +249,9 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
 
-		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
+		ch, err := lf.Notifier.Publish(ctx, &notifier.PublishRequest{
 			Payloads:     messages,
-			JobType:      notifierModel.JobTypeUpload,
+			JobType:      notifier.JobTypeUpload,
 			UploadSchema: metadataJSON,
 			Priority:     job.Upload.Priority,
 		})
@@ -290,7 +290,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 					return fmt.Errorf("unmarshalling response from notifier: %w", err)
 				}
 
-				if resp.Status == notifierModel.Aborted && resp.Error != nil {
+				if resp.Status == notifier.Aborted && resp.Error != nil {
 					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
 					sampleError = fmt.Errorf(resp.Error.Error())
 					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -66,7 +66,7 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			JobRunID:  payload.JobRunID,
 			TaskRunID: payload.TaskRunID,
 			StartTime: payload.StartTime,
-			JobType:   string(notifierModel.JobTypeAsync),
+			JobType:   string(notifier.JobTypeAsync),
 		})
 		if err != nil {
 			a.logger.Errorw("marshalling metadata for inserting async job", lf.Error, err.Error())

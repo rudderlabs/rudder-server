@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -78,10 +78,10 @@ func TestSlaveWorker(t *testing.T) {
 		ef := encoding.NewFactory(config.Default)
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -89,7 +89,7 @@ func TestSlaveWorker(t *testing.T) {
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -120,14 +120,14 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.ClaimJob{
-				Job: &notifierModel.Job{
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
 					ID:                  1,
 					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
-					Type:                notifierModel.JobTypeUpload,
+					Type:                notifier.JobTypeUpload,
 				},
 			}
 
@@ -178,10 +178,10 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("clickhouse bool", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -189,7 +189,7 @@ func TestSlaveWorker(t *testing.T) {
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -220,14 +220,14 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.ClaimJob{
-				Job: &notifierModel.Job{
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
 					ID:                  1,
 					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
-					Type:                notifierModel.JobTypeUpload,
+					Type:                notifier.JobTypeUpload,
 				},
 			}
 
@@ -302,10 +302,10 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("schema limit exceeded", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -316,7 +316,7 @@ func TestSlaveWorker(t *testing.T) {
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -347,14 +347,14 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claimJob := &notifierModel.ClaimJob{
-				Job: &notifierModel.Job{
+			claimJob := &notifier.ClaimJob{
+				Job: &notifier.Job{
 					ID:                  1,
 					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
-					Type:                notifierModel.JobTypeUpload,
+					Type:                notifier.JobTypeUpload,
 				},
 			}
 
@@ -372,10 +372,10 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("discards", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -383,7 +383,7 @@ func TestSlaveWorker(t *testing.T) {
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -426,14 +426,14 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.ClaimJob{
-				Job: &notifierModel.Job{
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
 					ID:                  1,
 					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
-					Type:                notifierModel.JobTypeUpload,
+					Type:                notifier.JobTypeUpload,
 				},
 			}
 
@@ -545,10 +545,10 @@ func TestSlaveWorker(t *testing.T) {
 		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -559,7 +559,7 @@ func TestSlaveWorker(t *testing.T) {
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				bcm,
 				newConstraintsManager(config.Default),
 				ef,
@@ -579,14 +579,14 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.ClaimJob{
-				Job: &notifierModel.Job{
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
 					ID:                  1,
 					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
-					Type:                notifierModel.JobTypeAsync,
+					Type:                notifier.JobTypeAsync,
 				},
 			}
 
@@ -611,10 +611,10 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("invalid configurations", func(t *testing.T) {
-			subscribeCh := make(chan *notifierModel.ClaimJobResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -625,7 +625,7 @@ func TestSlaveWorker(t *testing.T) {
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				bcm,
 				newConstraintsManager(config.Default),
 				ef,
@@ -684,15 +684,15 @@ func TestSlaveWorker(t *testing.T) {
 					payloadJson, err := json.Marshal(p)
 					require.NoError(t, err)
 
-					claim := &notifierModel.ClaimJob{
-						Job: &notifierModel.Job{
+					claim := &notifier.ClaimJob{
+						Job: &notifier.Job{
 							ID:                  1,
 							BatchID:             uuid.New().String(),
 							Payload:             payloadJson,
 							Status:              model.Waiting,
 							WorkspaceIdentifier: "test_workspace",
 							Attempt:             0,
-							Type:                notifierModel.JobTypeAsync,
+							Type:                notifier.JobTypeAsync,
 						},
 					}
 

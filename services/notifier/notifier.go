@@ -128,8 +128,8 @@ type Notifier struct {
 		maxOpenConnections         int
 		shouldForceSetLowerVersion bool
 		trackBatchInterval         time.Duration
-		maxPollSleep               time.Duration
-		jobOrphanTimeout           time.Duration
+		maxPollSleep               *config.Reloadable[time.Duration]
+		jobOrphanTimeout           *config.Reloadable[time.Duration]
 		queryTimeout               time.Duration
 	}
 	stats struct {
@@ -173,9 +173,8 @@ func New(
 	n.config.shouldForceSetLowerVersion = n.conf.GetBool("SQLMigrator.forceSetLowerVersion", true)
 	n.config.trackBatchInterval = n.conf.GetDuration("PgNotifier.trackBatchIntervalInS", 2, time.Second)
 	n.config.queryTimeout = n.conf.GetDuration("Warehouse.pgNotifierQueryTimeout", 5, time.Minute)
-
-	n.conf.RegisterDurationConfigVariable(5000, &n.config.maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
-	n.conf.RegisterDurationConfigVariable(120, &n.config.jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
+	n.config.maxPollSleep = n.conf.GetReloadableDurationVar(5000, time.Millisecond, "PgNotifier.maxPollSleep")
+	n.config.jobOrphanTimeout = n.conf.GetReloadableDurationVar(120, time.Second, "PgNotifier.jobOrphanTimeout")
 
 	n.stats.insertRecords = n.statsFactory.NewTaggedStat("pg_notifier.insert_records", stats.CountType, stats.Tags{
 		"module":    "pg_notifier",
@@ -422,11 +421,11 @@ func (n *Notifier) Subscribe(
 	nextPollInterval := func(pollSleep time.Duration) time.Duration {
 		pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
 
-		if pollSleep < n.config.maxPollSleep {
+		if pollSleep < n.config.maxPollSleep.Load() {
 			return pollSleep
 		}
 
-		return n.config.maxPollSleep
+		return n.config.maxPollSleep.Load()
 	}
 
 	n.background.group.Go(func() error {
@@ -549,12 +548,12 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(n.config.jobOrphanTimeout / 5):
+		case <-time.After(n.config.jobOrphanTimeout.Load() / 5):
 		}
 	}
 
 	for {
-		orphanJobIDs, err := n.repo.orphanJobIDs(ctx, int(n.config.jobOrphanTimeout/time.Second))
+		orphanJobIDs, err := n.repo.orphanJobIDs(ctx, int(n.config.jobOrphanTimeout.Load()/time.Second))
 		if err != nil {
 			var pqErr *pq.Error
 
@@ -575,7 +574,7 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(n.config.jobOrphanTimeout / 5):
+		case <-time.After(n.config.jobOrphanTimeout.Load() / 5):
 		}
 	}
 }

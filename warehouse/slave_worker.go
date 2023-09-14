@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -87,6 +87,7 @@ func newSlaveWorker(
 	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
 
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 	conf.RegisterIntConfigVariable(10240, &s.config.maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 
 	tags := stats.Tags{
@@ -100,7 +101,7 @@ func newSlaveWorker(
 	return s
 }
 
-func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notifierModel.ClaimJob, slaveID string) {
+func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
 	for {
@@ -122,7 +123,7 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notif
 			)
 
 			switch claimedJob.Job.Type {
-			case notifierModel.JobTypeAsync:
+			case notifier.JobTypeAsync:
 				sw.processClaimedAsyncJob(ctx, claimedJob)
 			default:
 				sw.processClaimedUploadJob(ctx, claimedJob)
@@ -139,13 +140,13 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notif
 	}
 }
 
-func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *notifierModel.ClaimJob) {
+func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	sw.stats.workerClaimProcessingTime.RecordDuration()()
 
-	handleErr := func(err error, claimedJob *notifierModel.ClaimJob) {
+	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
 		sw.stats.workerClaimProcessingFailed.Increment()
 
-		sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimJobResponse{
+		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -177,7 +178,7 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *
 
 	sw.stats.workerClaimProcessingSucceeded.Increment()
 
-	sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimJobResponse{
+	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobJSON,
 	})
 }
@@ -413,11 +414,11 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 	return uploadsResults, err
 }
 
-func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifierModel.ClaimJob) {
-	handleErr := func(err error, claimedJob *notifierModel.ClaimJob) {
+func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
 		sw.log.Errorf("Error processing claim: %v", err)
 
-		sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimJobResponse{
+		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -444,7 +445,7 @@ func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *n
 		return
 	}
 
-	sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimJobResponse{
+	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobResultJSON,
 	})
 }

@@ -17,6 +17,7 @@ type cacheItem[E any] struct {
 loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
 */
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (c *Cache[E]) loadCacheConfig() {
 	if c.size == 0 {
 		config.RegisterIntConfigVariable(3, &c.size, true, 1, "LiveEvent.cache.size")
