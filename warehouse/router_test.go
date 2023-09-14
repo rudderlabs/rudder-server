@@ -11,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -183,7 +185,6 @@ func TestRouter(t *testing.T) {
 		r := router{}
 		r.now = time.Now
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -199,8 +200,8 @@ func TestRouter(t *testing.T) {
 			require.NoError(t, err)
 
 			upload, err := repoUpload.Get(ctx, 1)
-			require.Equal(t, err, model.ErrUploadNotFound)
-			require.Equal(t, upload, model.Upload{})
+			require.ErrorIs(t, err, model.ErrUploadNotFound)
+			require.Zero(t, upload)
 		})
 
 		t.Run("with staging files", func(t *testing.T) {
@@ -292,6 +293,135 @@ func TestRouter(t *testing.T) {
 		})
 	})
 
+	t.Run("handlePriorityForWaitingUploads", func(t *testing.T) {
+		pgResource, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		t.Log("db:", pgResource.DBDsn)
+
+		err = (&migrator.Migrator{
+			Handle:          pgResource.DB,
+			MigrationsTable: "wh_schema_migrations",
+		}).Migrate("warehouse")
+		require.NoError(t, err)
+
+		db := sqlmiddleware.New(pgResource.DB)
+
+		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+
+		ctx := context.Background()
+		warehouse := model.Warehouse{
+			WorkspaceID: workspaceID,
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destinationType,
+				},
+				Config: map[string]interface{}{
+					"namespace": namespace,
+				},
+			},
+			Namespace:  "test_namespace",
+			Identifier: "RS:test-source-id:test-destination-id-create-jobs",
+		}
+
+		r := router{}
+		r.now = time.Now
+		r.dbHandle = db
+		r.uploadRepo = repoUpload
+		r.stagingRepo = repoStaging
+		r.statsFactory = memstats.New()
+		r.conf = config.Default
+		r.config.stagingFilesBatchSize = 100
+		r.config.warehouseSyncFreqIgnore = true
+		r.config.enableJitterForSyncs = true
+		r.destType = destinationType
+		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.logger = logger.NOP
+
+		priority := 50
+
+		createJob := func(t *testing.T, priority int) {
+			t.Helper()
+
+			stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
+
+			err = r.createUploadJobsFromStagingFiles(
+				ctx,
+				warehouse,
+				lo.Map(stagingFiles, func(item *model.StagingFileWithSchema, index int) *model.StagingFile {
+					return &item.StagingFile
+				}),
+				priority,
+				r.now(),
+			)
+			require.NoError(t, err)
+		}
+
+		t.Run("no uploads", func(t *testing.T) {
+			priority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+			require.NoError(t, err)
+			require.Equal(t, priority, defaultUploadPriority)
+		})
+
+		t.Run("context cancelled", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			priority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, priority, 0)
+		})
+
+		t.Run("with waiting uploads and in progress", func(t *testing.T) {
+			createJob(t, priority)
+
+			r.setDestInProgress(warehouse, -1)
+			defer r.removeDestInProgress(warehouse, -1)
+
+			jobPriority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+			require.NoError(t, err)
+			require.Equal(t, jobPriority, priority)
+
+			_, err = r.uploadRepo.Get(ctx, 1)
+			require.ErrorIs(t, err, model.ErrUploadNotFound)
+		})
+
+		t.Run("with waiting uploads and no in progress", func(t *testing.T) {
+			createJob(t, priority)
+
+			jobPriority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+			require.NoError(t, err)
+			require.Equal(t, jobPriority, priority)
+
+			_, err = r.uploadRepo.Get(ctx, 2)
+			require.ErrorIs(t, err, model.ErrUploadNotFound)
+		})
+
+		t.Run("no waiting uploads", func(t *testing.T) {
+			createJob(t, priority)
+
+			_, err := db.ExecContext(ctx, `UPDATE `+warehouseutils.WarehouseUploadsTable+` SET status = 'executing' WHERE id = $1`, 3)
+			require.NoError(t, err)
+
+			jobPriority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+			require.NoError(t, err)
+			require.Equal(t, jobPriority, defaultUploadPriority)
+
+			_, err = r.uploadRepo.Get(ctx, 3)
+			require.NoError(t, err)
+		})
+	})
+
 	t.Run("Scheduler", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
@@ -340,7 +470,6 @@ func TestRouter(t *testing.T) {
 		r := router{}
 		r.dbHandle = db
 		r.statsFactory = statsStore
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.conf = config.Default
@@ -442,7 +571,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -574,7 +702,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -722,7 +849,6 @@ func TestRouter(t *testing.T) {
 
 			r := router{}
 			r.dbHandle = db
-			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.statsFactory = memstats.New()
@@ -811,7 +937,6 @@ func TestRouter(t *testing.T) {
 			r := router{}
 			r.dbHandle = db
 			r.statsFactory = statsStore
-			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.conf = config.Default
@@ -1037,7 +1162,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
