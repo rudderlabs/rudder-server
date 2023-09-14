@@ -2,10 +2,12 @@ package cloudfunctions
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"golang.org/x/oauth2"
 	"google.golang.org/api/cloudfunctions/v1"
 	"google.golang.org/api/googleapi"
 
@@ -22,7 +24,7 @@ import (
 // 	sampleMessage            = "sample respMsg"
 // )
 
-func TestNewProducer(t *testing.T) {
+func TestNewProducerForGen1(t *testing.T) {
 	destinationConfig := map[string]interface{}{
 		"FunctionEnvironment":    "gen1",
 		"GoogleCloudFunctionUrl": "https://us-location-project-name.cloudfunctions.net/function-x",
@@ -38,6 +40,90 @@ func TestNewProducer(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
 	assert.NotNil(t, producer.client, producer.opts, producer.config)
+}
+
+func TestNewProducerForGen2(t *testing.T) {
+	destinationConfig := map[string]interface{}{
+		"FunctionEnvironment":    "gen2",
+		"GoogleCloudFunctionUrl": "sampleFunctionUrl",
+		"Credentials":            "crdentials",
+		"RequireAuthentication":  false,
+	}
+	destination := backendconfig.DestinationT{
+		Config: destinationConfig,
+	}
+	timeOut := 10 * time.Second
+	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
+	assert.Nil(t, err)
+	assert.NotNil(t, producer)
+}
+
+func TestNewProduceForGen2WithInvalidData(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+	}))
+
+	ctrl := gomock.NewController(t)
+	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
+	conf := &Config{
+		FunctionName:          "sample-functionname",
+		FunctionEnvironment:   "gen2",
+		RequireAuthentication: false,
+		FunctionUrl:           testSrv.URL,
+	}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
+	assert.Equal(t, 400, statusCode)
+	assert.Equal(t, "Failure", responseStatus)
+	assert.Contains(t, responseMessage, "Bad Request")
+}
+
+func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("sample respMsg"))
+	}))
+
+	ctrl := gomock.NewController(t)
+	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
+	conf := &Config{
+		FunctionEnvironment:   "gen2",
+		RequireAuthentication: false,
+		FunctionUrl:           testSrv.URL,
+	}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	statusCode, responseStatus, responseMessage := producer.Produce(
+		[]byte("{\"type\": \"track\", \"event\": \"checkout started\"}"),
+		map[string]string{})
+	assert.Equal(t, 200, statusCode)
+	assert.Equal(t, "Success", responseStatus)
+	assert.Contains(t, responseMessage, "Message Payload inserted with messageId")
+}
+
+func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+		w.Write([]byte("sample respMsg"))
+	}))
+
+	ctrl := gomock.NewController(t)
+	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
+	conf := &Config{
+		FunctionEnvironment:   "gen2",
+		RequireAuthentication: true,
+		FunctionUrl:           testSrv.URL,
+	}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	mockClient.EXPECT().
+		GetToken(gomock.Any(), testSrv.URL, gomock.Any()).
+		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).MaxTimes(1)
+	statusCode, responseStatus, responseMessage := producer.Produce(
+		[]byte("{\"type\": \"track\", \"event\": \"checkout started\"}"),
+		map[string]string{})
+	assert.Equal(t, 200, statusCode)
+	assert.Equal(t, "Success", responseStatus)
+	assert.Contains(t, responseMessage, "Message Payload inserted with messageId")
 }
 
 func TestProduceWithInvalidAndValidData(t *testing.T) {

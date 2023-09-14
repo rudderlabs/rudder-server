@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -28,12 +29,12 @@ import (
 )
 
 type Config struct {
-	Credentials            string     `json:"credentials"`
-	FunctionEnvironment    string     `json:"functionEnvironment"`
-	RequireAuthentication  bool       `json:"requireAuthentication"`
-	GoogleCloudFunctionUrl string     `json:"googleCloudFunctionUrl"`
-	FunctionName           string     `json:"functionName"`
-	TestConfig             TestConfig `json:"testConfig"`
+	Credentials           string     `json:"credentials"`
+	FunctionEnvironment   string     `json:"functionEnvironment"`
+	RequireAuthentication bool       `json:"requireAuthentication"`
+	FunctionUrl           string     `json:"googleCloudFunctionUrl"`
+	FunctionName          string     `json:"functionName"`
+	TestConfig            TestConfig `json:"testConfig"`
 }
 
 type TestConfig struct {
@@ -111,9 +112,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		return nil, err
 	}
 
-	functionName := getFunctionName(config.GoogleCloudFunctionUrl)
+	functionName := getFunctionName(config.FunctionUrl)
 
-	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.GoogleCloudFunctionUrl, functionName, config.TestConfig}
+	destConfig := &Config{config.Credentials, config.FunctionEnvironment, config.RequireAuthentication, config.FunctionUrl, functionName, config.TestConfig}
 
 	return &GoogleCloudFunctionProducer{
 		client: &GoogleCloudFunctionClientImpl{service: service.Projects.Locations.Functions},
@@ -172,7 +173,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 	jsonBytes := []byte(parsedJSON.Raw)
 
 	// Create a POST request
-	req, err := http.NewRequest(http.MethodPost, destConfig.GoogleCloudFunctionUrl, strings.NewReader(string(jsonBytes)))
+	req, err := http.NewRequest(http.MethodPost, destConfig.FunctionUrl, strings.NewReader(string(jsonBytes)))
 	if err != nil {
 		pkgLogger.Errorf("Failed to create httpRequest for Gen2 Fn: %w", err)
 		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Gen2 Fn: %s", err.Error())
@@ -181,7 +182,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
 	if destConfig.RequireAuthentication {
-		token, err := producer.client.GetToken(ctx, destConfig.GoogleCloudFunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
+		token, err := producer.client.GetToken(ctx, destConfig.FunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
 		if err != nil {
 			pkgLogger.Errorf("failed to receive token: %w", err)
 			return http.StatusInternalServerError, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
@@ -191,6 +192,11 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 
 	// Make the request using the client
 	resp, err := http.DefaultClient.Do(req)
+	var responseBody []byte
+	defer resp.Body.Close()
+	if err == nil {
+		responseBody, err = io.ReadAll(resp.Body)
+	}
 	if err != nil {
 		responseMessage = err.Error()
 		statusCode = http.StatusBadRequest
@@ -198,17 +204,20 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 			statusCode = http.StatusGatewayTimeout
 		}
 		respStatus = "Failure"
-		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + responseMessage
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage
 		pkgLogger.Errorf("error while calling the Gen2 function :: %v", err)
 		return statusCode, respStatus, responseMessage
 	}
-	defer resp.Body.Close()
-
-	if resp.Status == "OK" {
+	
+	if resp.StatusCode == http.StatusOK {
 		respStatus = "Success"
 		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
+	} else {
+		respStatus = "Failure"
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)
+		pkgLogger.Error(responseMessage)
 	}
-	return http.StatusOK, respStatus, responseMessage
+	return resp.StatusCode, respStatus, responseMessage
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
