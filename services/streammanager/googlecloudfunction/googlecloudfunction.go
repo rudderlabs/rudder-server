@@ -208,6 +208,11 @@ func generateService(opts ...option.ClientOption) (*cloudfunctions.Service, erro
 
 func getFunctionName(url string) (functionName string) {
 	// Define a regular expression pattern to match URLs between "https://" and dot (.)
+	if !isValidCloudFunctionURL(url) {
+		pkgLogger.Errorf("Invalid Function URL")
+		return
+	}
+
 	pattern := `https://(.*?)\.`
 
 	// Compile the regular expression pattern
@@ -245,6 +250,17 @@ func getFunctionName(url string) (functionName string) {
 	functionName = "projects/" + projectId + "/locations/" + region + "/functions/" + gcFnName
 
 	return functionName
+}
+
+func isValidCloudFunctionURL(url string) bool {
+	// Define a regular expression pattern to match a valid Google Cloud Function URL
+	pattern := `^https:\/\/[a-z1-9-]+\.cloudfunctions\.net\/[a-zA-Z0-9_-]+$`
+
+	// Compile the regular expression
+	regex := regexp.MustCompile(pattern)
+
+	// Use the regular expression to check if the URL matches the pattern
+	return regex.MatchString(url)
 }
 
 // handleServiceError is created for fail safety, if in any case when err type is not googleapi.Error
