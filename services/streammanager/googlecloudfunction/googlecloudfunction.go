@@ -161,15 +161,6 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 		return statCode, respStatus, responseMessage
 	}
 
-	// ---------- To be Removed
-	// Process the response (sample response handling here).
-	if response != nil {
-		fmt.Printf("Function call status code: %d\n", response.HTTPStatusCode)
-		// Handle response content as needed.
-	}
-	fmt.Println("Request successful!")
-	// -----------
-
 	respStatus = "Success"
 	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	return http.StatusOK, respStatus, responseMessage
