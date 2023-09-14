@@ -9,6 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	stats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	types "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	model "github.com/rudderlabs/rudder-server/gateway/webhook/model"
@@ -35,6 +36,21 @@ func NewMockGateway(ctrl *gomock.Controller) *MockGateway {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
+}
+
+// GetSourceConfig mocks base method.
+func (m *MockGateway) GetSourceConfig(arg0 string) (*backendconfig.SourceT, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSourceConfig", arg0)
+	ret0, _ := ret[0].(*backendconfig.SourceT)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSourceConfig indicates an expected call of GetSourceConfig.
+func (mr *MockGatewayMockRecorder) GetSourceConfig(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSourceConfig", reflect.TypeOf((*MockGateway)(nil).GetSourceConfig), arg0)
 }
 
 // NewSourceStat mocks base method.
