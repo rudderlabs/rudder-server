@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://www.rudderstack.com/">
-    <img src="resources/logo.png">
+    <img src="resources/rs-logo-full-duotone-dark.jpg" height="64px">
   </a>
 </p>
 

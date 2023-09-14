@@ -1569,42 +1569,6 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 	return err
 }
 
-func (job *UploadJob) triggerUploadNow() (err error) {
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
-	newJobState := model.Waiting
-
-	metadata := repo.ExtractUploadMetadata(job.upload)
-
-	metadata.NextRetryTime = job.now().Add(-time.Hour * 1)
-	metadata.Retried = true
-	metadata.Priority = 50
-
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
-
-	uploadColumns := []UploadColumn{
-		{Column: "status", Value: newJobState},
-		{Column: "metadata", Value: metadataJSON},
-		{Column: "updated_at", Value: job.now()},
-	}
-
-	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
-	if err != nil {
-		panic(err)
-	}
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-	if err != nil {
-		panic(err)
-	}
-	err = txn.Commit()
-
-	job.upload.Status = newJobState
-	return err
-}
-
 // extractAndUpdateUploadErrorsByState extracts and augment errors in format
 // { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
 // from a particular upload.

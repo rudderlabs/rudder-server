@@ -558,7 +558,7 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 			},
 			PU: firstReport.PU,
 			ReportMetadata: types.ReportMetadata{
-				ReportedAt: firstReport.ReportedAt,
+				ReportedAt: firstReport.ReportedAt * 60 * 1000,
 			},
 		}
 		var errs []types.EDErrorDetails
