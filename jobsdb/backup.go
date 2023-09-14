@@ -22,11 +22,11 @@ import (
 )
 
 func (jd *Handle) isBackupEnabled() bool {
-	return jd.conf.backup.masterBackupEnabled && jd.conf.backup.instanceBackupEnabled
+	return jd.conf.backup.masterBackupEnabled.Load() && jd.conf.backup.instanceBackupEnabled.Load()
 }
 
 func (jd *Handle) IsMasterBackupEnabled() bool {
-	return jd.conf.backup.masterBackupEnabled
+	return jd.conf.backup.masterBackupEnabled.Load()
 }
 
 func (jd *Handle) backupDSLoop(ctx context.Context) {
@@ -36,7 +36,7 @@ func (jd *Handle) backupDSLoop(ctx context.Context) {
 
 	for {
 		select {
-		case <-time.After(sleepMultiplier * jd.conf.backup.backupCheckSleepDuration):
+		case <-time.After(sleepMultiplier * jd.conf.backup.backupCheckSleepDuration.Load()):
 			if !jd.isBackupEnabled() {
 				jd.logger.Debugf("backupDSLoop backup disabled %s", jd.tablePrefix)
 				continue
@@ -200,7 +200,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getFailedOnlyBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize, jd.conf.backup.backupMaxTotalPayloadSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getFailedOnlyBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize.Load(), jd.conf.backup.backupMaxTotalPayloadSize.Load()), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -268,7 +268,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 		), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getJobsBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize, jd.conf.backup.backupMaxTotalPayloadSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getJobsBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize.Load(), jd.conf.backup.backupMaxTotalPayloadSize.Load()), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -326,7 +326,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getStatusBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getStatusBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize.Load()), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -680,7 +680,7 @@ func (jd *Handle) backupUploadWithExponentialBackoff(ctx context.Context, file *
 	}
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = jd.conf.backup.maxBackupRetryTime
+	bo.MaxElapsedTime = jd.conf.backup.maxBackupRetryTime.Load()
 	boRetries := backoff.WithMaxRetries(bo, uint64(jd.config.GetInt64("MAX_BACKOFF_RETRIES", 3)))
 	boCtx := backoff.WithContext(boRetries, ctx)
 
