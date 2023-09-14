@@ -44,16 +44,16 @@ type dumpsConfig struct {
 
 // procErrorRequestHandler is an empty struct to capture Proc Error re-stream request handling functionality
 type procErrorRequestHandler struct {
+	*dumpsLoader
 	g           errgroup.Group
 	tablePrefix string
-	*dumpsLoader
 }
 
 // gwReplayRequestHandler is an empty struct to capture Gateway replay handling functionality
 type gwReplayRequestHandler struct {
+	*dumpsLoader
 	g           errgroup.Group
 	tablePrefix string
-	*dumpsLoader
 }
 
 type OrderedJobs struct {
@@ -101,11 +101,10 @@ func Setup(ctx context.Context, config *config.Config, db *jobsdb.Handle, tableP
 	}
 	dumpHandler.config.startTime = startTime
 	dumpHandler.config.endTime = endTime
-	g := errgroup.Group{}
 	switch tablePrefix {
 	case "gw":
-		return &gwReplayRequestHandler{g, tablePrefix, dumpHandler}, nil
+		return &gwReplayRequestHandler{dumpHandler, errgroup.Group{}, tablePrefix}, nil
 	default:
-		return &procErrorRequestHandler{g, tablePrefix, dumpHandler}, nil
+		return &procErrorRequestHandler{dumpHandler, errgroup.Group{}, tablePrefix}, nil
 	}
 }
