@@ -275,6 +275,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
+			// TODO: GetSourceConfig from gateway
+			_, err := bt.webhook.gwHandle.GetSourceConfig("sentSourceID")
+
 			body, err := io.ReadAll(req.request.Body)
 			_ = req.request.Body.Close()
 
@@ -307,6 +310,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
+			// TODO: body is an event here. We need to make an object
+			// {event: body, source: sourceConfig}
 			payloadArr = append(payloadArr, body)
 			webRequests = append(webRequests, req)
 		}

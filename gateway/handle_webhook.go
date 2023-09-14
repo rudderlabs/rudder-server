@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -51,4 +52,9 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 	ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 	defer cancel()
 	return gw.errDB.Store(ctx, jobs)
+}
+
+func (gw *Handle) GetSourceConfig(sourceID string) (*backendconfig.SourceT, error) {
+	// TODO: complete this
+	return &backendconfig.SourceT{}, nil
 }
