@@ -79,7 +79,6 @@ func TestNewProduceForGen2WithInvalidData(t *testing.T) {
 	assert.Contains(t, responseMessage, "Bad Request")
 }
 
-
 func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(validData))
@@ -133,6 +132,7 @@ func TestNewProduceForGen2WithAuthenticationAndGetTokenFailed(t *testing.T) {
 	assert.Equal(t, "Failure", responseStatus)
 	assert.Contains(t, responseMessage, "Failed to receive token")
 }
+
 func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
