@@ -111,13 +111,6 @@ func (handle *Replayer) generatorLoop(ctx context.Context) error {
 		}
 		time.Sleep(5 * time.Second)
 	}
-
-	// Since generator read is done, closing worker channels
-	for _, worker := range handle.workers {
-		handle.log.Infof("Closing worker channels")
-		close(worker.channel)
-	}
-	return nil
 }
 
 func (handle *Replayer) initSourceWorkers(ctx context.Context) {
@@ -184,5 +177,9 @@ func (handle *Replayer) Start() {
 
 func (handle *Replayer) Stop() error {
 	handle.cancel()
+	for _, worker := range handle.workers {
+		handle.log.Infof("Closing worker channels")
+		close(worker.channel)
+	}
 	return handle.g.Wait()
 }
