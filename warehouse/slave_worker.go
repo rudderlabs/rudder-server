@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
-
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/lib/pq"
@@ -190,9 +188,9 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			continue
 		}
 
-		ch, err := a.notifier.Publish(ctx, &model.PublishRequest{
+		ch, err := a.notifier.Publish(ctx, &notifier.PublishRequest{
 			Payloads: notifierClaims,
-			JobType:  model.JobTypeAsync,
+			JobType:  notifier.JobTypeAsync,
 			Priority: 100,
 		})
 		if err != nil {
@@ -233,7 +231,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	}
 }
 
-func (a *AsyncJobWh) updateStatusJobPayloadsFromNotifierResponse(r *model.PublishResponse, m map[string]AsyncJobStatus) {
+func (a *AsyncJobWh) updateStatusJobPayloadsFromNotifierResponse(r *notifier.PublishResponse, m map[string]AsyncJobStatus) {
 	for _, resp := range r.Jobs {
 		var response NotifierResponse
 		err := json.Unmarshal(resp.Payload, &response)

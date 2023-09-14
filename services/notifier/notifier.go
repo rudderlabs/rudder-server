@@ -9,8 +9,6 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/notifier/repo"
-
 	"github.com/lib/pq"
 
 	"golang.org/x/sync/errgroup"
@@ -20,8 +18,6 @@ import (
 
 	"github.com/allisson/go-pglock/v2"
 	"github.com/spaolacci/murmur3"
-
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -36,16 +32,73 @@ const (
 	module    = "pgnotifier"
 )
 
+type JobType string
+
+const (
+	JobTypeUpload JobType = "upload"
+	JobTypeAsync  JobType = "async_job"
+)
+
+type JobStatus string
+
+const (
+	Waiting   JobStatus = "waiting"
+	Executing JobStatus = "executing"
+	Succeeded JobStatus = "succeeded"
+	Failed    JobStatus = "failed"
+	Aborted   JobStatus = "aborted"
+)
+
+type Job struct {
+	ID                  int64
+	BatchID             string
+	WorkerID            string
+	WorkspaceIdentifier string
+
+	Attempt  int
+	Status   JobStatus
+	Type     JobType
+	Priority int
+	Error    error
+
+	Payload json.RawMessage
+
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	LastExecTime time.Time
+}
+
+type PublishRequest struct {
+	Payloads     []json.RawMessage
+	UploadSchema json.RawMessage // ATM Hack to support merging schema with the payload at the postgres level
+	JobType      JobType
+	Priority     int
+}
+
+type PublishResponse struct {
+	Jobs []Job
+	Err  error
+}
+
+type ClaimJob struct {
+	Job *Job
+}
+
+type ClaimJobResponse struct {
+	Payload json.RawMessage
+	Err     error
+}
+
 type notifierRepo interface {
-	ResetForWorkspace(context.Context, string) error
-	Insert(context.Context, *model.PublishRequest, string, string) error
-	PendingByBatchID(context.Context, string) (int64, error)
-	DeleteByBatchID(context.Context, string) error
-	OrphanJobIDs(context.Context, int) ([]int64, error)
-	GetByBatchID(context.Context, string) ([]model.Job, error)
-	Claim(context.Context, string) (*model.Job, error)
-	OnClaimFailed(context.Context, *model.Job, error, int) error
-	OnClaimSuccess(context.Context, *model.Job, json.RawMessage) error
+	resetForWorkspace(context.Context, string) error
+	insert(context.Context, *PublishRequest, string, string) error
+	pendingByBatchID(context.Context, string) (int64, error)
+	deleteByBatchID(context.Context, string) error
+	orphanJobIDs(context.Context, int) ([]int64, error)
+	getByBatchID(context.Context, string) ([]Job, error)
+	claim(context.Context, string) (*Job, error)
+	onClaimFailed(context.Context, *Job, error, int) error
+	onClaimSuccess(context.Context, *Job, json.RawMessage) error
 }
 
 type Notifier struct {
@@ -133,11 +186,11 @@ func New(
 	})
 	n.stats.claimSucceeded = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": string(model.Succeeded),
+		"status": string(Succeeded),
 	})
 	n.stats.claimFailed = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": string(model.Failed),
+		"status": string(Failed),
 	})
 	n.stats.claimUpdateFailed = n.statsFactory.NewStat("pgnotifier.claimUpdateFailed", stats.CountType)
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
@@ -145,11 +198,11 @@ func New(
 	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": string(model.Succeeded),
+		"status": string(Succeeded),
 	})
 	n.stats.claimFailedTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": string(model.Failed),
+		"status": string(Failed),
 	})
 	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier.aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,
@@ -171,7 +224,7 @@ func (n *Notifier) Setup(
 	if err := n.setupDatabase(ctx, dsn); err != nil {
 		return fmt.Errorf("could not setup db: %w", err)
 	}
-	n.repo = repo.NewNotifier(n.db)
+	n.repo = newRepo(n.db)
 
 	groupCtx, groupCancel := context.WithCancel(ctx)
 	n.background.group, n.background.groupCtx = errgroup.WithContext(groupCtx)
@@ -256,7 +309,7 @@ func (n *Notifier) ClearJobs(ctx context.Context) error {
 
 	n.logger.Infof("Deleting all jobs for workspace: %s", n.workspaceIdentifier)
 
-	err := n.repo.ResetForWorkspace(ctx, n.workspaceIdentifier)
+	err := n.repo.resetForWorkspace(ctx, n.workspaceIdentifier)
 	if err != nil {
 		return fmt.Errorf("could not reset notifier for workspace: %s: %w", n.workspaceIdentifier, err)
 	}
@@ -270,13 +323,13 @@ func (n *Notifier) GetDBHandle() *sql.DB {
 // Publish inserts the payloads into the database and returns a channel of type PublishResponse
 func (n *Notifier) Publish(
 	ctx context.Context,
-	publishRequest *model.PublishRequest,
-) (<-chan *model.PublishResponse, error) {
+	publishRequest *PublishRequest,
+) (<-chan *PublishResponse, error) {
 	publishStartTime := n.now()
 
 	batchID := n.batchIDGenerator().String()
 
-	if err := n.repo.Insert(ctx, publishRequest, n.workspaceIdentifier, batchID); err != nil {
+	if err := n.repo.insert(ctx, publishRequest, n.workspaceIdentifier, batchID); err != nil {
 		return nil, fmt.Errorf("inserting jobs: %w", err)
 	}
 
@@ -296,13 +349,13 @@ func (n *Notifier) Publish(
 func (n *Notifier) trackBatch(
 	ctx context.Context,
 	batchID string,
-) <-chan *model.PublishResponse {
-	publishResCh := make(chan *model.PublishResponse)
+) <-chan *PublishResponse {
+	publishResCh := make(chan *PublishResponse)
 
 	n.background.group.Go(func() error {
 		defer close(publishResCh)
 
-		onUpdate := func(response *model.PublishResponse) {
+		onUpdate := func(response *PublishResponse) {
 			select {
 			case <-ctx.Done():
 				return
@@ -321,9 +374,9 @@ func (n *Notifier) trackBatch(
 			case <-time.After(n.config.trackBatchInterval):
 			}
 
-			count, err := n.repo.PendingByBatchID(ctx, batchID)
+			count, err := n.repo.pendingByBatchID(ctx, batchID)
 			if err != nil {
-				onUpdate(&model.PublishResponse{
+				onUpdate(&PublishResponse{
 					Err: fmt.Errorf("could not get pending count for batch: %s: %w", batchID, err),
 				})
 				return nil
@@ -331,17 +384,17 @@ func (n *Notifier) trackBatch(
 				continue
 			}
 
-			jobs, err := n.repo.GetByBatchID(ctx, batchID)
+			jobs, err := n.repo.getByBatchID(ctx, batchID)
 			if err != nil {
-				onUpdate(&model.PublishResponse{
+				onUpdate(&PublishResponse{
 					Err: fmt.Errorf("could not get jobs for batch: %s: %w", batchID, err),
 				})
 				return nil
 			}
 
-			err = n.repo.DeleteByBatchID(ctx, batchID)
+			err = n.repo.deleteByBatchID(ctx, batchID)
 			if err != nil {
-				onUpdate(&model.PublishResponse{
+				onUpdate(&PublishResponse{
 					Err: fmt.Errorf("could not delete jobs for batch: %s: %w", batchID, err),
 				})
 				return nil
@@ -349,7 +402,7 @@ func (n *Notifier) trackBatch(
 
 			n.logger.Infof("Completed processing all files in batch: %s", batchID)
 
-			onUpdate(&model.PublishResponse{
+			onUpdate(&PublishResponse{
 				Jobs: jobs,
 			})
 			return nil
@@ -363,8 +416,8 @@ func (n *Notifier) Subscribe(
 	ctx context.Context,
 	workerId string,
 	bufferSize int,
-) <-chan *model.ClaimJob {
-	jobsCh := make(chan *model.ClaimJob, bufferSize)
+) <-chan *ClaimJob {
+	jobsCh := make(chan *ClaimJob, bufferSize)
 
 	nextPollInterval := func(pollSleep time.Duration) time.Duration {
 		pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
@@ -397,7 +450,7 @@ func (n *Notifier) Subscribe(
 
 				pollSleep = nextPollInterval(pollSleep)
 			} else {
-				jobsCh <- &model.ClaimJob{
+				jobsCh <- &ClaimJob{
 					Job: job,
 				}
 
@@ -420,10 +473,10 @@ func (n *Notifier) Subscribe(
 func (n *Notifier) claim(
 	ctx context.Context,
 	workerID string,
-) (*model.Job, error) {
+) (*Job, error) {
 	claimStartTime := n.now()
 
-	claimedJob, err := n.repo.Claim(ctx, workerID)
+	claimedJob, err := n.repo.claim(ctx, workerID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("no jobs found: %w", err)
 	}
@@ -447,11 +500,11 @@ func (n *Notifier) claim(
 // claim lag also helps us to make sure that even the maintenance workers are able to monitor the jobs correctly.
 func (n *Notifier) UpdateClaim(
 	ctx context.Context,
-	claimedJob *model.ClaimJob,
-	response *model.ClaimJobResponse,
+	claimedJob *ClaimJob,
+	response *ClaimJobResponse,
 ) {
 	if response.Err != nil {
-		if err := n.repo.OnClaimFailed(ctx, claimedJob.Job, response.Err, n.config.maxAttempt); err != nil {
+		if err := n.repo.onClaimFailed(ctx, claimedJob.Job, response.Err, n.config.maxAttempt); err != nil {
 			n.stats.claimUpdateFailed.Increment()
 			n.logger.Errorf("update claimed: on claimed failed: %v", err)
 		}
@@ -462,7 +515,7 @@ func (n *Notifier) UpdateClaim(
 		return
 	}
 
-	if err := n.repo.OnClaimSuccess(ctx, claimedJob.Job, response.Payload); err != nil {
+	if err := n.repo.onClaimSuccess(ctx, claimedJob.Job, response.Payload); err != nil {
 		n.stats.claimUpdateFailed.Increment()
 		n.logger.Errorf("update claimed: on claimed success: %v", err)
 	}
@@ -501,7 +554,7 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 	}
 
 	for {
-		orphanJobIDs, err := n.repo.OrphanJobIDs(ctx, int(n.config.jobOrphanTimeout/time.Second))
+		orphanJobIDs, err := n.repo.orphanJobIDs(ctx, int(n.config.jobOrphanTimeout/time.Second))
 		if err != nil {
 			var pqErr *pq.Error
 

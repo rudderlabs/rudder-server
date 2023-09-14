@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
+
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 

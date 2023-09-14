@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	stdjson "encoding/json"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
+	stdjson "encoding/json"
 
 	"github.com/samber/lo"
 

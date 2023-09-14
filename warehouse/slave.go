@@ -3,7 +3,7 @@ package warehouse
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -17,9 +17,9 @@ import (
 )
 
 type slaveNotifier interface {
-	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.ClaimJob
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *notifier.ClaimJob
 	RunMaintenance(ctx context.Context) error
-	UpdateClaim(ctx context.Context, job *model.ClaimJob, response *model.ClaimJobResponse)
+	UpdateClaim(ctx context.Context, job *notifier.ClaimJob, response *notifier.ClaimJobResponse)
 }
 
 type slave struct {

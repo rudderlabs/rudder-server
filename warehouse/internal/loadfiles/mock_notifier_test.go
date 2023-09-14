@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/stretchr/testify/require"
 

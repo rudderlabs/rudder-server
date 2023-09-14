@@ -13,15 +13,14 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/services/notifier"
-	"github.com/rudderlabs/rudder-server/services/notifier/model"
-
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -55,7 +54,7 @@ func TestNotifier(t *testing.T) {
 		pgResource := setup(t)
 		ctx := context.Background()
 
-		publishRequest := &model.PublishRequest{
+		publishRequest := &notifier.PublishRequest{
 			Payloads: []json.RawMessage{
 				json.RawMessage(`{"id":"1"}`),
 				json.RawMessage(`{"id":"2"}`),
@@ -63,7 +62,7 @@ func TestNotifier(t *testing.T) {
 				json.RawMessage(`{"id":"4"}`),
 				json.RawMessage(`{"id":"5"}`),
 			},
-			JobType:      model.JobTypeUpload,
+			JobType:      notifier.JobTypeUpload,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
@@ -90,7 +89,7 @@ func TestNotifier(t *testing.T) {
 			subscriberWorkers = 4
 		)
 
-		collectResponses := make(chan *model.PublishResponse)
+		collectResponses := make(chan *notifier.PublishResponse)
 
 		for i := 0; i < totalJobs; i++ {
 			g.Go(func() error {
@@ -121,11 +120,11 @@ func TestNotifier(t *testing.T) {
 						for job := range subscriberCh {
 							switch job.Job.ID % 4 {
 							case 0, 1, 2:
-								n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+								n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 									Payload: json.RawMessage(`{"test": "payload"}`),
 								})
 							case 3:
-								n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+								n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 									Err: errors.New("test error"),
 								})
 							}
@@ -144,14 +143,14 @@ func TestNotifier(t *testing.T) {
 			return n.Shutdown()
 		})
 		g.Go(func() error {
-			responses := make([]model.Job, 0, totalJobs*len(publishRequest.Payloads))
+			responses := make([]notifier.Job, 0, totalJobs*len(publishRequest.Payloads))
 
 			for i := 0; i < totalJobs; i++ {
 				job := <-collectResponses
 				require.NoError(t, job.Err)
 				require.Len(t, job.Jobs, len(publishRequest.Payloads))
 
-				successfulJobs := lo.Filter(job.Jobs, func(item model.Job, index int) bool {
+				successfulJobs := lo.Filter(job.Jobs, func(item notifier.Job, index int) bool {
 					return item.Error == nil
 				})
 				for _, j := range successfulJobs {
@@ -163,12 +162,12 @@ func TestNotifier(t *testing.T) {
 			successCount := (3 * totalJobs * len(publishRequest.Payloads)) / 4
 			failureCount := totalJobs * len(publishRequest.Payloads) / 4
 
-			require.Len(t, lo.Filter(responses, func(item model.Job, index int) bool {
+			require.Len(t, lo.Filter(responses, func(item notifier.Job, index int) bool {
 				return item.Error == nil
 			}),
 				successCount,
 			)
-			require.Len(t, lo.Filter(responses, func(item model.Job, index int) bool {
+			require.Len(t, lo.Filter(responses, func(item notifier.Job, index int) bool {
 				return item.Error != nil
 			}),
 				failureCount,
@@ -207,9 +206,9 @@ func TestNotifier(t *testing.T) {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
-		publishRequest := &model.PublishRequest{
+		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      model.JobTypeUpload,
+			JobType:      notifier.JobTypeUpload,
 			UploadSchema: json.RawMessage(`{"mid": "1"}`),
 			Priority:     50,
 		}
@@ -228,7 +227,7 @@ func TestNotifier(t *testing.T) {
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
-		publishResponses := make(chan *model.PublishResponse)
+		publishResponses := make(chan *notifier.PublishResponse)
 
 		for i := 0; i < jobs; i++ {
 			g.Go(func() error {
@@ -250,7 +249,7 @@ func TestNotifier(t *testing.T) {
 				for j := 0; j < subscriberWorkers; j++ {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
-							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 								Payload: json.RawMessage(`{"test": "payload"}`),
 							})
 						}
@@ -297,9 +296,9 @@ func TestNotifier(t *testing.T) {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
-		publishRequest := &model.PublishRequest{
+		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      model.JobTypeUpload,
+			JobType:      notifier.JobTypeUpload,
 			UploadSchema: json.RawMessage(`{"mid": "1"}`),
 			Priority:     50,
 		}
@@ -318,7 +317,7 @@ func TestNotifier(t *testing.T) {
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
-		publishResponses := make(chan *model.PublishResponse)
+		publishResponses := make(chan *notifier.PublishResponse)
 
 		for i := 0; i < jobs; i++ {
 			g.Go(func() error {
@@ -340,7 +339,7 @@ func TestNotifier(t *testing.T) {
 				for j := 0; j < subscriberWorkers; j++ {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
-							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 								Payload: json.RawMessage(`{"test": "payload"}`),
 							})
 						}
@@ -387,9 +386,9 @@ func TestNotifier(t *testing.T) {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
-		publishRequest := &model.PublishRequest{
+		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      model.JobTypeUpload,
+			JobType:      notifier.JobTypeUpload,
 			UploadSchema: json.RawMessage(`{"mid": "1"}`),
 			Priority:     50,
 		}
@@ -410,7 +409,7 @@ func TestNotifier(t *testing.T) {
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
-		publishResponses := make(chan *model.PublishResponse)
+		publishResponses := make(chan *notifier.PublishResponse)
 
 		claimedWorkers := atomic.NewInt64(0)
 
@@ -447,7 +446,7 @@ func TestNotifier(t *testing.T) {
 								}
 							}
 
-							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 								Payload: json.RawMessage(`{"test": "payload"}`),
 							})
 						}

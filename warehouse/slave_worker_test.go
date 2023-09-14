@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
