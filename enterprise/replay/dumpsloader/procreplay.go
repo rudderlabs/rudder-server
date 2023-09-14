@@ -28,10 +28,6 @@ func (p *procErrorRequestHandler) Stop() error {
 	return p.g.Wait()
 }
 
-func (p *procErrorRequestHandler) IsDone() bool {
-	return p.handle.done
-}
-
 func (p *procErrorRequestHandler) handleRecovery() {
 	// remove dangling executing
 	p.handle.dbHandle.FailExecuting()
@@ -96,6 +92,5 @@ func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) error {
 	}
 
 	p.handle.log.Info("Dumps loader job is done")
-	p.handle.done = true
 	return nil
 }

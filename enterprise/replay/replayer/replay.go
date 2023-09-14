@@ -49,7 +49,6 @@ type replayConfig struct {
 
 func (handle *Replayer) generatorLoop(ctx context.Context) error {
 	handle.log.Infof("generator reading from replay_jobs_* started")
-	var breakLoop bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -62,7 +61,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) error {
 			CustomValFilters: []string{"replay"},
 			JobsLimit:        handle.config.dbReadSize,
 		}
-		jobsResult, err := handle.db.GetJobs(context.TODO(), []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
+		jobsResult, err := handle.db.GetJobs(ctx, []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
 		if err != nil {
 			handle.log.Errorf("Error getting to retry jobs: %v", err)
 			return err
@@ -70,35 +69,6 @@ func (handle *Replayer) generatorLoop(ctx context.Context) error {
 		combinedList := jobsResult.Jobs
 
 		handle.log.Infof("length of combinedList : %d", len(combinedList))
-
-		if len(combinedList) == 0 {
-			if breakLoop {
-				executingList, err := handle.db.GetJobs(
-					context.TODO(),
-					[]string{jobsdb.Executing.State},
-					jobsdb.GetQueryParams{
-						CustomValFilters: []string{"replay"},
-						JobsLimit:        handle.config.dbReadSize,
-					},
-				)
-				if err != nil {
-					handle.log.Errorf("Error getting executing jobs: %v", err)
-					return err
-				}
-				handle.log.Infof("breakLoop is set. Pending executing: %d", len(executingList.Jobs))
-				if len(executingList.Jobs) == 0 {
-					break
-				}
-			}
-
-			if handle.dumpsLoader.IsDone() {
-				breakLoop = true
-			}
-
-			handle.log.Debugf("DB Read Complete. No Jobs to process")
-			time.Sleep(5 * time.Second)
-			continue
-		}
 
 		sort.Slice(combinedList, func(i, j int) bool {
 			return combinedList[i].JobID < combinedList[j].JobID
@@ -139,6 +109,7 @@ func (handle *Replayer) generatorLoop(ctx context.Context) error {
 		for _, wrkJob := range toProcess {
 			wrkJob.worker.channel <- wrkJob.job
 		}
+		time.Sleep(5 * time.Second)
 	}
 
 	// Since generator read is done, closing worker channels

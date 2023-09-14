@@ -31,10 +31,6 @@ func (g *gwReplayRequestHandler) Stop() error {
 	return g.g.Wait()
 }
 
-func (g *gwReplayRequestHandler) IsDone() bool {
-	return g.handle.done
-}
-
 func (g *gwReplayRequestHandler) handleRecovery() {
 	// remove dangling executing
 	g.handle.dbHandle.FailExecuting()
@@ -128,6 +124,5 @@ func (g *gwReplayRequestHandler) fetchDumpsList(ctx context.Context) error {
 	}
 
 	g.handle.log.Info("Dumps loader job is done")
-	g.handle.done = true
 	return nil
 }

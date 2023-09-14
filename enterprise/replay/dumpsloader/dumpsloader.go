@@ -22,7 +22,6 @@ import (
 type DumpsLoader interface {
 	Start()
 	Stop() error
-	IsDone() bool
 }
 
 // DumpsLoaderHandleT - dumps-loader handle
@@ -32,7 +31,6 @@ type dumpsLoaderHandle struct {
 	log      logger.Logger
 	dbHandle *jobsdb.Handle
 	uploader filemanager.FileManager
-	done     bool
 	config   dumpsConfig
 }
 
