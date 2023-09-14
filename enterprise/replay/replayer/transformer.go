@@ -8,24 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type OriginalPayload struct {
-	CreatedAt time.Time       `json:"createdAt"`
-	MessageID string          `json:"messageId"`
-	Payload   json.RawMessage `json:"payload"`
-	UserID    string          `json:"userId"`
-}
-type DesiredPayload struct {
-	CreatedAt    time.Time `json:"created_at"`
-	CustomVal    string    `json:"custom_val"`
-	EventCount   int       `json:"event_count"`
-	EventPayload Payload   `json:"event_payload"`
-	ExpireAt     string    `json:"expire_at"`
-	JobID        int       `json:"job_id"`
-	Parameters   Params    `json:"parameters"`
-	UserID       string    `json:"user_id"`
-	UUID         string    `json:"uuid"`
-	WorkspaceID  string    `json:"workspace_id"`
-}
 type Payload struct {
 	Batch      json.RawMessage `json:"batch"`
 	ReceivedAt string          `json:"receivedAt"`
@@ -33,13 +15,16 @@ type Payload struct {
 	WriteKey   string          `json:"writeKey"`
 }
 type Params struct {
-	SourceID        string `json:"source_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceID string `json:"source_id"`
 }
 
 func transformArchivalToBackup(input []byte, path string) ([]byte, error) {
-	var originalPayload OriginalPayload
+	var originalPayload struct {
+		CreatedAt time.Time       `json:"createdAt"`
+		MessageID string          `json:"messageId"`
+		Payload   json.RawMessage `json:"payload"`
+		UserID    string          `json:"userId"`
+	}
 	var sourceId string
 	err := json.Unmarshal(input, &originalPayload)
 	if err != nil {
@@ -50,13 +35,24 @@ func transformArchivalToBackup(input []byte, path string) ([]byte, error) {
 	} else {
 		sourceId = strings.Split(path, "/")[0]
 	}
-	desiredPayload := DesiredPayload{
+	desiredPayload := struct {
+		CreatedAt    time.Time `json:"created_at"`
+		CustomVal    string    `json:"custom_val"`
+		EventCount   int       `json:"event_count"`
+		EventPayload Payload   `json:"event_payload"`
+		ExpireAt     string    `json:"expire_at"`
+		JobID        int       `json:"job_id"`
+		Parameters   Params    `json:"parameters"`
+		UserID       string    `json:"user_id"`
+		UUID         string    `json:"uuid"`
+		WorkspaceID  string    `json:"workspace_id"`
+	}{
 		CreatedAt: originalPayload.CreatedAt,
 		CustomVal: "GW",
 		EventPayload: Payload{
 			Batch: originalPayload.Payload,
 		},
-		UUID: uuid.Must(uuid.NewRandom()).String(),
+		UUID: uuid.NewString(),
 		Parameters: Params{
 			SourceID: sourceId,
 		},
