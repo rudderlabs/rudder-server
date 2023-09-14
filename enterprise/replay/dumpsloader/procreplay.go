@@ -19,38 +19,38 @@ func (p *procErrorRequestHandler) Start() {
 	p.g = errgroup.Group{}
 	p.handleRecovery()
 	p.g.Go(func() error {
-		return p.fetchDumpsList(p.handle.ctx)
+		return p.fetchDumpsList(p.ctx)
 	})
 }
 
 func (p *procErrorRequestHandler) Stop() error {
-	p.handle.cancel()
+	p.cancel()
 	return p.g.Wait()
 }
 
 func (p *procErrorRequestHandler) handleRecovery() {
 	// remove dangling executing
-	p.handle.dbHandle.FailExecuting()
+	p.dbHandle.FailExecuting()
 }
 
 func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) error {
 	objects := make([]OrderedJobs, 0)
-	p.handle.log.Info("Fetching proc err files list")
+	p.log.Info("Fetching proc err files list")
 	var err error
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)         // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	iter := filemanager.IterateFilesWithPrefix(ctx,
-		p.handle.config.prefix,
-		p.handle.config.startAfterKey,
+		p.config.prefix,
+		p.config.startAfterKey,
 		maxItems,
-		p.handle.uploader,
+		p.uploader,
 	)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "rudder-proc-err-logs") {
-			if object.LastModified.Before(p.handle.config.startTime) || (object.LastModified.Sub(p.handle.config.endTime).Hours() > 1) {
-				p.handle.log.Debugf("Skipping object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
+			if object.LastModified.Before(p.config.startTime) || (object.LastModified.Sub(p.config.endTime).Hours() > 1) {
+				p.log.Debugf("Skipping object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
 				continue
 			}
 			key := object.Key
@@ -73,7 +73,7 @@ func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) error {
 			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 		}
 		if len(objects) >= uploadMaxItems {
-			err := storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+			err := storeJobs(ctx, objects, p.dbHandle, p.log)
 			if err != nil {
 				return err
 			}
@@ -85,12 +85,12 @@ func (p *procErrorRequestHandler) fetchDumpsList(ctx context.Context) error {
 		return fmt.Errorf("failed to iterate proc err files with error: %w", iter.Err())
 	}
 	if len(objects) != 0 {
-		err := storeJobs(ctx, objects, p.handle.dbHandle, p.handle.log)
+		err := storeJobs(ctx, objects, p.dbHandle, p.log)
 		if err != nil {
 			return err
 		}
 	}
 
-	p.handle.log.Info("Dumps loader job is done")
+	p.log.Info("Dumps loader job is done")
 	return nil
 }

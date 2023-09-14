@@ -25,7 +25,7 @@ type DumpsLoader interface {
 }
 
 // DumpsLoaderHandleT - dumps-loader handle
-type dumpsLoaderHandle struct {
+type dumpsLoader struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	log      logger.Logger
@@ -46,14 +46,14 @@ type dumpsConfig struct {
 type procErrorRequestHandler struct {
 	g           errgroup.Group
 	tablePrefix string
-	handle      *dumpsLoaderHandle
+	*dumpsLoader
 }
 
 // gwReplayRequestHandler is an empty struct to capture Gateway replay handling functionality
 type gwReplayRequestHandler struct {
 	g           errgroup.Group
 	tablePrefix string
-	handle      *dumpsLoaderHandle
+	*dumpsLoader
 }
 
 type OrderedJobs struct {
@@ -83,7 +83,7 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 // Setup sets up dumps-loader.
 func Setup(ctx context.Context, config *config.Config, db *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) (DumpsLoader, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	dumpHandler := &dumpsLoaderHandle{
+	dumpHandler := &dumpsLoader{
 		ctx:      ctx,
 		cancel:   cancel,
 		log:      log,
@@ -101,10 +101,11 @@ func Setup(ctx context.Context, config *config.Config, db *jobsdb.Handle, tableP
 	}
 	dumpHandler.config.startTime = startTime
 	dumpHandler.config.endTime = endTime
+	g := errgroup.Group{}
 	switch tablePrefix {
 	case "gw":
-		return &gwReplayRequestHandler{tablePrefix: tablePrefix, handle: dumpHandler}, nil
+		return &gwReplayRequestHandler{g, tablePrefix, dumpHandler}, nil
 	default:
-		return &procErrorRequestHandler{tablePrefix: tablePrefix, handle: dumpHandler}, nil
+		return &procErrorRequestHandler{g, tablePrefix, dumpHandler}, nil
 	}
 }

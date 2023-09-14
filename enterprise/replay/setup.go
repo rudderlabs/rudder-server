@@ -40,20 +40,18 @@ type Factory struct {
 	EnterpriseToken string
 	Log             logger.Logger
 }
-
-type Replay struct {
+type replay struct {
 	toDB        *jobsdb.Handle
 	dumpsLoader dumpsloader.DumpsLoader
 	replayer    replayer.Replay
 }
-
-type ReplayFactory interface {
+type Replay interface {
 	Start() error
 	Stop() error
 }
 
 // Setup initializes Replay feature
-func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (ReplayFactory, error) {
+func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (Replay, error) {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("replay")
 	}
@@ -91,14 +89,14 @@ func (m *Factory) Setup(ctx context.Context, config *config.Config, replayDB, gw
 	if err != nil {
 		return nil, err
 	}
-	return &Replay{
+	return &replay{
 		toDB:        toDB,
 		dumpsLoader: dumpsLoader,
 		replayer:    setup,
 	}, nil
 }
 
-func (r *Replay) Start() error {
+func (r *replay) Start() error {
 	err := r.toDB.Start()
 	if err != nil {
 		return err
@@ -108,7 +106,7 @@ func (r *Replay) Start() error {
 	return nil
 }
 
-func (r *Replay) Stop() error {
+func (r *replay) Stop() error {
 	err := r.replayer.Stop()
 	if err != nil {
 		return err

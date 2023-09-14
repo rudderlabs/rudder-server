@@ -338,8 +338,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		if err != nil {
 			return err
 		}
-		err = replay.Start()
-		if err != nil {
+		if err := replay.Start(); err != nil {
 			return fmt.Errorf("could not start replay: %w", err)
 		}
 		defer func() { _ = replay.Stop() }()

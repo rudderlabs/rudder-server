@@ -42,7 +42,7 @@ Replay Feature
 
 // ReplayFeature handles inserting of failed jobs into respective gw/rt jobsdb
 type ReplayFeature interface {
-	Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (replay.ReplayFactory, error)
+	Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (replay.Replay, error)
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature
