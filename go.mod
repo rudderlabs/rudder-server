@@ -110,6 +110,8 @@ require (
 	google.golang.org/protobuf v1.31.0
 )
 
+require github.com/oschwald/maxminddb-golang v1.11.0 // indirect
+
 require (
 	cloud.google.com/go v0.110.8 // indirect
 	cloud.google.com/go/compute v1.23.0 // indirect
@@ -234,6 +236,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
 	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
+	github.com/oschwald/geoip2-golang v1.9.0
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect

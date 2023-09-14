@@ -43,6 +43,7 @@ type LifecycleManager struct {
 	rsourcesService  rsources.JobService
 	destDebugger     destinationdebugger.DestinationDebugger
 	transDebugger    transformationdebugger.TransformationDebugger
+	geoEnricher      PipelineEnricher
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -55,7 +56,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.readErrDB, proc.writeErrDB, proc.esDB, proc.arcDB,
-		proc.ReportingI, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.ReportingI, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger, proc.geoEnricher,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -94,6 +95,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+	geoEnricher PipelineEnricher,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -114,6 +116,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, er
 		rsourcesService:  rsourcesService,
 		destDebugger:     destDebugger,
 		transDebugger:    transDebugger,
+		geoEnricher:      geoEnricher,
 	}
 	for _, opt := range opts {
 		opt(proc)

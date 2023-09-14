@@ -83,6 +83,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
+	geoEnricher               PipelineEnricher
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
@@ -141,6 +142,7 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
+		geoEnrichmentEnabled      bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -352,7 +354,7 @@ func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
-	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger, geoEnricher PipelineEnricher,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -373,6 +375,7 @@ func (proc *Handle) Setup(
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
+	proc.geoEnricher = geoEnricher
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -609,6 +612,7 @@ func (proc *Handle) loadConfig() {
 	// EventSchemas feature. false by default
 	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
+	proc.config.geoEnrichmentEnabled = config.GetBoolVar(false, "GeoEnrichment.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -1483,6 +1487,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
+		if proc.config.geoEnrichmentEnabled {
+			proc.geoEnrichGatewayRequest(sourceId, &gatewayBatchEvent)
+		}
+
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
@@ -1856,6 +1864,23 @@ type transformationMessage struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+}
+
+// geoEnrichGatewayRequest simply enriches the batch events for source received at gateway
+// with geolocation information.
+func (proc *Handle) geoEnrichGatewayRequest(sourceId string, request *types.GatewayBatchRequest) {
+	source, err := proc.getSourceBySourceID(sourceId)
+	if err != nil {
+		proc.logger.Errorw("unable to lookup source for geo enrichment", "sourceId", sourceId)
+		return
+	}
+
+	// only if customer at source level
+	// has enabled the flag, we will be enriching
+	// the events with geolocation information.
+	if source.GeoEnrichmentEnabled {
+		proc.geoEnricher.Enrich(sourceId, request)
+	}
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {

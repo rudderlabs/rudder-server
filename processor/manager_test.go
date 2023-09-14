@@ -13,29 +13,26 @@ import (
 	"testing"
 	"time"
 
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/stash"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -222,6 +219,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		NoOpGeoEnricher{},
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
 			m.Handle.config.featuresRetryMaxAttempts = 0

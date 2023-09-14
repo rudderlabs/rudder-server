@@ -232,6 +232,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
+	geoEnricher, err := processor.NewGeoEnricher(config, a.log, stats.Default)
+	if err != nil {
+		return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+	}
+
 	proc := processor.New(
 		ctx,
 		&options.ClearDB,
@@ -248,6 +253,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
+		geoEnricher,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)

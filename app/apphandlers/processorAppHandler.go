@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/archiver"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
+	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -224,6 +225,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
+	geoEnricher, err := processor.NewGeoEnricher(config.Default, a.log, stats.Default)
+	if err != nil {
+		return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+	}
+
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -240,6 +246,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
+		geoEnricher,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.New(stats.Default)
