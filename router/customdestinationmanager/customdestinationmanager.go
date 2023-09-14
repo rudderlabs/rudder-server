@@ -76,10 +76,7 @@ func Init() {
 }
 
 func loadConfig() {
-	ObjectStreamDestinations = []string{
-		"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD",
-		"PERSONALIZE", "GOOGLESHEETS", "BQSTREAM", "LAMBDA",
-	}
+	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD", "PERSONALIZE", "GOOGLESHEETS", "BQSTREAM", "LAMBDA", "GOOGLE_CLOUD_FUNCTION"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	disableEgress = config.GetBoolVar(false, "disableEgress")

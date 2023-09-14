@@ -4,51 +4,15 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-type mockUploader struct {
-	mockError   error
-	localSchema model.Schema
-}
-
-func (*mockUploader) GetSchemaInWarehouse() model.Schema              { return model.Schema{} }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                          { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema { return nil }
-func (*mockUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (*mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return nil
-}
-
-func (*mockUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (*mockUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (m *mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return m.localSchema, nil
-}
-
-func (m *mockUploader) UpdateLocalSchema(context.Context, model.Schema) error {
-	return m.mockError
-}
 
 func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 	t.Parallel()
@@ -87,10 +51,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			t.Parallel()
 
 			warehouse := model.Warehouse{}
-			uploader := &mockUploader{
-				mockError:   tc.mockError,
-				localSchema: tc.localSchema,
-			}
+			uploader := newMockUploader(t, tc.mockError, tc.localSchema)
 
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
@@ -149,10 +110,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 			t.Parallel()
 
 			warehouse := model.Warehouse{}
-			uploader := &mockUploader{
-				mockError:   tc.mockError,
-				localSchema: tc.localSchema,
-			}
+			uploader := newMockUploader(t, tc.mockError, tc.localSchema)
 
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
@@ -223,10 +181,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			t.Parallel()
 
 			warehouse := model.Warehouse{}
-			uploader := &mockUploader{
-				mockError:   tc.mockError,
-				localSchema: tc.localSchema,
-			}
+			uploader := newMockUploader(t, tc.mockError, tc.localSchema)
 
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
@@ -241,4 +196,16 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newMockUploader(
+	t testing.TB,
+	updateLocalSchemaErr error,
+	localSchema model.Schema,
+) *mockuploader.MockUploader {
+	ctrl := gomock.NewController(t)
+	u := mockuploader.NewMockUploader(ctrl)
+	u.EXPECT().UpdateLocalSchema(gomock.Any(), gomock.Any()).Return(updateLocalSchemaErr).AnyTimes()
+	u.EXPECT().GetLocalSchema(gomock.Any()).Return(localSchema, nil).AnyTimes()
+	return u
 }
