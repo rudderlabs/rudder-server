@@ -145,8 +145,7 @@ func TestMainFlow(t *testing.T) {
 		var myEvent event
 		require.Eventually(t, func() bool {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
-			err := db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
-			require.NoError(t, err)
+			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		eventSql := "select count(*) from dev_integration_test_1.identifies"
@@ -171,8 +170,7 @@ func TestMainFlow(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			eventSql = "select count(*) from dev_integration_test_1.users"
-			err = db.QueryRow(eventSql).Scan(&myEvent.count)
-			require.NoError(t, err)
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
