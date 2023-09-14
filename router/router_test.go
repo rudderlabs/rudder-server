@@ -321,11 +321,14 @@ var _ = Describe("router", func() {
 
 	BeforeEach(func() {
 		conf = config.New()
+		config.Reset()
+		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 	})
 
 	AfterEach(func() {
+		config.Reset()
 		c.Finish()
 	})
 
@@ -427,7 +430,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(2))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
@@ -506,10 +516,18 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(1))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
+			config.Set("Router.jobRetention", "24h")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -587,6 +605,7 @@ var _ = Describe("router", func() {
 		})
 
 		It("aborts events that have reached max retries", func() {
+			config.Set("Router.jobRetention", "24h")
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
@@ -794,7 +813,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(5))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("fails jobs if destination is not found in config", func() {
@@ -879,7 +905,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(1))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 
@@ -1023,7 +1056,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
@@ -1172,7 +1212,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 
@@ -1207,7 +1254,7 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(3, 1, rand.UniqueString(10))
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(5, 1, rand.UniqueString(10))
 			router.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(math.MaxInt64, time.Nanosecond, rand.UniqueString(10))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1396,7 +1443,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(5))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		/*
@@ -1553,7 +1607,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 })

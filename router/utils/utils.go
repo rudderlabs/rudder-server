@@ -14,10 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	DefaultJobRetention *config.Reloadable[time.Duration]
-	EmptyPayload        = []byte(`{}`)
-)
+var EmptyPayload = []byte(`{}`)
 
 const (
 	DRAIN_ERROR_CODE int = 410
