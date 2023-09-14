@@ -141,7 +141,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 	}
 
 	requestPayload := &cloudfunctions.CallFunctionRequest{
-		Data: parsedJSON.String(),
+		Data: parsedJSON.Raw,
 	}
 
 	// Make the HTTP request
@@ -178,7 +178,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
-	jsonBytes := []byte(parsedJSON.String())
+	jsonBytes := []byte(parsedJSON.Raw)
 
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, destConfig.GoogleCloudFunctionUrl, strings.NewReader(string(jsonBytes)))

@@ -40,16 +40,16 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer.client, producer.opts, producer.config)
 }
 
-func TestProduceWithInvalidData(t *testing.T) {
+func TestProduceWithInvalidAndValidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
 	conf := &Config{FunctionName: "sample-functionname", FunctionEnvironment: "gen1"}
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
 
 	// Invalid Payload
-	sampleEventJson := []byte("invalid json")
+	sampleEventJson := []byte("invalid_json")
 	requestPayload := &cloudfunctions.CallFunctionRequest{
-		Data: "0",
+		Data: "invalid_json",
 	}
 	mockClient.
 		EXPECT().
@@ -67,9 +67,9 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
 
 	// Empty Payload
-	sampleEventJson = []byte("")
+	sampleEventJson = []byte("{}")
 	requestPayload = &cloudfunctions.CallFunctionRequest{
-		Data: "",
+		Data: "{}",
 	}
 	mockClient.
 		EXPECT().
@@ -85,4 +85,24 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
+
+	// Valid Data
+	sampleEventJson = []byte("{\"type\": \"track\", \"event\": \"checkout started\"}")
+	requestPayload = &cloudfunctions.CallFunctionRequest{
+		Data: "{\"type\": \"track\", \"event\": \"checkout started\"}",
+	}
+	mockClient.
+		EXPECT().
+		InvokeGen1Function(conf.FunctionName, requestPayload).
+		Return(&cloudfunctions.CallFunctionResponse{
+			Error: "",
+			ServerResponse: googleapi.ServerResponse{
+				HTTPStatusCode: http.StatusOK,
+			},
+		}, nil).MaxTimes(1)
+
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, requestPayload)
+	assert.Equal(t, 200, statusCode)
+	assert.Equal(t, "Success", statusMsg)
+	assert.Equal(t, "[GoogleCloudFunction] :: Message Payload inserted with messageId :: ", respMsg)
 }
