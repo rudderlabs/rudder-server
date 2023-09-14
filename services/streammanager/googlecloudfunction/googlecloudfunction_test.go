@@ -49,7 +49,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	// Invalid Payload
 	sampleEventJson := []byte("invalid json")
 	requestPayload := &cloudfunctions.CallFunctionRequest{
-		Data: "0", // TODO: 'invalid json is producing this when we do parsedJSON.String()'
+		Data: "0",
 	}
 	mockClient.
 		EXPECT().
@@ -64,12 +64,12 @@ func TestProduceWithInvalidData(t *testing.T) {
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Equal(t, "[FireHose] error :: message from payload not found", respMsg)
+	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
 
 	// Empty Payload
-	sampleEventJson = []byte("{}")
+	sampleEventJson = []byte("")
 	requestPayload = &cloudfunctions.CallFunctionRequest{
-		Data: "{}",
+		Data: "",
 	}
 	mockClient.
 		EXPECT().
@@ -84,5 +84,5 @@ func TestProduceWithInvalidData(t *testing.T) {
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, requestPayload)
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Equal(t, "[FireHose] error :: message from payload not found", respMsg)
+	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
 }

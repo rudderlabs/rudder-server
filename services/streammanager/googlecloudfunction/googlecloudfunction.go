@@ -146,6 +146,13 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 
 	// Make the HTTP request
 	response, err := producer.client.InvokeGen1Function(functionName, requestPayload)
+	if response.Error != "" {
+		statCode := 400
+		respStatus = "Failure"
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)"
+		pkgLogger.Errorf("error while calling the Gen1 function :: %v", response.Error)
+		return statCode, respStatus, responseMessage
+	}
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
