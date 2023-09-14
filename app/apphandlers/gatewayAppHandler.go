@@ -34,6 +34,7 @@ type gatewayApp struct {
 	}
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (a *gatewayApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 }

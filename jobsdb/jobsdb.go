@@ -855,6 +855,7 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (jd *Handle) loadConfig() {
 	// maxTableSizeInMB: Maximum Table size in MB
 	jd.config.RegisterInt64ConfigVariable(300, &jd.conf.maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")

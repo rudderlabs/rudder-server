@@ -28,8 +28,6 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-type Opt func(*Handle)
-
 type DestinationDebugger interface {
 	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
 	HasUploadEnabled(destID string) bool
@@ -40,7 +38,7 @@ type Handle struct {
 	configBackendURL                  string
 	log                               logger.Logger
 	started                           bool
-	disableEventDeliveryStatusUploads bool
+	disableEventDeliveryStatusUploads *config.Reloadable[bool]
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
 	uploadEnabledDestinationIDs       map[string]bool
@@ -51,16 +49,13 @@ type Handle struct {
 	done                              chan struct{}
 }
 
-var WithDisableEventUploads = func(disableEventDeliveryStatusUploads bool) func(h *Handle) {
-	return func(h *Handle) {
-		h.disableEventDeliveryStatusUploads = disableEventDeliveryStatusUploads
-	}
-}
-
-func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (DestinationDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig) (DestinationDebugger, error) {
 	h := &Handle{
-		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
+		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		disableEventDeliveryStatusUploads: config.GetReloadableBoolVar(
+			false, "DestinationDebugger.disableEventDeliveryStatusUploads",
+		),
 	}
 	var err error
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", h.configBackendURL)
@@ -73,10 +68,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (Destinat
 	if err != nil {
 		return nil, err
 	}
-	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-	for _, opt := range opts {
-		opt(h)
-	}
+
 	h.start(backendConfig)
 	return h, nil
 }
@@ -119,7 +111,7 @@ type EventDeliveryStatusUploader struct {
 // which will be processed by handleJobs.
 func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
 	// if disableEventDeliveryStatusUploads is true, return;
-	if !h.started || h.disableEventDeliveryStatusUploads {
+	if !h.started || h.disableEventDeliveryStatusUploads.Load() {
 		return false
 	}
 	<-h.initialized

@@ -92,17 +92,18 @@ type backendConfigImpl struct {
 	cache             cache.Cache
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
-	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
-	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
-	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
-	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
+	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
+	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
-	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
-	config.RegisterBoolConfigVariable(false, &incrementalConfigUpdates, false, "BackendConfig.incrementalConfigUpdates")
-	config.RegisterBoolConfigVariable(true, &dbCacheEnabled, false, "BackendConfig.dbCacheEnabled")
+	configJSONPath = config.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
+	configFromFile = config.GetBoolVar(false, "BackendConfig.configFromFile")
+	configEnvReplacementEnabled = config.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
+	incrementalConfigUpdates = config.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
+	dbCacheEnabled = config.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
 }
 
 func Init() {
