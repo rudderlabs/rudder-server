@@ -250,10 +250,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
 
 		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
-			Payloads:        messages,
-			JobType:         notifierModel.JobTypeUpload,
-			PayloadMetadata: metadataJSON,
-			Priority:        job.Upload.Priority,
+			Payloads:     messages,
+			JobType:      notifierModel.JobTypeUpload,
+			UploadSchema: metadataJSON,
+			Priority:     job.Upload.Priority,
 		})
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)

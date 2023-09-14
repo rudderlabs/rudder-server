@@ -12,7 +12,7 @@ import (
 func (n *Notifier) Claim(
 	ctx context.Context,
 	workerID string,
-) (*model.Job, model.JobMetadata, error) {
+) (*model.Job, error) {
 	row := n.db.QueryRowContext(ctx, `
 		UPDATE
   		  `+notifierTableName+`
@@ -28,8 +28,7 @@ func (n *Notifier) Claim(
 			FROM
       		  `+notifierTableName+`
 			WHERE
-			  (status = $4 OR status = $5) AND
-              topic = $6
+			  (status = $4 OR status = $5)
 			ORDER BY
 			  priority ASC,
 			  id ASC
@@ -45,21 +44,14 @@ func (n *Notifier) Claim(
 		workerID,
 		model.Waiting,
 		model.Failed,
-		topic,
 	)
 
 	var notifier model.Job
 	err := scanJob(row.Scan, &notifier)
 	if err != nil {
-		return nil, nil, fmt.Errorf("claim for workerID %s: scan: %w", workerID, err)
+		return nil, fmt.Errorf("claim for workerID %s: scan: %w", workerID, err)
 	}
-
-	metadata, err := n.metadataForBatchID(ctx, notifier.BatchID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("claim for workerID %s: metadata: %w", workerID, err)
-	}
-
-	return &notifier, metadata, nil
+	return &notifier, nil
 }
 
 // OnClaimFailed updates the status of a job to failed.

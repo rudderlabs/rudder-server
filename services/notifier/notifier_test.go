@@ -63,9 +63,9 @@ func TestNotifier(t *testing.T) {
 				json.RawMessage(`{"id":"4"}`),
 				json.RawMessage(`{"id":"5"}`),
 			},
-			JobType:         model.JobTypeUpload,
-			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
-			Priority:        50,
+			JobType:      model.JobTypeUpload,
+			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
+			Priority:     50,
 		}
 
 		statsStore := memstats.New()
@@ -149,8 +149,14 @@ func TestNotifier(t *testing.T) {
 			for i := 0; i < totalJobs; i++ {
 				job := <-collectResponses
 				require.NoError(t, job.Err)
-				require.EqualValues(t, job.JobMetadata, model.JobMetadata(publishRequest.PayloadMetadata))
+				require.Len(t, job.Jobs, len(publishRequest.Payloads))
 
+				successfulJobs := lo.Filter(job.Jobs, func(item model.Job, index int) bool {
+					return item.Error == nil
+				})
+				for _, j := range successfulJobs {
+					require.EqualValues(t, j.Payload, json.RawMessage(`{"test": "payload"}`))
+				}
 				responses = append(responses, job.Jobs...)
 			}
 
@@ -183,7 +189,6 @@ func TestNotifier(t *testing.T) {
 			"queueName": "pg_notifier_queue",
 		}).LastValue(), totalJobs*len(publishRequest.Payloads))
 	})
-
 	t.Run("many publish jobs", func(t *testing.T) {
 		t.Parallel()
 
@@ -203,10 +208,10 @@ func TestNotifier(t *testing.T) {
 		}
 
 		publishRequest := &model.PublishRequest{
-			Payloads:        payloads,
-			JobType:         model.JobTypeUpload,
-			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
-			Priority:        50,
+			Payloads:     payloads,
+			JobType:      model.JobTypeUpload,
+			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			Priority:     50,
 		}
 
 		c := config.New()
@@ -274,7 +279,6 @@ func TestNotifier(t *testing.T) {
 		})
 		require.NoError(t, g.Wait())
 	})
-
 	t.Run("bigger batches and many subscribers", func(t *testing.T) {
 		t.Parallel()
 
@@ -294,10 +298,10 @@ func TestNotifier(t *testing.T) {
 		}
 
 		publishRequest := &model.PublishRequest{
-			Payloads:        payloads,
-			JobType:         model.JobTypeUpload,
-			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
-			Priority:        50,
+			Payloads:     payloads,
+			JobType:      model.JobTypeUpload,
+			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			Priority:     50,
 		}
 
 		c := config.New()
@@ -365,7 +369,6 @@ func TestNotifier(t *testing.T) {
 		})
 		require.NoError(t, g.Wait())
 	})
-
 	t.Run("round robin pickup and maintenance workers", func(t *testing.T) {
 		t.Parallel()
 
@@ -385,10 +388,10 @@ func TestNotifier(t *testing.T) {
 		}
 
 		publishRequest := &model.PublishRequest{
-			Payloads:        payloads,
-			JobType:         model.JobTypeUpload,
-			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
-			Priority:        50,
+			Payloads:     payloads,
+			JobType:      model.JobTypeUpload,
+			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			Priority:     50,
 		}
 
 		c := config.New()
@@ -472,12 +475,7 @@ func TestNotifier(t *testing.T) {
 			return n.Shutdown()
 		})
 		require.NoError(t, g.Wait())
-		require.EqualValues(t, statsStore.Get("pg_notifier.orphanJobs", stats.Tags{
-			"module":    "pgnotifier",
-			"queueName": "pg_notifier_queue",
-		}).LastValue(), claimedWorkers.Load()-1)
 	})
-
 	t.Run("env vars", func(t *testing.T) {
 		t.Parallel()
 

@@ -100,6 +100,7 @@ func TestSlaveWorker(t *testing.T) {
 				UploadID:                     1,
 				StagingFileID:                1,
 				StagingFileLocation:          jobLocation,
+				UploadSchema:                 schemaMap,
 				WorkspaceID:                  workspaceID,
 				SourceID:                     sourceID,
 				SourceName:                   sourceName,
@@ -115,27 +116,19 @@ func TestSlaveWorker(t *testing.T) {
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
 			}
-			pMeta := payloadMetadata{
-				UploadSchema: schemaMap,
-			}
 
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
-			payloadMetaJson, err := json.Marshal(pMeta)
-			require.NoError(t, err)
-
-			batchID := uuid.New().String()
 
 			claim := &notifierModel.ClaimJob{
 				Job: &notifierModel.Job{
 					ID:                  1,
-					BatchID:             batchID,
+					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
 					Type:                notifierModel.JobTypeUpload,
 				},
-				JobMetadata: payloadMetaJson,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -155,7 +148,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
 			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
 			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
-			require.Equal(t, uploadPayload.UploadSchema, pMeta.UploadSchema)
+			require.Equal(t, uploadPayload.UploadSchema, p.UploadSchema)
 			require.Equal(t, uploadPayload.WorkspaceID, p.WorkspaceID)
 			require.Equal(t, uploadPayload.SourceID, p.SourceID)
 			require.Equal(t, uploadPayload.SourceName, p.SourceName)
@@ -223,27 +216,19 @@ func TestSlaveWorker(t *testing.T) {
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
 			}
-			pMeta := payloadMetadata{
-				UploadSchema: schemaMap,
-			}
 
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
-			payloadMetaJson, err := json.Marshal(pMeta)
-			require.NoError(t, err)
-
-			batchID := uuid.New().String()
 
 			claim := &notifierModel.ClaimJob{
 				Job: &notifierModel.Job{
 					ID:                  1,
-					BatchID:             batchID,
+					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
 					Type:                notifierModel.JobTypeUpload,
 				},
-				JobMetadata: payloadMetaJson,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -342,6 +327,7 @@ func TestSlaveWorker(t *testing.T) {
 				UploadID:                     1,
 				StagingFileID:                1,
 				StagingFileLocation:          jobLocation,
+				UploadSchema:                 schemaMap,
 				WorkspaceID:                  workspaceID,
 				SourceID:                     sourceID,
 				SourceName:                   sourceName,
@@ -357,27 +343,19 @@ func TestSlaveWorker(t *testing.T) {
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
 			}
-			pMeta := payloadMetadata{
-				UploadSchema: schemaMap,
-			}
 
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
-			payloadMetaJson, err := json.Marshal(pMeta)
-			require.NoError(t, err)
-
-			batchID := uuid.New().String()
 
 			claimJob := &notifierModel.ClaimJob{
 				Job: &notifierModel.Job{
 					ID:                  1,
-					BatchID:             batchID,
+					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
 					Type:                notifierModel.JobTypeUpload,
 				},
-				JobMetadata: payloadMetaJson,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -413,9 +391,22 @@ func TestSlaveWorker(t *testing.T) {
 			)
 
 			p := payload{
-				UploadID:                     1,
-				StagingFileID:                1,
-				StagingFileLocation:          jobLocation,
+				UploadID:            1,
+				StagingFileID:       1,
+				StagingFileLocation: jobLocation,
+				UploadSchema: map[string]model.TableSchema{
+					"tracks": map[string]string{
+						"id":                 "int",
+						"user_id":            "int",
+						"uuid_ts":            "timestamp",
+						"received_at":        "timestamp",
+						"original_timestamp": "timestamp",
+						"timestamp":          "timestamp",
+						"sent_at":            "timestamp",
+						"event":              "string",
+						"event_text":         "string",
+					},
+				},
 				WorkspaceID:                  workspaceID,
 				SourceID:                     sourceID,
 				SourceName:                   sourceName,
@@ -431,39 +422,19 @@ func TestSlaveWorker(t *testing.T) {
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
 			}
-			pMeta := payloadMetadata{
-				UploadSchema: map[string]model.TableSchema{
-					"tracks": map[string]string{
-						"id":                 "int",
-						"user_id":            "int",
-						"uuid_ts":            "timestamp",
-						"received_at":        "timestamp",
-						"original_timestamp": "timestamp",
-						"timestamp":          "timestamp",
-						"sent_at":            "timestamp",
-						"event":              "string",
-						"event_text":         "string",
-					},
-				},
-			}
 
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
-			payloadMetaJson, err := json.Marshal(pMeta)
-			require.NoError(t, err)
-
-			batchID := uuid.New().String()
 
 			claim := &notifierModel.ClaimJob{
 				Job: &notifierModel.Job{
 					ID:                  1,
-					BatchID:             batchID,
+					BatchID:             uuid.New().String(),
 					Payload:             payloadJson,
 					Status:              model.Waiting,
 					WorkspaceIdentifier: "test_workspace",
 					Type:                notifierModel.JobTypeUpload,
 				},
-				JobMetadata: payloadMetaJson,
 			}
 
 			claimedJobDone := make(chan struct{})

@@ -156,17 +156,10 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *
 		err     error
 	)
 
-	var metadata payloadMetadata
-	if err = json.Unmarshal(claimedJob.JobMetadata, &metadata); err != nil {
-		handleErr(err, claimedJob)
-		return
-	}
-
 	if err = json.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
-	job.UploadSchema = metadata.UploadSchema
 
 	sw.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
 

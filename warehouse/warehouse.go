@@ -442,11 +442,7 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			if err := notifierInstance.ClearJobs(gCtx); err != nil {
-				return fmt.Errorf("unable to clear notifier jobs: %w", err)
-			}
-
-			return notifierInstance.RunMaintenance(gCtx)
+			return notifierInstance.ClearJobs(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

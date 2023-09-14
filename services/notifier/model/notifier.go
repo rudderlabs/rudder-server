@@ -41,24 +41,20 @@ type Job struct {
 	LastExecTime time.Time
 }
 
-type JobMetadata json.RawMessage
-
 type PublishRequest struct {
-	Payloads        []json.RawMessage
-	PayloadMetadata json.RawMessage
-	JobType         JobType
-	Priority        int
+	Payloads     []json.RawMessage
+	UploadSchema json.RawMessage // ATM Hack to support merging schema with the payload at the postgres level
+	JobType      JobType
+	Priority     int
 }
 
 type PublishResponse struct {
-	Jobs        []Job
-	JobMetadata JobMetadata
-	Err         error
+	Jobs []Job
+	Err  error
 }
 
 type ClaimJob struct {
-	Job         *Job
-	JobMetadata JobMetadata
+	Job *Job
 }
 
 type ClaimJobResponse struct {

@@ -42,8 +42,8 @@ type notifierRepo interface {
 	PendingByBatchID(context.Context, string) (int64, error)
 	DeleteByBatchID(context.Context, string) error
 	OrphanJobIDs(context.Context, int) ([]int64, error)
-	GetByBatchID(context.Context, string) ([]model.Job, model.JobMetadata, error)
-	Claim(context.Context, string) (*model.Job, model.JobMetadata, error)
+	GetByBatchID(context.Context, string) ([]model.Job, error)
+	Claim(context.Context, string) (*model.Job, error)
 	OnClaimFailed(context.Context, *model.Job, error, int) error
 	OnClaimSuccess(context.Context, *model.Job, json.RawMessage) error
 }
@@ -83,16 +83,12 @@ type Notifier struct {
 		insertRecords      stats.Counter
 		publish            stats.Counter
 		publishTime        stats.Timer
-		claimLag           stats.Timer
-		trackBatch         stats.Counter
-		trackBatchLag      stats.Timer
 		claimSucceeded     stats.Counter
 		claimSucceededTime stats.Timer
 		claimFailed        stats.Counter
 		claimFailedTime    stats.Timer
 		claimUpdateFailed  stats.Counter
 		abortedRecords     stats.Counter
-		orphanJobs         stats.Counter
 	}
 }
 
@@ -147,15 +143,6 @@ func New(
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
 		"module": module,
 	})
-	n.stats.claimLag = n.statsFactory.NewTaggedStat("pgnotifier.claimLag", stats.TimerType, stats.Tags{
-		"module": module,
-	})
-	n.stats.trackBatch = n.statsFactory.NewTaggedStat("pgnotifier.trackBatchLag", stats.CountType, stats.Tags{
-		"module": module,
-	})
-	n.stats.trackBatchLag = n.statsFactory.NewTaggedStat("pgnotifier.trackBatchLag", stats.TimerType, stats.Tags{
-		"module": module,
-	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
 		"status": string(model.Succeeded),
@@ -163,10 +150,6 @@ func New(
 	n.stats.claimFailedTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
 		"status": string(model.Failed),
-	})
-	n.stats.orphanJobs = n.statsFactory.NewTaggedStat("pg_notifier.orphanJobs", stats.CountType, stats.Tags{
-		"module":    module,
-		"queueName": queueName,
 	})
 	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier.aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,
@@ -316,9 +299,6 @@ func (n *Notifier) trackBatch(
 ) <-chan *model.PublishResponse {
 	publishResCh := make(chan *model.PublishResponse)
 
-	n.stats.trackBatchLag.RecordDuration()()
-	n.stats.trackBatch.Increment()
-
 	n.background.group.Go(func() error {
 		defer close(publishResCh)
 
@@ -351,7 +331,7 @@ func (n *Notifier) trackBatch(
 				continue
 			}
 
-			jobs, jobMetadata, err := n.repo.GetByBatchID(ctx, batchID)
+			jobs, err := n.repo.GetByBatchID(ctx, batchID)
 			if err != nil {
 				onUpdate(&model.PublishResponse{
 					Err: fmt.Errorf("could not get jobs for batch: %s: %w", batchID, err),
@@ -370,8 +350,7 @@ func (n *Notifier) trackBatch(
 			n.logger.Infof("Completed processing all files in batch: %s", batchID)
 
 			onUpdate(&model.PublishResponse{
-				Jobs:        jobs,
-				JobMetadata: jobMetadata,
+				Jobs: jobs,
 			})
 			return nil
 		}
@@ -403,7 +382,7 @@ func (n *Notifier) Subscribe(
 		pollSleep := time.Duration(0)
 
 		for {
-			job, metadata, err := n.claim(ctx, workerId)
+			job, err := n.claim(ctx, workerId)
 			if err != nil {
 				var pqErr *pq.Error
 
@@ -419,8 +398,7 @@ func (n *Notifier) Subscribe(
 				pollSleep = nextPollInterval(pollSleep)
 			} else {
 				jobsCh <- &model.ClaimJob{
-					Job:         job,
-					JobMetadata: metadata,
+					Job: job,
 				}
 
 				pollSleep = time.Duration(0)
@@ -442,25 +420,24 @@ func (n *Notifier) Subscribe(
 func (n *Notifier) claim(
 	ctx context.Context,
 	workerID string,
-) (*model.Job, model.JobMetadata, error) {
+) (*model.Job, error) {
 	claimStartTime := n.now()
 
-	claimedJob, metadata, err := n.repo.Claim(ctx, workerID)
+	claimedJob, err := n.repo.Claim(ctx, workerID)
 	if err == sql.ErrNoRows {
-		return nil, nil, fmt.Errorf("no jobs found: %w", err)
+		return nil, fmt.Errorf("no jobs found: %w", err)
 	}
 	if err != nil {
 		n.stats.claimFailedTime.Since(claimStartTime)
 		n.stats.claimFailed.Increment()
 
-		return nil, nil, fmt.Errorf("claiming job: %w", err)
+		return nil, fmt.Errorf("claiming job: %w", err)
 	}
 
-	n.stats.claimLag.SendTiming(n.now().Sub(claimedJob.CreatedAt))
 	n.stats.claimSucceededTime.Since(claimStartTime)
 	n.stats.claimSucceeded.Increment()
 
-	return claimedJob, metadata, nil
+	return claimedJob, nil
 }
 
 // UpdateClaim updates the notifier with the claimResponse
@@ -540,7 +517,6 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 
 		if len(orphanJobIDs) > 0 {
 			n.logger.Infof("Re-triggered job ids: %v", orphanJobIDs)
-			n.stats.orphanJobs.Count(len(orphanJobIDs))
 		}
 
 		select {

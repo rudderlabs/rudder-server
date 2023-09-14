@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -27,10 +26,6 @@ const (
 		updated_at,
 		last_exec_time
 `
-
-	notifierMetadataTableName = "pg_notifier_queue_metadata"
-
-	topic = "warehouse/v1"
 )
 
 type Opt func(*Notifier)
@@ -64,31 +59,7 @@ func (n *Notifier) ResetForWorkspace(
 	ctx context.Context,
 	workspaceIdentifier string,
 ) error {
-	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("reset: begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = txn.Rollback()
-			return
-		}
-	}()
-
-	_, err = txn.ExecContext(ctx, `
-		DELETE FROM `+notifierMetadataTableName+`
-		WHERE batch_id IN (
-			SELECT DISTINCT batch_id FROM `+notifierTableName+`
-			WHERE workspace = $1
-		);
-	`,
-		workspaceIdentifier,
-	)
-	if err != nil {
-		return fmt.Errorf("reset: delete metadata for workspace %s: %w", workspaceIdentifier, err)
-	}
-
-	_, err = txn.ExecContext(ctx, `
+	_, err := n.db.ExecContext(ctx, `
 		DELETE FROM `+notifierTableName+`
 		WHERE workspace = $1;
 	`,
@@ -97,10 +68,5 @@ func (n *Notifier) ResetForWorkspace(
 	if err != nil {
 		return fmt.Errorf("reset: delete for workspace %s: %w", workspaceIdentifier, err)
 	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("reset: commit: %w", err)
-	}
-
 	return nil
 }

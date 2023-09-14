@@ -41,7 +41,6 @@ func (n *Notifier) Insert(
 			"workspace",
 			"priority",
 			"job_type",
-			"topic",
 			"created_at",
 			"updated_at",
 		),
@@ -60,7 +59,6 @@ func (n *Notifier) Insert(
 			workspaceIdentifier,
 			publishRequest.Priority,
 			publishRequest.JobType,
-			topic,
 			now.UTC(),
 			now.UTC(),
 		)
@@ -72,16 +70,20 @@ func (n *Notifier) Insert(
 		return fmt.Errorf(`inserting: CopyIn final exec: %w`, err)
 	}
 
-	if publishRequest.PayloadMetadata != nil {
+	if publishRequest.UploadSchema != nil {
 		_, err = txn.ExecContext(ctx, `
-			INSERT INTO `+notifierMetadataTableName+` (batch_id, metadata)
-			VALUES ($1, $2);
+			UPDATE
+  			  `+notifierTableName+`
+			SET
+			  payload = payload || $1
+			WHERE
+			  batch_id = $2;
 	`,
+			publishRequest.UploadSchema,
 			batchID,
-			string(publishRequest.PayloadMetadata),
 		)
 		if err != nil {
-			return fmt.Errorf(`inserting: metadata: %w`, err)
+			return fmt.Errorf(`updating: metadata: %w`, err)
 		}
 	}
 
@@ -120,15 +122,36 @@ func (n *Notifier) PendingByBatchID(
 }
 
 // GetByBatchID returns all the jobs for a batchID.
+// TODO: ATM Hack to remove `UploadSchema` from the payload to have the similar implementation as the old notifier.
 func (n *Notifier) GetByBatchID(
 	ctx context.Context,
 	batchID string,
-) ([]model.Job, model.JobMetadata, error) {
-	query := `SELECT ` + notifierTableColumns + ` FROM ` + notifierTableName + ` WHERE batch_id = $1 ORDER BY id;`
+) ([]model.Job, error) {
+	query := `
+		SELECT
+			id,
+			batch_id,
+			worker_id,
+			workspace,
+			attempt,
+			status,
+			job_type,
+			priority,
+			error,
+			payload - 'UploadSchema',
+			created_at,
+			updated_at,
+			last_exec_time
+		FROM
+			` + notifierTableName + `
+		WHERE
+			batch_id = $1
+		ORDER BY
+			id;`
 
 	rows, err := n.db.QueryContext(ctx, query, batchID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting by batchID: %w", err)
+		return nil, fmt.Errorf("getting by batchID: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -137,24 +160,19 @@ func (n *Notifier) GetByBatchID(
 		var job model.Job
 		err := scanJob(rows.Scan, &job)
 		if err != nil {
-			return nil, nil, fmt.Errorf("getting by batchID: scan: %w", err)
+			return nil, fmt.Errorf("getting by batchID: scan: %w", err)
 		}
 
 		jobs = append(jobs, job)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("getting by batchID: rows err: %w", err)
+		return nil, fmt.Errorf("getting by batchID: rows err: %w", err)
 	}
 	if len(jobs) == 0 {
-		return nil, nil, fmt.Errorf("getting by batchID: no jobs found")
+		return nil, fmt.Errorf("getting by batchID: no jobs found")
 	}
 
-	metadata, err := n.metadataForBatchID(ctx, batchID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting by batchID: metadata: %w", err)
-	}
-
-	return jobs, metadata, err
+	return jobs, err
 }
 
 func scanJob(scan scanFn, job *model.Job) error {
@@ -207,60 +225,18 @@ func scanJob(scan scanFn, job *model.Job) error {
 	return nil
 }
 
-func (n *Notifier) metadataForBatchID(
-	ctx context.Context,
-	batchID string,
-) (model.JobMetadata, error) {
-	var metadata model.JobMetadata
-
-	err := n.db.QueryRowContext(ctx, `
-		SELECT
-		  metadata
-		FROM
-		  `+notifierMetadataTableName+`
-		WHERE
-		  batch_id = $1;
-`,
-		batchID,
-	).Scan(&metadata)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("metadata by batchID: %w", err)
-	}
-	return metadata, nil
-}
-
 // DeleteByBatchID deletes all the jobs for a batchID.
 func (n *Notifier) DeleteByBatchID(
 	ctx context.Context,
 	batchID string,
 ) error {
-	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("reset: begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = txn.Rollback()
-			return
-		}
-	}()
-
-	_, err = txn.ExecContext(ctx, `DELETE FROM `+notifierTableName+` WHERE batch_id = $1;`, batchID)
+	_, err := n.db.ExecContext(ctx, `
+		DELETE FROM `+notifierTableName+` WHERE batch_id = $1;
+	`,
+		batchID,
+	)
 	if err != nil {
 		return fmt.Errorf("deleting by batchID: %w", err)
 	}
-
-	_, err = txn.ExecContext(ctx, `DELETE FROM `+notifierMetadataTableName+` WHERE batch_id = $1`, batchID)
-	if err != nil {
-		return fmt.Errorf("deleting metadata by batchID: %w", err)
-	}
-
-	if err = txn.Commit(); err != nil {
-		return fmt.Errorf("deleting by batchID: commit: %w", err)
-	}
-
 	return nil
 }

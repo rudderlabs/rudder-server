@@ -76,5 +76,10 @@ func (s *slave) setupSlave(ctx context.Context) error {
 			return nil
 		}))
 	}
+
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		return s.notifier.RunMaintenance(gCtx)
+	}))
+
 	return g.Wait()
 }
