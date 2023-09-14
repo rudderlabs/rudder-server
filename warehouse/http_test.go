@@ -201,7 +201,7 @@ func TestHTTPApi(t *testing.T) {
 		return nil
 	})
 	g.Go(func() error {
-		return sourcesManager.Start()
+		return sourcesManager.Run()
 	})
 
 	setupCh := make(chan struct{})

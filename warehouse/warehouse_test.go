@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -171,12 +170,9 @@ func TestApp(t *testing.T) {
 
 					ctx, stopServer := context.WithCancel(context.Background())
 
-					port, err := strconv.Atoi(pgResource.Port)
-					require.NoError(t, err)
-
 					c := config.New()
 					c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-					c.Set("WAREHOUSE_JOBS_DB_PORT", port)
+					c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 					c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 					c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 					c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
@@ -190,7 +186,7 @@ func TestApp(t *testing.T) {
 
 					g, gCtx := errgroup.WithContext(ctx)
 					g.Go(func() error {
-						return a.Start(gCtx)
+						return a.Run(gCtx)
 					})
 					g.Go(func() error {
 						defer stopServer()
@@ -222,12 +218,9 @@ func TestApp(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t, postgres.WithTag("9-alpine"))
 		require.NoError(t, err)
 
-		port, err := strconv.Atoi(pgResource.Port)
-		require.NoError(t, err)
-
 		c := config.New()
 		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-		c.Set("WAREHOUSE_JOBS_DB_PORT", port)
+		c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 		c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
@@ -248,16 +241,13 @@ func TestApp(t *testing.T) {
 		err = a.Setup(context.Background())
 		require.ErrorContains(t, err, "setting up database: could not check compatibility:")
 	})
-	t.Run("without env vars", func(t *testing.T) {
+	t.Run("without warehouse env vars", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		port, err := strconv.Atoi(pgResource.Port)
 		require.NoError(t, err)
 
 		c := config.New()
 		c.Set("DB.host", pgResource.Host)
-		c.Set("DB.port", port)
+		c.Set("DB.port", pgResource.Port)
 		c.Set("DB.user", pgResource.User)
 		c.Set("DB.password", pgResource.Password)
 		c.Set("DB.name", pgResource.Database)
@@ -275,12 +265,9 @@ func TestApp(t *testing.T) {
 
 		ctx := context.Background()
 
-		port, err := strconv.Atoi(pgResource.Port)
-		require.NoError(t, err)
-
 		c := config.New()
 		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-		c.Set("WAREHOUSE_JOBS_DB_PORT", port)
+		c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 		c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
@@ -306,12 +293,9 @@ func TestApp(t *testing.T) {
 
 			ctx, stopServer := context.WithCancel(context.Background())
 
-			port, err := strconv.Atoi(pgResource.Port)
-			require.NoError(t, err)
-
 			c := config.New()
 			c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-			c.Set("WAREHOUSE_JOBS_DB_PORT", port)
+			c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 			c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 			c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 			c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
@@ -335,7 +319,7 @@ func TestApp(t *testing.T) {
 
 			g, gCtx := errgroup.WithContext(ctx)
 			g.Go(func() error {
-				return a.Start(gCtx)
+				return a.Run(gCtx)
 			})
 			g.Go(func() error {
 				defer stopServer()
@@ -369,12 +353,9 @@ func TestApp(t *testing.T) {
 
 			ctx := context.Background()
 
-			port, err := strconv.Atoi(pgResource.Port)
-			require.NoError(t, err)
-
 			c := config.New()
 			c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-			c.Set("WAREHOUSE_JOBS_DB_PORT", port)
+			c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 			c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 			c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 			c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
@@ -393,7 +374,7 @@ func TestApp(t *testing.T) {
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 
-			err = a.Start(ctx)
+			err = a.Run(ctx)
 			require.NoError(t, err)
 		})
 	})

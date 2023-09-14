@@ -113,7 +113,7 @@ func (a *AsyncJobWh) addJobsToDB(payload *AsyncJobPayload) (int64, error) {
 // 1. Scan the database for entries into wh_async_jobs
 // 2. Publish data to pg_notifier queue
 // 3. Move any executing jobs to waiting
-func (a *AsyncJobWh) Start() error {
+func (a *AsyncJobWh) Run() error {
 	// Start the asyncJobRunner
 	a.logger.Info("[WH-Jobs]: Initializing async job runner")
 	g, ctx := errgroup.WithContext(a.context)

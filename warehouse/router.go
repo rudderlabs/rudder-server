@@ -171,7 +171,6 @@ func newRouter(
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,
 		db:                   r.db,
-		notifier:             r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
@@ -728,9 +727,9 @@ func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequenc
 	freqInS := r.uploadFreqInS(syncFrequency)
 
 	r.createJobMarkerMapLock.RLock()
-	defer r.createJobMarkerMapLock.RUnlock()
-
 	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
+	r.createJobMarkerMapLock.RUnlock()
+
 	if !ok {
 		return true
 	}

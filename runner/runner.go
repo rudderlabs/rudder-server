@@ -278,7 +278,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if r.canStartWarehouse() {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			if err := r.warehouseApp.Start(ctx); err != nil {
+			if err := r.warehouseApp.Run(ctx); err != nil {
 				return fmt.Errorf("warehouse service routine: %w", err)
 			}
 			return nil
