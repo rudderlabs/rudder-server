@@ -207,12 +207,12 @@ func generateService(opts ...option.ClientOption) (*cloudfunctions.Service, erro
 }
 
 func getFunctionName(url string) (functionName string) {
-	// Define a regular expression pattern to match URLs between "https://" and dot (.)
 	if !isValidCloudFunctionURL(url) {
 		pkgLogger.Errorf("Invalid Function URL")
 		return
 	}
 
+	// Define a regular expression pattern to match URLs between "https://" and dot (.)
 	pattern := `https://(.*?)\.`
 
 	// Compile the regular expression pattern
