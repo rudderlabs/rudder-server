@@ -12,34 +12,27 @@ import (
 	"testing"
 	"time"
 
+	dbsql "github.com/databricks/databricks-sql-go"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-
-	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
-	dbsql "github.com/databricks/databricks-sql-go"
-
-	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/stretchr/testify/require"
-
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type testCredentials struct {
@@ -189,6 +182,7 @@ func TestIntegration(t *testing.T) {
 			loadTableStrategy   string
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
+			jobRunID            string
 		}{
 			{
 				name:                "Merge Mode",
@@ -200,6 +194,7 @@ func TestIntegration(t *testing.T) {
 				loadTableStrategy:   "MERGE",
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-merge-mode",
+				jobRunID:            misc.FastUUID().String(),
 			},
 			{
 				name:                "Append Mode",
@@ -211,6 +206,9 @@ func TestIntegration(t *testing.T) {
 				loadTableStrategy:   "APPEND",
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
+				// an empty jobRunID means that the source is not an ETL one
+				// see Uploader.CanAppend()
+				jobRunID: "",
 			},
 			{
 				name:                "Parquet load files",
@@ -222,6 +220,7 @@ func TestIntegration(t *testing.T) {
 				loadTableStrategy:   "MERGE",
 				useParquetLoadFiles: true,
 				stagingFilePrefix:   "testdata/upload-job-parquet",
+				jobRunID:            misc.FastUUID().String(),
 			},
 		}
 
@@ -255,6 +254,7 @@ func TestIntegration(t *testing.T) {
 					Tables:        tables,
 					SourceID:      tc.sourceID,
 					DestinationID: tc.destinationID,
+					JobRunID:      tc.jobRunID,
 					WarehouseEventsMap: testhelper.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
@@ -283,6 +283,7 @@ func TestIntegration(t *testing.T) {
 					Tables:             tables,
 					SourceID:           tc.sourceID,
 					DestinationID:      tc.destinationID,
+					JobRunID:           tc.jobRunID,
 					WarehouseEventsMap: tc.warehouseEventsMap,
 					Config:             conf,
 					WorkspaceID:        workspaceID,
@@ -414,6 +415,61 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 
 			d := deltalake.New(c, logger.NOP, stats.Default)
 			require.Equal(t, d.TrimErrorMessage(tc.inputError), tc.expectedError)
+		})
+	}
+}
+
+func TestDeltalake_ShouldAppend(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		loadTableStrategy     string
+		uploaderCanAppend     bool
+		uploaderExpectedCalls int
+		expected              bool
+	}{
+		{
+			name:                  "uploader says we can append and we are in append mode",
+			loadTableStrategy:     "APPEND",
+			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 1,
+			expected:              true,
+		},
+		{
+			name:                  "uploader says we cannot append and we are in append mode",
+			loadTableStrategy:     "APPEND",
+			uploaderCanAppend:     false,
+			uploaderExpectedCalls: 1,
+			expected:              false,
+		},
+		{
+			name:                  "uploader says we can append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
+			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 0,
+			expected:              false,
+		},
+		{
+			name:                  "uploader says we cannot append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
+			uploaderCanAppend:     false,
+			uploaderExpectedCalls: 0,
+			expected:              false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.New()
+			c.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
+
+			d := deltalake.New(c, logger.NOP, stats.Default)
+
+			mockCtrl := gomock.NewController(t)
+			uploader := mockuploader.NewMockUploader(mockCtrl)
+			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
+
+			d.Uploader = uploader
+			require.Equal(t, d.ShouldAppend(), tc.expected)
 		})
 	}
 }

@@ -39,19 +39,11 @@ type SourceDebugger interface {
 	Stop()
 }
 
-type Opt func(*Handle)
-
-var WithDisableEventUploads = func(disableEventUploads bool) func(h *Handle) {
-	return func(h *Handle) {
-		h.disableEventUploads = disableEventUploads
-	}
-}
-
 type Handle struct {
 	started             bool
 	uploader            debugger.Uploader[*GatewayEventBatchT]
 	configBackendURL    string
-	disableEventUploads bool
+	disableEventUploads *config.Reloadable[bool]
 	log                 logger.Logger
 	eventsCache         cache.Cache[[]byte]
 
@@ -64,13 +56,13 @@ type Handle struct {
 	done        chan struct{}
 }
 
-func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (SourceDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig) (SourceDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
 	var err error
-	config.RegisterBoolConfigVariable(false, &h.disableEventUploads, true, "SourceDebugger.disableEventUploads")
+	h.disableEventUploads = config.GetReloadableBoolVar(false, "SourceDebugger.disableEventUploads")
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventUploader(h.log)
 	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
@@ -81,9 +73,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (SourceDe
 	if err != nil {
 		return nil, err
 	}
-	for _, opt := range opts {
-		opt(h)
-	}
+
 	h.start(backendConfig)
 	return h, nil
 }
@@ -117,7 +107,7 @@ func (h *Handle) Stop() {
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
 func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
-	if !h.started || h.disableEventUploads {
+	if !h.started || h.disableEventUploads.Load() {
 		return false
 	}
 	<-h.initialized

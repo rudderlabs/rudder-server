@@ -11,8 +11,8 @@ func CronArchiver(ctx context.Context, a *Archiver) {
 		case <-ctx.Done():
 			a.log.Infof("context is cancelled, stopped running archiving")
 			return
-		case <-time.After(a.config.archiverTickerTime):
-			if a.config.archiveUploadRelatedRecords {
+		case <-time.After(a.config.archiverTickerTime.Load()):
+			if a.config.archiveUploadRelatedRecords.Load() {
 				err := a.Do(ctx)
 				if err != nil {
 					a.log.Errorf(`Error archiving uploads: %v`, err)

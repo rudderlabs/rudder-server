@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
@@ -513,6 +515,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		missingMessage:   mockSkippedDueToMessage,
 		prepareBatchTime: mockPrepareBatchTime,
 	}
+	allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, rand.UniqueString(10))
 
 	t.Run("nil", func(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
@@ -573,7 +576,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		now := time.Now()
-		allowReqsWithoutUserIDAndAnonymousID = true
+		allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(true, rand.UniqueString(10))
 		data := []map[string]interface{}{
 			{"not-interesting": "some value", "topic": "some-topic"},
 			{"message": "msg01", "topic": "some-topic"},

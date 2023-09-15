@@ -331,10 +331,8 @@ func (proc *Handle) Setup(
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
-	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
-	config.RegisterDurationConfigVariable(600, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
-	config.RegisterDurationConfigVariable(600, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(2, &proc.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
+	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
 
@@ -449,6 +447,13 @@ func (proc *Handle) Setup(
 	}))
 
 	proc.crashRecover()
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (proc *Handle) setupReloadableVars() {
+	config.RegisterDurationConfigVariable(600, &proc.jobdDBQueryRequestTimeout, true, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	config.RegisterDurationConfigVariable(600, &proc.jobsDBCommandTimeout, true, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
+	config.RegisterIntConfigVariable(2, &proc.jobdDBMaxRetries, true, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 }
 
 // Start starts this processor's main loops.
@@ -577,35 +582,40 @@ func (proc *Handle) loadConfig() {
 		defaultPayloadLimit = 20 * bytesize.MB
 	}
 
-	config.RegisterInt64ConfigVariable(defaultPayloadLimit, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
-	config.RegisterBoolConfigVariable(true, &proc.config.enablePipelining, false, "Processor.enablePipelining")
-	config.RegisterIntConfigVariable(0, &proc.config.pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
-	config.RegisterIntConfigVariable(defaultSubJobSize, &proc.config.subJobSize, false, 1, "Processor.subJobSize")
-	config.RegisterDurationConfigVariable(10000, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
-	config.RegisterDurationConfigVariable(5, &proc.config.storeTimeout, true, time.Minute, "Processor.storeTimeout")
+	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
+	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
+	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	// Enable dedup of incoming events by default
+	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
+	// EventSchemas feature. false by default
+	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
+	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
+	proc.config.eventSchemaV2AllSources = config.GetBoolVar(false, "EventSchemas2.enableAllSources")
+	proc.config.batchDestinations = misc.BatchDestinations()
+	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
+	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	proc.config.pollInterval = config.GetDurationVar(5, time.Second, "Processor.pollInterval", "Processor.pollIntervalInS")
+	// GWCustomVal is used as a key in the jobsDB customval column
+	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 
+	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
+	config.RegisterInt64ConfigVariable(defaultPayloadLimit, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
+	config.RegisterDurationConfigVariable(10000, &proc.config.maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
+	config.RegisterDurationConfigVariable(5, &proc.config.storeTimeout, true, time.Minute, "Processor.storeTimeout")
 	config.RegisterDurationConfigVariable(1000, &proc.config.pingerSleep, true, time.Millisecond, "Processor.pingerSleep")
 	config.RegisterDurationConfigVariable(1000, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	config.RegisterIntConfigVariable(100, &proc.config.transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &proc.config.userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-	// Enable dedup of incoming events by default
-	config.RegisterBoolConfigVariable(false, &proc.config.enableDedup, false, "Dedup.enableDedup")
 	config.RegisterBoolConfigVariable(true, &proc.config.enableEventCount, true, "Processor.enableEventCount")
-	// EventSchemas feature. false by default
-	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
-	// EventSchemas2 feature.
-	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
 	config.RegisterBoolConfigVariable(true, &proc.config.archivalEnabled, true, "archival.Enabled")
-	proc.config.batchDestinations = misc.BatchDestinations()
-	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &proc.config.captureEventNameStats, true, "Processor.Stats.captureEventName")
-	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterDurationConfigVariable(5, &proc.config.pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
-	// GWCustomVal is used as a key in the jobsDB customval column
-	config.RegisterStringConfigVariable("GW", &proc.config.GWCustomVal, false, "Gateway.CustomVal")
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
@@ -2856,8 +2866,10 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
 	var jobdDBQueryRequestTimeout time.Duration
 	var jobdDBMaxRetries int
-	config.RegisterDurationConfigVariable(600, &jobdDBQueryRequestTimeout, false, time.Second, []string{"JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
-	config.RegisterIntConfigVariable(2, &jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	jobdDBQueryRequestTimeout = config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+	config.RegisterIntConfigVariable(2, &jobdDBMaxRetries, true, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
 	for tablePrefix, db := range dbs {
 		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
