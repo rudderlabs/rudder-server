@@ -393,8 +393,13 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
 	go func() {
 		// for monitoring reports pileups
+		defer wg.Done()
 		for {
 			lag := time.Since(lastReportedAtTime.Load())
 			reportingLag.Gauge(lag.Seconds())
