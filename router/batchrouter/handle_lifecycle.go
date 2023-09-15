@@ -107,6 +107,7 @@ func (brt *Handle) Setup(
 	brt.encounteredMergeRuleMap = map[string]map[string]bool{}
 	brt.uploadIntervalMap = map[string]time.Duration{}
 	brt.lastExecTimes = map[string]time.Time{}
+	brt.failingDestinations = map[string]bool{}
 	brt.dateFormatProvider = &storageDateFormatProvider{dateFormatsCache: make(map[string]string)}
 	diagnosisTickerTime := config.GetDurationVar(600, time.Second, "Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS")
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
