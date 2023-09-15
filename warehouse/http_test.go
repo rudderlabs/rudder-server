@@ -741,7 +741,7 @@ func TestHTTPApi(t *testing.T) {
 			}()
 
 			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
-			require.False(t, isTriggered)
+			require.True(t, isTriggered)
 		})
 	})
 

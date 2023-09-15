@@ -125,6 +125,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("setting up database: %w", err)
 	}
 
+	a.triggerStore = &sync.Map{}
 	a.tenantManager = multitenant.New(
 		a.conf,
 		a.bcConfig,
