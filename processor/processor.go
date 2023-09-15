@@ -1499,7 +1499,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
 				proc.eventAuditEnabled(batchEvent.WorkspaceId) &&
-				proc.config.eventAuditEnabled[batchEvent.WorkspaceId] &&
 				// TODO: could use source.SourceDefinition.Category instead?
 				commonMetadataFromSingularEvent.SourceJobRunID == "" {
 				if payload := payloadFunc(); payload != nil {
