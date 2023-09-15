@@ -72,17 +72,17 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable(true, &EnableDiagnostics, false, "Diagnostics.enableDiagnostics")
-	config.RegisterStringConfigVariable("https://rudderstack-dataplane.rudderstack.com", &endpoint, false, "Diagnostics.endpoint")
-	config.RegisterStringConfigVariable("1aWPBIROQvFYW9FHxgc03nUsLza", &writekey, false, "Diagnostics.writekey")
-	config.RegisterBoolConfigVariable(true, &EnableServerStartMetric, false, "Diagnostics.enableServerStartMetric")
-	config.RegisterBoolConfigVariable(true, &EnableConfigIdentifyMetric, false, "Diagnostics.enableConfigIdentifyMetric")
-	config.RegisterBoolConfigVariable(true, &EnableServerStartedMetric, false, "Diagnostics.enableServerStartedMetric")
-	config.RegisterBoolConfigVariable(true, &EnableConfigProcessedMetric, false, "Diagnostics.enableConfigProcessedMetric")
-	config.RegisterBoolConfigVariable(true, &EnableGatewayMetric, false, "Diagnostics.enableGatewayMetric")
-	config.RegisterBoolConfigVariable(true, &EnableRouterMetric, false, "Diagnostics.enableRouterMetric")
-	config.RegisterBoolConfigVariable(true, &EnableBatchRouterMetric, false, "Diagnostics.enableBatchRouterMetric")
-	config.RegisterBoolConfigVariable(true, &EnableDestinationFailuresMetric, false, "Diagnostics.enableDestinationFailuresMetric")
+	EnableDiagnostics = config.GetBoolVar(true, "Diagnostics.enableDiagnostics")
+	endpoint = config.GetStringVar("https://rudderstack-dataplane.rudderstack.com", "Diagnostics.endpoint")
+	writekey = config.GetStringVar("1aWPBIROQvFYW9FHxgc03nUsLza", "Diagnostics.writekey")
+	EnableServerStartMetric = config.GetBoolVar(true, "Diagnostics.enableServerStartMetric")
+	EnableConfigIdentifyMetric = config.GetBoolVar(true, "Diagnostics.enableConfigIdentifyMetric")
+	EnableServerStartedMetric = config.GetBoolVar(true, "Diagnostics.enableServerStartedMetric")
+	EnableConfigProcessedMetric = config.GetBoolVar(true, "Diagnostics.enableConfigProcessedMetric")
+	EnableGatewayMetric = config.GetBoolVar(true, "Diagnostics.enableGatewayMetric")
+	EnableRouterMetric = config.GetBoolVar(true, "Diagnostics.enableRouterMetric")
+	EnableBatchRouterMetric = config.GetBoolVar(true, "Diagnostics.enableBatchRouterMetric")
+	EnableDestinationFailuresMetric = config.GetBoolVar(true, "Diagnostics.enableDestinationFailuresMetric")
 	Diagnostics = newDiagnostics()
 }
 

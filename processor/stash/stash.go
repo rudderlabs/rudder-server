@@ -37,6 +37,7 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
@@ -84,10 +85,15 @@ func (st *HandleT) Setup(
 	st.transientSource = transientSource
 	st.fileuploader = fileuploader
 	st.adaptiveLimit = adaptiveLimitFunc
+	st.setupReloadableVars()
+	st.crashRecover()
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (st *HandleT) setupReloadableVars() {
 	config.RegisterIntConfigVariable(2, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(600, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(600, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	st.crashRecover()
 }
 
 func (st *HandleT) crashRecover() {
