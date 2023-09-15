@@ -34,7 +34,7 @@ type SourceWorkerT struct {
 	uploader      filemanager.FileManager
 }
 
-var userTransformBatchSize int
+var userTransformBatchSize misc.ValueLoader[int]
 
 func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 	worker.log.Debugf("worker started %d", worker.workerID)
@@ -167,7 +167,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	}
 
 	if transformationVersionID != "" {
-		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize)
+		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize.Load())
 
 		for _, ev := range response.Events {
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])

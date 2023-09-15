@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -31,14 +32,13 @@ import (
 
 var (
 	// environment variables
-	configBackendURL                      string
-	cpRouterURL                           string
-	pollInterval, regulationsPollInterval time.Duration
-	configJSONPath                        string
-	configFromFile                        bool
-	maxRegulationsPerRequest              int
-	configEnvReplacementEnabled           bool
-	dbCacheEnabled                        bool
+	configBackendURL            string
+	cpRouterURL                 string
+	pollInterval                misc.ValueLoader[time.Duration]
+	configJSONPath              string
+	configFromFile              bool
+	configEnvReplacementEnabled bool
+	dbCacheEnabled              bool
 
 	LastSync           string
 	LastRegulationSync string
@@ -92,13 +92,10 @@ type backendConfigImpl struct {
 	cache             cache.Cache
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
-	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
-	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS")
-	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
+	pollInterval = config.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
 	configJSONPath = config.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
 	configFromFile = config.GetBoolVar(false, "BackendConfig.configFromFile")
 	configEnvReplacementEnabled = config.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
@@ -246,7 +243,7 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(pollInterval):
+		case <-time.After(pollInterval.Load()):
 		}
 	}
 }
@@ -384,7 +381,7 @@ func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(pollInterval):
+		case <-time.After(pollInterval.Load()):
 		}
 	}
 }

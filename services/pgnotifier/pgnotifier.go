@@ -26,8 +26,8 @@ var (
 	queueName          string
 	maxAttempt         int
 	trackBatchInterval time.Duration
-	maxPollSleep       *config.Reloadable[time.Duration]
-	jobOrphanTimeout   *config.Reloadable[time.Duration]
+	maxPollSleep       misc.ValueLoader[time.Duration]
+	jobOrphanTimeout   misc.ValueLoader[time.Duration]
 	pkgLogger          logger.Logger
 )
 

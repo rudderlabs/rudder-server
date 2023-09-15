@@ -68,24 +68,24 @@ type Handle struct {
 
 	maxEventsInABatch            int
 	maxPayloadSizeInBytes        int
-	maxFailedCountForJob         *config.Reloadable[int]
-	asyncUploadTimeout           *config.Reloadable[time.Duration]
-	retryTimeWindow              *config.Reloadable[time.Duration]
+	maxFailedCountForJob         misc.ValueLoader[int]
+	asyncUploadTimeout           misc.ValueLoader[time.Duration]
+	retryTimeWindow              misc.ValueLoader[time.Duration]
 	reportingEnabled             bool
-	jobQueryBatchSize            *config.Reloadable[int]
-	pollStatusLoopSleep          *config.Reloadable[time.Duration]
-	payloadLimit                 *config.Reloadable[int64]
-	jobsDBCommandTimeout         *config.Reloadable[time.Duration]
-	jobdDBQueryRequestTimeout    *config.Reloadable[time.Duration]
-	jobdDBMaxRetries             *config.Reloadable[int]
-	minIdleSleep                 *config.Reloadable[time.Duration]
-	uploadFreq                   *config.Reloadable[time.Duration]
+	jobQueryBatchSize            misc.ValueLoader[int]
+	pollStatusLoopSleep          misc.ValueLoader[time.Duration]
+	payloadLimit                 misc.ValueLoader[int64]
+	jobsDBCommandTimeout         misc.ValueLoader[time.Duration]
+	jobdDBQueryRequestTimeout    misc.ValueLoader[time.Duration]
+	jobdDBMaxRetries             misc.ValueLoader[int]
+	minIdleSleep                 misc.ValueLoader[time.Duration]
+	uploadFreq                   misc.ValueLoader[time.Duration]
 	disableEgress                bool
-	toAbortDestinationIDs        *config.Reloadable[string]
-	warehouseServiceMaxRetryTime *config.Reloadable[time.Duration]
+	toAbortDestinationIDs        misc.ValueLoader[string]
+	warehouseServiceMaxRetryTime misc.ValueLoader[time.Duration]
 	transformerURL               string
-	datePrefixOverride           *config.Reloadable[string]
-	customDatePrefix             *config.Reloadable[string]
+	datePrefixOverride           misc.ValueLoader[string]
+	customDatePrefix             misc.ValueLoader[string]
 
 	// state
 

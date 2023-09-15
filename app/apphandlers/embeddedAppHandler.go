@@ -46,24 +46,19 @@ type embeddedApp struct {
 	log            logger.Logger
 	config         struct {
 		enableReplay       bool
-		processorDSLimit   int
-		routerDSLimit      int
-		batchRouterDSLimit int
-		gatewayDSLimit     int
+		processorDSLimit   misc.ValueLoader[int]
+		routerDSLimit      misc.ValueLoader[int]
+		batchRouterDSLimit misc.ValueLoader[int]
+		gatewayDSLimit     misc.ValueLoader[int]
 	}
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (a *embeddedApp) loadConfiguration() {
-	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
-	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-}
-
 func (a *embeddedApp) Setup(options *app.Options) error {
-	a.loadConfiguration()
+	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
+	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 
 	if err := db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED); err != nil {
 		return err
@@ -153,7 +148,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
+		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 	)
@@ -162,7 +157,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&a.config.routerDSLimit),
+		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 	)
@@ -171,7 +166,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
+		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 	)
@@ -182,7 +177,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
@@ -200,7 +195,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
 	defer schemaDB.Close()
@@ -208,7 +203,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	archivalDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
