@@ -3,10 +3,11 @@ package processor
 import (
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 func (proc *Handle) getDroppedJobs(response transformer.Response, eventsToTransform []transformer.TransformerEvent) []*jobsdb.JobT {
@@ -18,20 +19,12 @@ func (proc *Handle) getDroppedJobs(response transformer.Response, eventsToTransf
 	// in transformer response, multiple messageIDs could be batched together
 	successFullMessageIDs := make([]string, 0)
 	lo.ForEach(response.Events, func(e transformer.TransformerResponse, _ int) {
-		if len(e.Metadata.MessageIDs) > 0 {
-			successFullMessageIDs = append(successFullMessageIDs, e.Metadata.MessageIDs...)
-		} else {
-			successFullMessageIDs = append(successFullMessageIDs, e.Metadata.MessageID)
-		}
+		successFullMessageIDs = append(successFullMessageIDs, e.Metadata.GetMessagesIDs()...)
 	})
 	// for failed as well
 	failedMessageIDs := make([]string, 0)
 	lo.ForEach(response.FailedEvents, func(e transformer.TransformerResponse, _ int) {
-		if len(e.Metadata.MessageIDs) > 0 {
-			failedMessageIDs = append(failedMessageIDs, e.Metadata.MessageIDs...)
-		} else {
-			failedMessageIDs = append(failedMessageIDs, e.Metadata.MessageID)
-		}
+		failedMessageIDs = append(failedMessageIDs, e.Metadata.GetMessagesIDs()...)
 	})
 	// the remainder of the messageIDs are those that are dropped
 	// we get jobs for those dropped messageIDs - for rsources_stats_collector
@@ -40,7 +33,7 @@ func (proc *Handle) getDroppedJobs(response transformer.Response, eventsToTransf
 	droppedJobs := make([]*jobsdb.JobT, 0)
 	for _, e := range eventsToTransform {
 		if _, ok := droppedMessageIDKeys[e.Metadata.MessageID]; ok {
-			var params = struct {
+			params := struct {
 				SourceJobRunID  string      `json:"source_job_run_id"`
 				SourceTaskRunID string      `json:"source_task_run_id"`
 				SourceID        string      `json:"source_id"`
