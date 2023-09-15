@@ -978,7 +978,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 	}
 }
 
-func (proc *Handle) getDestTransformerEvents(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, destination *backendconfig.DestinationT, stage string, trackingPlanEnabled, userTransformationEnabled bool) ([]transformer.TransformerEvent, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
+func (proc *Handle) getDestTransformerEvents(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, destination *backendconfig.DestinationT, inPU, pu string) ([]transformer.TransformerEvent, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
@@ -996,22 +996,21 @@ func (proc *Handle) getDestTransformerEvents(response transformer.Response, comm
 		)
 
 		for _, message := range messages {
-			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, stage,
-				func() json.RawMessage {
-					if stage != transformer.TrackingPlanValidationStage {
-						return []byte(`{}`)
-					}
-					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
-					}
+			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
+				if pu != types.TRACKINGPLAN_VALIDATOR {
+					return []byte(`{}`)
+				}
+				if proc.transientSources.Apply(commonMetaData.SourceID) {
+					return []byte(`{}`)
+				}
 
-					sampleEvent, err := jsonfast.Marshal(message)
-					if err != nil {
-						proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-						sampleEvent = []byte(`{}`)
-					}
-					return sampleEvent
-				},
+				sampleEvent, err := jsonfast.Marshal(message)
+				if err != nil {
+					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
+					sampleEvent = []byte(`{}`)
+				}
+				return sampleEvent
+			},
 				nil)
 		}
 
@@ -1041,30 +1040,6 @@ func (proc *Handle) getDestTransformerEvents(response transformer.Response, comm
 	// REPORTING - START
 	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
-
-		var inPU, pu string
-		if stage == transformer.UserTransformerStage {
-			if trackingPlanEnabled {
-				inPU = types.TRACKINGPLAN_VALIDATOR
-			} else {
-				inPU = types.DESTINATION_FILTER
-			}
-			pu = types.USER_TRANSFORMER
-		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.DESTINATION_FILTER
-			pu = types.TRACKINGPLAN_VALIDATOR
-		} else if stage == transformer.EventFilterStage {
-			if userTransformationEnabled {
-				inPU = types.USER_TRANSFORMER
-			} else {
-				if trackingPlanEnabled {
-					inPU = types.TRACKINGPLAN_VALIDATOR
-				} else {
-					inPU = types.DESTINATION_FILTER
-				}
-			}
-			pu = types.EVENT_FILTER
-		}
 
 		for k, cd := range connectionDetailsMap {
 			for _, sd := range statusDetailsMap[k] {
@@ -1162,7 +1137,7 @@ func (proc *Handle) updateMetricMaps(
 	// create status details for each validation error
 	// single event can have multiple validation errors of same type
 	veCount := len(event.ValidationErrors)
-	if stage == transformer.TrackingPlanValidationStage && status == jobsdb.Succeeded.State {
+	if stage == types.TRACKINGPLAN_VALIDATOR && status == jobsdb.Succeeded.State {
 		if veCount > 0 {
 			status = types.SUCCEEDED_WITH_VIOLATIONS
 		} else {
@@ -1204,19 +1179,19 @@ func (proc *Handle) updateMetricMaps(
 	sd.ViolationCount += int64(veCount)
 }
 
-func (proc *Handle) getNonSuccessfulMetrics(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) *NonSuccessfulTransformationMetrics {
+func (proc *Handle) getNonSuccessfulMetrics(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, inPU, pu string) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
 
 	grouped := lo.GroupBy(response.FailedEvents, func(event transformer.TransformerResponse) bool { return event.StatusCode == types.FilterEventCode })
 	filtered, failed := grouped[true], grouped[false]
 
-	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(filtered, jobsdb.Filtered.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
-	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(failed, jobsdb.Aborted.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
+	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(filtered, jobsdb.Filtered.State, commonMetaData, eventsByMessageID, inPU, pu)
+	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(failed, jobsdb.Aborted.State, commonMetaData, eventsByMessageID, inPU, pu)
 
 	return m
 }
 
-func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.TransformerResponse, state string, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
+func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.TransformerResponse, state string, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, inPU, pu string) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
 	metrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
@@ -1237,7 +1212,7 @@ func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.
 		}
 
 		for _, message := range messages {
-			proc.updateMetricMaps(nil, countMap, connectionDetailsMap, statusDetailsMap, failedEvent, state, stage, func() json.RawMessage {
+			proc.updateMetricMaps(nil, countMap, connectionDetailsMap, statusDetailsMap, failedEvent, state, pu, func() json.RawMessage {
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
 					return []byte(`{}`)
 				}
@@ -1263,7 +1238,7 @@ func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.
 			"source_job_run_id":  failedEvent.Metadata.SourceJobRunID,
 			"error":              failedEvent.Error,
 			"status_code":        failedEvent.StatusCode,
-			"stage":              stage,
+			"stage":              pu,
 			"record_id":          failedEvent.Metadata.RecordID,
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 		}
@@ -1291,7 +1266,7 @@ func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.
 		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
 			"destName":   commonMetaData.DestinationType,
 			"statusCode": strconv.Itoa(failedEvent.StatusCode),
-			"stage":      stage,
+			"stage":      pu,
 		})
 
 		procErrorStat.Increment()
@@ -1300,33 +1275,6 @@ func (proc *Handle) getTransformationMetrics(transformerResponses []transformer.
 	// REPORTING - START
 	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
-
-		var inPU, pu string
-		if stage == transformer.EventFilterStage {
-			if transformationEnabled {
-				inPU = types.USER_TRANSFORMER
-			} else {
-				if trackingPlanEnabled {
-					inPU = types.TRACKINGPLAN_VALIDATOR
-				} else {
-					inPU = types.DESTINATION_FILTER
-				}
-			}
-			pu = types.EVENT_FILTER
-		} else if stage == transformer.DestTransformerStage {
-			inPU = types.EVENT_FILTER
-			pu = types.DEST_TRANSFORMER
-		} else if stage == transformer.UserTransformerStage {
-			if trackingPlanEnabled {
-				inPU = types.TRACKINGPLAN_VALIDATOR
-			} else {
-				inPU = types.DESTINATION_FILTER
-			}
-			pu = types.USER_TRANSFORMER
-		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.DESTINATION_FILTER
-			pu = types.TRACKINGPLAN_VALIDATOR
-		}
 		for k, cd := range connectionDetailsMap {
 			for _, sd := range statusDetailsMap[k] {
 				m := &types.PUReportedMetric{
@@ -2290,6 +2238,12 @@ func (proc *Handle) transformSrcDest(
 
 	var response transformer.Response
 	var eventsToTransform []transformer.TransformerEvent
+	var inPU string
+	if trackingPlanEnabled {
+		inPU = types.TRACKINGPLAN_VALIDATOR
+	} else {
+		inPU = types.DESTINATION_FILTER
+	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination)
@@ -2305,8 +2259,8 @@ func (proc *Handle) transformSrcDest(
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.UserTransformerStage, trackingPlanEnabled, transformationEnabled)
-			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, inPU, types.USER_TRANSFORMER)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, types.USER_TRANSFORMER)
 			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -2341,6 +2295,7 @@ func (proc *Handle) transformSrcDest(
 				inCountMetadataMap = successCountMetadataMap
 			}
 			// REPORTING - END
+			inPU = types.USER_TRANSFORMER // for the next step in the pipeline
 		})
 	} else {
 		proc.logger.Debug("No custom transformation")
@@ -2377,28 +2332,17 @@ func (proc *Handle) transformSrcDest(
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, types.EVENT_FILTER)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 	}
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, inPU, types.EVENT_FILTER)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		var inPU string
-		if transformationEnabled {
-			inPU = types.USER_TRANSFORMER
-		} else {
-			if trackingPlanEnabled {
-				inPU = types.TRACKINGPLAN_VALIDATOR
-			} else {
-				inPU = types.DESTINATION_FILTER
-			}
-		}
-
 		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2451,7 +2395,7 @@ func (proc *Handle) transformSrcDest(
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
 				response, commonMetaData, eventsByMessageID,
-				transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled,
+				types.EVENT_FILTER, types.DEST_TRANSFORMER,
 			)
 			destTransformationStat.numEvents.Count(len(eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
