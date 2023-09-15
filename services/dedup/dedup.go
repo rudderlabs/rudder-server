@@ -32,7 +32,9 @@ func DefaultPath() string {
 // New creates a new deduplication service. The service needs to be closed after use.
 func New(path string) Dedup {
 	var dedupWindow time.Duration
-	config.RegisterDurationConfigVariable(3600, &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
+	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+	config.RegisterDurationConfigVariable(3600, &dedupWindow, true, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+
 	log := logger.NewLogger().Child("dedup")
 	defer func() {
 		// TODO : Remove this after badgerdb v2 is completely removed

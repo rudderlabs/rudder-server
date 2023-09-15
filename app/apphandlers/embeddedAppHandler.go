@@ -53,8 +53,9 @@ type embeddedApp struct {
 	}
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (a *embeddedApp) loadConfiguration() {
-	config.RegisterBoolConfigVariable(types.DefaultReplayEnabled, &a.config.enableReplay, false, "Replay.enabled")
+	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")

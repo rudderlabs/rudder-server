@@ -87,27 +87,12 @@ func (brt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
-	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
-	config.RegisterIntConfigVariable(10000, &brt.maxPayloadSizeInBytes, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxPayloadSizeInBytes", "BatchRouter.maxPayloadSizeInBytes"}...)
-	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
-	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
-	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
-	config.RegisterIntConfigVariable(100000, &brt.jobQueryBatchSize, true, 1, []string{"BatchRouter." + brt.destType + "." + "jobQueryBatchSize", "BatchRouter.jobQueryBatchSize"}...)
-	config.RegisterDurationConfigVariable(10, &brt.pollStatusLoopSleep, true, time.Second, []string{"BatchRouter." + brt.destType + "." + "pollStatusLoopSleep", "BatchRouter.pollStatusLoopSleep"}...)
-	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "PayloadLimit", "BatchRouter.PayloadLimit"}...)
-	config.RegisterDurationConfigVariable(600, &brt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	config.RegisterDurationConfigVariable(600, &brt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.BatchRouter.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
-	config.RegisterIntConfigVariable(2, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
-	config.RegisterDurationConfigVariable(2, &brt.minIdleSleep, true, time.Second, []string{"BatchRouter.minIdleSleep"}...)
-	config.RegisterDurationConfigVariable(30, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
-	config.RegisterBoolConfigVariable(false, &brt.forceHonorUploadFrequency, true, "BatchRouter.forceHonorUploadFrequency")
-	config.RegisterBoolConfigVariable(false, &brt.disableEgress, false, "disableEgress")
-	config.RegisterStringConfigVariable("", &brt.toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
-	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
+	brt.maxEventsInABatch = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxEventsInABatch", "BatchRouter.maxEventsInABatch")
+	brt.maxPayloadSizeInBytes = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxPayloadSizeInBytes", "BatchRouter.maxPayloadSizeInBytes")
+	brt.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	brt.disableEgress = config.GetBoolVar(false, "disableEgress")
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterStringConfigVariable("", &brt.datePrefixOverride, true, "BatchRouter.datePrefixOverride")
-	config.RegisterStringConfigVariable("", &brt.customDatePrefix, true, "BatchRouter.customDatePrefix")
+	brt.setupReloadableVars()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
@@ -123,8 +108,7 @@ func (brt *Handle) Setup(
 	brt.uploadIntervalMap = map[string]time.Duration{}
 	brt.lastExecTimes = map[string]time.Time{}
 	brt.dateFormatProvider = &storageDateFormatProvider{dateFormatsCache: make(map[string]string)}
-	var diagnosisTickerTime time.Duration
-	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
+	diagnosisTickerTime := config.GetDurationVar(600, time.Second, "Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS")
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
 
@@ -204,6 +188,26 @@ func (brt *Handle) Setup(
 		brt.backendConfigSubscriber()
 		return nil
 	}))
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (brt *Handle) setupReloadableVars() {
+	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, "BatchRouter."+brt.destType+".maxFailedCountForJob", "BatchRouter.maxFailedCountForJob")
+	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
+	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, "BatchRouter."+brt.destType+".retryTimeWindow", "BatchRouter."+brt.destType+".retryTimeWindowInMins", "BatchRouter.retryTimeWindow", "BatchRouter.retryTimeWindowInMins")
+	config.RegisterIntConfigVariable(100000, &brt.jobQueryBatchSize, true, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
+	config.RegisterDurationConfigVariable(10, &brt.pollStatusLoopSleep, true, time.Second, "BatchRouter."+brt.destType+".pollStatusLoopSleep", "BatchRouter.pollStatusLoopSleep")
+	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, "BatchRouter."+brt.destType+".PayloadLimit", "BatchRouter.PayloadLimit")
+	config.RegisterDurationConfigVariable(600, &brt.jobsDBCommandTimeout, true, time.Second, "JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
+	config.RegisterDurationConfigVariable(600, &brt.jobdDBQueryRequestTimeout, true, time.Second, "JobsDB.BatchRouter.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	config.RegisterIntConfigVariable(2, &brt.jobdDBMaxRetries, true, 1, "JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries")
+	config.RegisterDurationConfigVariable(2, &brt.minIdleSleep, true, time.Second, "BatchRouter.minIdleSleep")
+	config.RegisterDurationConfigVariable(30, &brt.uploadFreq, true, time.Second, "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
+	config.RegisterBoolConfigVariable(false, &brt.forceHonorUploadFrequency, true, "BatchRouter.forceHonorUploadFrequency")
+	config.RegisterStringConfigVariable("", &brt.toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
+	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
+	config.RegisterStringConfigVariable("", &brt.datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	config.RegisterStringConfigVariable("", &brt.customDatePrefix, true, "BatchRouter.customDatePrefix")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -329,8 +333,8 @@ func (brt *Handle) crashRecover() {
 				continue
 			}
 
-			jsonFile.Close()
-			defer os.Remove(jsonPath)
+			_ = jsonFile.Close()
+			defer func() { _ = os.Remove(jsonPath) }()
 			rawf, err := os.Open(jsonPath)
 			if err != nil {
 				panic(err)
