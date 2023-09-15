@@ -389,12 +389,12 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": clientName},
 	)
 
-	var lastReportedAt atomic.Time
-	lastReportedAt.Store(time.Now())
+	var lastReportedAtTime atomic.Time
+	lastReportedAtTime.Store(time.Now())
 	go func() {
 		// for monitoring reports pileups
 		for {
-			lag := time.Since(lastReportedAt.Load())
+			lag := time.Since(lastReportedAtTime.Load())
 			reportingLag.Gauge(lag.Seconds())
 
 			select {
@@ -420,7 +420,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			if err == nil {
-				lastReportedAt.Store(loopStart)
+				lastReportedAtTime.Store(loopStart)
 			}
 			select {
 			case <-ctx.Done():
@@ -431,7 +431,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			continue
 		}
 
-		lastReportedAt.Store(time.Unix(reportedAt*60, 0))
+		lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
