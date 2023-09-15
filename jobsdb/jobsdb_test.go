@@ -778,19 +778,22 @@ func TestCacheScenarios(t *testing.T) {
 
 	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
 		maxDSSize := 1
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", maxDSSize)
 		var dbWithOneLimit *Handle
 		triggerAddNewDS := make(chan time.Time)
 		if limit > 0 {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
 				WithDSLimit(&limit),
+				WithConfig(c),
 			)
 		} else {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
+				WithConfig(c),
 			)
 		}
-		dbWithOneLimit.conf.MaxDSSize = &maxDSSize
 		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
 			return triggerAddNewDS
 		}
