@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,8 +13,6 @@ import (
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/types"
-
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -735,25 +734,25 @@ func (d *Deltalake) insertIntoLoadTable(
 				  _rudder_staging_row_number = 1
 			  );
 		`,
-d.Namespace,
-tableName,
-stagingTableName,
-columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
-primaryKey(tableName),
-)
+		d.Namespace,
+		tableName,
+		stagingTableName,
+		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
+		primaryKey(tableName),
+	)
 
-var rowsAffected, rowsInserted int64
-err := d.DB.QueryRowContext(ctx, insertStmt).Scan(
-&rowsAffected,
-&rowsInserted,
-)
-if err != nil {
-return nil, fmt.Errorf("running INSERT command: %w", err)
-}
+	var rowsAffected, rowsInserted int64
+	err := d.DB.QueryRowContext(ctx, insertStmt).Scan(
+		&rowsAffected,
+		&rowsInserted,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("running INSERT command: %w", err)
+	}
 
-return &types.LoadTableStats{
-RowsInserted: rowsInserted,
-}, nil
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted,
+	}, nil
 }
 
 func (d *Deltalake) mergeIntoLoadTable(

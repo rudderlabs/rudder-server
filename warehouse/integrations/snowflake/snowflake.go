@@ -7,13 +7,12 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"

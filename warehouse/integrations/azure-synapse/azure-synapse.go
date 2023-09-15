@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"net"
 	"net/url"
@@ -18,8 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -359,6 +358,140 @@ func (as *AzureSynapse) loadTable(
 	}, stagingTableName, nil
 }
 
+func (as *AzureSynapse) loadDataIntoStagingTable(
+	ctx context.Context,
+	log logger.Logger,
+	stmt *sql.Stmt,
+	fileName string,
+	sortedColumnKeys []string,
+	extraColumns []string,
+	tableSchemaInUpload model.TableSchema,
+) error {
+	gzipFile, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("opening file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipFile.Close()
+	}()
+
+	gzipReader, err := gzip.NewReader(gzipFile)
+	if err != nil {
+		return fmt.Errorf("reading file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+
+	csvReader := csv.NewReader(gzipReader)
+
+	for {
+		record, err := csvReader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("reading record from %s: %w", fileName, err)
+		}
+		if len(sortedColumnKeys) != len(record) {
+			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d",
+				fileName,
+				len(record),
+				len(sortedColumnKeys),
+			)
+		}
+
+		recordInterface := make([]interface{}, 0, len(record))
+		for _, value := range record {
+			if strings.TrimSpace(value) == "" {
+				recordInterface = append(recordInterface, nil)
+			} else {
+				recordInterface = append(recordInterface, value)
+			}
+		}
+
+		finalColumnValues := make([]interface{}, 0, len(record))
+		for index, value := range recordInterface {
+			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
+			if value == nil {
+				log.Debugw("found nil value", "type", valueType, "column", sortedColumnKeys[index])
+
+				finalColumnValues = append(finalColumnValues, nil)
+				continue
+			}
+
+			processedVal, err := as.ProcessColumnValue(
+				value.(string),
+				valueType,
+			)
+			if err != nil {
+				log.Warnw("mismatch in datatype",
+					logfield.ColumnType, valueType,
+					logfield.ColumnName, sortedColumnKeys[index],
+					logfield.ColumnValue, value,
+					logfield.Error, err,
+				)
+				finalColumnValues = append(finalColumnValues, nil)
+			} else {
+				finalColumnValues = append(finalColumnValues, processedVal)
+			}
+		}
+
+		// To ensure the successful execution of the 'copyIn' operation in Azure Synapse,
+		// it is necessary to handle the scenario where new columns are added to the target table.
+		// Without this adjustment, attempting to perform 'copyIn' when the column count in the
+		// target table does not match the column count specified in the input data will result
+		// in an error like:
+		//
+		//   mssql: Column count in target table does not match column count specified in input.
+		//
+		// If this error is encountered, it is important to verify that the column structure in
+		// the source data matches the destination table's structure. If you are using the BCP command,
+		// ensure that the format file's column count matches the destination table. For SSIS data imports,
+		// double-check that the column mappings are consistent with the target table.
+		for range extraColumns {
+			finalColumnValues = append(finalColumnValues, nil)
+		}
+
+		_, err = stmt.ExecContext(ctx, finalColumnValues...)
+		if err != nil {
+			return fmt.Errorf("exec statement error: %w", err)
+		}
+	}
+	return nil
+}
+
+func (as *AzureSynapse) ProcessColumnValue(
+	value string,
+	valueType string,
+) (interface{}, error) {
+	switch valueType {
+	case "int":
+		return strconv.Atoi(value)
+	case "float":
+		return strconv.ParseFloat(value, 64)
+	case "datetime":
+		return time.Parse(time.RFC3339, value)
+	case "boolean":
+		return strconv.ParseBool(value)
+	case "string":
+		if len(value) > mssqlStringLengthLimit {
+			value = value[:mssqlStringLengthLimit]
+		}
+		if !hasDiacritics(value) {
+			return value, nil
+		} else {
+			byteArr := str2ucs2(value)
+			if len(byteArr) > mssqlStringLengthLimit {
+				byteArr = byteArr[:mssqlStringLengthLimit]
+			}
+			return byteArr, nil
+		}
+	default:
+		return value, nil
+	}
+}
+
 func (as *AzureSynapse) deleteFromLoadTable(
 	ctx context.Context,
 	txn *sqlmw.Tx,
@@ -451,165 +584,6 @@ func (as *AzureSynapse) insertIntoLoadTable(
 		return 0, fmt.Errorf("inserting into original table: %w", err)
 	}
 	return r.RowsAffected()
-}
-
-func (as *AzureSynapse) loadDataIntoStagingTable(
-	ctx context.Context,
-	log logger.Logger,
-	stmt *sql.Stmt,
-	fileName string,
-	sortedColumnKeys []string,
-	extraColumns []string,
-	tableSchemaInUpload model.TableSchema,
-) error {
-	gzipFile, err := os.Open(fileName)
-	if err != nil {
-		return fmt.Errorf("opening file %s: %w", fileName, err)
-	}
-	defer func() {
-		_ = gzipFile.Close()
-	}()
-
-	gzipReader, err := gzip.NewReader(gzipFile)
-	if err != nil {
-		return fmt.Errorf("reading file %s: %w", fileName, err)
-	}
-	defer func() {
-		_ = gzipReader.Close()
-	}()
-
-	csvReader := csv.NewReader(gzipReader)
-
-	for {
-		var record []string
-		record, err = csvReader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("reading file %s: %w", fileName, err)
-		}
-		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d, error: %w",
-				fileName,
-				len(record),
-				len(sortedColumnKeys),
-				err,
-			)
-		}
-
-		recordInterface := make([]interface{}, 0, len(record))
-		for _, value := range record {
-			if strings.TrimSpace(value) == "" {
-				recordInterface = append(recordInterface, nil)
-			} else {
-				recordInterface = append(recordInterface, value)
-			}
-		}
-
-		finalColumnValues := make([]interface{}, 0, len(record))
-		for index, value := range recordInterface {
-			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
-			if value == nil {
-				log.Debugw("found nil value", "type", valueType, "column", sortedColumnKeys[index])
-
-				finalColumnValues = append(finalColumnValues, nil)
-				continue
-			}
-
-			strValue := value.(string)
-
-			switch valueType {
-			case "int":
-				if convertedValue, err := strconv.Atoi(strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "float":
-				if convertedValue, err := strconv.ParseFloat(strValue, 64); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "datetime":
-				// TODO : handling milli?
-				if convertedValue, err := time.Parse(time.RFC3339, strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-				// TODO : handling all cases?
-			case "boolean":
-				if convertedValue, err := strconv.ParseBool(strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "string":
-				// Enabling diacritic support is essential to correctly handle characters with diacritics,
-				// such as Ü,ç, Ç, ©, ∆, ß, á, ù, ñ, ê. This ensures that these characters are processed
-				// and stored accurately in the database.
-
-				// The current approach serves as a substitute for a specific pull request (PR)
-				// that aimed to address this issue: https://github.com/denisenkom/go-mssqldb/pull/576/files.
-
-				// An alternate method to achieve diacritic support is to use 'nvarchar' data type instead of 'varchar'.
-				// However, the chosen approach may be more suitable for the current application's requirements.
-
-				if len(strValue) > mssqlStringLengthLimit {
-					strValue = strValue[:mssqlStringLengthLimit]
-				}
-
-				if !hasDiacritics(strValue) {
-					log.Debugw("non-diacritic", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue)
-
-					finalColumnValues = append(finalColumnValues, strValue)
-				} else {
-					byteArr := str2ucs2(strValue)
-
-					// This is needed as with above operation every character occupies 2 bytes
-					if len(byteArr) > mssqlStringLengthLimit {
-						byteArr = byteArr[:mssqlStringLengthLimit]
-					}
-
-					finalColumnValues = append(finalColumnValues, byteArr)
-				}
-			default:
-				finalColumnValues = append(finalColumnValues, value)
-			}
-		}
-
-		// To ensure the successful execution of the 'copyIn' operation in Azure Synapse,
-		// it is necessary to handle the scenario where new columns are added to the target table.
-		// Without this adjustment, attempting to perform 'copyIn' when the column count in the
-		// target table does not match the column count specified in the input data will result
-		// in an error like:
-		//
-		//   mssql: Column count in target table does not match column count specified in input.
-		//
-		// If this error is encountered, it is important to verify that the column structure in
-		// the source data matches the destination table's structure. If you are using the BCP command,
-		// ensure that the format file's column count matches the destination table. For SSIS data imports,
-		// double-check that the column mappings are consistent with the target table.
-		for range extraColumns {
-			finalColumnValues = append(finalColumnValues, nil)
-		}
-
-		_, err = stmt.ExecContext(ctx, finalColumnValues...)
-		if err != nil {
-			return fmt.Errorf("exec statement error: %w", err)
-		}
-	}
-	return nil
 }
 
 // Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go

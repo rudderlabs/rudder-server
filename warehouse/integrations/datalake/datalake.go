@@ -3,10 +3,9 @@ package datalake
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 

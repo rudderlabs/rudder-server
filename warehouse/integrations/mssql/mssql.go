@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"net"
 	"net/url"
@@ -17,8 +18,6 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"

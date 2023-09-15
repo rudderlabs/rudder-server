@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"cloud.google.com/go/bigquery"
 	"golang.org/x/exp/slices"
@@ -403,17 +402,18 @@ func (bq *BigQuery) loadFileLocations(
 ) ([]warehouseutils.LoadFile, error) {
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
-		if loadfile, err := bq.uploader.GetSingleLoadFile(ctx, tableName); err != nil {
+		loadfile, err := bq.uploader.GetSingleLoadFile(
+			ctx,
+			tableName,
+		)
+		if err != nil {
 			return nil, fmt.Errorf("getting single load file for table %s: %w", tableName, err)
-		} else {
-			return []warehouseutils.LoadFile{loadfile}, nil
 		}
+		return []warehouseutils.LoadFile{loadfile}, nil
 	default:
 		metadata := bq.uploader.GetLoadFilesMetadata(
 			ctx,
-			warehouseutils.GetLoadFilesOptions{
-				Table: tableName,
-			},
+			warehouseutils.GetLoadFilesOptions{Table: tableName},
 		)
 		return metadata, nil
 	}
@@ -547,16 +547,16 @@ func (bq *BigQuery) loadTableByMerge(
 
 	tableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
 
-	tableColNames := lo.MapToSlice(tableColMap, func(colName, colType string) string {
+	tableColNames := lo.MapToSlice(tableColMap, func(colName, _ string) string {
 		return fmt.Sprintf("`%s`", colName)
 	})
 
 	columnNames := strings.Join(tableColNames, ",")
 
-	stagingColumnNames := strings.Join(lo.Map(tableColNames, func(colName string, index int) string {
+	stagingColumnNames := strings.Join(lo.Map(tableColNames, func(colName string, _ int) string {
 		return fmt.Sprintf(`staging.%s`, colName)
 	}), ",")
-	columnsWithValues := strings.Join(lo.Map(tableColNames, func(colName string, index int) string {
+	columnsWithValues := strings.Join(lo.Map(tableColNames, func(colName string, _ int) string {
 		return fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
 	}), ",")
 
@@ -569,7 +569,7 @@ func (bq *BigQuery) loadTableByMerge(
 		partitionKey = column
 	}
 
-	primaryJoinClause := strings.Join(lo.Map(strings.Split(primaryKey, ","), func(str string, index int) string {
+	primaryJoinClause := strings.Join(lo.Map(strings.Split(primaryKey, ","), func(str string, _ int) string {
 		return fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " "))
 	}), " AND ")
 
@@ -616,22 +616,22 @@ func (bq *BigQuery) loadTableByMerge(
 	log.Infow("merging data from staging table into original table")
 	job, err = bq.getMiddleware().Run(ctx, bq.db.Query(mergeIntoStmt))
 	if err != nil {
-		return nil, nil, fmt.Errorf("running loader: %w", err)
+		return nil, nil, fmt.Errorf("merge: running loader: %w", err)
 	}
 
 	log.Infow("waiting for merge job to complete", "jobID", job.ID())
 	status, err = job.Wait(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("waiting for job: %w", err)
+		return nil, nil, fmt.Errorf("merge: waiting for job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status: %w", err)
+		return nil, nil, fmt.Errorf("merge: status: %w", err)
 	}
 
 	log.Infow("getting job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting job statistics: %w", err)
+		return nil, nil, fmt.Errorf("job statistics: %w", err)
 	}
 
 	log.Infow("completed loading")

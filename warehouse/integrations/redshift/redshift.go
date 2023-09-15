@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,8 +14,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"golang.org/x/exp/slices"
 
