@@ -69,7 +69,6 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
-	EventSchemasEnabled        bool
 }
 
 func (s *SourceT) IsReplaySource() bool {

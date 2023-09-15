@@ -214,10 +214,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:                  SourceIDEnabledNoUT,
-			WriteKey:            WriteKeyEnabledNoUT,
-			Enabled:             true,
-			EventSchemasEnabled: true,
+			ID:       SourceIDEnabledNoUT,
+			WriteKey: WriteKeyEnabledNoUT,
+			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Category: "eventStream",
 			},
