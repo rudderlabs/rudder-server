@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
 )
@@ -70,29 +71,29 @@ type JobResponse struct {
 }
 
 type reloadableConfig struct {
-	jobQueryBatchSize                       int
-	updateStatusBatchSize                   int
-	readSleep                               time.Duration
-	maxStatusUpdateWait                     time.Duration
-	minRetryBackoff                         time.Duration
-	maxRetryBackoff                         time.Duration
-	jobsBatchTimeout                        time.Duration
-	failingJobsPenaltyThreshold             float64
-	failingJobsPenaltySleep                 time.Duration
-	toAbortDestinationIDs                   string
-	noOfJobsToBatchInAWorker                int
-	jobsDBCommandTimeout                    time.Duration
-	jobdDBMaxRetries                        int
-	maxFailedCountForJob                    int
-	payloadLimit                            int64
-	routerTimeout                           time.Duration
-	retryTimeWindow                         time.Duration
-	pickupFlushInterval                     time.Duration
-	maxDSQuerySize                          int
-	jobIteratorMaxQueries                   int
-	jobIteratorDiscardedPercentageTolerance int
-	savePayloadOnError                      bool
-	transformerProxy                        bool
-	skipRtAbortAlertForTransformation       bool // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
-	skipRtAbortAlertForDelivery             bool // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	jobQueryBatchSize                       *config.Reloadable[int]
+	updateStatusBatchSize                   *config.Reloadable[int]
+	readSleep                               *config.Reloadable[time.Duration]
+	maxStatusUpdateWait                     *config.Reloadable[time.Duration]
+	minRetryBackoff                         *config.Reloadable[time.Duration]
+	maxRetryBackoff                         *config.Reloadable[time.Duration]
+	jobsBatchTimeout                        *config.Reloadable[time.Duration]
+	failingJobsPenaltyThreshold             *config.Reloadable[float64]
+	failingJobsPenaltySleep                 *config.Reloadable[time.Duration]
+	toAbortDestinationIDs                   *config.Reloadable[string]
+	noOfJobsToBatchInAWorker                *config.Reloadable[int]
+	jobsDBCommandTimeout                    *config.Reloadable[time.Duration]
+	jobdDBMaxRetries                        *config.Reloadable[int]
+	maxFailedCountForJob                    *config.Reloadable[int]
+	payloadLimit                            *config.Reloadable[int64]
+	routerTimeout                           *config.Reloadable[time.Duration]
+	retryTimeWindow                         *config.Reloadable[time.Duration]
+	pickupFlushInterval                     *config.Reloadable[time.Duration]
+	maxDSQuerySize                          *config.Reloadable[int]
+	jobIteratorMaxQueries                   *config.Reloadable[int]
+	jobIteratorDiscardedPercentageTolerance *config.Reloadable[int]
+	savePayloadOnError                      *config.Reloadable[bool]
+	transformerProxy                        *config.Reloadable[bool]
+	skipRtAbortAlertForTransformation       *config.Reloadable[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForDelivery             *config.Reloadable[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
 }
