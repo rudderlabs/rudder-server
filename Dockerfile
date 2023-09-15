@@ -27,7 +27,7 @@ RUN BUILD_DATE=$(date "+%F,%T") \
     make build
 
 RUN go build -o devtool ./cmd/devtool/
-
+RUN go build -o rudder-cli ./cmd/rudder-cli/
 
 FROM alpine:${ALPINE_VERSION}
 
@@ -39,10 +39,10 @@ COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
 COPY --from=builder rudder-server/build/regulation-worker .
 COPY --from=builder rudder-server/devtool .
+COPY --from=builder rudder-server/rudder-cli /usr/bin/rudder-cli
 
 COPY build/docker-entrypoint.sh /
 COPY build/wait-for /
-COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 COPY scripts/generate-event /scripts/generate-event
 COPY scripts/batch.json /scripts/batch.json
 
