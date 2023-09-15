@@ -175,7 +175,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	destinationsMap := brt.destinationsMap
 	brt.configSubscriberMu.RUnlock()
 	var jobs []*jobsdb.JobT
-	limit := brt.jobQueryBatchSize
 
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
@@ -184,7 +183,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	queryStart := time.Now()
 	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{brt.destType},
-		JobsLimit:        limit.Load(),
+		JobsLimit:        brt.jobQueryBatchSize.Load(),
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
