@@ -68,9 +68,7 @@ type DisableDestinationResponse struct {
 }
 
 type AuthStatusInactiveResponse struct {
-	Success    string `json:"success"`
-	Error      string `json:"error"`
-	StatusCode string `json:"statusCode"`
+	Message string `json:"message"`
 }
 
 type RefreshTokenParams struct {
@@ -481,7 +479,8 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	authErrHandler.logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
 
 	var authStatusInactiveRes *AuthStatusInactiveResponse
-	if unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusInactiveRes); unmarshalErr != nil || !router_utils.IsNotEmptyString(authStatusInactiveRes.Error) {
+	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusInactiveRes)
+	if unmarshalErr != nil || !router_utils.IsNotEmptyString(authStatusInactiveRes.Message) || statusCode != http.StatusOK {
 		var msg string
 		if unmarshalErr != nil {
 			msg = unmarshalErr.Error()
