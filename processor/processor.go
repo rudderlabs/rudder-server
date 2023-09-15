@@ -726,7 +726,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			destinationIDtoTypeMap = make(map[string]string)
 			eventAuditEnabled      = make(map[string]bool)
 		)
-		proc.config.configSubscriberLock.Lock()
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
@@ -743,6 +742,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
 		}
+		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
@@ -1381,6 +1381,12 @@ type dupStatKey struct {
 	equalSize bool
 }
 
+func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.eventAuditEnabled[workspaceID]
+}
+
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1492,6 +1498,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			},
 			)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
+				proc.eventAuditEnabled(batchEvent.WorkspaceId) &&
 				proc.config.eventAuditEnabled[batchEvent.WorkspaceId] &&
 				// TODO: could use source.SourceDefinition.Category instead?
 				commonMetadataFromSingularEvent.SourceJobRunID == "" {
