@@ -139,7 +139,7 @@ type Handle struct {
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
 		archivalEnabled           bool
-		eventAuditEnabled         bool
+		eventAuditEnabled         map[string]bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -715,8 +715,9 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
 			destinationIDtoTypeMap = make(map[string]string)
-			eventAuditEnabled      = false
+			eventAuditEnabled      = make(map[string]bool)
 		)
+		proc.config.configSubscriberLock.Lock()
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
@@ -731,9 +732,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
-			eventAuditEnabled = wConfig.Settings.EventAuditEnabled
+			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
 		}
-		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
@@ -1483,7 +1483,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			},
 			)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
-				proc.config.eventAuditEnabled &&
+				proc.config.eventAuditEnabled[batchEvent.WorkspaceId] &&
 				// TODO: could use source.SourceDefinition.Category instead?
 				commonMetadataFromSingularEvent.SourceJobRunID == "" {
 				if payload := payloadFunc(); payload != nil {
