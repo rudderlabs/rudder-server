@@ -26,6 +26,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -320,12 +321,14 @@ var _ = Describe("router", func() {
 
 	BeforeEach(func() {
 		conf = config.New()
-		routerUtils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
+		config.Reset()
+		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 	})
 
 	AfterEach(func() {
+		config.Reset()
 		c.Finish()
 	})
 
@@ -398,7 +401,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
@@ -427,7 +430,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(2))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
@@ -465,7 +475,7 @@ var _ = Describe("router", func() {
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-				PayloadSizeLimit: payloadLimit,
+				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
@@ -506,11 +516,18 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(1))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
-			routerUtils.JobRetention = time.Duration(24) * time.Hour
+			config.Set("Router.jobRetention", "24h")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -544,7 +561,7 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-				PayloadSizeLimit: payloadLimit,
+				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
@@ -588,7 +605,7 @@ var _ = Describe("router", func() {
 		})
 
 		It("aborts events that have reached max retries", func() {
-			routerUtils.JobRetention = time.Duration(24) * time.Hour
+			config.Set("Router.jobRetention", "24h")
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
@@ -598,7 +615,7 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.netHandle = mockNetHandle
 
-			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.retryTimeWindow)
+			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.retryTimeWindow.Load())
 			jobs := []*jobsdb.JobT{
 				{
 					UUID:         uuid.New(),
@@ -609,7 +626,7 @@ var _ = Describe("router", func() {
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(`{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`),
 					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum:    router.reloadableConfig.maxFailedCountForJob,
+						AttemptNum:    router.reloadableConfig.maxFailedCountForJob.Load(),
 						JobState:      jobsdb.Failed.State,
 						ErrorCode:     "500",
 						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
@@ -629,7 +646,7 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-				PayloadSizeLimit: payloadLimit,
+				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
@@ -686,8 +703,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 5
-			router.reloadableConfig.routerTimeout = time.Duration(0)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(5, 1, rand.UniqueString(10))
+			router.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(0, time.Nanosecond, rand.UniqueString(10))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -771,7 +788,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
@@ -796,7 +813,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(5))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("fails jobs if destination is not found in config", func() {
@@ -810,9 +834,9 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 5
-			router.reloadableConfig.routerTimeout = time.Duration(60) * time.Second
-			router.reloadableConfig.jobIteratorMaxQueries = 1
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(5, 1, rand.UniqueString(10))
+			router.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(60, time.Second, rand.UniqueString(10))
+			router.reloadableConfig.jobIteratorMaxQueries = config.GetReloadableIntVar(1, 1, rand.UniqueString(10))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, nonexistentDestinationID) // skipcq: GO-R4002
@@ -839,7 +863,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				},
 				nil).
@@ -881,7 +905,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(1))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 
@@ -903,9 +934,9 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 
 			router.enableBatching = true
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 3
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(3, 1, rand.UniqueString(10))
 			router.noOfWorkers = 1
-			router.reloadableConfig.routerTimeout = time.Duration(math.MaxInt64)
+			router.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(math.MaxInt64, time.Nanosecond, rand.UniqueString(10))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -963,7 +994,7 @@ var _ = Describe("router", func() {
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-				PayloadSizeLimit: payloadLimit,
+				PayloadSizeLimit: payloadLimit.Load(),
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobsList}}, nil)
 
@@ -1025,7 +1056,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
@@ -1041,8 +1079,8 @@ var _ = Describe("router", func() {
 			// we have a job that has failed once(toRetryJobsList), it should abort when picked up next
 			// Because we only allow one failure per job with this
 			router.transformer = mockTransformer
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 3
-			router.reloadableConfig.maxFailedCountForJob = 5
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(3, 1, rand.UniqueString(10))
+			router.reloadableConfig.maxFailedCountForJob = config.GetReloadableIntVar(5, 1, rand.UniqueString(10))
 			router.enableBatching = true
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1099,7 +1137,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				}, nil).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: toRetryJobsList}}, nil).Times(
 				1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
@@ -1174,7 +1212,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 
@@ -1209,8 +1254,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 5
-			router.reloadableConfig.routerTimeout = time.Duration(math.MaxInt64)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(5, 1, rand.UniqueString(10))
+			router.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(math.MaxInt64, time.Nanosecond, rand.UniqueString(10))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1294,7 +1339,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
@@ -1398,7 +1443,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(5))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		/*
@@ -1422,7 +1474,7 @@ var _ = Describe("router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
-			router.reloadableConfig.noOfJobsToBatchInAWorker = 3
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(3, 1, rand.UniqueString(10))
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1481,7 +1533,7 @@ var _ = Describe("router", func() {
 				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit,
+					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
@@ -1555,7 +1607,14 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(3))
-			<-done
+			Eventually(func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 	})
 })
@@ -1710,9 +1769,9 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			logger: logger.NOP,
 			rt: &Handle{
 				reloadableConfig: &reloadableConfig{
-					transformerProxy:                  tc.transformerProxy,
-					skipRtAbortAlertForDelivery:       tc.skip.deliveryAlert,
-					skipRtAbortAlertForTransformation: tc.skip.transformationAlert,
+					transformerProxy:                  config.GetReloadableBoolVar(tc.transformerProxy, rand.UniqueString(10)),
+					skipRtAbortAlertForDelivery:       config.GetReloadableBoolVar(tc.skip.deliveryAlert, rand.UniqueString(10)),
+					skipRtAbortAlertForTransformation: config.GetReloadableBoolVar(tc.skip.transformationAlert, rand.UniqueString(10)),
 				},
 			},
 		}

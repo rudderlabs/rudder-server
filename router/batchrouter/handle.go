@@ -68,26 +68,24 @@ type Handle struct {
 
 	maxEventsInABatch            int
 	maxPayloadSizeInBytes        int
-	maxFailedCountForJob         int
-	asyncUploadTimeout           time.Duration
-	retryTimeWindow              time.Duration
+	maxFailedCountForJob         *config.Reloadable[int]
+	asyncUploadTimeout           *config.Reloadable[time.Duration]
+	retryTimeWindow              *config.Reloadable[time.Duration]
 	reportingEnabled             bool
-	jobQueryBatchSize            int
-	pollStatusLoopSleep          time.Duration
-	payloadLimit                 int64
-	jobsDBCommandTimeout         time.Duration
-	jobdDBQueryRequestTimeout    time.Duration
-	jobdDBMaxRetries             int
-	minIdleSleep                 time.Duration
-	uploadFreq                   time.Duration
-	forceHonorUploadFrequency    bool
-	readPerDestination           bool
+	jobQueryBatchSize            *config.Reloadable[int]
+	pollStatusLoopSleep          *config.Reloadable[time.Duration]
+	payloadLimit                 *config.Reloadable[int64]
+	jobsDBCommandTimeout         *config.Reloadable[time.Duration]
+	jobdDBQueryRequestTimeout    *config.Reloadable[time.Duration]
+	jobdDBMaxRetries             *config.Reloadable[int]
+	minIdleSleep                 *config.Reloadable[time.Duration]
+	uploadFreq                   *config.Reloadable[time.Duration]
 	disableEgress                bool
-	toAbortDestinationIDs        string
-	warehouseServiceMaxRetryTime time.Duration
+	toAbortDestinationIDs        *config.Reloadable[string]
+	warehouseServiceMaxRetryTime *config.Reloadable[time.Duration]
 	transformerURL               string
-	datePrefixOverride           string
-	customDatePrefix             string
+	datePrefixOverride           *config.Reloadable[string]
+	customDatePrefix             *config.Reloadable[string]
 
 	// state
 
@@ -148,7 +146,7 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
-			mainLoopSleep = brt.uploadFreq
+			mainLoopSleep = brt.uploadFreq.Load()
 		}
 	}
 }
@@ -177,7 +175,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	destinationsMap := brt.destinationsMap
 	brt.configSubscriberMu.RUnlock()
 	var jobs []*jobsdb.JobT
-	limit := brt.jobQueryBatchSize
 
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
@@ -186,14 +183,14 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	queryStart := time.Now()
 	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{brt.destType},
-		JobsLimit:        limit,
-		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
+		JobsLimit:        brt.jobQueryBatchSize.Load(),
+		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
 	var limitsReached bool
 
 	if config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition after successful rollout of sinle query
-		toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 			return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
 		}, brt.sendQueryRetryStats)
 		if err != nil {
@@ -203,7 +200,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		jobs = toProcess.Jobs
 		limitsReached = toProcess.LimitsReached
 	} else {
-		toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 			return brt.jobsDB.GetFailed(ctx, queryParams)
 		}, brt.sendQueryRetryStats)
 		if err != nil {
@@ -217,7 +214,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 			if queryParams.PayloadSizeLimit > 0 {
 				queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 			}
-			unprocessed, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			unprocessed, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 				return brt.jobsDB.GetUnprocessed(ctx, queryParams)
 			}, brt.sendQueryRetryStats)
 			if err != nil {
@@ -245,11 +242,11 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		if batchDest, ok := destinationsMap[destID]; ok {
 			var processJobs bool
 			brt.lastExecTimesMu.Lock()
-			if limitsReached && !brt.forceHonorUploadFrequency { // if limits are reached, process all jobs regardless of their upload frequency
+			if limitsReached { // if limits are reached, process all jobs regardless of their upload frequency
 				processJobs = true
 			} else { // honour upload frequency
 				lastExecTime := brt.lastExecTimes[destID]
-				if lastExecTime.IsZero() || time.Since(lastExecTime) >= brt.uploadFreq {
+				if lastExecTime.IsZero() || time.Since(lastExecTime) >= brt.uploadFreq.Load() {
 					processJobs = true
 					brt.lastExecTimes[destID] = time.Now()
 				}
@@ -406,8 +403,8 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 
 	var datePrefixLayout string
-	if brt.datePrefixOverride != "" {
-		datePrefixLayout = brt.datePrefixOverride
+	if brt.datePrefixOverride.Load() != "" {
+		datePrefixLayout = brt.datePrefixOverride.Load()
 	} else {
 		dateFormat, _ := brt.dateFormatProvider.GetFormat(brt.logger, uploader, batchJobs.Connection, folderName)
 		datePrefixLayout = dateFormat
@@ -420,7 +417,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	default:
 		datePrefixLayout = time.Now().Format("2006-01-02")
 	}
-	keyPrefixes := []string{folderName, batchJobs.Connection.Source.ID, brt.customDatePrefix + datePrefixLayout}
+	keyPrefixes := []string{folderName, batchJobs.Connection.Source.ID, brt.customDatePrefix.Load() + datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
@@ -622,8 +619,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		timeElapsed := time.Since(firstAttemptedAt)
 		switch jobState {
 		case jobsdb.Failed.State:
-			if !notifyWarehouseErr && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.
-				maxFailedCountForJob {
+			if !notifyWarehouseErr && timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
@@ -632,7 +628,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			if notifyWarehouseErr && isWarehouse {
 				// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 				brt.warehouseServiceFailedTimeMu.RLock()
-				if time.Since(brt.warehouseServiceFailedTime) > brt.warehouseServiceMaxRetryTime {
+				if time.Since(brt.warehouseServiceFailedTime) > brt.warehouseServiceMaxRetryTime.Load() {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
@@ -722,7 +718,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 
 	// Store the aborted jobs to errorDB
 	if abortedEvents != nil {
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.errorDB.Store(ctx, abortedEvents)
 		}, brt.sendRetryStoreStats)
 		if err != nil {
@@ -759,7 +755,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	// REPORTING - END
 
 	// Mark the status of the jobs
-	err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
@@ -791,17 +787,17 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 	uploadInterval, ok := destinationConfig["uploadInterval"]
 	if !ok {
 		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
+		return brt.asyncUploadTimeout.Load()
 	}
 	dur, ok := uploadInterval.(string)
 	if !ok {
 		brt.logger.Warnf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
+		return brt.asyncUploadTimeout.Load()
 	}
 	parsedTime, err := strconv.ParseInt(dur, 10, 64)
 	if err != nil {
 		brt.logger.Warnf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
+		return brt.asyncUploadTimeout.Load()
 	}
 	return time.Duration(parsedTime * int64(time.Minute))
 }
@@ -812,10 +808,10 @@ func (brt *Handle) skipFetchingJobs(partition string) bool {
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        1,
-			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
+			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 		}
 		brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-		importingList, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		importingList, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 			return brt.jobsDB.GetImporting(ctx, queryParams)
 		}, brt.sendQueryRetryStats)
 		if err != nil {
