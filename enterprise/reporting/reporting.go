@@ -386,17 +386,16 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 	reportingLag := stats.Default.NewTaggedStat(
-		"reporting_metrics_lag_minutes", stats.GaugeType, stats.Tags{"client": clientName},
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": clientName},
 	)
 
-	lastReportedAt := atomic.NewInt64(time.Now().UTC().Unix() / 60)
+	var lastReportedAt atomic.Time
+	lastReportedAt.Store(time.Now())
 	go func() {
 		// for monitoring reports pileups
 		for {
-			currentMs := time.Now().UTC().Unix() / 60
-			lagMinutes := int(currentMs - lastReportedAt.Load())
-
-			reportingLag.Gauge(lagMinutes)
+			lag := time.Since(lastReportedAt.Load())
+			reportingLag.Gauge(lag.Seconds())
 
 			select {
 			case <-ctx.Done():
@@ -421,7 +420,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			if err == nil {
-				lastReportedAt.Store(currentMs)
+				lastReportedAt.Store(loopStart)
 			}
 			select {
 			case <-ctx.Done():
@@ -432,7 +431,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			continue
 		}
 
-		lastReportedAt.Store(reportedAt)
+		lastReportedAt.Store(time.Unix(reportedAt*60, 0))
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
@@ -460,12 +459,11 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 
 		err = errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
 			dbHandle, err := r.getDBHandle(clientName)
 			if err != nil {
 				panic(err)
 			}
-			_, err = dbHandle.Exec(sqlStatement)
+			_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 			if err != nil {
 				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 			}
