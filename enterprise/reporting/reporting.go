@@ -62,7 +62,7 @@ type HandleT struct {
 	region                               string
 	sleepInterval                        time.Duration
 	mainLoopSleepInterval                time.Duration
-	dbQueryTimeout                       time.Duration
+	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 
@@ -72,17 +72,19 @@ type HandleT struct {
 }
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
-	var sleepInterval, mainLoopSleepInterval, dbQueryTimeout time.Duration
+	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxOpenConnections int
+	var dbQueryTimeout *config.Reloadable[time.Duration]
+
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
 
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
-	config.RegisterDurationConfigVariable(60, &dbQueryTimeout, true, time.Second, "Reporting.dbQueryTimeout")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
+	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -222,14 +224,14 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	}
 
 	queryStart := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
 	defer cancel()
 	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
 
-	if err != nil && err != sql.ErrNoRows && err != context.DeadlineExceeded {
+	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
 	}
-	if err == context.DeadlineExceeded {
+	if ctx.Err() != nil {
 		return nil, 0, fmt.Errorf("reporting query timeout")
 	}
 
