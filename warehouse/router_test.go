@@ -6,10 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/samber/lo"
 
@@ -105,7 +104,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
-		triggerStore := trigger.NewStore()
+		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +199,7 @@ func TestRouter(t *testing.T) {
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
 		r.logger = logger.NOP
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
 		r.createJobMarkerMap = make(map[string]time.Time)
 
@@ -275,7 +274,7 @@ func TestRouter(t *testing.T) {
 
 			t.Run("upload triggered", func(t *testing.T) {
 				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
-				r.triggerStore.Trigger(warehouse.Identifier)
+				r.triggerStore.Store(warehouse.Identifier, struct{}{})
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -355,7 +354,7 @@ func TestRouter(t *testing.T) {
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
 		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 		r.logger = logger.NOP
 
 		priority := 50
@@ -501,7 +500,7 @@ func TestRouter(t *testing.T) {
 			"destinationType": r.destType,
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -614,7 +613,7 @@ func TestRouter(t *testing.T) {
 			"destType": r.destType,
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -755,7 +754,7 @@ func TestRouter(t *testing.T) {
 			"destType": r.destType,
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 
 		close(r.bcManager.initialConfigFetched)
 
@@ -904,7 +903,7 @@ func TestRouter(t *testing.T) {
 				"destType": r.destType,
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
-			r.triggerStore = trigger.NewStore()
+			r.triggerStore = &sync.Map{}
 
 			close(r.bcManager.initialConfigFetched)
 
@@ -975,7 +974,7 @@ func TestRouter(t *testing.T) {
 				"destinationType": r.destType,
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
-			r.triggerStore = trigger.NewStore()
+			r.triggerStore = &sync.Map{}
 
 			closeCh := make(chan struct{})
 
@@ -1189,7 +1188,7 @@ func TestRouter(t *testing.T) {
 		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
 		r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
 		r.createJobMarkerMap = make(map[string]time.Time)
-		r.triggerStore = trigger.NewStore()
+		r.triggerStore = &sync.Map{}
 
 		go func() {
 			r.bcManager.Start(ctx)

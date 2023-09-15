@@ -10,9 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
@@ -75,7 +74,7 @@ type Api struct {
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
-	triggerStore  *trigger.Store
+	triggerStore  *sync.Map
 
 	config struct {
 		healthTimeout       time.Duration
@@ -97,7 +96,7 @@ func NewApi(
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
-	triggerStore *trigger.Store,
+	triggerStore *sync.Map,
 ) *Api {
 	a := &Api{
 		mode:          mode,
@@ -331,7 +330,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, warehouse := range wh {
-			a.triggerStore.Trigger(warehouse.Identifier)
+			a.triggerStore.Store(warehouse.Identifier, struct{}{})
 		}
 	}
 
@@ -390,7 +389,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, warehouse := range wh {
-		a.triggerStore.Trigger(warehouse.Identifier)
+		a.triggerStore.Store(warehouse.Identifier, struct{}{})
 	}
 
 	w.WriteHeader(http.StatusOK)

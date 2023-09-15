@@ -6,9 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 
@@ -56,8 +55,8 @@ type App struct {
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	sourcesManager     *jobs.AsyncJobWh
-	triggerStore       *trigger.Store
 	admin              *Admin
+	triggerStore       *sync.Map
 
 	appName string
 
@@ -125,8 +124,6 @@ func (a *App) Setup(ctx context.Context) error {
 	if err := a.setupDatabase(ctx); err != nil {
 		return fmt.Errorf("setting up database: %w", err)
 	}
-
-	a.triggerStore = trigger.NewStore()
 
 	a.tenantManager = multitenant.New(
 		a.conf,

@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
-
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -58,7 +56,7 @@ type router struct {
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
-	triggerStore *trigger.Store
+	triggerStore *sync.Map
 
 	isEnabled atomic.Bool
 
@@ -133,7 +131,7 @@ func newRouter(
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
 	encodingFactory *encoding.Factory,
-	triggerStore *trigger.Store,
+	triggerStore *sync.Map,
 ) (*router, error) {
 	r := &router{}
 
@@ -681,7 +679,7 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	uploadTriggered := r.triggerStore.IsTriggered(warehouse.Identifier)
+	_, uploadTriggered := r.triggerStore.Load(warehouse.Identifier)
 	if uploadTriggered {
 		priority = 50
 	}
@@ -717,7 +715,7 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 
 	// reset upload trigger if the upload was triggered
 	if uploadTriggered {
-		r.triggerStore.ClearTrigger(warehouse.Identifier)
+		r.triggerStore.Delete(warehouse.Identifier)
 	}
 
 	return nil

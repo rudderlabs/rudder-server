@@ -9,10 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
@@ -180,7 +179,7 @@ func TestHTTPApi(t *testing.T) {
 
 	bcManager := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP)
 
-	triggerStore := trigger.NewStore()
+	triggerStore := &sync.Map{}
 
 	ctx, stopTest := context.WithCancel(context.Background())
 
@@ -510,7 +509,9 @@ func TestHTTPApi(t *testing.T) {
 			require.EqualValues(t, pendingEventsResponse.PendingUploadCount, 1)
 			require.EqualValues(t, pendingEventsResponse.PendingStagingFilesCount, 5)
 			require.EqualValues(t, pendingEventsResponse.AbortedEvents, true)
-			require.False(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, isTriggered)
 		})
 
 		t.Run("pending events available with trigger uploads", func(t *testing.T) {
@@ -531,14 +532,16 @@ func TestHTTPApi(t *testing.T) {
 			require.NoError(t, err)
 
 			defer func() {
-				triggerStore.ClearTrigger("POSTGRES:test_source_id:test_destination_id")
+				triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 			}()
 
 			require.EqualValues(t, pendingEventsResponse.PendingEvents, true)
 			require.EqualValues(t, pendingEventsResponse.PendingUploadCount, 1)
 			require.EqualValues(t, pendingEventsResponse.PendingStagingFilesCount, 5)
 			require.EqualValues(t, pendingEventsResponse.AbortedEvents, true)
-			require.True(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, isTriggered)
 		})
 
 		t.Run("no pending events available", func(t *testing.T) {
@@ -561,7 +564,9 @@ func TestHTTPApi(t *testing.T) {
 			require.EqualValues(t, pendingEventsResponse.PendingUploadCount, 0)
 			require.EqualValues(t, pendingEventsResponse.PendingStagingFilesCount, 0)
 			require.EqualValues(t, pendingEventsResponse.AbortedEvents, false)
-			require.False(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, isTriggered)
 		})
 	})
 
@@ -690,7 +695,9 @@ func TestHTTPApi(t *testing.T) {
 			a.triggerUploadHandler(resp, req)
 
 			require.Equal(t, http.StatusBadRequest, resp.Code)
-			require.False(t, triggerStore.IsTriggered("POSTGRES:unsupported_test_source_id:unsupported_test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:unsupported_test_source_id:unsupported_test_destination_id")
+			require.False(t, isTriggered)
 		})
 
 		t.Run("without destination id", func(t *testing.T) {
@@ -708,9 +715,11 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			defer func() {
-				triggerStore.ClearTrigger("POSTGRES:test_source_id:test_destination_id")
+				triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 			}()
-			require.True(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, isTriggered)
 		})
 
 		t.Run("with destination id", func(t *testing.T) {
@@ -728,9 +737,11 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			defer func() {
-				triggerStore.ClearTrigger("POSTGRES:test_source_id:test_destination_id")
+				triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 			}()
-			require.True(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, isTriggered)
 		})
 	})
 

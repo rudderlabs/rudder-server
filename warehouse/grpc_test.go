@@ -8,10 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -144,7 +143,7 @@ func TestGRPC(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		triggerStore := trigger.NewStore()
+		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
 		bcManager := newBackendConfigManager(c, db, tenantManager, logger.NOP)
 		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
@@ -556,7 +555,7 @@ func TestGRPC(t *testing.T) {
 
 				t.Run("success", func(t *testing.T) {
 					t.Cleanup(func() {
-						triggerStore.ClearTrigger("POSTGRES:test_source_id:test_destination_id")
+						triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 					})
 
 					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
@@ -568,7 +567,9 @@ func TestGRPC(t *testing.T) {
 					require.NotNil(t, res)
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
-					require.True(t, triggerStore.IsTriggered("POSTGRES:test_source_id:test_destination_id"))
+
+					_, triggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+					require.True(t, triggered)
 				})
 				t.Run("no warehouses", func(t *testing.T) {})
 				t.Run("no pending count", func(t *testing.T) {

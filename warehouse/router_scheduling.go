@@ -35,7 +35,7 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	}
 
 	// return true if the upload was triggered
-	if r.triggerStore.IsTriggered(warehouse.Identifier) {
+	if _, isTriggered := r.triggerStore.Load(warehouse.Identifier); isTriggered {
 		return true, nil
 	}
 

@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/trigger"
+	"sync"
 
 	"github.com/samber/lo"
 
@@ -59,7 +58,7 @@ type GRPC struct {
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
 	uploadRepo         *repo.Uploads
-	triggerStore       *trigger.Store
+	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
 
 	config struct {
@@ -81,7 +80,7 @@ func NewGRPCServer(
 	db *sqlmw.DB,
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
-	triggerStore *trigger.Store,
+	triggerStore *sync.Map,
 ) (*GRPC, error) {
 	g := &GRPC{
 		logger:             logger.Child("grpc"),
@@ -390,7 +389,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 
 	for _, warehouse := range wh {
-		g.triggerStore.Trigger(warehouse.Identifier)
+		g.triggerStore.Store(warehouse.Identifier, struct{}{})
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.
