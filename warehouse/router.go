@@ -43,11 +43,10 @@ import (
 type router struct {
 	destType string
 
-	dbHandle          *sqlquerywrapper.DB
-	warehouseDBHandle *DB
-	stagingRepo       *repo.StagingFiles
-	uploadRepo        *repo.Uploads
-	whSchemaRepo      *repo.WHSchema
+	dbHandle     *sqlquerywrapper.DB
+	stagingRepo  *repo.StagingFiles
+	uploadRepo   *repo.Uploads
+	whSchemaRepo *repo.WHSchema
 
 	isEnabled atomic.Bool
 
@@ -130,7 +129,6 @@ func newRouter(
 	r.dbHandle = db
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
-	r.warehouseDBHandle = NewWarehouseDB(db)
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
@@ -170,18 +168,13 @@ func newRouter(
 
 	whName := warehouseutils.WHDestNameMap[destType]
 
-	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
-	r.conf.RegisterIntConfigVariable(1, &r.config.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
-	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
-	r.conf.RegisterDurationConfigVariable(5, &r.config.waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
-	r.conf.RegisterDurationConfigVariable(5, &r.config.uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
-	r.conf.RegisterDurationConfigVariable(5, &r.config.mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
-	r.conf.RegisterIntConfigVariable(960, &r.config.stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
-	r.conf.RegisterDurationConfigVariable(30, &r.config.uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
-	r.conf.RegisterBoolConfigVariable(false, &r.config.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
-	r.conf.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.shouldPopulateHistoricIdentities, false, "Warehouse.populateHistoricIdentities")
+	r.config.maxConcurrentUploadJobs = config.GetIntVar(1, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
+	r.config.waitForWorkerSleep = config.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
+	r.config.uploadAllocatorSleep = config.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
+	r.config.uploadStatusTrackFrequency = config.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
+	r.config.allowMultipleSourcesForJobsPickup = config.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+	r.config.shouldPopulateHistoricIdentities = config.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
+	r.setupReloadableVars(whName)
 
 	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 		"destType": r.destType,
@@ -226,6 +219,16 @@ func newRouter(
 	}))
 
 	return r, nil
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (r *router) setupReloadableVars(whName string) {
+	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
+	r.conf.RegisterDurationConfigVariable(5, &r.config.mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
+	r.conf.RegisterIntConfigVariable(960, &r.config.stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
+	r.conf.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	r.conf.RegisterBoolConfigVariable(false, &r.config.warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
@@ -578,18 +581,9 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return nil
 	}
 
-	priority := defaultUploadPriority
-
-	uploadID, uploadStatus, uploadPriority := r.latestUploadStatus(ctx, &warehouse)
-	if uploadStatus == model.Waiting {
-		// If it is present do nothing else delete it
-		if _, inProgress := r.isUploadJobInProgress(warehouse, uploadID); !inProgress {
-			err := r.uploadRepo.DeleteWaiting(ctx, uploadID)
-			if err != nil {
-				r.logger.Error(err, "uploadID", uploadID, "warehouse", warehouse.Identifier)
-			}
-			priority = uploadPriority // copy the priority from the latest upload job.
-		}
+	priority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+	if err != nil {
+		return fmt.Errorf("handling priority for waiting uploads: %w", err)
 	}
 
 	stagingFilesFetchStart := r.now()
@@ -628,17 +622,30 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 	return nil
 }
 
-func (r *router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
-	uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
+func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse model.Warehouse) (int, error) {
+	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(
 		ctx,
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
 	)
 	if err != nil {
-		r.logger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
+		if errors.Is(err, model.ErrNoUploadsFound) {
+			return defaultUploadPriority, nil
+		}
+		return 0, fmt.Errorf("getting latest upload info: %w", err)
 	}
 
-	return uploadID, status, priority
+	if latestInfo.Status != model.Waiting {
+		return defaultUploadPriority, nil
+	}
+
+	// If it is present do nothing else delete it
+	if _, inProgress := r.isUploadJobInProgress(warehouse, latestInfo.ID); !inProgress {
+		if err := r.uploadRepo.DeleteWaiting(ctx, latestInfo.ID); err != nil {
+			return 0, fmt.Errorf("deleting waiting upload: %w", err)
+		}
+	}
+	return latestInfo.Priority, nil
 }
 
 func (r *router) uploadStartAfterTime() time.Time {

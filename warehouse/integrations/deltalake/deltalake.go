@@ -10,24 +10,20 @@ import (
 	"strings"
 	"time"
 
+	dbsql "github.com/databricks/databricks-sql-go"
+	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"golang.org/x/exp/slices"
-
-	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	dbsqllog "github.com/databricks/databricks-sql-go/logger"
-
-	dbsql "github.com/databricks/databricks-sql-go"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -39,28 +35,20 @@ const (
 	catalog      = "catalog"
 	useSTSTokens = "useSTSTokens"
 	userAgent    = "Rudderstack"
-)
 
-const (
 	provider = warehouseutils.DELTALAKE
 
 	// Corresponds to the max length set for event rudder-transformer
 	// https://github.com/rudderlabs/rudder-transformer/blob/fb8b818b2cbd05f784117b9f3040856dab1a7346/src/warehouse/v1/util.js#L34
 	tableNameLimit = 127
-)
 
-const (
 	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
 	partitionNotFound    = "SHOW PARTITIONS is not allowed on a table that is not partitioned"
 	columnsAlreadyExists = "already exists in root"
-)
 
-const (
 	mergeMode  = "MERGE"
 	appendMode = "APPEND"
-)
 
-const (
 	rudderStagingTableRegex    = "^rudder_staging_.*$"       // matches rudder_staging_* tables
 	nonRudderStagingTableRegex = "^(?!rudder_staging_.*$).*" // matches tables that do not start with rudder_staging_
 )
@@ -621,7 +609,7 @@ func (d *Deltalake) loadTable(
 
 	log.Infow("moving data from main table to staging table")
 	var loadTableStat *types.LoadTableStats
-	if d.config.loadTableStrategy == appendMode {
+	if d.ShouldAppend() {
 		loadTableStat, err = d.insertIntoLoadTable(
 			ctx, tableName, stagingTableName,
 			tableSchemaAfterUpload,
@@ -677,8 +665,7 @@ func (d *Deltalake) copyIntoLoadTable(
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
 			COPY_OPTIONS ('force' = 'true')
-			%s;
-`,
+			%s;`,
 			fmt.Sprintf(`%s.%s`, d.Namespace, stagingTableName),
 			sortedColumnNames,
 			loadFolder,
@@ -748,25 +735,25 @@ func (d *Deltalake) insertIntoLoadTable(
 				  _rudder_staging_row_number = 1
 			  );
 		`,
-		d.Namespace,
-		tableName,
-		stagingTableName,
-		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
-		primaryKey(tableName),
-	)
+d.Namespace,
+tableName,
+stagingTableName,
+columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
+primaryKey(tableName),
+)
 
-	var rowsAffected, rowsInserted int64
-	err := d.DB.QueryRowContext(ctx, insertStmt).Scan(
-		&rowsAffected,
-		&rowsInserted,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("running INSERT command: %w", err)
-	}
+var rowsAffected, rowsInserted int64
+err := d.DB.QueryRowContext(ctx, insertStmt).Scan(
+&rowsAffected,
+&rowsInserted,
+)
+if err != nil {
+return nil, fmt.Errorf("running INSERT command: %w", err)
+}
 
-	return &types.LoadTableStats{
-		RowsInserted: rowsInserted,
-	}, nil
+return &types.LoadTableStats{
+RowsInserted: rowsInserted,
+}, nil
 }
 
 func (d *Deltalake) mergeIntoLoadTable(
@@ -1111,7 +1098,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	if d.config.loadTableStrategy == appendMode {
+	if d.ShouldAppend() {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
@@ -1152,8 +1139,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 			  %[5]s WHEN NOT MATCHED
 			THEN INSERT (%[6]s)
 			VALUES
-			  (%[7]s);
-		`,
+			  (%[7]s);`,
 			d.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -1385,4 +1371,11 @@ func (d *Deltalake) DropTable(ctx context.Context, tableName string) error {
 
 func (*Deltalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
+// ShouldAppend returns true if:
+// * the load table strategy is "append" mode
+// * the uploader says we can append
+func (d *Deltalake) ShouldAppend() bool {
+	return d.config.loadTableStrategy == appendMode && d.Uploader.CanAppend()
 }

@@ -16,8 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/types"
 
 	"github.com/samber/lo"
-
-	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
+	snowflake "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -60,11 +59,6 @@ var partitionKeyMap = map[string]string{
 	usersTable:      `"ID"`,
 	identifiesTable: `"ID"`,
 	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
-}
-
-var mergeSourceCategoryMap = map[string]struct{}{
-	"cloud":           {},
-	"singer-protocol": {},
 }
 
 var (
@@ -869,12 +863,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-// ShouldAppend returns true if the load table strategy is append mode and the source category is not in "mergeSourceCategoryMap"
+// ShouldAppend returns true if:
+// * the load table strategy is "append" mode
+// * the uploader says we can append
 func (sf *Snowflake) ShouldAppend() bool {
-	sourceCategory := sf.Warehouse.Source.SourceDefinition.Category
-	_, isMergeCategory := mergeSourceCategoryMap[sourceCategory]
-
-	return !isMergeCategory && sf.config.loadTableStrategy == loadTableStrategyAppendMode
+	return sf.config.loadTableStrategy == loadTableStrategyAppendMode && sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {

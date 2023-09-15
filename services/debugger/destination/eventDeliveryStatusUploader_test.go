@@ -1,4 +1,4 @@
-package destinationdebugger_test
+package destinationdebugger
 
 import (
 	"context"
@@ -9,13 +9,11 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
@@ -150,7 +148,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-var faultyData = destinationdebugger.DeliveryStatusT{
+var faultyData = DeliveryStatusT{
 	DestinationID: DestinationIDEnabledA,
 	SourceID:      SourceIDEnabled,
 	Payload:       []byte(`{"t":"a"`),
@@ -184,8 +182,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	var (
 		c              *eventDeliveryStatusUploaderContext
-		deliveryStatus destinationdebugger.DeliveryStatusT
-		h              destinationdebugger.DestinationDebugger
+		deliveryStatus DeliveryStatusT
+		h              DestinationDebugger
 	)
 
 	BeforeEach(func() {
@@ -204,7 +202,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 				return ch
 			}).AnyTimes()
 
-		deliveryStatus = destinationdebugger.DeliveryStatusT{
+		deliveryStatus = DeliveryStatusT{
 			DestinationID: DestinationIDEnabledA,
 			SourceID:      SourceIDEnabled,
 			Payload:       []byte(`{"t":"a"}`),
@@ -228,7 +226,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = destinationdebugger.NewHandle(c.mockBackendConfig, destinationdebugger.WithDisableEventUploads(false))
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -238,8 +236,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := destinationdebugger.NewHandle(c.mockBackendConfig, destinationdebugger.WithDisableEventUploads(true))
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
+			h.(*Handle).disableEventDeliveryStatusUploads = config.GetReloadableBoolVar(true, rand.UniqueString(10))
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 		})
 
@@ -253,8 +252,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			var edsUploader destinationdebugger.EventDeliveryStatusUploader
-			var payload []*destinationdebugger.DeliveryStatusT
+			var edsUploader EventDeliveryStatusUploader
+			var payload []*DeliveryStatusT
 			payload = append(payload, &deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
@@ -263,8 +262,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("sends empty json if transformation fails", func() {
-			edsUploader := destinationdebugger.NewEventDeliveryStatusUploader(logger.NOP)
-			var payload []*destinationdebugger.DeliveryStatusT
+			edsUploader := NewEventDeliveryStatusUploader(logger.NOP)
+			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
@@ -279,7 +278,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Set("DestinationDebugger.cacheType", 0)
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err = destinationdebugger.NewHandle(c.mockBackendConfig, destinationdebugger.WithDisableEventUploads(false))
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -289,8 +288,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := destinationdebugger.NewHandle(c.mockBackendConfig, destinationdebugger.WithDisableEventUploads(true))
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
+			h.(*Handle).disableEventDeliveryStatusUploads = config.GetReloadableBoolVar(true, rand.UniqueString(10))
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 		})
 
@@ -304,8 +304,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			var edsUploader destinationdebugger.EventDeliveryStatusUploader
-			var payload []*destinationdebugger.DeliveryStatusT
+			var edsUploader EventDeliveryStatusUploader
+			var payload []*DeliveryStatusT
 			payload = append(payload, &deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
@@ -314,8 +314,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("sends empty json if transformation fails", func() {
-			edsUploader := destinationdebugger.NewEventDeliveryStatusUploader(logger.NOP)
-			var payload []*destinationdebugger.DeliveryStatusT
+			edsUploader := NewEventDeliveryStatusUploader(logger.NOP)
+			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
