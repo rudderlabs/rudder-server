@@ -186,6 +186,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 						AttemptNum:    job.LastJobStatus.AttemptNum,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
+						ErrorCode:     "200",
 						ErrorResponse: resp,
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
@@ -202,11 +203,13 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 						AttemptNum:    job.LastJobStatus.AttemptNum,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
+						ErrorCode:     "400",
 						ErrorResponse: resp,
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
+					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", errorRespString)
 					abortedJobs = append(abortedJobs, job)
 					completedJobsList = append(completedJobsList, job)
 				}
