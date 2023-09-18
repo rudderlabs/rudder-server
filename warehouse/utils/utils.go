@@ -107,10 +107,11 @@ const (
 
 // Object storages
 const (
-	S3        = "S3"
-	AzureBlob = "AZURE_BLOB"
-	GCS       = "GCS"
-	MINIO     = "MINIO"
+	S3                 = "S3"
+	AzureBlob          = "AZURE_BLOB"
+	GCS                = "GCS"
+	MINIO              = "MINIO"
+	DigitalOceanSpaces = "DIGITAL_OCEAN_SPACES"
 )
 
 // Cloud providers
@@ -194,8 +195,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
-	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
+	enableIDResolution = config.GetBoolVar(false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
@@ -230,6 +232,7 @@ type KeyValue struct {
 	Value interface{}
 }
 
+//go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
 	GetSchemaInWarehouse() model.Schema
 	GetLocalSchema(ctx context.Context) (model.Schema, error)
@@ -244,6 +247,7 @@ type Uploader interface {
 	GetLoadFileGenStartTIme() time.Time
 	GetLoadFileType() string
 	GetFirstLastEvent() (time.Time, time.Time)
+	CanAppend() bool
 }
 
 type GetLoadFilesOptions struct {

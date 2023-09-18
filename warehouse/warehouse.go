@@ -66,7 +66,7 @@ var (
 	port                                           int
 )
 
-var defaultUploadPriority = 100
+const defaultUploadPriority = 100
 
 const (
 	DegradedMode        = "degraded"
@@ -83,6 +83,7 @@ func Init4() {
 	pkgLogger = logger.NewLogger().Child("warehouse")
 }
 
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	// Port where WH is running
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -94,8 +95,8 @@ func loadConfig() {
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	triggerUploadsMap = map[string]bool{}
-	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+	ShouldForceSetLowerVersion = config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion")
+	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, "Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin")
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }
@@ -225,67 +226,6 @@ func setupTables(dbHandle *sql.DB) error {
 	return nil
 }
 
-func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
-	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
-
-	query := fmt.Sprintf(`
-		SELECT
-		  COUNT(*)
-		FROM
-		  %[1]s
-		WHERE
-		  %[1]s.status NOT IN ('%[2]s', '%[3]s')
-	`,
-		warehouseutils.WarehouseUploadsTable,
-		model.ExportedData,
-		model.Aborted,
-	)
-
-	args := make([]interface{}, 0)
-	for i, filter := range filters {
-		query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
-		args = append(args, filter.Value)
-	}
-
-	err = wrappedDBHandle.QueryRow(query, args...).Scan(&uploadCount)
-	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", query, err)
-		return
-	}
-
-	return uploadCount, nil
-}
-
-func TriggerUploadHandler(sourceID, destID string) error {
-	// return error if source id and dest id is empty
-	if sourceID == "" && destID == "" {
-		err := fmt.Errorf("empty source and destination id")
-		pkgLogger.Errorf("[WH]: trigger upload : %v", err)
-		return err
-	}
-
-	var wh []model.Warehouse
-	if sourceID != "" && destID == "" {
-		wh = bcManager.WarehousesBySourceID(sourceID)
-	}
-	if destID != "" {
-		wh = bcManager.WarehousesByDestID(destID)
-	}
-
-	// return error if no such destinations found
-	if len(wh) == 0 {
-		err := fmt.Errorf("no warehouse destinations found for source id '%s'", sourceID)
-		pkgLogger.Errorf("[WH]: %v", err)
-		return err
-	}
-
-	// iterate over each wh destination and trigger upload
-	for _, warehouse := range wh {
-		triggerUpload(warehouse)
-	}
-	return nil
-}
-
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
@@ -411,25 +351,32 @@ func Start(ctx context.Context, app app.App) error {
 
 	RegisterAdmin(bcManager, pkgLogger)
 
+	grpcServer, err := NewGRPCServer(config.Default, pkgLogger, wrappedDBHandle, tenantManager, bcManager)
+	if err != nil {
+		return fmt.Errorf("cannot create grpc server: %w", err)
+	}
+
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
-		if isMaster(mode) {
-			err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
-			if err != nil {
-				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
-				return err
-			}
-		}
 
-		api := NewApi(
-			mode, config.Default, pkgLogger, stats.Default,
-			backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
-			bcManager, nil,
-		)
-		return api.Start(ctx)
+		if isMaster(mode) {
+			g.Go(func() error {
+				grpcServer.Start(gCtx)
+				return nil
+			})
+		}
+		g.Go(func() error {
+			api := NewApi(
+				mode, config.Default, pkgLogger, stats.Default,
+				backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
+				bcManager, nil,
+			)
+			return api.Start(gCtx)
+		})
+
+		return g.Wait()
 	}
-	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
@@ -513,11 +460,11 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
-		if err != nil {
-			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
-			return err
-		}
+		g.Go(func() error {
+			grpcServer.Start(gCtx)
+			return nil
+		})
+
 		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
 

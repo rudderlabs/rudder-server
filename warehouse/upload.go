@@ -171,6 +171,10 @@ const (
 var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE, warehouseutils.BQ}
+	mergeSourceCategoryMap                           = map[string]struct{}{
+		"cloud":           {},
+		"singer-protocol": {},
+	}
 )
 
 func init() {
@@ -768,6 +772,23 @@ func (job *UploadJob) exportRegularTables(specialTables []string, loadFilesTable
 	}
 
 	return
+}
+
+// CanAppend returns true if:
+// * the source is not an ETL source
+// * the source is not a replay source
+// * the source category is not in "mergeSourceCategoryMap"
+func (job *UploadJob) CanAppend() bool {
+	if isSourceETL := job.upload.SourceJobRunID != ""; isSourceETL {
+		return false
+	}
+	if job.warehouse.Source.IsReplaySource() {
+		return false
+	}
+	if _, isMergeCategory := mergeSourceCategoryMap[job.warehouse.Source.SourceDefinition.Category]; isMergeCategory {
+		return false
+	}
+	return true
 }
 
 func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[string]model.PendingTableUpload, error) {
@@ -1566,42 +1587,6 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 		querier = job.dbHandle
 	}
 	_, err := querier.ExecContext(job.ctx, sqlStatement, values...)
-	return err
-}
-
-func (job *UploadJob) triggerUploadNow() (err error) {
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
-	newJobState := model.Waiting
-
-	metadata := repo.ExtractUploadMetadata(job.upload)
-
-	metadata.NextRetryTime = job.now().Add(-time.Hour * 1)
-	metadata.Retried = true
-	metadata.Priority = 50
-
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
-
-	uploadColumns := []UploadColumn{
-		{Column: "status", Value: newJobState},
-		{Column: "metadata", Value: metadataJSON},
-		{Column: "updated_at", Value: job.now()},
-	}
-
-	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
-	if err != nil {
-		panic(err)
-	}
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-	if err != nil {
-		panic(err)
-	}
-	err = txn.Commit()
-
-	job.upload.Status = newJobState
 	return err
 }
 

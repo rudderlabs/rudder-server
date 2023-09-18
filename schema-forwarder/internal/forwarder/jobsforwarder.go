@@ -53,12 +53,17 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	forwarder.pulsarClient = client
 
 	forwarder.topic = config.GetString("SchemaForwarder.pulsarTopic", "event-schema")
-	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "SchemaForwarder.initialRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "SchemaForwarder.maxRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
-	config.RegisterInt64ConfigVariable(10*bytesize.KB, &forwarder.maxSampleSize, true, 1, "SchemaForwarder.maxSampleSize")
+	forwarder.setupReloadableVars()
 
 	return &forwarder
+}
+
+// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
+func (jf *JobsForwarder) setupReloadableVars() {
+	config.RegisterDurationConfigVariable(10, &jf.initialRetryInterval, true, time.Second, "SchemaForwarder.initialRetryInterval")
+	config.RegisterDurationConfigVariable(60, &jf.maxRetryInterval, true, time.Second, "SchemaForwarder.maxRetryInterval")
+	config.RegisterDurationConfigVariable(60, &jf.maxRetryElapsedTime, true, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
+	config.RegisterInt64ConfigVariable(10*bytesize.KB, &jf.maxSampleSize, true, 1, "SchemaForwarder.maxSampleSize")
 }
 
 // Start starts the forwarder which will start forwarding jobs from database to the appropriate pulsar topics
