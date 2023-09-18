@@ -1916,6 +1916,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
+	sm.routerDestIDs = append(sm.routerDestIDs, subJob.routerDestIDs...)
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
 	for dupStatKey, count := range subJob.sourceDupStats {
