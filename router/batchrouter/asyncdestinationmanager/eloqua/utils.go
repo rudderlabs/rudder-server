@@ -157,6 +157,7 @@ func generateErrorString(item RejectedItem) string {
 	}
 	return item.StatusCode + " : " + item.Message + " " + invalidItems
 }
+
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service EloquaService, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
