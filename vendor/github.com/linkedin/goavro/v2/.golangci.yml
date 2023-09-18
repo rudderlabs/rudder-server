@@ -1,0 +1,30 @@
+run:
+  timeout: 30s
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters-settings:
+  depguard:
+    include-go-root: true
+    packages:
+      - "io/ioutil"
+
+linters:
+  enable:
+    # Enable some extra linters
+    - gofmt
+    - goimports
+    - gocritic
+    - revive
+    # stylecheck warns about errors starting with a capital letter, which should be fixed in the next major release
+    # - stylecheck
+    - unconvert
+    - durationcheck
+    - wastedassign
+    - depguard
+    - bodyclose
+    - gosec
+    - misspell
+    - prealloc

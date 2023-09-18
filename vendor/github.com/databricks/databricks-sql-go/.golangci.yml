@@ -1,0 +1,62 @@
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - deadcode
+    - depguard
+    - dogsled
+    # - dupl
+    - errcheck
+    # - exportloopref
+    # - funlen
+    # - gochecknoinits
+    # - goconst
+    # - gocritic
+    # - gocyclo
+    - gofmt
+    # - goimports
+    # - gomnd
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    # - lll
+    # - misspell
+    - nakedret
+    # - noctx
+    - nolintlint
+    - staticcheck
+    - structcheck
+    # - stylecheck
+    - typecheck
+    # - unconvert
+    # - unparam
+    - unused
+    - varcheck
+    # - whitespace
+
+  # don't enable:
+  # - asciicheck
+  # - scopelint
+  # - gochecknoglobals
+  # - gocognit
+  # - godot
+  # - godox
+  # - goerr113
+  # - interfacer
+  # - maligned
+  # - nestif
+  # - prealloc
+  # - testpackage
+  # - revive
+  # - wsl
+
+linters-settings:
+  gosec:
+    exclude-generated: true
+    severity: "low"
+    confidence: "low"
+
+run:
+  timeout: 5m

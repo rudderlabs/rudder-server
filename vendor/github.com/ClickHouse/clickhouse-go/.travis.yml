@@ -1,0 +1,20 @@
+sudo: required
+language: go
+go:
+  - 1.15.x
+  - 1.16.x
+go_import_path: github.com/ClickHouse/clickhouse-go
+services:
+  - docker
+install:
+  - export GO111MODULE="on"
+  - go mod vendor
+
+before_install:
+  - docker --version
+  - docker-compose --version
+  - docker-compose up -d
+script:
+  - ./go.test.sh
+after_success:
+  - bash <(curl -s https://codecov.io/bash)

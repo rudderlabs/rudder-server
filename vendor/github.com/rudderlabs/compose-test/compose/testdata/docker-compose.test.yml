@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  postgresDB:
+    image: postgres:11-alpine
+    environment:
+      - POSTGRES_DB=jobsdb
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=rudder
+    ports:
+      - "5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      retries: 25
+    labels:
+      compose-test-expose.DB_DSN: "postgresql://rudder:password@localhost:{port:5432}/jobsdb"
+  transformer:
+    image: rudderlabs/develop-rudder-transformer:master
+    ports:
+      - "9090"
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000/tcp"
+    environment:
+      - MINIO_ACCESS_KEY=MYACCESSKEY
+      - MINIO_SECRET_KEY=MYSECRETKEY
+    command: server /data
+    healthcheck:
+      test: curl --fail http://localhost:9000/minio/health/live || exit 1
+      interval: 1s
+      retries: 25
+  zookeeper:
+    image: zookeeper:3.5
+    hostname: clickhouse-zookeeper
+    healthcheck:
+      test: nc -z localhost 2181 || exit 1
+      interval: 1s
+      retries: 25

@@ -1,0 +1,1795 @@
+**The Project Gutenberg Etext of A Child's History of England**
+#11 in our series by Charles Dickens
+
+
+Copyright laws are changing all over the world, be sure to check
+the copyright laws for your country before posting these files!!
+
+Please take a look at the important information in this header.
+We encourage you to keep this file on your own disk, keeping an
+electronic path open for the next readers.  Do not remove this.
+
+
+**Welcome To The World of Free Plain Vanilla Electronic Texts**
+
+**Etexts Readable By Both Humans and By Computers, Since 1971**
+
+*These Etexts Prepared By Hundreds of Volunteers and Donations*
+
+Information on contacting Project Gutenberg to get Etexts, and
+further information is included below.  We need your donations.
+
+
+A Child's History of England
+
+by Charles Dickens
+
+October, 1996  [Etext #699]
+
+
+**The Project Gutenberg Etext of A Child's History of England**
+*****This file should be named achoe10.txt or achoe10.zip******
+
+Corrected EDITIONS of our etexts get a new NUMBER, achoe11.txt.
+VERSIONS based on separate sources get new LETTER, achoe10a.txt.
+
+
+We are now trying to release all our books one month in advance
+of the official release dates, for time for better editing.
+
+Please note:  neither this list nor its contents are final till
+midnight of the last day of the month of any such announcement.
+The official release date of all Project Gutenberg Etexts is at
+Midnight, Central Time, of the last day of the stated month.  A
+preliminary version may often be posted for suggestion, comment
+and editing by those who wish to do so.  To be sure you have an
+up to date first edition [xxxxx10x.xxx] please check file sizes
+in the first week of the next month.  Since our ftp program has
+a bug in it that scrambles the date [tried to fix and failed] a
+look at the file size will have to do, but we will try to see a
+new copy has at least one byte more or less.
+
+
+Information about Project Gutenberg (one page)
+
+We produce about two million dollars for each hour we work.  The
+fifty hours is one conservative estimate for how long it we take
+to get any etext selected, entered, proofread, edited, copyright
+searched and analyzed, the copyright letters written, etc.  This
+projected audience is one hundred million readers.  If our value
+per text is nominally estimated at one dollar then we produce $2
+million dollars per hour this year as we release thirty-two text
+files per month:  or 400 more Etexts in 1996 for a total of 800.
+If these reach just 10% of the computerized population, then the
+total should reach 80 billion Etexts.
+
+The Goal of Project Gutenberg is to Give Away One Trillion Etext
+Files by the December 31, 2001.  [10,000 x 100,000,000=Trillion]
+This is ten thousand titles each to one hundred million readers,
+which is only 10% of the present number of computer users.  2001
+should have at least twice as many computer users as that, so it
+will require us reaching less than 5% of the users in 2001.
+
+
+We need your donations more than ever!
+
+
+All donations should be made to "Project Gutenberg/BU":  and are
+tax deductible to the extent allowable by law. (BU = Benedictine
+University).  (Subscriptions to our paper newsletter go to BU.)
+
+For these and other matters, please mail to:
+
+Project Gutenberg
+P. O. Box  2782
+Champaign, IL 61825
+
+When all other email fails try our Executive Director:
+Michael S. Hart <hart@pobox.com>
+
+We would prefer to send you this information by email
+(Internet, Bitnet, Compuserve, ATTMAIL or MCImail).
+
+******
+If you have an FTP program (or emulator), please
+FTP directly to the Project Gutenberg archives:
+[Mac users, do NOT point and click. . .type]
+
+ftp uiarchive.cso.uiuc.edu
+login:  anonymous
+password:  your@login
+cd etext/etext90 through /etext96
+or cd etext/articles [get suggest gut for more information]
+dir [to see files]
+get or mget [to get files. . .set bin for zip files]
+GET INDEX?00.GUT
+for a list of books
+and
+GET NEW GUT for general information
+and
+MGET GUT* for newsletters.
+
+**Information prepared by the Project Gutenberg legal advisor**
+(Three Pages)
+
+
+***START**THE SMALL PRINT!**FOR PUBLIC DOMAIN ETEXTS**START***
+Why is this "Small Print!" statement here?  You know: lawyers.
+They tell us you might sue us if there is something wrong with
+your copy of this etext, even if you got it for free from
+someone other than us, and even if what's wrong is not our
+fault.  So, among other things, this "Small Print!" statement
+disclaims most of our liability to you.  It also tells you how
+you can distribute copies of this etext if you want to.
+
+*BEFORE!* YOU USE OR READ THIS ETEXT
+By using or reading any part of this PROJECT GUTENBERG-tm
+etext, you indicate that you understand, agree to and accept
+this "Small Print!" statement.  If you do not, you can receive
+a refund of the money (if any) you paid for this etext by
+sending a request within 30 days of receiving it to the person
+you got it from.  If you received this etext on a physical
+medium (such as a disk), you must return it with your request.
+
+ABOUT PROJECT GUTENBERG-TM ETEXTS
+This PROJECT GUTENBERG-tm etext, like most PROJECT GUTENBERG-
+tm etexts, is a "public domain" work distributed by Professor
+Michael S. Hart through the Project Gutenberg Association at
+Benedictine University (the "Project").  Among other
+things, this means that no one owns a United States copyright
+on or for this work, so the Project (and you!) can copy and
+distribute it in the United States without permission and
+without paying copyright royalties.  Special rules, set forth
+below, apply if you wish to copy and distribute this etext
+under the Project's "PROJECT GUTENBERG" trademark.
+
+To create these etexts, the Project expends considerable
+efforts to identify, transcribe and proofread public domain
+works.  Despite these efforts, the Project's etexts and any
+medium they may be on may contain "Defects".  Among other
+things, Defects may take the form of incomplete, inaccurate or
+corrupt data, transcription errors, a copyright or other
+intellectual property infringement, a defective or damaged
+disk or other etext medium, a computer virus, or computer
+codes that damage or cannot be read by your equipment.
+
+LIMITED WARRANTY; DISCLAIMER OF DAMAGES
+But for the "Right of Replacement or Refund" described below,
+[1] the Project (and any other party you may receive this
+etext from as a PROJECT GUTENBERG-tm etext) disclaims all
+liability to you for damages, costs and expenses, including
+legal fees, and [2] YOU HAVE NO REMEDIES FOR NEGLIGENCE OR
+UNDER STRICT LIABILITY, OR FOR BREACH OF WARRANTY OR CONTRACT,
+INCLUDING BUT NOT LIMITED TO INDIRECT, CONSEQUENTIAL, PUNITIVE
+OR INCIDENTAL DAMAGES, EVEN IF YOU GIVE NOTICE OF THE
+POSSIBILITY OF SUCH DAMAGES.
+
+If you discover a Defect in this etext within 90 days of
+receiving it, you can receive a refund of the money (if any)
+you paid for it by sending an explanatory note within that
+time to the person you received it from.  If you received it
+on a physical medium, you must return it with your note, and
+such person may choose to alternatively give you a replacement
+copy.  If you received it electronically, such person may
+choose to alternatively give you a second opportunity to
+receive it electronically.
+
+THIS ETEXT IS OTHERWISE PROVIDED TO YOU "AS-IS".  NO OTHER
+WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, ARE MADE TO YOU AS
+TO THE ETEXT OR ANY MEDIUM IT MAY BE ON, INCLUDING BUT NOT
+LIMITED TO WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A
+PARTICULAR PURPOSE.
+
+Some states do not allow disclaimers of implied warranties or
+the exclusion or limitation of consequential damages, so the
+above disclaimers and exclusions may not apply to you, and you
+may have other legal rights.
+
+INDEMNITY
+You will indemnify and hold the Project, its directors,
+officers, members and agents harmless from all liability, cost
+and expense, including legal fees, that arise directly or
+indirectly from any of the following that you do or cause:
+[1] distribution of this etext, [2] alteration, modification,
+or addition to the etext, or [3] any Defect.
+
+DISTRIBUTION UNDER "PROJECT GUTENBERG-tm"
+You may distribute copies of this etext electronically, or by
+disk, book or any other medium if you either delete this
+"Small Print!" and all other references to Project Gutenberg,
+or:
+
+[1]  Only give exact copies of it.  Among other things, this
+     requires that you do not remove, alter or modify the
+     etext or this "small print!" statement.  You may however,
+     if you wish, distribute this etext in machine readable
+     binary, compressed, mark-up, or proprietary form,
+     including any form resulting from conversion by word pro-
+     cessing or hypertext software, but only so long as
+     *EITHER*:
+
+     [*]  The etext, when displayed, is clearly readable, and
+          does *not* contain characters other than those
+          intended by the author of the work, although tilde
+          (~), asterisk (*) and underline (_) characters may
+          be used to convey punctuation intended by the
+          author, and additional characters may be used to
+          indicate hypertext links; OR
+
+     [*]  The etext may be readily converted by the reader at
+          no expense into plain ASCII, EBCDIC or equivalent
+          form by the program that displays the etext (as is
+          the case, for instance, with most word processors);
+          OR
+
+     [*]  You provide, or agree to also provide on request at
+          no additional cost, fee or expense, a copy of the
+          etext in its original plain ASCII form (or in EBCDIC
+          or other equivalent proprietary form).
+
+[2]  Honor the etext refund and replacement provisions of this
+     "Small Print!" statement.
+
+[3]  Pay a trademark license fee to the Project of 20% of the
+     net profits you derive calculated using the method you
+     already use to calculate your applicable taxes.  If you
+     don't derive profits, no royalty is due.  Royalties are
+     payable to "Project Gutenberg Association / Benedictine
+     University" within the 60 days following each
+     date you prepare (or were legally required to prepare)
+     your annual (or equivalent periodic) tax return.
+
+WHAT IF YOU *WANT* TO SEND MONEY EVEN IF YOU DON'T HAVE TO?
+The Project gratefully accepts contributions in money, time,
+scanning machines, OCR software, public domain etexts, royalty
+free copyright licenses, and every other sort of contribution
+you can think of.  Money should be paid to "Project Gutenberg
+Association / Benedictine University".
+
+*END*THE SMALL PRINT! FOR PUBLIC DOMAIN ETEXTS*Ver.04.29.93*END*
+
+
+
+
+
+A Child's History of England by Charles Dickens
+Scanned and Proofed by David Price, email ccx074@coventry.ac.uk
+
+
+
+
+
+A Child's History of England
+
+
+
+
+CHAPTER I - ANCIENT ENGLAND AND THE ROMANS
+
+
+
+IF you look at a Map of the World, you will see, in the left-hand 
+upper corner of the Eastern Hemisphere, two Islands lying in the 
+sea.  They are England and Scotland, and Ireland.  England and 
+Scotland form the greater part of these Islands.  Ireland is the 
+next in size.  The little neighbouring islands, which are so small 
+upon the Map as to be mere dots, are chiefly little bits of 
+Scotland, - broken off, I dare say, in the course of a great length 
+of time, by the power of the restless water.
+
+In the old days, a long, long while ago, before Our Saviour was 
+born on earth and lay asleep in a manger, these Islands were in the 
+same place, and the stormy sea roared round them, just as it roars 
+now.  But the sea was not alive, then, with great ships and brave 
+sailors, sailing to and from all parts of the world.  It was very 
+lonely.  The Islands lay solitary, in the great expanse of water.  
+The foaming waves dashed against their cliffs, and the bleak winds 
+blew over their forests; but the winds and waves brought no 
+adventurers to land upon the Islands, and the savage Islanders knew 
+nothing of the rest of the world, and the rest of the world knew 
+nothing of them.
+
+It is supposed that the Phoenicians, who were an ancient people, 
+famous for carrying on trade, came in ships to these Islands, and 
+found that they produced tin and lead; both very useful things, as 
+you know, and both produced to this very hour upon the sea-coast. 
+The most celebrated tin mines in Cornwall are, still, close to the 
+sea.  One of them, which I have seen, is so close to it that it is 
+hollowed out underneath the ocean; and the miners say, that in 
+stormy weather, when they are at work down in that deep place, they 
+can hear the noise of the waves thundering above their heads.  So, 
+the Phoenicians, coasting about the Islands, would come, without 
+much difficulty, to where the tin and lead were.
+
+The Phoenicians traded with the Islanders for these metals, and 
+gave the Islanders some other useful things in exchange.  The 
+Islanders were, at first, poor savages, going almost naked, or only 
+dressed in the rough skins of beasts, and staining their bodies, as 
+other savages do, with coloured earths and the juices of plants.  
+But the Phoenicians, sailing over to the opposite coasts of France 
+and Belgium, and saying to the people there, 'We have been to those 
+white cliffs across the water, which you can see in fine weather, 
+and from that country, which is called BRITAIN, we bring this tin 
+and lead,' tempted some of the French and Belgians to come over 
+also.  These people settled themselves on the south coast of 
+England, which is now called Kent; and, although they were a rough 
+people too, they taught the savage Britons some useful arts, and 
+improved that part of the Islands.  It is probable that other 
+people came over from Spain to Ireland, and settled there.
+
+Thus, by little and little, strangers became mixed with the 
+Islanders, and the savage Britons grew into a wild, bold people; 
+almost savage, still, especially in the interior of the country 
+away from the sea where the foreign settlers seldom went; but 
+hardy, brave, and strong.
+
+The whole country was covered with forests, and swamps.  The 
+greater part of it was very misty and cold.  There were no roads, 
+no bridges, no streets, no houses that you would think deserving of 
+the name.  A town was nothing but a collection of straw-covered 
+huts, hidden in a thick wood, with a ditch all round, and a low 
+wall, made of mud, or the trunks of trees placed one upon another.  
+The people planted little or no corn, but lived upon the flesh of 
+their flocks and cattle.  They made no coins, but used metal rings 
+for money.  They were clever in basket-work, as savage people often 
+are; and they could make a coarse kind of cloth, and some very bad 
+earthenware.  But in building fortresses they were much more 
+clever.
+
+They made boats of basket-work, covered with the skins of animals, 
+but seldom, if ever, ventured far from the shore.  They made 
+swords, of copper mixed with tin; but, these swords were of an 
+awkward shape, and so soft that a heavy blow would bend one.  They 
+made light shields, short pointed daggers, and spears - which they 
+jerked back after they had thrown them at an enemy, by a long strip 
+of leather fastened to the stem.  The butt-end was a rattle, to 
+frighten an enemy's horse.  The ancient Britons, being divided into 
+as many as thirty or forty tribes, each commanded by its own little 
+king, were constantly fighting with one another, as savage people 
+usually do; and they always fought with these weapons.
+
+They were very fond of horses.  The standard of Kent was the 
+picture of a white horse.  They could break them in and manage them 
+wonderfully well.  Indeed, the horses (of which they had an 
+abundance, though they were rather small) were so well taught in 
+those days, that they can scarcely be said to have improved since; 
+though the men are so much wiser.  They understood, and obeyed, 
+every word of command; and would stand still by themselves, in all 
+the din and noise of battle, while their masters went to fight on 
+foot.  The Britons could not have succeeded in their most 
+remarkable art, without the aid of these sensible and trusty 
+animals.  The art I mean, is the construction and management of 
+war-chariots or cars, for which they have ever been celebrated in 
+history.  Each of the best sort of these chariots, not quite breast 
+high in front, and open at the back, contained one man to drive, 
+and two or three others to fight - all standing up.  The horses who 
+drew them were so well trained, that they would tear, at full 
+gallop, over the most stony ways, and even through the woods; 
+dashing down their masters' enemies beneath their hoofs, and 
+cutting them to pieces with the blades of swords, or scythes, which 
+were fastened to the wheels, and stretched out beyond the car on 
+each side, for that cruel purpose.  In a moment, while at full 
+speed, the horses would stop, at the driver's command.  The men 
+within would leap out, deal blows about them with their swords like 
+hail, leap on the horses, on the pole, spring back into the 
+chariots anyhow; and, as soon as they were safe, the horses tore 
+away again.
+
+The Britons had a strange and terrible religion, called the 
+Religion of the Druids.  It seems to have been brought over, in 
+very early times indeed, from the opposite country of France, 
+anciently called Gaul, and to have mixed up the worship of the 
+Serpent, and of the Sun and Moon, with the worship of some of the 
+Heathen Gods and Goddesses.  Most of its ceremonies were kept 
+secret by the priests, the Druids, who pretended to be enchanters, 
+and who carried magicians' wands, and wore, each of them, about his 
+neck, what he told the ignorant people was a Serpent's egg in a 
+golden case.  But it is certain that the Druidical ceremonies 
+included the sacrifice of human victims, the torture of some 
+suspected criminals, and, on particular occasions, even the burning 
+alive, in immense wicker cages, of a number of men and animals 
+together.  The Druid Priests had some kind of veneration for the 
+Oak, and for the mistletoe - the same plant that we hang up in 
+houses at Christmas Time now - when its white berries grew upon the 
+Oak.  They met together in dark woods, which they called Sacred 
+Groves; and there they instructed, in their mysterious arts, young 
+men who came to them as pupils, and who sometimes stayed with them 
+as long as twenty years.
+
+These Druids built great Temples and altars, open to the sky, 
+fragments of some of which are yet remaining.  Stonehenge, on 
+Salisbury Plain, in Wiltshire, is the most extraordinary of these.  
+Three curious stones, called Kits Coty House, on Bluebell Hill, 
+near Maidstone, in Kent, form another.  We know, from examination 
+of the great blocks of which such buildings are made, that they 
+could not have been raised without the aid of some ingenious 
+machines, which are common now, but which the ancient Britons 
+certainly did not use in making their own uncomfortable houses.  I 
+should not wonder if the Druids, and their pupils who stayed with 
+them twenty years, knowing more than the rest of the Britons, kept 
+the people out of sight while they made these buildings, and then 
+pretended that they built them by magic.  Perhaps they had a hand 
+in the fortresses too; at all events, as they were very powerful, 
+and very much believed in, and as they made and executed the laws, 
+and paid no taxes, I don't wonder that they liked their trade.  
+And, as they persuaded the people the more Druids there were, the 
+better off the people would be, I don't wonder that there were a 
+good many of them.  But it is pleasant to think that there are no 
+Druids, NOW, who go on in that way, and pretend to carry 
+Enchanters' Wands and Serpents' Eggs - and of course there is 
+nothing of the kind, anywhere.
+
+Such was the improved condition of the ancient Britons, fifty-five 
+years before the birth of Our Saviour, when the Romans, under their 
+great General, Julius Caesar, were masters of all the rest of the 
+known world.  Julius Caesar had then just conquered Gaul; and 
+hearing, in Gaul, a good deal about the opposite Island with the 
+white cliffs, and about the bravery of the Britons who inhabited it 
+- some of whom had been fetched over to help the Gauls in the war 
+against him - he resolved, as he was so near, to come and conquer 
+Britain next.
+
+So, Julius Caesar came sailing over to this Island of ours, with 
+eighty vessels and twelve thousand men.  And he came from the 
+French coast between Calais and Boulogne, 'because thence was the 
+shortest passage into Britain;' just for the same reason as our 
+steam-boats now take the same track, every day.  He expected to 
+conquer Britain easily:  but it was not such easy work as he 
+supposed - for the bold Britons fought most bravely; and, what with 
+not having his horse-soldiers with him (for they had been driven 
+back by a storm), and what with having some of his vessels dashed 
+to pieces by a high tide after they were drawn ashore, he ran great 
+risk of being totally defeated.  However, for once that the bold 
+Britons beat him, he beat them twice; though not so soundly but 
+that he was very glad to accept their proposals of peace, and go 
+away.
+
+But, in the spring of the next year, he came back; this time, with 
+eight hundred vessels and thirty thousand men.  The British tribes 
+chose, as their general-in-chief, a Briton, whom the Romans in 
+their Latin language called CASSIVELLAUNUS, but whose British name 
+is supposed to have been CASWALLON.  A brave general he was, and 
+well he and his soldiers fought the Roman army!  So well, that 
+whenever in that war the Roman soldiers saw a great cloud of dust, 
+and heard the rattle of the rapid British chariots, they trembled 
+in their hearts.  Besides a number of smaller battles, there was a 
+battle fought near Canterbury, in Kent; there was a battle fought 
+near Chertsey, in Surrey; there was a battle fought near a marshy 
+little town in a wood, the capital of that part of Britain which 
+belonged to CASSIVELLAUNUS, and which was probably near what is now 
+Saint Albans, in Hertfordshire.  However, brave CASSIVELLAUNUS had 
+the worst of it, on the whole; though he and his men always fought 
+like lions.  As the other British chiefs were jealous of him, and 
+were always quarrelling with him, and with one another, he gave up, 
+and proposed peace.  Julius Caesar was very glad to grant peace 
+easily, and to go away again with all his remaining ships and men.  
+He had expected to find pearls in Britain, and he may have found a 
+few for anything I know; but, at all events, he found delicious 
+oysters, and I am sure he found tough Britons - of whom, I dare 
+say, he made the same complaint as Napoleon Bonaparte the great 
+French General did, eighteen hundred years afterwards, when he said 
+they were such unreasonable fellows that they never knew when they 
+were beaten.  They never DID know, I believe, and never will.
+
+Nearly a hundred years passed on, and all that time, there was 
+peace in Britain.  The Britons improved their towns and mode of 
+life:  became more civilised, travelled, and learnt a great deal 
+from the Gauls and Romans.  At last, the Roman Emperor, Claudius, 
+sent AULUS PLAUTIUS, a skilful general, with a mighty force, to 
+subdue the Island, and shortly afterwards arrived himself.  They 
+did little; and OSTORIUS SCAPULA, another general, came.  Some of 
+the British Chiefs of Tribes submitted.  Others resolved to fight 
+to the death.  Of these brave men, the bravest was CARACTACUS, or 
+CARADOC, who gave battle to the Romans, with his army, among the 
+mountains of North Wales.  'This day,' said he to his soldiers, 
+'decides the fate of Britain!  Your liberty, or your eternal 
+slavery, dates from this hour.  Remember your brave ancestors, who 
+drove the great Caesar himself across the sea!'  On hearing these 
+words, his men, with a great shout, rushed upon the Romans.  But 
+the strong Roman swords and armour were too much for the weaker 
+British weapons in close conflict.  The Britons lost the day.  The 
+wife and daughter of the brave CARACTACUS were taken prisoners; his 
+brothers delivered themselves up; he himself was betrayed into the 
+hands of the Romans by his false and base stepmother:  and they 
+carried him, and all his family, in triumph to Rome.
+
+But a great man will be great in misfortune, great in prison, great 
+in chains.  His noble air, and dignified endurance of distress, so 
+touched the Roman people who thronged the streets to see him, that 
+he and his family were restored to freedom.  No one knows whether 
+his great heart broke, and he died in Rome, or whether he ever 
+returned to his own dear country.  English oaks have grown up from 
+acorns, and withered away, when they were hundreds of years old - 
+and other oaks have sprung up in their places, and died too, very 
+aged - since the rest of the history of the brave CARACTACUS was 
+forgotten.
+
+Still, the Britons WOULD NOT yield.  They rose again and again, and 
+died by thousands, sword in hand.  They rose, on every possible 
+occasion.  SUETONIUS, another Roman general, came, and stormed the 
+Island of Anglesey (then called MONA), which was supposed to be 
+sacred, and he burnt the Druids in their own wicker cages, by their 
+own fires.  But, even while he was in Britain, with his victorious 
+troops, the BRITONS rose.  Because BOADICEA, a British queen, the 
+widow of the King of the Norfolk and Suffolk people, resisted the 
+plundering of her property by the Romans who were settled in 
+England, she was scourged, by order of CATUS a Roman officer; and 
+her two daughters were shamefully insulted in her presence, and her 
+husband's relations were made slaves.  To avenge this injury, the 
+Britons rose, with all their might and rage.  They drove CATUS into 
+Gaul; they laid the Roman possessions waste; they forced the Romans 
+out of London, then a poor little town, but a trading place; they 
+hanged, burnt, crucified, and slew by the sword, seventy thousand 
+Romans in a few days.  SUETONIUS strengthened his army, and 
+advanced to give them battle.  They strengthened their army, and 
+desperately attacked his, on the field where it was strongly 
+posted.  Before the first charge of the Britons was made, BOADICEA, 
+in a war-chariot, with her fair hair streaming in the wind, and her 
+injured daughters lying at her feet, drove among the troops, and 
+cried to them for vengeance on their oppressors, the licentious 
+Romans.  The Britons fought to the last; but they were vanquished 
+with great slaughter, and the unhappy queen took poison.
+
+Still, the spirit of the Britons was not broken.  When SUETONIUS 
+left the country, they fell upon his troops, and retook the Island 
+of Anglesey.  AGRICOLA came, fifteen or twenty years afterwards, 
+and retook it once more, and devoted seven years to subduing the 
+country, especially that part of it which is now called SCOTLAND; 
+but, its people, the Caledonians, resisted him at every inch of 
+ground.  They fought the bloodiest battles with him; they killed 
+their very wives and children, to prevent his making prisoners of 
+them; they fell, fighting, in such great numbers that certain hills 
+in Scotland are yet supposed to be vast heaps of stones piled up 
+above their graves.  HADRIAN came, thirty years afterwards, and 
+still they resisted him.  SEVERUS came, nearly a hundred years 
+afterwards, and they worried his great army like dogs, and rejoiced 
+to see them die, by thousands, in the bogs and swamps.  CARACALLA, 
+the son and successor of SEVERUS, did the most to conquer them, for 
+a time; but not by force of arms.  He knew how little that would 
+do.  He yielded up a quantity of land to the Caledonians, and gave 
+the Britons the same privileges as the Romans possessed.  There was 
+peace, after this, for seventy years.
+
+Then new enemies arose.  They were the Saxons, a fierce, sea-faring 
+people from the countries to the North of the Rhine, the great 
+river of Germany on the banks of which the best grapes grow to make 
+the German wine.  They began to come, in pirate ships, to the sea-
+coast of Gaul and Britain, and to plunder them.  They were repulsed 
+by CARAUSIUS, a native either of Belgium or of Britain, who was 
+appointed by the Romans to the command, and under whom the Britons 
+first began to fight upon the sea.  But, after this time, they 
+renewed their ravages.  A few years more, and the Scots (which was 
+then the name for the people of Ireland), and the Picts, a northern 
+people, began to make frequent plundering incursions into the South 
+of Britain.  All these attacks were repeated, at intervals, during 
+two hundred years, and through a long succession of Roman Emperors 
+and chiefs; during all which length of time, the Britons rose 
+against the Romans, over and over again.  At last, in the days of 
+the Roman HONORIUS, when the Roman power all over the world was 
+fast declining, and when Rome wanted all her soldiers at home, the 
+Romans abandoned all hope of conquering Britain, and went away.  
+And still, at last, as at first, the Britons rose against them, in 
+their old brave manner; for, a very little while before, they had 
+turned away the Roman magistrates, and declared themselves an 
+independent people.
+
+Five hundred years had passed, since Julius Caesar's first invasion 
+of the Island, when the Romans departed from it for ever.  In the 
+course of that time, although they had been the cause of terrible 
+fighting and bloodshed, they had done much to improve the condition 
+of the Britons.  They had made great military roads; they had built 
+forts; they had taught them how to dress, and arm themselves, much 
+better than they had ever known how to do before; they had refined 
+the whole British way of living.  AGRICOLA had built a great wall 
+of earth, more than seventy miles long, extending from Newcastle to 
+beyond Carlisle, for the purpose of keeping out the Picts and 
+Scots; HADRIAN had strengthened it; SEVERUS, finding it much in 
+want of repair, had built it afresh of stone.
+
+Above all, it was in the Roman time, and by means of Roman ships, 
+that the Christian Religion was first brought into Britain, and its 
+people first taught the great lesson that, to be good in the sight 
+of GOD, they must love their neighbours as themselves, and do unto 
+others as they would be done by.  The Druids declared that it was 
+very wicked to believe in any such thing, and cursed all the people 
+who did believe it, very heartily.  But, when the people found that 
+they were none the better for the blessings of the Druids, and none 
+the worse for the curses of the Druids, but, that the sun shone and 
+the rain fell without consulting the Druids at all, they just began 
+to think that the Druids were mere men, and that it signified very 
+little whether they cursed or blessed.  After which, the pupils of 
+the Druids fell off greatly in numbers, and the Druids took to 
+other trades.
+
+Thus I have come to the end of the Roman time in England.  It is 
+but little that is known of those five hundred years; but some 
+remains of them are still found.  Often, when labourers are digging 
+up the ground, to make foundations for houses or churches, they 
+light on rusty money that once belonged to the Romans.  Fragments 
+of plates from which they ate, of goblets from which they drank, 
+and of pavement on which they trod, are discovered among the earth 
+that is broken by the plough, or the dust that is crumbled by the 
+gardener's spade.  Wells that the Romans sunk, still yield water; 
+roads that the Romans made, form part of our highways.  In some old 
+battle-fields, British spear-heads and Roman armour have been 
+found, mingled together in decay, as they fell in the thick 
+pressure of the fight.  Traces of Roman camps overgrown with grass, 
+and of mounds that are the burial-places of heaps of Britons, are 
+to be seen in almost all parts of the country.  Across the bleak 
+moors of Northumberland, the wall of SEVERUS, overrun with moss and 
+weeds, still stretches, a strong ruin; and the shepherds and their 
+dogs lie sleeping on it in the summer weather.  On Salisbury Plain, 
+Stonehenge yet stands:  a monument of the earlier time when the 
+Roman name was unknown in Britain, and when the Druids, with their 
+best magic wands, could not have written it in the sands of the 
+wild sea-shore.
+
+
+
+CHAPTER II - ANCIENT ENGLAND UNDER THE EARLY SAXONS
+
+
+
+THE Romans had scarcely gone away from Britain, when the Britons 
+began to wish they had never left it.  For, the Romans being gone, 
+and the Britons being much reduced in numbers by their long wars, 
+the Picts and Scots came pouring in, over the broken and unguarded 
+wall of SEVERUS, in swarms.  They plundered the richest towns, and 
+killed the people; and came back so often for more booty and more 
+slaughter, that the unfortunate Britons lived a life of terror.  As 
+if the Picts and Scots were not bad enough on land, the Saxons 
+attacked the islanders by sea; and, as if something more were still 
+wanting to make them miserable, they quarrelled bitterly among 
+themselves as to what prayers they ought to say, and how they ought 
+to say them.  The priests, being very angry with one another on 
+these questions, cursed one another in the heartiest manner; and 
+(uncommonly like the old Druids) cursed all the people whom they 
+could not persuade.  So, altogether, the Britons were very badly 
+off, you may believe.
+
+They were in such distress, in short, that they sent a letter to 
+Rome entreating help - which they called the Groans of the Britons; 
+and in which they said, 'The barbarians chase us into the sea, the 
+sea throws us back upon the barbarians, and we have only the hard 
+choice left us of perishing by the sword, or perishing by the 
+waves.'  But, the Romans could not help them, even if they were so 
+inclined; for they had enough to do to defend themselves against 
+their own enemies, who were then very fierce and strong.  At last, 
+the Britons, unable to bear their hard condition any longer, 
+resolved to make peace with the Saxons, and to invite the Saxons to 
+come into their country, and help them to keep out the Picts and 
+Scots.
+
+It was a British Prince named VORTIGERN who took this resolution, 
+and who made a treaty of friendship with HENGIST and HORSA, two 
+Saxon chiefs.  Both of these names, in the old Saxon language, 
+signify Horse; for the Saxons, like many other nations in a rough 
+state, were fond of giving men the names of animals, as Horse, 
+Wolf, Bear, Hound.  The Indians of North America, - a very inferior 
+people to the Saxons, though - do the same to this day.
+
+HENGIST and HORSA drove out the Picts and Scots; and VORTIGERN, 
+being grateful to them for that service, made no opposition to 
+their settling themselves in that part of England which is called 
+the Isle of Thanet, or to their inviting over more of their 
+countrymen to join them.  But HENGIST had a beautiful daughter 
+named ROWENA; and when, at a feast, she filled a golden goblet to 
+the brim with wine, and gave it to VORTIGERN, saying in a sweet 
+voice, 'Dear King, thy health!' the King fell in love with her.  My 
+opinion is, that the cunning HENGIST meant him to do so, in order 
+that the Saxons might have greater influence with him; and that the 
+fair ROWENA came to that feast, golden goblet and all, on purpose.
+
+At any rate, they were married; and, long afterwards, whenever the 
+King was angry with the Saxons, or jealous of their encroachments, 
+ROWENA would put her beautiful arms round his neck, and softly say, 
+'Dear King, they are my people!  Be favourable to them, as you 
+loved that Saxon girl who gave you the golden goblet of wine at the 
+feast!'  And, really, I don't see how the King could help himself.
+
+Ah!  We must all die!  In the course of years, VORTIGERN died - he 
+was dethroned, and put in prison, first, I am afraid; and ROWENA 
+died; and generations of Saxons and Britons died; and events that 
+happened during a long, long time, would have been quite forgotten 
+but for the tales and songs of the old Bards, who used to go about 
+from feast to feast, with their white beards, recounting the deeds 
+of their forefathers.  Among the histories of which they sang and 
+talked, there was a famous one, concerning the bravery and virtues 
+of KING ARTHUR, supposed to have been a British Prince in those old 
+times.  But, whether such a person really lived, or whether there 
+were several persons whose histories came to be confused together 
+under that one name, or whether all about him was invention, no one 
+knows.
+
+I will tell you, shortly, what is most interesting in the early 
+Saxon times, as they are described in these songs and stories of 
+the Bards.
+
+In, and long after, the days of VORTIGERN, fresh bodies of Saxons, 
+under various chiefs, came pouring into Britain.  One body, 
+conquering the Britons in the East, and settling there, called 
+their kingdom Essex; another body settled in the West, and called 
+their kingdom Wessex; the Northfolk, or Norfolk people, established 
+themselves in one place; the Southfolk, or Suffolk people, 
+established themselves in another; and gradually seven kingdoms or 
+states arose in England, which were called the Saxon Heptarchy.  
+The poor Britons, falling back before these crowds of fighting men 
+whom they had innocently invited over as friends, retired into 
+Wales and the adjacent country; into Devonshire, and into Cornwall.  
+Those parts of England long remained unconquered.  And in Cornwall 
+now - where the sea-coast is very gloomy, steep, and rugged - 
+where, in the dark winter-time, ships have often been wrecked close 
+to the land, and every soul on board has perished - where the winds 
+and waves howl drearily and split the solid rocks into arches and 
+caverns - there are very ancient ruins, which the people call the 
+ruins of KING ARTHUR'S Castle.
+
+Kent is the most famous of the seven Saxon kingdoms, because the 
+Christian religion was preached to the Saxons there (who domineered 
+over the Britons too much, to care for what THEY said about their 
+religion, or anything else) by AUGUSTINE, a monk from Rome.  KING 
+ETHELBERT, of Kent, was soon converted; and the moment he said he 
+was a Christian, his courtiers all said THEY were Christians; after 
+which, ten thousand of his subjects said they were Christians too.  
+AUGUSTINE built a little church, close to this King's palace, on 
+the ground now occupied by the beautiful cathedral of Canterbury.  
+SEBERT, the King's nephew, built on a muddy marshy place near 
+London, where there had been a temple to Apollo, a church dedicated 
+to Saint Peter, which is now Westminster Abbey.  And, in London 
+itself, on the foundation of a temple to Diana, he built another 
+little church which has risen up, since that old time, to be Saint 
+Paul's.
+
+After the death of ETHELBERT, EDWIN, King of Northumbria, who was 
+such a good king that it was said a woman or child might openly 
+carry a purse of gold, in his reign, without fear, allowed his 
+child to be baptised, and held a great council to consider whether 
+he and his people should all be Christians or not.  It was decided 
+that they should be.  COIFI, the chief priest of the old religion, 
+made a great speech on the occasion.  In this discourse, he told 
+the people that he had found out the old gods to be impostors.  'I 
+am quite satisfied of it,' he said.  'Look at me!  I have been 
+serving them all my life, and they have done nothing for me; 
+whereas, if they had been really powerful, they could not have 
+decently done less, in return for all I have done for them, than 
+make my fortune.  As they have never made my fortune, I am quite 
+convinced they are impostors!'  When this singular priest had 
+finished speaking, he hastily armed himself with sword and lance, 
+mounted a war-horse, rode at a furious gallop in sight of all the 
+people to the temple, and flung his lance against it as an insult.  
+From that time, the Christian religion spread itself among the 
+Saxons, and became their faith.
+
+The next very famous prince was EGBERT.  He lived about a hundred 
+and fifty years afterwards, and claimed to have a better right to 
+the throne of Wessex than BEORTRIC, another Saxon prince who was at 
+the head of that kingdom, and who married EDBURGA, the daughter of 
+OFFA, king of another of the seven kingdoms.  This QUEEN EDBURGA 
+was a handsome murderess, who poisoned people when they offended 
+her.  One day, she mixed a cup of poison for a certain noble 
+belonging to the court; but her husband drank of it too, by 
+mistake, and died.  Upon this, the people revolted, in great 
+crowds; and running to the palace, and thundering at the gates, 
+cried, 'Down with the wicked queen, who poisons men!'  They drove 
+her out of the country, and abolished the title she had disgraced.  
+When years had passed away, some travellers came home from Italy, 
+and said that in the town of Pavia they had seen a ragged beggar-
+woman, who had once been handsome, but was then shrivelled, bent, 
+and yellow, wandering about the streets, crying for bread; and that 
+this beggar-woman was the poisoning English queen.  It was, indeed, 
+EDBURGA; and so she died, without a shelter for her wretched head.
+
+EGBERT, not considering himself safe in England, in consequence of 
+his having claimed the crown of Wessex (for he thought his rival 
+might take him prisoner and put him to death), sought refuge at the 
+court of CHARLEMAGNE, King of France.  On the death of BEORTRIC, so 
+unhappily poisoned by mistake, EGBERT came back to Britain; 
+succeeded to the throne of Wessex; conquered some of the other 
+monarchs of the seven kingdoms; added their territories to his own; 
+and, for the first time, called the country over which he ruled, 
+ENGLAND.
+
+And now, new enemies arose, who, for a long time, troubled England 
+sorely.  These were the Northmen, the people of Denmark and Norway, 
+whom the English called the Danes.  They were a warlike people, 
+quite at home upon the sea; not Christians; very daring and cruel.  
+They came over in ships, and plundered and burned wheresoever they 
+landed.  Once, they beat EGBERT in battle.  Once, EGBERT beat them.  
+But, they cared no more for being beaten than the English 
+themselves.  In the four following short reigns, of ETHELWULF, and 
+his sons, ETHELBALD, ETHELBERT, and ETHELRED, they came back, over 
+and over again, burning and plundering, and laying England waste.  
+In the last-mentioned reign, they seized EDMUND, King of East 
+England, and bound him to a tree.  Then, they proposed to him that 
+he should change his religion; but he, being a good Christian, 
+steadily refused.  Upon that, they beat him, made cowardly jests 
+upon him, all defenceless as he was, shot arrows at him, and, 
+finally, struck off his head.  It is impossible to say whose head 
+they might have struck off next, but for the death of KING ETHELRED 
+from a wound he had received in fighting against them, and the 
+succession to his throne of the best and wisest king that ever 
+lived in England.
+
+
+
+CHAPTER III - ENGLAND UNDER THE GOOD SAXON, ALFRED
+
+
+
+ALFRED THE GREAT was a young man, three-and-twenty years of age, 
+when he became king.  Twice in his childhood, he had been taken to 
+Rome, where the Saxon nobles were in the habit of going on journeys 
+which they supposed to be religious; and, once, he had stayed for 
+some time in Paris.  Learning, however, was so little cared for, 
+then, that at twelve years old he had not been taught to read; 
+although, of the sons of KING ETHELWULF, he, the youngest, was the 
+favourite.  But he had - as most men who grow up to be great and 
+good are generally found to have had - an excellent mother; and, 
+one day, this lady, whose name was OSBURGA, happened, as she was 
+sitting among her sons, to read a book of Saxon poetry.  The art of 
+printing was not known until long and long after that period, and 
+the book, which was written, was what is called 'illuminated,' with 
+beautiful bright letters, richly painted.  The brothers admiring it 
+very much, their mother said, 'I will give it to that one of you 
+four princes who first learns to read.'  ALFRED sought out a tutor 
+that very day, applied himself to learn with great diligence, and 
+soon won the book.  He was proud of it, all his life.
+
+This great king, in the first year of his reign, fought nine 
+battles with the Danes.  He made some treaties with them too, by 
+which the false Danes swore they would quit the country.  They 
+pretended to consider that they had taken a very solemn oath, in 
+swearing this upon the holy bracelets that they wore, and which 
+were always buried with them when they died; but they cared little 
+for it, for they thought nothing of breaking oaths and treaties 
+too, as soon as it suited their purpose, and coming back again to 
+fight, plunder, and burn, as usual.  One fatal winter, in the 
+fourth year of KING ALFRED'S reign, they spread themselves in great 
+numbers over the whole of England; and so dispersed and routed the 
+King's soldiers that the King was left alone, and was obliged to 
+disguise himself as a common peasant, and to take refuge in the 
+cottage of one of his cowherds who did not know his face.
+
+Here, KING ALFRED, while the Danes sought him far and near, was 
+left alone one day, by the cowherd's wife, to watch some cakes 
+which she put to bake upon the hearth.  But, being at work upon his 
+bow and arrows, with which he hoped to punish the false Danes when 
+a brighter time should come, and thinking deeply of his poor 
+unhappy subjects whom the Danes chased through the land, his noble 
+mind forgot the cakes, and they were burnt.  'What!' said the 
+cowherd's wife, who scolded him well when she came back, and little 
+thought she was scolding the King, 'you will be ready enough to eat 
+them by-and-by, and yet you cannot watch them, idle dog?'
+
+At length, the Devonshire men made head against a new host of Danes 
+who landed on their coast; killed their chief, and captured their 
+flag; on which was represented the likeness of a Raven - a very fit 
+bird for a thievish army like that, I think.  The loss of their 
+standard troubled the Danes greatly, for they believed it to be 
+enchanted - woven by the three daughters of one father in a single 
+afternoon - and they had a story among themselves that when they 
+were victorious in battle, the Raven stretched his wings and seemed 
+to fly; and that when they were defeated, he would droop.  He had 
+good reason to droop, now, if he could have done anything half so 
+sensible; for, KING ALFRED joined the Devonshire men; made a camp 
+with them on a piece of firm ground in the midst of a bog in 
+Somersetshire; and prepared for a great attempt for vengeance on 
+the Danes, and the deliverance of his oppressed people.
+
+But, first, as it was important to know how numerous those 
+pestilent Danes were, and how they were fortified, KING ALFRED, 
+being a good musician, disguised himself as a glee-man or minstrel, 
+and went, with his harp, to the Danish camp.  He played and sang in 
+the very tent of GUTHRUM the Danish leader, and entertained the 
+Danes as they caroused.  While he seemed to think of nothing but 
+his music, he was watchful of their tents, their arms, their 
+discipline, everything that he desired to know.  And right soon did 
+this great king entertain them to a different tune; for, summoning 
+all his true followers to meet him at an appointed place, where 
+they received him with joyful shouts and tears, as the monarch whom 
+many of them had given up for lost or dead, he put himself at their 
+head, marched on the Danish camp, defeated the Danes with great 
+slaughter, and besieged them for fourteen days to prevent their 
+escape.  But, being as merciful as he was good and brave, he then, 
+instead of killing them, proposed peace:  on condition that they 
+should altogether depart from that Western part of England, and 
+settle in the East; and that GUTHRUM should become a Christian, in 
+remembrance of the Divine religion which now taught his conqueror, 
+the noble ALFRED, to forgive the enemy who had so often injured 
+him.  This, GUTHRUM did.  At his baptism, KING ALFRED was his 
+godfather.  And GUTHRUM was an honourable chief who well deserved 
+that clemency; for, ever afterwards he was loyal and faithful to 
+the king.  The Danes under him were faithful too.  They plundered 
+and burned no more, but worked like honest men.  They ploughed, and 
+sowed, and reaped, and led good honest English lives.  And I hope 
+the children of those Danes played, many a time, with Saxon 
+children in the sunny fields; and that Danish young men fell in 
+love with Saxon girls, and married them; and that English 
+travellers, benighted at the doors of Danish cottages, often went 
+in for shelter until morning; and that Danes and Saxons sat by the 
+red fire, friends, talking of KING ALFRED THE GREAT.
+
+All the Danes were not like these under GUTHRUM; for, after some 
+years, more of them came over, in the old plundering and burning 
+way - among them a fierce pirate of the name of HASTINGS, who had 
+the boldness to sail up the Thames to Gravesend, with eighty ships.  
+For three years, there was a war with these Danes; and there was a 
+famine in the country, too, and a plague, both upon human creatures 
+and beasts.  But KING ALFRED, whose mighty heart never failed him, 
+built large ships nevertheless, with which to pursue the pirates on 
+the sea; and he encouraged his soldiers, by his brave example, to 
+fight valiantly against them on the shore.  At last, he drove them 
+all away; and then there was repose in England.
+
+As great and good in peace, as he was great and good in war, KING 
+ALFRED never rested from his labours to improve his people.  He 
+loved to talk with clever men, and with travellers from foreign 
+countries, and to write down what they told him, for his people to 
+read.  He had studied Latin after learning to read English, and now 
+another of his labours was, to translate Latin books into the 
+English-Saxon tongue, that his people might be interested, and 
+improved by their contents.  He made just laws, that they might 
+live more happily and freely; he turned away all partial judges, 
+that no wrong might be done them; he was so careful of their 
+property, and punished robbers so severely, that it was a common 
+thing to say that under the great KING ALFRED, garlands of golden 
+chains and jewels might have hung across the streets, and no man 
+would have touched one.  He founded schools; he patiently heard 
+causes himself in his Court of Justice; the great desires of his 
+heart were, to do right to all his subjects, and to leave England 
+better, wiser, happier in all ways, than he found it.  His industry 
+in these efforts was quite astonishing.  Every day he divided into 
+certain portions, and in each portion devoted himself to a certain 
+pursuit.  That he might divide his time exactly, he had wax torches 
+or candles made, which were all of the same size, were notched 
+across at regular distances, and were always kept burning.  Thus, 
+as the candles burnt down, he divided the day into notches, almost 
+as accurately as we now divide it into hours upon the clock.  But 
+when the candles were first invented, it was found that the wind 
+and draughts of air, blowing into the palace through the doors and 
+windows, and through the chinks in the walls, caused them to gutter 
+and burn unequally.  To prevent this, the King had them put into 
+cases formed of wood and white horn.  And these were the first 
+lanthorns ever made in England.
+
+All this time, he was afflicted with a terrible unknown disease, 
+which caused him violent and frequent pain that nothing could 
+relieve.  He bore it, as he had borne all the troubles of his life, 
+like a brave good man, until he was fifty-three years old; and 
+then, having reigned thirty years, he died.  He died in the year 
+nine hundred and one; but, long ago as that is, his fame, and the 
+love and gratitude with which his subjects regarded him, are 
+freshly remembered to the present hour.
+
+In the next reign, which was the reign of EDWARD, surnamed THE 
+ELDER, who was chosen in council to succeed, a nephew of KING 
+ALFRED troubled the country by trying to obtain the throne.  The 
+Danes in the East of England took part with this usurper (perhaps 
+because they had honoured his uncle so much, and honoured him for 
+his uncle's sake), and there was hard fighting; but, the King, with 
+the assistance of his sister, gained the day, and reigned in peace 
+for four and twenty years.  He gradually extended his power over 
+the whole of England, and so the Seven Kingdoms were united into 
+one.
+
+When England thus became one kingdom, ruled over by one Saxon king, 
+the Saxons had been settled in the country more than four hundred 
+and fifty years.  Great changes had taken place in its customs 
+during that time.  The Saxons were still greedy eaters and great 
+drinkers, and their feasts were often of a noisy and drunken kind; 
+but many new comforts and even elegances had become known, and were 
+fast increasing.  Hangings for the walls of rooms, where, in these 
+modern days, we paste up paper, are known to have been sometimes 
+made of silk, ornamented with birds and flowers in needlework.  
+Tables and chairs were curiously carved in different woods; were 
+sometimes decorated with gold or silver; sometimes even made of 
+those precious metals.  Knives and spoons were used at table; 
+golden ornaments were worn - with silk and cloth, and golden 
+tissues and embroideries; dishes were made of gold and silver, 
+brass and bone.  There were varieties of drinking-horns, bedsteads, 
+musical instruments.  A harp was passed round, at a feast, like the 
+drinking-bowl, from guest to guest; and each one usually sang or 
+played when his turn came.  The weapons of the Saxons were stoutly 
+made, and among them was a terrible iron hammer that gave deadly 
+blows, and was long remembered.  The Saxons themselves were a 
+handsome people.  The men were proud of their long fair hair, 
+parted on the forehead; their ample beards, their fresh 
+complexions, and clear eyes.  The beauty of the Saxon women filled 
+all England with a new delight and grace.
+
+I have more to tell of the Saxons yet, but I stop to say this now, 
+because under the GREAT ALFRED, all the best points of the English-
+Saxon character were first encouraged, and in him first shown.  It 
+has been the greatest character among the nations of the earth.  
+Wherever the descendants of the Saxon race have gone, have sailed, 
+or otherwise made their way, even to the remotest regions of the 
+world, they have been patient, persevering, never to be broken in 
+spirit, never to be turned aside from enterprises on which they 
+have resolved.  In Europe, Asia, Africa, America, the whole world 
+over; in the desert, in the forest, on the sea; scorched by a 
+burning sun, or frozen by ice that never melts; the Saxon blood 
+remains unchanged.  Wheresoever that race goes, there, law, and 
+industry, and safety for life and property, and all the great 
+results of steady perseverance, are certain to arise.
+
+I pause to think with admiration, of the noble king who, in his 
+single person, possessed all the Saxon virtues.  Whom misfortune 
+could not subdue, whom prosperity could not spoil, whose 
+perseverance nothing could shake.  Who was hopeful in defeat, and 
+generous in success.  Who loved justice, freedom, truth, and 
+knowledge.  Who, in his care to instruct his people, probably did 
+more to preserve the beautiful old Saxon language, than I can 
+imagine.  Without whom, the English tongue in which I tell this 
+story might have wanted half its meaning.  As it is said that his 
+spirit still inspires some of our best English laws, so, let you 
+and I pray that it may animate our English hearts, at least to this 
+- to resolve, when we see any of our fellow-creatures left in 
+ignorance, that we will do our best, while life is in us, to have 
+them taught; and to tell those rulers whose duty it is to teach 
+them, and who neglect their duty, that they have profited very 
+little by all the years that have rolled away since the year nine 
+hundred and one, and that they are far behind the bright example of 
+KING ALFRED THE GREAT.
+
+
+
+CHAPTER IV - ENGLAND UNDER ATHELSTAN AND THE SIX BOY-KINGS
+
+
+
+ATHELSTAN, the son of Edward the Elder, succeeded that king.  He 
+reigned only fifteen years; but he remembered the glory of his 
+grandfather, the great Alfred, and governed England well.  He 
+reduced the turbulent people of Wales, and obliged them to pay him 
+a tribute in money, and in cattle, and to send him their best hawks 
+and hounds.  He was victorious over the Cornish men, who were not 
+yet quite under the Saxon government.  He restored such of the old 
+laws as were good, and had fallen into disuse; made some wise new 
+laws, and took care of the poor and weak.  A strong alliance, made 
+against him by ANLAF a Danish prince, CONSTANTINE King of the 
+Scots, and the people of North Wales, he broke and defeated in one 
+great battle, long famous for the vast numbers slain in it.  After 
+that, he had a quiet reign; the lords and ladies about him had 
+leisure to become polite and agreeable; and foreign princes were 
+glad (as they have sometimes been since) to come to England on 
+visits to the English court.
+
+When Athelstan died, at forty-seven years old, his brother EDMUND, 
+who was only eighteen, became king.  He was the first of six boy-
+kings, as you will presently know.
+
+They called him the Magnificent, because he showed a taste for 
+improvement and refinement.  But he was beset by the Danes, and had 
+a short and troubled reign, which came to a troubled end.  One 
+night, when he was feasting in his hall, and had eaten much and 
+drunk deep, he saw, among the company, a noted robber named LEOF, 
+who had been banished from England.  Made very angry by the 
+boldness of this man, the King turned to his cup-bearer, and said, 
+'There is a robber sitting at the table yonder, who, for his 
+crimes, is an outlaw in the land - a hunted wolf, whose life any 
+man may take, at any time.  Command that robber to depart!'  'I 
+will not depart!' said Leof.  'No?' cried the King.  'No, by the 
+Lord!' said Leof.  Upon that the King rose from his seat, and, 
+making passionately at the robber, and seizing him by his long 
+hair, tried to throw him down.  But the robber had a dagger 
+underneath his cloak, and, in the scuffle, stabbed the King to 
+death.  That done, he set his back against the wall, and fought so 
+desperately, that although he was soon cut to pieces by the King's 
+armed men, and the wall and pavement were splashed with his blood, 
+yet it was not before he had killed and wounded many of them.  You 
+may imagine what rough lives the kings of those times led, when one 
+of them could struggle, half drunk, with a public robber in his own 
+dining-hall, and be stabbed in presence of the company who ate and 
+drank with him.
+
+Then succeeded the boy-king EDRED, who was weak and sickly in body, 
+but of a strong mind.  And his armies fought the Northmen, the 
+Danes, and Norwegians, or the Sea-Kings, as they were called, and 
+beat them for the time.  And, in nine years, Edred died, and passed 
+away.
+
+Then came the boy-king EDWY, fifteen years of age; but the real 
+king, who had the real power, was a monk named DUNSTAN - a clever 
+priest, a little mad, and not a little proud and cruel.
+
+Dunstan was then Abbot of Glastonbury Abbey, whither the body of 
+King Edmund the Magnificent was carried, to be buried.  While yet a 
+boy, he had got out of his bed one night (being then in a fever), 
+and walked about Glastonbury Church when it was under repair; and, 
+because he did not tumble off some scaffolds that were there, and 
+break his neck, it was reported that he had been shown over the 
+building by an angel.  He had also made a harp that was said to 
+play of itself - which it very likely did, as AEolian Harps, which 
+are played by the wind, and are understood now, always do.  For 
+these wonders he had been once denounced by his enemies, who were 
+jealous of his favour with the late King Athelstan, as a magician; 
+and he had been waylaid, bound hand and foot, and thrown into a 
+marsh.  But he got out again, somehow, to cause a great deal of 
+trouble yet.
+
+The priests of those days were, generally, the only scholars.  They 
+were learned in many things.  Having to make their own convents and 
+monasteries on uncultivated grounds that were granted to them by 
+the Crown, it was necessary that they should be good farmers and 
+good gardeners, or their lands would have been too poor to support 
+them.  For the decoration of the chapels where they prayed, and for 
+the comfort of the refectories where they ate and drank, it was 
+necessary that there should be good carpenters, good smiths, good 
+painters, among them.  For their greater safety in sickness and 
+accident, living alone by themselves in solitary places, it was 
+necessary that they should study the virtues of plants and herbs, 
+and should know how to dress cuts, burns, scalds, and bruises, and 
+how to set broken limbs.  Accordingly, they taught themselves, and 
+one another, a great variety of useful arts; and became skilful in 
+agriculture, medicine, surgery, and handicraft.  And when they 
+wanted the aid of any little piece of machinery, which would be 
+simple enough now, but was marvellous then, to impose a trick upon 
+the poor peasants, they knew very well how to make it; and DID make 
+it many a time and often, I have no doubt.
+
+Dunstan, Abbot of Glastonbury Abbey, was one of the most sagacious 
+of these monks.  He was an ingenious smith, and worked at a forge 
+in a little cell.  This cell was made too short to admit of his 
+lying at full length when he went to sleep - as if THAT did any 
+good to anybody! - and he used to tell the most extraordinary lies 
+about demons and spirits, who, he said, came there to persecute 
+him.  For instance, he related that one day when he was at work, 
+the devil looked in at the little window, and tried to tempt him to 
+lead a life of idle pleasure; whereupon, having his pincers in the 
+fire, red hot, he seized the devil by the nose, and put him to such 
+pain, that his bellowings were heard for miles and miles.  Some 
+people are inclined to think this nonsense a part of Dunstan's 
+madness (for his head never quite recovered the fever), but I think 
+not.  I observe that it induced the ignorant people to consider him 
+a holy man, and that it made him very powerful.  Which was exactly 
+what he always wanted.
+
+On the day of the coronation of the handsome boy-king Edwy, it was 
+remarked by ODO, Archbishop of Canterbury (who was a Dane by 
+birth), that the King quietly left the coronation feast, while all 
+the company were there.  Odo, much displeased, sent his friend 
+Dunstan to seek him.  Dunstan finding him in the company of his 
+beautiful young wife ELGIVA, and her mother ETHELGIVA, a good and 
+virtuous lady, not only grossly abused them, but dragged the young 
+King back into the feasting-hall by force.  Some, again, think 
+Dunstan did this because the young King's fair wife was his own 
+cousin, and the monks objected to people marrying their own 
+cousins; but I believe he did it, because he was an imperious, 
+audacious, ill-conditioned priest, who, having loved a young lady 
+himself before he became a sour monk, hated all love now, and 
+everything belonging to it.
+
+The young King was quite old enough to feel this insult.  Dunstan 
+had been Treasurer in the last reign, and he soon charged Dunstan 
+with having taken some of the last king's money.  The Glastonbury 
+Abbot fled to Belgium (very narrowly escaping some pursuers who 
+were sent to put out his eyes, as you will wish they had, when you 
+read what follows), and his abbey was given to priests who were 
+married; whom he always, both before and afterwards, opposed.  But 
+he quickly conspired with his friend, Odo the Dane, to set up the 
+King's young brother, EDGAR, as his rival for the throne; and, not 
+content with this revenge, he caused the beautiful queen Elgiva, 
+though a lovely girl of only seventeen or eighteen, to be stolen 
+from one of the Royal Palaces, branded in the cheek with a red-hot 
+iron, and sold into slavery in Ireland.  But the Irish people 
+pitied and befriended her; and they said, 'Let us restore the girl-
+queen to the boy-king, and make the young lovers happy!' and they 
+cured her of her cruel wound, and sent her home as beautiful as 
+before.  But the villain Dunstan, and that other villain, Odo, 
+caused her to be waylaid at Gloucester as she was joyfully hurrying 
+to join her husband, and to be hacked and hewn with swords, and to 
+be barbarously maimed and lamed, and left to die.  When Edwy the 
+Fair (his people called him so, because he was so young and 
+handsome) heard of her dreadful fate, he died of a broken heart; 
+and so the pitiful story of the poor young wife and husband ends!  
+Ah!  Better to be two cottagers in these better times, than king 
+and queen of England in those bad days, though never so fair!
+
+Then came the boy-king, EDGAR, called the Peaceful, fifteen years 
+old.  Dunstan, being still the real king, drove all married priests 
+out of the monasteries and abbeys, and replaced them by solitary 
+monks like himself, of the rigid order called the Benedictines.  He 
+made himself Archbishop of Canterbury, for his greater glory; and 
+exercised such power over the neighbouring British princes, and so 
+collected them about the King, that once, when the King held his 
+court at Chester, and went on the river Dee to visit the monastery 
+of St. John, the eight oars of his boat were pulled (as the people 
+used to delight in relating in stories and songs) by eight crowned 
+kings, and steered by the King of England.  As Edgar was very 
+obedient to Dunstan and the monks, they took great pains to 
+represent him as the best of kings.  But he was really profligate, 
+debauched, and vicious.  He once forcibly carried off a young lady 
+from the convent at Wilton; and Dunstan, pretending to be very much 
+shocked, condemned him not to wear his crown upon his head for 
+seven years - no great punishment, I dare say, as it can hardly 
+have been a more comfortable ornament to wear, than a stewpan 
+without a handle.  His marriage with his second wife, ELFRIDA, is 
+one of the worst events of his reign.  Hearing of the beauty of 
+this lady, he despatched his favourite courtier, ATHELWOLD, to her 
+father's castle in Devonshire, to see if she were really as 
+charming as fame reported.  Now, she was so exceedingly beautiful 
+that Athelwold fell in love with her himself, and married her; but 
+he told the King that she was only rich - not handsome.  The King, 
+suspecting the truth when they came home, resolved to pay the 
+newly-married couple a visit; and, suddenly, told Athelwold to 
+prepare for his immediate coming.  Athelwold, terrified, confessed 
+to his young wife what he had said and done, and implored her to 
+disguise her beauty by some ugly dress or silly manner, that he 
+might be safe from the King's anger.  She promised that she would; 
+but she was a proud woman, who would far rather have been a queen 
+than the wife of a courtier.  She dressed herself in her best 
+dress, and adorned herself with her richest jewels; and when the 
+King came, presently, he discovered the cheat.  So, he caused his 
+false friend, Athelwold, to be murdered in a wood, and married his 
+widow, this bad Elfrida.  Six or seven years afterwards, he died; 
+and was buried, as if he had been all that the monks said he was, 
+in the abbey of Glastonbury, which he - or Dunstan for him - had 
+much enriched.
+
+England, in one part of this reign, was so troubled by wolves, 
+which, driven out of the open country, hid themselves in the 
+mountains of Wales when they were not attacking travellers and 
+animals, that the tribute payable by the Welsh people was forgiven 
+them, on condition of their producing, every year, three hundred 
+wolves' heads.  And the Welshmen were so sharp upon the wolves, to 
+save their money, that in four years there was not a wolf left.
+
+Then came the boy-king, EDWARD, called the Martyr, from the manner 
+of his death.  Elfrida had a son, named ETHELRED, for whom she 
+claimed the throne; but Dunstan did not choose to favour him, and 
+he made Edward king.  The boy was hunting, one day, down in 
+Dorsetshire, when he rode near to Corfe Castle, where Elfrida and 
+Ethelred lived.  Wishing to see them kindly, he rode away from his 
+attendants and galloped to the castle gate, where he arrived at 
+twilight, and blew his hunting-horn.  'You are welcome, dear King,' 
+said Elfrida, coming out, with her brightest smiles.  'Pray you 
+dismount and enter.'  'Not so, dear madam,' said the King.  'My 
+company will miss me, and fear that I have met with some harm.  
+Please you to give me a cup of wine, that I may drink here, in the 
+saddle, to you and to my little brother, and so ride away with the 
+good speed I have made in riding here.'  Elfrida, going in to bring 
+the wine, whispered an armed servant, one of her attendants, who 
+stole out of the darkening gateway, and crept round behind the 
+King's horse.  As the King raised the cup to his lips, saying, 
+'Health!' to the wicked woman who was smiling on him, and to his 
+innocent brother whose hand she held in hers, and who was only ten 
+years old, this armed man made a spring and stabbed him in the 
+back.  He dropped the cup and spurred his horse away; but, soon 
+fainting with loss of blood, dropped from the saddle, and, in his 
+fall, entangled one of his feet in the stirrup.  The frightened 
+horse dashed on; trailing his rider's curls upon the ground; 
+dragging his smooth young face through ruts, and stones, and 
+briers, and fallen leaves, and mud; until the hunters, tracking the 
+animal's course by the King's blood, caught his bridle, and 
+released the disfigured body.
+
+Then came the sixth and last of the boy-kings, ETHELRED, whom 
+Elfrida, when he cried out at the sight of his murdered brother 
+riding away from the castle gate, unmercifully beat with a torch 
+which she snatched from one of the attendants.  The people so 
+disliked this boy, on account of his cruel mother and the murder 
+she had done to promote him, that Dunstan would not have had him 
+for king, but would have made EDGITHA, the daughter of the dead 
+King Edgar, and of the lady whom he stole out of the convent at 
+Wilton, Queen of England, if she would have consented.  But she 
+knew the stories of the youthful kings too well, and would not be 
+persuaded from the convent where she lived in peace; so, Dunstan 
+put Ethelred on the throne, having no one else to put there, and 
+gave him the nickname of THE UNREADY - knowing that he wanted 
+resolution and firmness.
+
+At first, Elfrida possessed great influence over the young King, 
+but, as he grew older and came of age, her influence declined.  The 
+infamous woman, not having it in her power to do any more evil, 
+then retired from court, and, according, to the fashion of the 
+time, built churches and monasteries, to expiate her guilt.  As if 
+a church, with a steeple reaching to the very stars, would have 
+been any sign of true repentance for the blood of the poor boy, 
+whose murdered form was trailed at his horse's heels!  As if she 
+could have buried her wickedness beneath the senseless stones of 
+the whole world, piled up one upon another, for the monks to live 
+in!
+
+About the ninth or tenth year of this reign, Dunstan died.  He was 
+growing old then, but was as stern and artful as ever.  Two 
+circumstances that happened in connexion with him, in this reign of 
+Ethelred, made a great noise.  Once, he was present at a meeting of 
+the Church, when the question was discussed whether priests should 
+have permission to marry; and, as he sat with his head hung down, 
+apparently thinking about it, a voice seemed to come out of a 
+crucifix in the room, and warn the meeting to be of his opinion.  
+This was some juggling of Dunstan's, and was probably his own voice 
+disguised.  But he played off a worse juggle than that, soon 
+afterwards; for, another meeting being held on the same subject, 
+and he and his supporters being seated on one side of a great room, 
+and their opponents on the other, he rose and said, 'To Christ 
+himself, as judge, do I commit this cause!'  Immediately on these 
+words being spoken, the floor where the opposite party sat gave 
+way, and some were killed and many wounded.  You may be pretty sure 
+that it had been weakened under Dunstan's direction, and that it 
+fell at Dunstan's signal.  HIS part of the floor did not go down.  
+No, no.  He was too good a workman for that.
+
+When he died, the monks settled that he was a Saint, and called him 
+Saint Dunstan ever afterwards.  They might just as well have 
+settled that he was a coach-horse, and could just as easily have 
+called him one.
+
+Ethelred the Unready was glad enough, I dare say, to be rid of this 
+holy saint; but, left to himself, he was a poor weak king, and his 
+reign was a reign of defeat and shame.  The restless Danes, led by 
+SWEYN, a son of the King of Denmark who had quarrelled with his 
+father and had been banished from home, again came into England, 
+and, year after year, attacked and despoiled large towns.  To coax 
+these sea-kings away, the weak Ethelred paid them money; but, the 
+more money he paid, the more money the Danes wanted.  At first, he 
+gave them ten thousand pounds; on their next invasion, sixteen 
+thousand pounds; on their next invasion, four and twenty thousand 
+pounds:  to pay which large sums, the unfortunate English people 
+were heavily taxed.  But, as the Danes still came back and wanted 
+more, he thought it would be a good plan to marry into some 
+powerful foreign family that would help him with soldiers.  So, in 
+the year one thousand and two, he courted and married Emma, the 
+sister of Richard Duke of Normandy; a lady who was called the 
+Flower of Normandy.
+
+And now, a terrible deed was done in England, the like of which was 
+never done on English ground before or since.  On the thirteenth of 
+November, in pursuance of secret instructions sent by the King over 
+the whole country, the inhabitants of every town and city armed, 
+and murdered all the Danes who were their neighbours.
+
+Young and old, babies and soldiers, men and women, every Dane was 
+killed.  No doubt there were among them many ferocious men who had 
+done the English great wrong, and whose pride and insolence, in 
+swaggering in the houses of the English and insulting their wives 
+and daughters, had become unbearable; but no doubt there were also 
+among them many peaceful Christian Danes who had married English 
+women and become like English men.  They were all slain, even to 
+GUNHILDA, the sister of the King of Denmark, married to an English 
+lord; who was first obliged to see the murder of her husband and 
+her child, and then was killed herself.
+
+When the King of the sea-kings heard of this deed of blood, he 
+swore that he would have a great revenge.  He raised an army, and a 
+mightier fleet of ships than ever yet had sailed to England; and in 
+all his army there was not a slave or an old man, but every soldier 
+was a free man, and the son of a free man, and in the prime of 
+life, and sworn to be revenged upon the English nation, for the 
+massacre of that dread thirteenth of November, when his countrymen 
+and countrywomen, and the little children whom they loved, were 
+killed with fire and sword.  And so, the sea-kings came to England 
+in many great ships, each bearing the flag of its own commander.  
+Golden eagles, ravens, dragons, dolphins, beasts of prey, 
+threatened England from the prows of those ships, as they came 
+onward through the water; and were reflected in the shining shields 
+that hung upon their sides.  The ship that bore the standard of the 
+King of the sea-kings was carved and painted like a mighty serpent; 
+and the King in his anger prayed that the Gods in whom he trusted 
+might all desert him, if his serpent did not strike its fangs into 
+England's heart.
+
+And indeed it did.  For, the great army landing from the great 
+fleet, near Exeter, went forward, laying England waste, and 
+striking their lances in the earth as they advanced, or throwing 
+them into rivers, in token of their making all the island theirs.  
+In remembrance of the black November night when the Danes were 
+murdered, wheresoever the invaders came, they made the Saxons 
+prepare and spread for them great feasts; and when they had eaten 
+those feasts, and had drunk a curse to England with wild 
+rejoicings, they drew their swords, and killed their Saxon 
+entertainers, and marched on.  For six long years they carried on 
+this war:  burning the crops, farmhouses, barns, mills, granaries; 
+killing the labourers in the fields; preventing the seed from being 
+sown in the ground; causing famine and starvation; leaving only 
+heaps of ruin and smoking ashes, where they had found rich towns.  
+To crown this misery, English officers and men deserted, and even 
+the favourites of Ethelred the Unready, becoming traitors, seized 
+many of the English ships, turned pirates against their own 
+country, and aided by a storm occasioned the loss of nearly the 
+whole English navy.
+
+There was but one man of note, at this miserable pass, who was true 
+to his country and the feeble King.  He was a priest, and a brave 
+one.  For twenty days, the Archbishop of Canterbury defended that 
+city against its Danish besiegers; and when a traitor in the town 
+threw the gates open and admitted them, he said, in chains, 'I will 
+not buy my life with money that must be extorted from the suffering 
+people.  Do with me what you please!'  Again and again, he steadily 
+refused to purchase his release with gold wrung from the poor.
+
+At last, the Danes being tired of this, and being assembled at a 
+drunken merry-making, had him brought into the feasting-hall.
+
+'Now, bishop,' they said, 'we want gold!'
+
+He looked round on the crowd of angry faces; from the shaggy beards 
+close to him, to the shaggy beards against the walls, where men 
+were mounted on tables and forms to see him over the heads of 
+others:  and he knew that his time was come.
+
+'I have no gold,' he said.
+
+'Get it, bishop!' they all thundered.
+
+'That, I have often told you I will not,' said he.
+
+They gathered closer round him, threatening, but he stood unmoved.  
+Then, one man struck him; then, another; then a cursing soldier 
+picked up from a heap in a corner of the hall, where fragments had 
+been rudely thrown at dinner, a great ox-bone, and cast it at his 
+face, from which the blood came spurting forth; then, others ran to 
+the same heap, and knocked him down with other bones, and bruised 
+and battered him; until one soldier whom he had baptised (willing, 
+as I hope for the sake of that soldier's soul, to shorten the 
+sufferings of the good man) struck him dead with his battle-axe.
+
+If Ethelred had had the heart to emulate the courage of this noble 
+archbishop, he might have done something yet.  But he paid the 
+Danes forty-eight thousand pounds, instead, and gained so little by 
+the cowardly act, that Sweyn soon afterwards came over to subdue 
+all England.  So broken was the attachment of the English people, 
+by this time, to their incapable King and their forlorn country 
+which could not protect them, that they welcomed Sweyn on all 
+sides, as a deliverer.  London faithfully stood out, as long as the 
+King was within its walls; but, when he sneaked away, it also 
+welcomed the Dane.  Then, all was over; and the King took refuge 
+abroad with the Duke of Normandy, who had already given shelter to 
+the King's wife, once the Flower of that country, and to her 
+children.
+
+Still, the English people, in spite of their sad sufferings, could 
+not quite forget the great King Alfred and the Saxon race.  When 
+Sweyn died suddenly, in little more than a month after he had been 
+proclaimed King of England, they generously sent to Ethelred, to 
+say that they would have him for their King again, 'if he would 
+only govern them better than he had governed them before.'  The 
+Unready, instead of coming himself, sent Edward, one of his sons, 
+to make promises for him.  At last, he followed, and the English 
+declared him King.  The Danes declared CANUTE, the son of Sweyn, 
+King.  Thus, direful war began again, and lasted for three years, 
+when the Unready died.  And I know of nothing better that he did, 
+in all his reign of eight and thirty years.
+
+Was Canute to be King now?  Not over the Saxons, they said; they 
+must have EDMUND, one of the sons of the Unready, who was surnamed 
+IRONSIDE, because of his strength and stature.  Edmund and Canute 
+thereupon fell to, and fought five battles - O unhappy England, 
+what a fighting-ground it was! - and then Ironside, who was a big 
+man, proposed to Canute, who was a little man, that they two should 
+fight it out in single combat.  If Canute had been the big man, he 
+would probably have said yes, but, being the little man, he 
+decidedly said no.  However, he declared that he was willing to 
+divide the kingdom - to take all that lay north of Watling Street, 
+as the old Roman military road from Dover to Chester was called, 
+and to give Ironside all that lay south of it.  Most men being 
+weary of so much bloodshed, this was done.  But Canute soon became 
+sole King of England; for Ironside died suddenly within two months.  
+Some think that he was killed, and killed by Canute's orders.  No 
+one knows.
+
+
+
+CHAPTER V - ENGLAND UNDER CANUTE THE DANE
+
+
+
+CANUTE reigned eighteen years.  He was a merciless King at first.  
+After he had clasped the hands of the Saxon chiefs, in token of the 
+sincerity with which he swore to be just and good to them in return 
+for their acknowledging him, he denounced and slew many of them, as 
+well as many relations of the late King.  'He who brings me the 
+head of one of my enemies,' he used to say, 'shall be dearer to me 
+than a brother.'  And he was so severe in hunting down his enemies, 
+that he must have got together a pretty large family of these dear 
+brothers.  He was strongly inclined to kill EDMUND and EDWARD, two 
+children, sons of poor Ironside; but, being afraid to do so in 
+England, he sent them over to the King of Sweden, with a request 
+that the King would be so good as 'dispose of them.'  If the King 
+of Sweden had been like many, many other men of that day, he would 
+have had their innocent throats cut; but he was a kind man, and 
+brought them up tenderly.
+
+Normandy ran much in Canute's mind.  In Normandy were the two 
+children of the late king - EDWARD and ALFRED by name; and their 
+uncle the Duke might one day claim the crown for them.  But the 
+Duke showed so little inclination to do so now, that he proposed to 
+Canute to marry his sister, the widow of The Unready; who, being 
+but a showy flower, and caring for nothing so much as becoming a 
+queen again, left her children and was wedded to him.
+
+Successful and triumphant, assisted by the valour of the English in 
+his foreign wars, and with little strife to trouble him at home, 
+Canute had a prosperous reign, and made many improvements.  He was 
+a poet and a musician.  He grew sorry, as he grew older, for the 
+blood he had shed at first; and went to Rome in a Pilgrim's dress, 
+by way of washing it out.  He gave a great deal of money to 
+foreigners on his journey; but he took it from the English before 
+he started.  On the whole, however, he certainly became a far 
+better man when he had no opposition to contend with, and was as 
+great a King as England had known for some time.
+
+The old writers of history relate how that Canute was one day 
+disgusted with his courtiers for their flattery, and how he caused 
+his chair to be set on the sea-shore, and feigned to command the 
+tide as it came up not to wet the edge of his robe, for the land 
+was his; how the tide came up, of course, without regarding him; 
+and how he then turned to his flatterers, and rebuked them, saying, 
+what was the might of any earthly king, to the might of the 
+Creator, who could say unto the sea, 'Thus far shalt thou go, and 
+no farther!'  We may learn from this, I think, that a little sense 
+will go a long way in a king; and that courtiers are not easily 
+cured of flattery, nor kings of a liking for it.  If the courtiers 
+of Canute had not known, long before, that the King was fond of 
+flattery, they would have known better than to offer it in such 
+large doses.  And if they had not known that he was vain of this 
+speech (anything but a wonderful speech it seems to me, if a good 
+child had made it), they would not have been at such great pains to 
+repeat it.  I fancy I see them all on the sea-shore together; the 
+King's chair sinking in the sand; the King in a mighty good humour 
+with his own wisdom; and the courtiers pretending to be quite 
+stunned by it!
+
+It is not the sea alone that is bidden to go 'thus far, and no 
+farther.'  The great command goes forth to all the kings upon the 
+earth, and went to Canute in the year one thousand and thirty-five, 
+and stretched him dead upon his bed.  Beside it, stood his Norman 
+wife.  Perhaps, as the King looked his last upon her, he, who had 
+so often thought distrustfully of Normandy, long ago, thought once 
+more of the two exiled Princes in their uncle's court, and of the 
+little favour they could feel for either Danes or Saxons, and of a 
+rising cloud in Normandy that slowly moved towards England.
+
+
+
+CHAPTER VI - ENGLAND UNDER HAROLD HAREFOOT, HARDICANUTE, AND EDWARD 
+THE CONFESSOR
+
+
+
+CANUTE left three sons, by name SWEYN, HAROLD, and HARDICANUTE; but 
+his Queen, Emma, once the Flower of Normandy, was the mother of 
+only Hardicanute.  Canute had wished his dominions to be divided 
+between the three, and had wished Harold to have England; but the 
+Saxon people in the South of England, headed by a nobleman with 
+great possessions, called the powerful EARL GODWIN (who is said to 
+have been originally a poor cow-boy), opposed this, and desired to 
+have, instead, either Hardicanute, or one of the two exiled Princes 
+who were over in Normandy.  It seemed so certain that there would 
+be more bloodshed to settle this dispute, that many people left 
+their homes, and took refuge in the woods and swamps.  Happily, 
+however, it was agreed to refer the whole question to a great 
+meeting at Oxford, which decided that Harold should have all the 
+country north of the Thames, with London for his capital city, and 
+that Hardicanute should have all the south.  The quarrel was so 
+arranged; and, as Hardicanute was in Denmark troubling himself very 
+little about anything but eating and getting drunk, his mother and 
+Earl Godwin governed the south for him.
+
+They had hardly begun to do so, and the trembling people who had 
+hidden themselves were scarcely at home again, when Edward, the 
+elder of the two exiled Princes, came over from Normandy with a few 
+followers, to claim the English Crown.  His mother Emma, however, 
+who only cared for her last son Hardicanute, instead of assisting 
+him, as he expected, opposed him so strongly with all her influence 
+that he was very soon glad to get safely back.  His brother Alfred 
+was not so fortunate.  Believing in an affectionate letter, written 
+some time afterwards to him and his brother, in his mother's name 
+(but whether really with or without his mother's knowledge is now 
+uncertain), he allowed himself to be tempted over to England, with 
+a good force of soldiers, and landing on the Kentish coast, and 
+being met and welcomed by Earl Godwin, proceeded into Surrey, as 
+far as the town of Guildford.  Here, he and his men halted in the 
+evening to rest, having still the Earl in their company; who had 
+ordered lodgings and good cheer for them.  But, in the dead of the 
+night, when they were off their guard, being divided into small 
+parties sleeping soundly after a long march and a plentiful supper 
+in different houses, they were set upon by the King's troops, and 
+taken prisoners.  Next morning they were drawn out in a line, to 
+the number of six hundred men, and were barbarously tortured and 
+killed; with the exception of every tenth man, who was sold into 
+slavery.  As to the wretched Prince Alfred, he was stripped naked, 
+tied to a horse and sent away into the Isle of Ely, where his eyes 
+were torn out of his head, and where in a few days he miserably 
+died.  I am not sure that the Earl had wilfully entrapped him, but 
+I suspect it strongly.
+
+Harold was now King all over England, though it is doubtful whether 
+the Archbishop of Canterbury (the greater part of the priests were 
+Saxons, and not friendly to the Danes) ever consented to crown him.  
+Crowned or uncrowned, with the Archbishop's leave or without it, he 
+was King for four years:  after which short reign he died, and was 
+buried; having never done much in life but go a hunting.  He was 
+such a fast runner at this, his favourite sport, that the people 
+called him Harold Harefoot.
+
+Hardicanute was then at Bruges, in Flanders, plotting, with his 
+mother (who had gone over there after the cruel murder of Prince 
+Alfred), for the invasion of England.  The Danes and Saxons, 
+finding themselves without a King, and dreading new disputes, made 
+common cause, and joined in inviting him to occupy the Throne.  He 
+consented, and soon troubled them enough; for he brought over 
+numbers of Danes, and taxed the people so insupportably to enrich 
+those greedy favourites that there were many insurrections, 
+especially one at Worcester, where the citizens rose and killed his 
+tax-collectors; in revenge for which he burned their city.  He was 
+a brutal King, whose first public act was to order the dead body of 
+poor Harold Harefoot to be dug up, beheaded, and thrown into the 
+river.  His end was worthy of such a beginning.  He fell down 
+drunk, with a goblet of wine in his hand, at a wedding-feast at 
+Lambeth, given in honour of the marriage of his standard-bearer, a 
+Dane named TOWED THE PROUD.  And he never spoke again.
+
+EDWARD, afterwards called by the monks THE CONFESSOR, succeeded; 
+and his first act was to oblige his mother Emma, who had favoured 
+him so little, to retire into the country; where she died some ten 
+years afterwards.  He was the exiled prince whose brother Alfred 
+had been so foully killed.  He had been invited over from Normandy 
+by Hardicanute, in the course of his short reign of two years, and 
+had been handsomely treated at court.  His cause was now favoured 
+by the powerful Earl Godwin, and he was soon made King.  This Earl 
+had been suspected by the people, ever since Prince Alfred's cruel 
+death; he had even been tried in the last reign for the Prince's 
+murder, but had been pronounced not guilty; chiefly, as it was 
+supposed, because of a present he had made to the swinish King, of 
+a gilded ship with a figure-head of solid gold, and a crew of 
+eighty splendidly armed men.  It was his interest to help the new 
+King with his power, if the new King would help him against the 
+popular distrust and hatred.  So they made a bargain.  Edward the 
+Confessor got the Throne.  The Earl got more power and more land, 
+and his daughter Editha was made queen; for it was a part of their 
+compact that the King should take her for his wife.
+
+But, although she was a gentle lady, in all things worthy to be 
+beloved - good, beautiful, sensible, and kind - the King from the 
+first neglected her.  Her father and her six proud brothers, 
+resenting this cold treatment, harassed the King greatly by 
+exerting all their power to make him unpopular.  Having lived so 
+long in Normandy, he preferred the Normans to the English.  He made 
+a Norman Archbishop, and Norman Bishops; his great officers and 
+favourites were all Normans; he introduced the Norman fashions and 
+the Norman language; in imitation of the state custom of Normandy, 
+he attached a great seal to his state documents, instead of merely 
+marking them, as the Saxon Kings had done, with the sign of the 
+cross - just as poor people who have never been taught to write, 
+now make the same mark for their names.  All this, the powerful 
+Earl Godwin and his six proud sons represented to the people as 
+disfavour shown towards the English; and thus they daily increased 
+their own power, and daily diminished the power of the King.
+
+They were greatly helped by an event that occurred when he had 
+reigned eight years.  Eustace, Earl of Bologne, who had married the 
+King's sister, came to England on a visit.  After staying at the 
+court some time, he set forth, with his numerous train of 
+attendants, to return home.  They were to embark at Dover.  
+Entering that peaceful town in armour, they took possession of the 
+best houses, and noisily demanded to be lodged and entertained 
+without payment.  One of the bold men of Dover, who would not 
+endure to have these domineering strangers jingling their heavy 
+swords and iron corselets up and down his house, eating his meat 
+and drinking his strong liquor, stood in his doorway and refused 
+admission to the first armed man who came there.  The armed man 
+drew, and wounded him.  The man of Dover struck the armed man dead.  
+Intelligence of what he had done, spreading through the streets to 
+where the Count Eustace and his men were standing by their horses, 
+bridle in hand, they passionately mounted, galloped to the house, 
+surrounded it, forced their way in (the doors and windows being 
+closed when they came up), and killed the man of Dover at his own 
+fireside.  They then clattered through the streets, cutting down 
+and riding over men, women, and children.  This did not last long, 
+you may believe.  The men of Dover set upon them with great fury, 
+killed nineteen of the foreigners, wounded many more, and, 
+blockading the road to the port so that they should not embark, 
+beat them out of the town by the way they had come.  Hereupon, 
+Count Eustace rides as hard as man can ride to Gloucester, where 
+Edward is, surrounded by Norman monks and Norman lords.  'Justice!' 
+cries the Count, 'upon the men of Dover, who have set upon and 
+slain my people!'  The King sends immediately for the powerful Earl 
+Godwin, who happens to be near; reminds him that Dover is under his 
+government; and orders him to repair to Dover and do military 
+execution on the inhabitants.  'It does not become you,' says the 
+proud Earl in reply, 'to condemn without a hearing those whom you 
+have sworn to protect.  I will not do it.'
+
+The King, therefore, summoned the Earl, on pain of banishment and 
+loss of his titles and property, to appear before the court to 
+answer this disobedience.  The Earl refused to appear.  He, his 
+eldest son Harold, and his second son Sweyn, hastily raised as many 
+fighting men as their utmost power could collect, and demanded to 
+have Count Eustace and his followers surrendered to the justice of 
+the country.  The King, in his turn, refused to give them up, and 
+raised a strong force.  After some treaty and delay, the troops of 
+the great Earl and his sons began to fall off.  The Earl, with a 
+part of his family and abundance of treasure, sailed to Flanders; 
+Harold escaped to Ireland; and the power of the great family was 
+for that time gone in England.  But, the people did not forget 
+them.
+
+Then, Edward the Confessor, with the true meanness of a mean 
+spirit, visited his dislike of the once powerful father and sons 
+upon the helpless daughter and sister, his unoffending wife, whom 
+all who saw her (her husband and his monks excepted) loved.  He 
+seized rapaciously upon her fortune and her jewels, and allowing 
+her only one attendant, confined her in a gloomy convent, of which 
+a sister of his - no doubt an unpleasant lady after his own heart - 
+was abbess or jailer.
+
+Having got Earl Godwin and his six sons well out of his way, the 
+King favoured the Normans more than ever.  He invited over WILLIAM, 
+DUKE OF NORMANDY, the son of that Duke who had received him and his 
+murdered brother long ago, and of a peasant girl, a tanner's 
+daughter, with whom that Duke had fallen in love for her beauty as 
+he saw her washing clothes in a brook.  William, who was a great 
+warrior, with a passion for fine horses, dogs, and arms, accepted 
+the invitation; and the Normans in England, finding themselves more 
+numerous than ever when he arrived with his retinue, and held in 
+still greater honour at court than before, became more and more 
+haughty towards the people, and were more and more disliked by 
+them.
+
+The old Earl Godwin, though he was abroad, knew well how the people 
+felt; for, with part of the treasure he had carried away with him, 
+he kept spies and agents in his pay all over England.
+
+Accordingly, he thought the time was come for fitting out a great 
+expedition against the Norman-loving King.  With it, he sailed to 
+the Isle of Wight, where he was joined by his son Harold, the most 
+gallant and brave of all his family.  And so the father and son 
+came sailing up the Thames to Southwark; great numbers of the 
+people declaring for them, and shouting for the English Earl and 
+the English Harold, against the Norman favourites!
+
+The King was at first as blind and stubborn as kings usually have 
+been whensoever they have been in the hands of monks.  But the 
+people rallied so thickly round the old Earl and his son, and the 
+old Earl was so steady in demanding without bloodshed the 
+restoration of himself and his family to their rights, that at last 
+the court took the alarm.  The Norman Archbishop of Canterbury, and 
+the Norman Bishop of London, surrounded by their retainers, fought 
+their way out of London, and escaped from Essex to France in a 
+fishing-boat.  The other Norman favourites dispersed in all 
+directions.  The old Earl and his sons (except Sweyn, who had 
+committed crimes against the law) were restored to their 
+possessions and dignities.  Editha, the virtuous and lovely Queen 
+of the insensible King, was triumphantly released from her prison, 
+the convent, and once more sat in her chair of state, arrayed in 
+the jewels of which, when she had no champion to support her 
+rights, her cold-blooded husband had deprived her.
+
+The old Earl Godwin did not long enjoy his restored fortune.  He 
+fell down in a fit at the King's table, and died upon the third day 
+afterwards.  Harold succeeded to his power, and to a far higher 
+place in the attachment of the people than his father had ever 
+held.  By his valour he subdued the King's enemies in many bloody 
+fights.  He was vigorous against rebels in Scotland - this was the 
+time when Macbeth slew Duncan, upon which event our English 
+Shakespeare, hundreds of years afterwards, wrote his great tragedy; 
+and he killed the restless Welsh King GRIFFITH, and brought his 
+head to England.
+
+What Harold was doing at sea, when he was driven on the French 
+coast by a tempest, is not at all certain; nor does it at all 
+matter.  That his ship was forced by a storm on that shore, and 
+that he was taken prisoner, there is no doubt.  In those barbarous 
+days, all shipwrecked strangers were taken prisoners, and obliged 
+to pay ransom.  So, a certain Count Guy, who was the Lord of 
+Ponthieu where Harold's disaster happened, seized him, instead of 
+relieving him like a hospitable and Christian lord as he ought to 
+have done, and expected to make a very good thing of it.
+
+But Harold sent off immediately to Duke William of Normandy, 
+complaining of this treatment; and the Duke no sooner heard of it 
+than he ordered Harold to be escorted to the ancient town of Rouen, 
+where he then was, and where he received him as an honoured guest.  
+Now, some writers tell us that Edward the Confessor, who was by 
+this time old and had no children, had made a will, appointing Duke 
+William of Normandy his successor, and had informed the Duke of his 
+having done so.  There is no doubt that he was anxious about his 
+successor; because he had even invited over, from abroad, EDWARD 
+THE OUTLAW, a son of Ironside, who had come to England with his 
+wife and three children, but whom the King had strangely refused to 
+see when he did come, and who had died in London suddenly (princes 
+were terribly liable to sudden death in those days), and had been 
+buried in St. Paul's Cathedral.  The King might possibly have made 
+such a will; or, having always been fond of the Normans, he might 
+have encouraged Norman William to aspire to 
