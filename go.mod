@@ -71,8 +71,8 @@ require (
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.4.0
-	github.com/rs/cors v1.10.0
 	github.com/redis/go-redis/v9 v9.0.5
+	github.com/rs/cors v1.10.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.15.11
