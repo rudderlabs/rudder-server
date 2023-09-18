@@ -7,7 +7,9 @@ go 1.21
 // the same version is used both here and in the require section
 replace (
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.24
+	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.4
 	github.com/docker/docker => github.com/docker/docker v24.0.6+incompatible
+	github.com/elazarl/goproxy => github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a // indirect
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.9.1
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.9
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.16.0
@@ -110,6 +112,7 @@ require (
 require (
 	github.com/containerd/containerd v1.6.18 // indirect
 	github.com/goccy/go-reflect v1.2.0 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
 )
 
 require (
@@ -232,7 +235,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
 	github.com/opencontainers/runc v1.1.5 // indirect
-	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
+	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
