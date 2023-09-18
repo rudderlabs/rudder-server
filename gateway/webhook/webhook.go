@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -117,7 +118,6 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 	atomic.AddUint64(&webhook.recvCount, 1)
 	sourceDefName := arctx.SourceDefName
-
 	var postFrom url.Values
 	var multipartForm *multipart.Form
 
@@ -275,8 +275,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			// TODO: GetSourceConfig from gateway
-			_, err := bt.webhook.gwHandle.GetSourceConfig("sentSourceID")
+			// GetSourceConfig from gateway using sourceId
+			sourceId := req.authContext.SourceID
+			sourceConfig, err := bt.webhook.gwHandle.GetSourceConfig(sourceId)
 
 			body, err := io.ReadAll(req.request.Body)
 			_ = req.request.Body.Close()
@@ -309,10 +310,14 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
 				continue
 			}
+			Config, err := json.Marshal(sourceConfig)
+			format := "{body: %s, sourceConfig: %s}"
+			eventToSource := fmt.Sprintf(format, body, Config)
+			// Convert the formatted string to a []byte.
+			eventToSourceBytes := []byte(eventToSource)
 
-			// TODO: body is an event here. We need to make an object
-			// {event: body, source: sourceConfig}
-			payloadArr = append(payloadArr, body)
+			// eventToSource = {event: body, sourceConfig: Config}
+			payloadArr = append(payloadArr, eventToSourceBytes)
 			webRequests = append(webRequests, req)
 		}
 

@@ -55,6 +55,8 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 }
 
 func (gw *Handle) GetSourceConfig(sourceID string) (*backendconfig.SourceT, error) {
-	// TODO: complete this
-	return &backendconfig.SourceT{}, nil
+	config := gw.sourceIDSourceMap[sourceID].Config
+	return &backendconfig.SourceT{
+		Config: config,
+	}, nil
 }
