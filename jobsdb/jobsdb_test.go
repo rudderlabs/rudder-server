@@ -778,19 +778,22 @@ func TestCacheScenarios(t *testing.T) {
 
 	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
 		maxDSSize := 1
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", maxDSSize)
 		var dbWithOneLimit *Handle
 		triggerAddNewDS := make(chan time.Time)
 		if limit > 0 {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
 				WithDSLimit(&limit),
+				WithConfig(c),
 			)
 		} else {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
+				WithConfig(c),
 			)
 		}
-		dbWithOneLimit.conf.MaxDSSize = &maxDSSize
 		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
 			return triggerAddNewDS
 		}
@@ -1244,6 +1247,9 @@ func TestMaxAgeCleanup(t *testing.T) {
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
+	// run cleanup once with an empty db
+	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
+
 	// store some jobs
 	require.NoError(
 		t,
@@ -1279,6 +1285,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
 	triggerJobCleanup <- time.Now()
 	triggerJobCleanup <- time.Now()
 

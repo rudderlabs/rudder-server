@@ -262,7 +262,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 			stagingIDs := repo.StagingFileIDs(stagingFiles)
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
-			require.EqualError(t, err, "querying schemas: context canceled")
+			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, expectedSchemas)
 		})
 
