@@ -3,9 +3,18 @@ package warehouse
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/yamux"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -63,66 +72,7 @@ func TestApp(t *testing.T) {
 		Reporting: report,
 	}).AnyTimes()
 
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).DoAndReturn(func(ctx context.Context) error {
-		return nil
-	}).AnyTimes()
-	mockBackendConfig.EXPECT().Identity().Return(nil)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), bcConfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic bcConfig.Topic) pubsub.DataChannel {
-		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{
-			Data: map[string]bcConfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []bcConfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []bcConfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: bcConfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-								},
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: bcConfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-								},
-							},
-						},
-					},
-				},
-				unsupportedWorkspaceID: {
-					WorkspaceID: unsupportedWorkspaceID,
-					Sources: []bcConfig.SourceT{
-						{
-							ID:      unsupportedSourceID,
-							Enabled: true,
-							Destinations: []bcConfig.DestinationT{
-								{
-									ID:      unsupportedDestinationID,
-									Enabled: true,
-									DestinationDefinition: bcConfig.DestinationDefinitionT{
-										Name: "unknown_destination_type",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			Topic: string(bcConfig.TopicBackendConfig),
-		}
-		close(ch)
-		return ch
-	}).AnyTimes()
-
-	t.Run("Graceful shutdown", func(t *testing.T) {
+	t.Run("Serving HTTP", func(t *testing.T) {
 		testCases := []struct {
 			name          string
 			warehouseMode string
@@ -205,7 +155,7 @@ func TestApp(t *testing.T) {
 							return resp.StatusCode == http.StatusOK
 						},
 							time.Second*10,
-							time.Second,
+							time.Millisecond*100,
 						)
 						return nil
 					})
@@ -213,6 +163,108 @@ func TestApp(t *testing.T) {
 				})
 			}
 		}
+	})
+	t.Run("Serving GRPC", func(t *testing.T) {
+		pgResource, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		tcpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		ctx, stopServer := context.WithCancel(context.Background())
+
+		c := config.New()
+		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
+		c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
+		c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
+		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
+		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
+		c.Set("Warehouse.mode", config.MasterMode)
+		c.Set("Warehouse.webPort", webPort)
+		c.Set("CP_ROUTER_USE_TLS", false)
+
+		mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).DoAndReturn(func(ctx context.Context) error {
+			return nil
+		}).AnyTimes()
+		mockBackendConfig.EXPECT().Identity().Return(nil)
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), bcConfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic bcConfig.Topic) pubsub.DataChannel {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{
+				Data: map[string]bcConfig.ConfigT{
+					workspaceID: {
+						ConnectionFlags: bcConfig.ConnectionFlags{
+							URL: fmt.Sprintf("localhost:%d", tcpPort),
+							Services: map[string]bool{
+								"warehouse": true,
+							},
+						},
+					},
+				},
+				Topic: string(bcConfig.TopicBackendConfig),
+			}
+			close(ch)
+			return ch
+		}).AnyTimes()
+
+		a := NewApp(mockApp, c, logger.NOP, stats.Default, mockBackendConfig, filemanager.New)
+		err = a.Setup(ctx)
+		require.NoError(t, err)
+
+		g, gCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			return a.Run(gCtx)
+		})
+		g.Go(func() error {
+			defer stopServer()
+
+			listener, err := net.Listen("tcp", ":"+strconv.Itoa(tcpPort))
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = listener.Close()
+			})
+
+			tcpConn, err := listener.Accept()
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = tcpConn.Close()
+			})
+
+			session, err := yamux.Client(tcpConn, yamux.DefaultConfig())
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = session.Close()
+			})
+
+			grpcConn, err := grpc.Dial("", grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
+					return session.Open()
+				}),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = grpcConn.Close()
+			})
+
+			grpcClient := proto.NewWarehouseClient(grpcConn)
+
+			require.Eventually(t, func() bool {
+				if healthResponse, err := grpcClient.GetHealth(ctx, &emptypb.Empty{}); err != nil {
+					return false
+				} else if healthResponse == nil {
+					return false
+				} else {
+					return healthResponse.GetValue()
+				}
+			},
+				time.Second*10,
+				time.Millisecond*100,
+			)
+			return nil
+		})
+		require.NoError(t, g.Wait())
 	})
 	t.Run("incompatible postgres", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t, postgres.WithTag("9-alpine"))
@@ -273,6 +325,65 @@ func TestApp(t *testing.T) {
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
 		c.Set("Warehouse.mode", config.MasterMode)
 		c.Set("Warehouse.webPort", webPort)
+
+		mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).DoAndReturn(func(ctx context.Context) error {
+			return nil
+		}).AnyTimes()
+		mockBackendConfig.EXPECT().Identity().Return(nil)
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), bcConfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic bcConfig.Topic) pubsub.DataChannel {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{
+				Data: map[string]bcConfig.ConfigT{
+					workspaceID: {
+						WorkspaceID: workspaceID,
+						Sources: []bcConfig.SourceT{
+							{
+								ID:      sourceID,
+								Enabled: true,
+								Destinations: []bcConfig.DestinationT{
+									{
+										ID:      destinationID,
+										Enabled: true,
+										DestinationDefinition: bcConfig.DestinationDefinitionT{
+											Name: whutils.POSTGRES,
+										},
+									},
+									{
+										ID:      destinationID,
+										Enabled: true,
+										DestinationDefinition: bcConfig.DestinationDefinitionT{
+											Name: whutils.POSTGRES,
+										},
+									},
+								},
+							},
+						},
+					},
+					unsupportedWorkspaceID: {
+						WorkspaceID: unsupportedWorkspaceID,
+						Sources: []bcConfig.SourceT{
+							{
+								ID:      unsupportedSourceID,
+								Enabled: true,
+								Destinations: []bcConfig.DestinationT{
+									{
+										ID:      unsupportedDestinationID,
+										Enabled: true,
+										DestinationDefinition: bcConfig.DestinationDefinitionT{
+											Name: "unknown_destination_type",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Topic: string(bcConfig.TopicBackendConfig),
+			}
+			close(ch)
+			return ch
+		}).AnyTimes()
 
 		a := NewApp(mockApp, c, logger.NOP, stats.Default, mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
