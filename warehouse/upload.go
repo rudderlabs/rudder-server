@@ -12,17 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -30,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -93,6 +91,7 @@ type UploadJob struct {
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PGNotifier
 	schemaHandle         *Schema
+	uploadSchema         model.Schema
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -311,16 +310,24 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	if err := job.schemaHandle.prepareUploadSchema(
-		job.ctx,
-		job.stagingFiles,
-	); err != nil {
+	uploadSchema, err := job.schemaHandle.prepareUploadSchema(job.ctx, job.stagingFiles)
+	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
+	marshalledSchema, err := json.Marshal(uploadSchema)
+	if err != nil {
+		panic(err)
+	}
+
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
+		{Column: UploadSchemaField, Value: marshalledSchema},
+	}})
+	if err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
+
+	job.uploadSchema = uploadSchema
 
 	return nil
 }
@@ -467,7 +474,7 @@ func (job *UploadJob) run() (err error) {
 		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
 
-	job.schemaHandle.uploadSchema = job.upload.UploadSchema
+	job.uploadSchema = job.upload.UploadSchema
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1052,7 +1059,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tName)
+	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, job.GetTableSchemaInUpload(tName))
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1345,7 +1352,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tableName)
+		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, job.GetTableSchemaInUpload(tableName))
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1521,16 +1528,6 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	return job.setUploadColumns(uploadColumnOpts)
 }
 
-// SetUploadSchema
-func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
-	marshalledSchema, err := json.Marshal(consolidatedSchema)
-	if err != nil {
-		panic(err)
-	}
-	job.upload.UploadSchema = consolidatedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
-}
-
 // Set LoadFileIDs
 func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error {
 	if startLoadFileID > endLoadFileID {
@@ -1572,8 +1569,7 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 		SET
 		  %s
 		WHERE
-		  id = $1;
-`,
+		  id = $1;`,
 		warehouseutils.WarehouseUploadsTable,
 		columns,
 	)
@@ -1980,7 +1976,7 @@ func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSch
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
-	return job.schemaHandle.uploadSchema[tableName]
+	return job.uploadSchema[tableName]
 }
 
 func (job *UploadJob) GetSingleLoadFile(ctx context.Context, tableName string) (warehouseutils.LoadFile, error) {

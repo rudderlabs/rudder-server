@@ -50,7 +50,6 @@ type Schema struct {
 	localSchema                      model.Schema
 	schemaInWarehouse                model.Schema
 	unrecognizedSchemaInWarehouse    model.Schema
-	uploadSchema                     model.Schema
 	schemaRepo                       schemaRepo
 	stagingFileRepo                  stagingFileRepo
 	log                              logger.Logger
@@ -158,14 +157,13 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) error {
+func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
 	if err != nil {
-		return fmt.Errorf("consolidating staging files schema: %w", err)
+		return nil, fmt.Errorf("consolidating staging files schema: %w", err)
 	}
 
-	sh.uploadSchema = consolidatedSchema
-	return nil
+	return consolidatedSchema, nil
 }
 
 // consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
@@ -350,8 +348,8 @@ func (sh *Schema) hasSchemaChanged() bool {
 	return false
 }
 
-// generateTableSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
+// TableSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) warehouseutils.TableSchemaDiff {
 	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
@@ -360,13 +358,13 @@ func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.Table
 
 	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
 	if !ok {
-		if _, ok := sh.uploadSchema[tableName]; !ok {
+		if len(tableSchema) == 0 {
 			return diff
 		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
-		diff.ColumnMap = sh.uploadSchema[tableName]
-		diff.UpdatedSchema = sh.uploadSchema[tableName]
+		diff.ColumnMap = tableSchema
+		diff.UpdatedSchema = tableSchema
 		return diff
 	}
 
@@ -375,7 +373,7 @@ func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.Table
 	}
 
 	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range sh.uploadSchema[tableName] {
+	for columnName, columnType := range tableSchema {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
