@@ -16,7 +16,7 @@ var replayEnabled bool
 
 func loadConfig() {
 	replayEnabled = config.GetBool("Replay.enabled", types.DefaultReplayEnabled)
-	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
+	userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 }
 
 func initFileManager(log logger.Logger) (filemanager.FileManager, string, error) {

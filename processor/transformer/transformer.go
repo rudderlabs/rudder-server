@@ -27,6 +27,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -178,10 +179,9 @@ type handle struct {
 
 		timeoutDuration time.Duration
 
-		maxRetry int
-
-		failOnUserTransformTimeout bool
-		failOnError                bool
+		maxRetry                   misc.ValueLoader[int]
+		failOnUserTransformTimeout misc.ValueLoader[bool]
+		failOnError                misc.ValueLoader[bool]
 
 		destTransformationURL string
 		userTransformationURL string
@@ -207,7 +207,10 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	trans.config.userTransformationURL = conf.GetString("USER_TRANSFORM_URL", trans.config.destTransformationURL)
-	trans.setupReloadableVars()
+
+	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
+	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
+	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -228,13 +231,6 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	}
 
 	return &trans
-}
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (trans *handle) setupReloadableVars() {
-	trans.conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
-	trans.conf.RegisterBoolConfigVariable(false, &trans.config.failOnUserTransformTimeout, true, "Processor.Transformer.failOnUserTransformTimeout")
-	trans.conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
 }
 
 // Transform function is used to invoke destination transformer API
@@ -461,16 +457,16 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
-		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry)),
+		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
 			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
 		},
 	)
 	if err != nil {
-		if trans.config.failOnUserTransformTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
+		if trans.config.failOnUserTransformTimeout.Load() && stage == UserTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
-		} else if trans.config.failOnError {
+		} else if trans.config.failOnError.Load() {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
 		} else {
 			panic(err)

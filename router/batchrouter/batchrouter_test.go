@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -147,7 +146,7 @@ var _ = Describe("BatchRouter", func() {
 
 	BeforeEach(func() {
 		config.Reset()
-		router_utils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
+		config.Set("Router.jobRetention", "175200h") // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 	})
@@ -178,7 +177,6 @@ var _ = Describe("BatchRouter", func() {
 			batchrouter := &Handle{}
 			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 
-			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
 			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil)
@@ -236,7 +234,7 @@ var _ = Describe("BatchRouter", func() {
 
 			payloadLimit := batchrouter.payloadLimit
 			var getJobsListCalled bool
-			c.mockBatchRouterJobsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+			c.mockBatchRouterJobsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit.Load()}).DoAndReturn(func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
 				var res jobsdb.JobsResult
 				if !getJobsListCalled {
 					getJobsListCalled = true
@@ -267,8 +265,8 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.minIdleSleep = time.Microsecond
-			batchrouter.uploadFreq = time.Microsecond
+			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)

@@ -455,8 +455,8 @@ var _ = Describe("Eloqua test", func() {
 					},
 					{
 						FieldValues: map[string]string{
-							"C_FirstName":    "Test12",
-							"C_EmailAddress": "test13@mail.com",
+							"C_FirstName":    "test13@mail.com",
+							"C_EmailAddress": "Test12",
 						},
 						Message:       "Invalid email address.",
 						StatusCode:    "ELQ-00002",
@@ -470,8 +470,8 @@ var _ = Describe("Eloqua test", func() {
 				FailedKeys:    []int64{1018, 1022},
 				SucceededKeys: []int64{1014, 1015, 1016, 1017, 1019, 1020, 1021, 1023},
 				FailedReasons: map[int64]string{
-					1018: "Invalid email address.",
-					1022: "Invalid email address.",
+					1018: "ELQ-00002 : Invalid email address. C_EmailAddress : Test7",
+					1022: "ELQ-00002 : Invalid email address. C_EmailAddress : Test12",
 				},
 			}
 			expected := common.GetUploadStatsResponse{

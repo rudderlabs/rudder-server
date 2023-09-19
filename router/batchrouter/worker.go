@@ -75,7 +75,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
-			if drain, reason := router_utils.ToBeDrained(job, destWithSources.Destination.ID, brt.toAbortDestinationIDs, destinationsMap); drain {
+			if drain, reason := router_utils.ToBeDrained(job, destWithSources.Destination.ID, brt.toAbortDestinationIDs.Load(), destinationsMap); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -128,14 +128,14 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		}
 		// Mark the drainList jobs as Aborted
 		if len(drainList) > 0 {
-			err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return brt.errorDB.Store(ctx, drainJobList)
 			}, brt.sendRetryStoreStats)
 			if err != nil {
 				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 			}
 
-			err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 					err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
 					if err != nil {
@@ -166,7 +166,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			}
 		}
 		// Mark the jobs as executing
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
 		}, brt.sendRetryUpdateStats)
 		if err != nil {
@@ -253,13 +253,13 @@ func (w *worker) SleepDurations() (min, max time.Duration) {
 	w.brt.lastExecTimesMu.Lock()
 	defer w.brt.lastExecTimesMu.Unlock()
 	if lastExecTime, ok := w.brt.lastExecTimes[w.partition]; ok {
-		if nextAllowedTime := lastExecTime.Add(w.brt.uploadFreq); nextAllowedTime.After(time.Now()) {
+		if nextAllowedTime := lastExecTime.Add(w.brt.uploadFreq.Load()); nextAllowedTime.After(time.Now()) {
 			sleepTime := time.Until(nextAllowedTime)
 			// sleep at least until the next upload frequency window opens
-			return sleepTime, w.brt.uploadFreq
+			return sleepTime, w.brt.uploadFreq.Load()
 		}
 	}
-	return w.brt.minIdleSleep, w.brt.uploadFreq / 2
+	return w.brt.minIdleSleep.Load(), w.brt.uploadFreq.Load() / 2
 }
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.

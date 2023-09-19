@@ -988,7 +988,45 @@ func TestGRPC(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
-					require.Equal(t, "Invalid destination creds, failed for operation: upload with err: \nEndpoint:  does not follow ip address or domain name standards.", res.GetError())
+					require.Equal(t, "Invalid destination creds, failed for operation: list with err: \nEndpoint:  does not follow ip address or domain name standards.", res.GetError())
+					require.False(t, res.GetIsValid())
+				})
+				t.Run("list permissions missing", func(t *testing.T) {
+					res, err := grpcClient.ValidateObjectStorageDestination(ctx, &proto.ValidateObjectStorageRequest{
+						Type: whutils.MINIO,
+						Config: &structpb.Struct{
+							Fields: map[string]*structpb.Value{
+								"region": {
+									Kind: &structpb.Value_StringValue{
+										StringValue: minioResource.SiteRegion,
+									},
+								},
+								"bucketName": {
+									Kind: &structpb.Value_StringValue{
+										StringValue: minioResource.BucketName,
+									},
+								},
+								"secretAccessKey": {
+									Kind: &structpb.Value_StringValue{
+										StringValue: "wrongSecretKey",
+									},
+								},
+								"accessKeyID": {
+									Kind: &structpb.Value_StringValue{
+										StringValue: "wrongAccessKey",
+									},
+								},
+								"endPoint": {
+									Kind: &structpb.Value_StringValue{
+										StringValue: minioResource.Endpoint,
+									},
+								},
+							},
+						},
+					})
+					require.NoError(t, err)
+					require.NotEmpty(t, res)
+					require.Equal(t, "Invalid destination creds, failed for operation: list with err: \nThe Access Key Id you provided does not exist in our records.", res.GetError())
 					require.False(t, res.GetIsValid())
 				})
 				t.Run("checkMapForValidKey", func(t *testing.T) {

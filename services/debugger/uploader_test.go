@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type uploaderContext struct {
@@ -189,8 +190,8 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			uploader.(*uploaderImpl[any]).batchTimeout = time.Millisecond
-			uploader.(*uploaderImpl[any]).retrySleep = time.Millisecond
+			uploader.(*uploaderImpl[any]).batchTimeout = misc.SingleValueLoader(time.Millisecond)
+			uploader.(*uploaderImpl[any]).retrySleep = misc.SingleValueLoader(time.Millisecond)
 
 			var wg sync.WaitGroup
 			wg.Add(3)
@@ -212,7 +213,7 @@ var _ = Describe("Uploader", func() {
 
 		It("should drop some events if number of events to record is more than queue size", func() {
 			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.(*uploaderImpl[any]).maxESQueueSize = 1
+			uploader.(*uploaderImpl[any]).maxESQueueSize = misc.SingleValueLoader(1)
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -247,8 +248,8 @@ var _ = Describe("Uploader", func() {
 
 		It("should send events in batches", func() {
 			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
-			uploader.(*uploaderImpl[any]).maxBatchSize = 1
-			uploader.(*uploaderImpl[any]).batchTimeout = time.Millisecond
+			uploader.(*uploaderImpl[any]).maxBatchSize = misc.SingleValueLoader(1)
+			uploader.(*uploaderImpl[any]).batchTimeout = misc.SingleValueLoader(time.Millisecond)
 
 			var wg sync.WaitGroup
 			wg.Add(2)
