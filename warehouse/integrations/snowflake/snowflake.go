@@ -412,10 +412,6 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	} else if len(duplicates) > 0 {
 		uploadID, _ := whutils.UploadIDFromCtx(ctx)
 
-		sort.Slice(duplicates, func(i, j int) bool {
-			return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
-		})
-
 		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
 			return item.String()
 		})
@@ -544,6 +540,7 @@ func (sf *Snowflake) sampleDuplicateMessages(
 				FROM
 			  		`+stagingTable+`
 		  	)
+        ORDER BY RECEIVED_AT DESC
 		LIMIT
 		  ?;
 `,
