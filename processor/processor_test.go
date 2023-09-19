@@ -10,7 +10,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -3856,3 +3859,66 @@ var _ = Describe("TestConfigFilter", func() {
 		})
 	})
 })
+
+func TestStoreMessageMerge(t *testing.T) {
+	sm1 := &storeMessage{
+		statusList:    []*jobsdb.JobStatusT{{JobID: 1}},
+		destJobs:      []*jobsdb.JobT{{JobID: 1}},
+		batchDestJobs: []*jobsdb.JobT{{JobID: 1}},
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"1": {{JobID: 1}},
+		},
+		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}},
+		routerDestIDs:  []string{"1"},
+		reportMetrics:  []*types.PUReportedMetric{{}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 1},
+		dedupKeys:      map[string]struct{}{"1": {}},
+		totalEvents:    1,
+	}
+
+	sm2 := &storeMessage{
+		statusList:    []*jobsdb.JobStatusT{{JobID: 2}},
+		destJobs:      []*jobsdb.JobT{{JobID: 2}},
+		batchDestJobs: []*jobsdb.JobT{{JobID: 2}},
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"2": {{JobID: 2}},
+		},
+		procErrorJobs:  []*jobsdb.JobT{{JobID: 2}},
+		routerDestIDs:  []string{"2"},
+		reportMetrics:  []*types.PUReportedMetric{{}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 2},
+		dedupKeys:      map[string]struct{}{"2": {}},
+		totalEvents:    1,
+	}
+
+	merged := storeMessage{
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
+		sourceDupStats:        map[dupStatKey]int{},
+		dedupKeys:             map[string]struct{}{},
+	}
+
+	merged.merge(sm1)
+	require.Len(t, merged.statusList, 1, "status list should have 1 element")
+	require.Len(t, merged.destJobs, 1, "dest jobs should have 1 element")
+	require.Len(t, merged.batchDestJobs, 1, "batch dest jobs should have 1 element")
+	require.Len(t, merged.procErrorJobsByDestID, 1, "proc error jobs by dest id should have 1 element")
+	require.Len(t, merged.procErrorJobs, 1, "proc error jobs should have 1 element")
+	require.Len(t, merged.routerDestIDs, 1, "router dest ids should have 1 element")
+	require.Len(t, merged.reportMetrics, 1, "report metrics should have 1 element")
+	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
+	require.Len(t, merged.dedupKeys, 1, "dedup keys should have 1 element")
+	require.Equal(t, merged.totalEvents, 1, "total events should be 1")
+
+	merged.merge(sm2)
+	require.Len(t, merged.statusList, 2, "status list should have 2 elements")
+	require.Len(t, merged.destJobs, 2, "dest jobs should have 2 elements")
+	require.Len(t, merged.batchDestJobs, 2, "batch dest jobs should have 2 elements")
+	require.Len(t, merged.procErrorJobsByDestID, 2, "proc error jobs by dest id should have 2 elements")
+	require.Len(t, merged.procErrorJobs, 2, "proc error jobs should have 2 elements")
+	require.Len(t, merged.routerDestIDs, 2, "router dest ids should have 2 elements")
+	require.Len(t, merged.reportMetrics, 2, "report metrics should have 2 elements")
+	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
+	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
+	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
+	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+}

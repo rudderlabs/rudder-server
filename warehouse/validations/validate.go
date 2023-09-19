@@ -249,7 +249,7 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 func (c *connections) Validate(ctx context.Context) error {
 	defer c.manager.Cleanup(ctx)
 
-	ctx, cancel := context.WithTimeout(ctx, warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
 	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
@@ -467,7 +467,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 
-	fileManager.SetTimeout(objectStorageValidationTimeout)
+	fileManager.SetTimeout(objectStorageTimeout)
 
 	return fileManager, nil
 }
@@ -485,7 +485,7 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 		return nil, fmt.Errorf("getting manager: %w", err)
 	}
 
-	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
+	operations.SetConnectionTimeout(queryTimeout)
 
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
 		dest: dest,
