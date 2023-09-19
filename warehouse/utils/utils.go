@@ -184,10 +184,9 @@ var DiscardsSchema = map[string]string{
 }
 
 const (
-	LoadFileTypeCsv       = "csv"
-	LoadFileTypeJson      = "json"
-	LoadFileTypeParquet   = "parquet"
-	TestConnectionTimeout = 15 * time.Second
+	LoadFileTypeCsv     = "csv"
+	LoadFileTypeJson    = "json"
+	LoadFileTypeParquet = "parquet"
 )
 
 func Init() {
