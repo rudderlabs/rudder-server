@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
+	cloudfunctions "github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
@@ -45,6 +46,8 @@ func NewProducer(destination *backendconfig.DestinationT, opts common.Opts) (com
 		return bqstream.NewProducer(destination, opts)
 	case "LAMBDA":
 		return lambda.NewProducer(destination, opts)
+	case "GOOGLE_CLOUD_FUNCTION":
+		return cloudfunctions.NewProducer(destination, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}

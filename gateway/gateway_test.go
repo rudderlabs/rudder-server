@@ -948,7 +948,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests without valid rudder event in request body", func() {
 			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
-			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID }).Should(BeTrue())
+			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }).Should(BeTrue())
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
@@ -1075,7 +1075,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with request bodies larger than configured limit", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				data := make([]byte, gateway.conf.maxReqSize)
+				data := make([]byte, gateway.conf.maxReqSize.Load())
 				for i := range data {
 					data[i] = 'a'
 				}

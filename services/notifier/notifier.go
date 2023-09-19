@@ -129,8 +129,8 @@ type Notifier struct {
 		maxOpenConnections         int
 		shouldForceSetLowerVersion bool
 		trackBatchInterval         time.Duration
-		maxPollSleep               *config.Reloadable[time.Duration]
-		jobOrphanTimeout           *config.Reloadable[time.Duration]
+		maxPollSleep               misc.ValueLoader[time.Duration]
+		jobOrphanTimeout           misc.ValueLoader[time.Duration]
 		queryTimeout               time.Duration
 	}
 	stats struct {

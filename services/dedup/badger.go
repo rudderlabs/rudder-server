@@ -15,7 +15,7 @@ type badgerDB struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
-	window   *time.Duration
+	window   misc.ValueLoader[time.Duration]
 	close    chan struct{}
 	gcDone   chan struct{}
 	path     string
@@ -47,7 +47,7 @@ func (d *badgerDB) Set(kvs []KeyValue) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
-		e := badger.NewEntry([]byte(message.Key), []byte(value)).WithTTL(*d.window)
+		e := badger.NewEntry([]byte(message.Key), []byte(value)).WithTTL(d.window.Load())
 		err := txn.SetEntry(e)
 		if err == badger.ErrTxnTooBig {
 			if err = txn.Commit(); err != nil {

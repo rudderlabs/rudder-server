@@ -71,7 +71,12 @@ func TestNotifier(t *testing.T) {
 			t.Helper()
 
 			var count int
-			err := pgResource.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_notifier_queue;").Scan(&count)
+			err := pgResource.DB.QueryRowContext(ctx, `
+				SELECT
+				  COUNT(*)
+				FROM
+				  pg_notifier_queue;
+			`).Scan(&count)
 			require.NoError(t, err)
 			return count
 		}

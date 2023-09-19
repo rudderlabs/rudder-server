@@ -238,7 +238,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableEventDeliveryStatusUploads = config.GetReloadableBoolVar(true, rand.UniqueString(10))
+			h.(*Handle).disableEventDeliveryStatusUploads = misc.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 		})
 
@@ -290,7 +290,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableEventDeliveryStatusUploads = config.GetReloadableBoolVar(true, rand.UniqueString(10))
+			h.(*Handle).disableEventDeliveryStatusUploads = misc.SingleValueLoader(true)
 			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 		})
 
