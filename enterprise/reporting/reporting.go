@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
@@ -61,6 +62,7 @@ type HandleT struct {
 	region                               string
 	sleepInterval                        time.Duration
 	mainLoopSleepInterval                time.Duration
+	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 
@@ -72,6 +74,8 @@ type HandleT struct {
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxOpenConnections int
+	var dbQueryTimeout *config.Reloadable[time.Duration]
+
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
@@ -80,6 +84,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
+	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -100,6 +105,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
+		dbQueryTimeout:                       dbQueryTimeout,
 	}
 }
 
@@ -209,7 +215,7 @@ func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
 }
 
-func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64) {
+func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(clientName)
@@ -218,13 +224,20 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	}
 
 	queryStart := time.Now()
-	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
-	if err != nil && err != sql.ErrNoRows {
+	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
+	defer cancel()
+	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+
+	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
 	}
+	if ctx.Err() != nil {
+		return nil, 0, fmt.Errorf("reporting query timeout")
+	}
+
 	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
-		return nil, 0
+		return nil, 0, nil
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
@@ -270,7 +283,7 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 		metricReports = append(metricReports, &metricReport)
 	}
 
-	return metricReports, queryMin.Int64
+	return metricReports, queryMin.Int64, err
 }
 
 func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
@@ -374,6 +387,31 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+	reportingLag := stats.Default.NewTaggedStat(
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": clientName},
+	)
+
+	var lastReportedAtTime atomic.Time
+	lastReportedAtTime.Store(time.Now())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
+	go func() {
+		// for monitoring reports pileups
+		defer wg.Done()
+		for {
+			lag := time.Since(lastReportedAtTime.Load())
+			reportingLag.Gauge(lag.Seconds())
+
+			select {
+			case <-ctx.Done():
+				break
+			case <-time.After(2 * time.Minute):
+			}
+		}
+	}()
+
 	for {
 		if ctx.Err() != nil {
 			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -384,10 +422,13 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt := r.getReports(currentMs, clientName)
+		reports, reportedAt, err := r.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
+			if err == nil {
+				lastReportedAtTime.Store(loopStart)
+			}
 			select {
 			case <-ctx.Done():
 				r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -397,6 +438,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			continue
 		}
 
+		lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
@@ -422,14 +464,13 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			})
 		}
 
-		err := errGroup.Wait()
+		err = errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
 			dbHandle, err := r.getDBHandle(clientName)
 			if err != nil {
 				panic(err)
 			}
-			_, err = dbHandle.Exec(sqlStatement)
+			_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 			if err != nil {
 				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 			}

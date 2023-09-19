@@ -191,7 +191,6 @@ func (brt *Handle) Setup(
 	}))
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (brt *Handle) setupReloadableVars() {
 	brt.maxFailedCountForJob = config.GetReloadableIntVar(128, 1, "BatchRouter."+brt.destType+".maxFailedCountForJob", "BatchRouter.maxFailedCountForJob")
 	brt.asyncUploadTimeout = config.GetReloadableDurationVar(30, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
@@ -204,6 +203,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries")
 	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter.minIdleSleep")
 	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
+	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.mainLoopFreq")
 	brt.toAbortDestinationIDs = config.GetReloadableStringVar("", "BatchRouter.toAbortDestinationIDs")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")

@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/filemanager/mock_filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -266,8 +265,9 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.minIdleSleep = config.GetReloadableDurationVar(1, time.Microsecond, rand.UniqueString(10))
-			batchrouter.uploadFreq = config.GetReloadableDurationVar(1, time.Microsecond, rand.UniqueString(10))
+			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.mainLoopFreq = misc.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)

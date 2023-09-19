@@ -43,7 +43,7 @@ type Handle struct {
 	started             bool
 	uploader            debugger.Uploader[*GatewayEventBatchT]
 	configBackendURL    string
-	disableEventUploads *config.Reloadable[bool]
+	disableEventUploads misc.ValueLoader[bool]
 	log                 logger.Logger
 	eventsCache         cache.Cache[[]byte]
 

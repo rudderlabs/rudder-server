@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -64,12 +65,16 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	rt := &Handle{
 		jobsDB: jdb,
 	}
+	refTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err = postgres.DB.Exec("UPDATE rt_jobs_1 SET created_at = $1", refTime)
+	require.NoError(t, err)
 
 	debugInfo := rt.eventOrderDebugInfo("user1:destination1")
 	require.Equal(t,
-		` |  id| job_id| job_state| attempt|                     exec_time| error_code| parameters| error_response|
- | ---|    ---|       ---|     ---|                           ---|        ---|        ---|            ---|
- |   1|      1| executing|       0| 0001-01-01 00:00:00 +0000 UTC|           |         {}|             {}|
- |   2|      1| succeeded|       0| 0001-01-01 00:00:00 +0000 UTC|           |         {}|             {}|
+		` |    t_name| job_id|                    created_at| status_id| job_state| attempt|                     exec_time| error_code| parameters| error_response|
+ |       ---|    ---|                           ---|       ---|       ---|     ---|                           ---|        ---|        ---|            ---|
+ | rt_jobs_1|      1| 2023-01-01 00:00:00 +0000 UTC|         1| executing|       0| 0001-01-01 00:00:00 +0000 UTC|           |         {}|             {}|
+ | rt_jobs_1|      1| 2023-01-01 00:00:00 +0000 UTC|         2| succeeded|       0| 0001-01-01 00:00:00 +0000 UTC|           |         {}|             {}|
 `, debugInfo)
 }

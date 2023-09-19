@@ -26,9 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -328,10 +326,8 @@ func runAllInit() {
 	pgnotifier.Init()
 	warehouse.Init4()
 	validations.Init()
-	webhook.Init()
 	eventschema.Init()
 	eventschema.Init2()
-	stash.Init()
 	kafka.Init()
 	customdestinationmanager.Init()
 	alert.Init()
