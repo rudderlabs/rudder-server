@@ -101,7 +101,6 @@ type UploadJob struct {
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
 	schemaLock     sync.Mutex
-	uploadLock     sync.Mutex
 	alertSender    alerta.AlertSender
 	now            func() time.Time
 
@@ -438,8 +437,6 @@ func (job *UploadJob) run() (err error) {
 		ch <- struct{}{}
 	}()
 
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
 	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadLastExecAtField, Value: job.now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
