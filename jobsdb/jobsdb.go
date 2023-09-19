@@ -483,14 +483,14 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
-		maxTableSize                   *config.Reloadable[int64]
-		cacheExpiration                *config.Reloadable[time.Duration]
-		addNewDSLoopSleepDuration      *config.Reloadable[time.Duration]
-		refreshDSListLoopSleepDuration *config.Reloadable[time.Duration]
-		jobCleanupFrequency            *config.Reloadable[time.Duration]
-		minDSRetentionPeriod           *config.Reloadable[time.Duration]
-		maxDSRetentionPeriod           *config.Reloadable[time.Duration]
-		refreshDSTimeout               *config.Reloadable[time.Duration]
+		maxTableSize                   misc.ValueLoader[int64]
+		cacheExpiration                misc.ValueLoader[time.Duration]
+		addNewDSLoopSleepDuration      misc.ValueLoader[time.Duration]
+		refreshDSListLoopSleepDuration misc.ValueLoader[time.Duration]
+		jobCleanupFrequency            misc.ValueLoader[time.Duration]
+		minDSRetentionPeriod           misc.ValueLoader[time.Duration]
+		maxDSRetentionPeriod           misc.ValueLoader[time.Duration]
+		refreshDSTimeout               misc.ValueLoader[time.Duration]
 		jobMaxAge                      func() time.Duration
 		writeCapacity                  chan struct{}
 		readCapacity                   chan struct{}
@@ -498,32 +498,32 @@ type Handle struct {
 		enableReaderQueue              bool
 		clearAll                       bool
 		skipMaintenanceError           bool
-		dsLimit                        *int
+		dsLimit                        misc.ValueLoader[int]
 		maxReaders                     int
 		maxWriters                     int
 		maxOpenConnections             int
-		analyzeThreshold               *config.Reloadable[int]
-		MaxDSSize                      *config.Reloadable[int]
+		analyzeThreshold               misc.ValueLoader[int]
+		MaxDSSize                      misc.ValueLoader[int]
 		migration                      struct {
-			maxMigrateOnce, maxMigrateDSProbe          *config.Reloadable[int]
+			maxMigrateOnce, maxMigrateDSProbe          misc.ValueLoader[int]
 			vacuumFullStatusTableThreshold             func() int64
 			vacuumAnalyzeStatusTableThreshold          func() int64
 			jobDoneMigrateThres, jobStatusMigrateThres func() float64
 			jobMinRowsMigrateThres                     func() float64
-			migrateDSLoopSleepDuration                 *config.Reloadable[time.Duration]
-			migrateDSTimeout                           *config.Reloadable[time.Duration]
+			migrateDSLoopSleepDuration                 misc.ValueLoader[time.Duration]
+			migrateDSTimeout                           misc.ValueLoader[time.Duration]
 		}
 		backup struct {
-			masterBackupEnabled       *config.Reloadable[bool]
-			maxBackupRetryTime        *config.Reloadable[time.Duration]
-			backupCheckSleepDuration  *config.Reloadable[time.Duration]
+			masterBackupEnabled       misc.ValueLoader[bool]
+			maxBackupRetryTime        misc.ValueLoader[time.Duration]
+			backupCheckSleepDuration  misc.ValueLoader[time.Duration]
 			preBackupHandlers         []prebackup.Handler
 			fileUploaderProvider      fileuploader.Provider
-			instanceBackupEnabled     *config.Reloadable[bool]
+			instanceBackupEnabled     misc.ValueLoader[bool]
 			FailedOnly                bool
 			PathPrefix                string
-			backupRowsBatchSize       *config.Reloadable[int64]
-			backupMaxTotalPayloadSize *config.Reloadable[int64]
+			backupRowsBatchSize       misc.ValueLoader[int64]
+			backupMaxTotalPayloadSize misc.ValueLoader[int64]
 		}
 	}
 }
@@ -658,7 +658,7 @@ func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	}
 }
 
-func WithDSLimit(limit *int) OptsFunc {
+func WithDSLimit(limit misc.ValueLoader[int]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.dsLimit = limit
 	}
@@ -3258,7 +3258,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	cacheHitCount := 0
 	var dsLimit int
 	if jd.conf.dsLimit != nil {
-		dsLimit = *jd.conf.dsLimit
+		dsLimit = jd.conf.dsLimit.Load()
 	}
 	for idx, ds := range dsList {
 		if params.afterJobID != nil {

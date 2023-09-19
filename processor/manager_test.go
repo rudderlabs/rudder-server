@@ -35,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -123,7 +122,6 @@ func blockOnHold() {
 func initJobsDB() {
 	config.Reset()
 	logger.Reset()
-	stash.Init()
 	admin.Init()
 }
 

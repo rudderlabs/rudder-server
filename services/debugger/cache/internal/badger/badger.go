@@ -22,10 +22,9 @@ import (
 loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
 */
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (e *Cache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(5, &e.ttl, true, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
-	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
+	e.ttl = config.GetReloadableDurationVar(5, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
+	e.limiter = config.GetReloadableIntVar(100, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
 	e.ticker = config.GetDurationVar(1, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
 	e.queryTimeout = config.GetDurationVar(15, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
 	e.gcDiscardRatio = config.GetFloat64Var(0.5, "LiveEvent.cache."+e.origin+".gcDiscardRatio", "LiveEvent.cache.gcDiscardRatio")
@@ -43,14 +42,14 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	limiter                 int
+	limiter                 misc.ValueLoader[int]
 	path                    string
 	origin                  string
 	done                    chan struct{}
 	closed                  chan struct{}
 	ticker                  time.Duration
 	queryTimeout            time.Duration
-	ttl                     time.Duration
+	ttl                     misc.ValueLoader[time.Duration]
 	gcDiscardRatio          float64
 	numMemtables            int
 	numLevelZeroTables      int
@@ -82,7 +81,7 @@ func (e *Cache[E]) Update(key string, value E) error {
 		if err != nil {
 			return err
 		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl)
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl.Load())
 		return txn.SetEntry(entry)
 	})
 }
@@ -92,7 +91,7 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 	var values []E
 	err := e.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = e.limiter
+		opts.PrefetchSize = e.limiter.Load()
 		itr := txn.NewKeyIterator([]byte(key), opts)
 		defer itr.Close()
 		for itr.Rewind(); itr.Valid(); itr.Next() {
@@ -105,7 +104,7 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 			}); err == nil { // ignore unmarshal errors (old version of the data)
 				values = append(values, value)
 			}
-			if len(values) >= e.limiter {
+			if len(values) >= e.limiter.Load() {
 				break
 			}
 		}
@@ -159,7 +158,7 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		WithNumMemtables(e.numMemtables).
 		WithValueThreshold(e.valueThreshold).
 		WithBlockCacheSize(0).
-		WithNumVersionsToKeep(e.limiter).
+		WithNumVersionsToKeep(e.limiter.Load()).
 		WithNumLevelZeroTables(e.numLevelZeroTables).
 		WithNumLevelZeroTablesStall(e.numLevelZeroTablesStall).
 		WithSyncWrites(e.syncWrites)
