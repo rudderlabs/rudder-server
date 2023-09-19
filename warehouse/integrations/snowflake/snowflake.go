@@ -540,7 +540,7 @@ func (sf *Snowflake) sampleDuplicateMessages(
 				FROM
 			  		`+stagingTable+`
 		  	)
-        ORDER BY RECEIVED_AT DESC
+        ORDER BY RECEIVED_AT ASC
 		LIMIT
 		  ?;
 `,
