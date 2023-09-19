@@ -75,7 +75,16 @@ func (gw *Handle) Setup(
 	gw.conf.maxUserWebRequestWorkerProcess = config.GetIntVar(64, 1, "Gateway.maxUserWebRequestWorkerProcess")
 	// Multiple DB writers are used to write data to DB
 	gw.conf.maxDBWriterProcess = config.GetIntVar(256, 1, "Gateway.maxDBWriterProcess")
-	gw.setupReloadableVars(config)
+	// Timeout after which batch is formed anyway with whatever requests are available
+	gw.conf.userWebRequestBatchTimeout = config.GetReloadableDurationVar(15, time.Millisecond, "Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS")
+	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
+	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
+	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
+	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
+	// Maximum request size to gateway
+	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
+	// Enable rate limit on incoming events. false by default
+	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
 	// Enable suppress user feature. false by default
 	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
 	// EventSchemas feature. false by default
@@ -153,20 +162,6 @@ func (gw *Handle) Setup(
 		return nil
 	}))
 	return nil
-}
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (gw *Handle) setupReloadableVars(config *config.Config) {
-	// Timeout after which batch is formed anyway with whatever requests are available
-	config.RegisterDurationConfigVariable(15, &gw.conf.userWebRequestBatchTimeout, true, time.Millisecond, "Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS")
-	config.RegisterDurationConfigVariable(5, &gw.conf.dbBatchWriteTimeout, true, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
-	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
-	config.RegisterBoolConfigVariable(false, &gw.conf.allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	config.RegisterBoolConfigVariable(true, &gw.conf.gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
-	// Maximum request size to gateway
-	config.RegisterIntConfigVariable(4000, &gw.conf.maxReqSize, true, 1024, "Gateway.maxReqSizeInKB")
-	// Enable rate limit on incoming events. false by default
-	config.RegisterBoolConfigVariable(false, &gw.conf.enableRateLimit, true, "Gateway.enableRateLimit")
 }
 
 // initUserWebRequestWorkers initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
@@ -263,7 +258,7 @@ func (gw *Handle) initDBWriterWorkers(ctx context.Context) {
 func (gw *Handle) userWorkerRequestBatcher() {
 	userWorkerBatchRequestBuffer := make([]*userWorkerBatchRequestT, 0)
 
-	timeout := time.After(gw.conf.dbBatchWriteTimeout)
+	timeout := time.After(gw.conf.dbBatchWriteTimeout.Load())
 	for {
 		select {
 		case userWorkerBatchRequest, hasMore := <-gw.userWorkerBatchRequestQ:
@@ -283,7 +278,7 @@ func (gw *Handle) userWorkerRequestBatcher() {
 				userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 			}
 		case <-timeout:
-			timeout = time.After(gw.conf.dbBatchWriteTimeout)
+			timeout = time.After(gw.conf.dbBatchWriteTimeout.Load())
 			if len(userWorkerBatchRequestBuffer) > 0 {
 				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
 				gw.dbWorkersTimeOutStat.Count(1)
@@ -311,7 +306,7 @@ func (gw *Handle) dbWriterWorkerProcess() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 		err := gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			if gw.conf.gwAllowPartialWriteWithErrors {
+			if gw.conf.gwAllowPartialWriteWithErrors.Load() {
 				var err error
 				errorMessagesMap, err = gw.jobsDB.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
 				if err != nil {

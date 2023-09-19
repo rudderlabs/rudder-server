@@ -46,7 +46,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
-		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
+		c.Set("JobsDB."+tablePrefix+"."+"maxDSRetention", "1ms")
 
 		customVal := rand.String(5)
 		jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
@@ -232,7 +232,7 @@ func TestMigration(t *testing.T) {
 		))
 		defer jobDB.TearDown()
 
-		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
+		c.Set("JobsDB."+tablePrefix+"."+"maxDSRetention", "1ms")
 
 		// 3 datasets with 10 jobs each, 1 dataset with 0 jobs
 		for i := 0; i < 3; i++ {

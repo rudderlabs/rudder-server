@@ -14,10 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	JobRetention time.Duration
-	EmptyPayload = []byte(`{}`)
-)
+var EmptyPayload = []byte(`{}`)
 
 const (
 	DRAIN_ERROR_CODE int = 410
@@ -46,21 +43,8 @@ type SendPostResponse struct {
 	ResponseBody        []byte
 }
 
-func Init() {
-	loadConfig()
-}
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func loadConfig() {
-	config.RegisterDurationConfigVariable(720, &JobRetention, true, time.Hour, "Router.jobRetention")
-}
-
 func getRetentionTimeForDestination(destID string) time.Duration {
-	if config.IsSet("Router." + destID + ".jobRetention") {
-		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
-	}
-
-	return JobRetention
+	return config.GetDurationVar(720, time.Hour, "Router."+destID+".jobRetention", "Router.jobRetention")
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*DestinationWithSources) (bool, string) {

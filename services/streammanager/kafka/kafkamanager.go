@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // schema is the AVRO schema required to convert the data to AVRO
@@ -199,7 +200,7 @@ var (
 	kafkaBatchSize                       = defaultBatchSize
 	kafkaBatchingEnabled                 bool
 	kafkaCompression                     client.Compression
-	allowReqsWithoutUserIDAndAnonymousID *config.Reloadable[bool]
+	allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
 
 	kafkaStats managerStats
 	pkgLogger  logger

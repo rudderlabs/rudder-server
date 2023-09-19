@@ -30,17 +30,12 @@ type gatewayApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		gatewayDSLimit int
+		gatewayDSLimit misc.ValueLoader[int]
 	}
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (a *gatewayApp) loadConfiguration() {
-	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-}
-
 func (a *gatewayApp) Setup(options *app.Options) error {
-	a.loadConfiguration()
+	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY); err != nil {
 		return err
 	}
@@ -80,7 +75,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
+		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)

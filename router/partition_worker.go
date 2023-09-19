@@ -33,7 +33,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			barrier: eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 				"destType":         rt.destType,
 				"batching":         strconv.FormatBool(rt.enableBatching),
-				"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy),
+				"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
 			}),
 				eventorder.WithConcurrencyLimit(rt.barrierConcurrencyLimit),
 				eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
@@ -80,7 +80,7 @@ func (pw *partitionWorker) Work() bool {
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
 	worked := pw.pickupCount > 0
 	if worked && !pw.limitsReached { // sleep only if we worked and we didn't reach the limits
-		if sleepFor := pw.rt.reloadableConfig.readSleep - time.Since(start); sleepFor > 0 {
+		if sleepFor := pw.rt.reloadableConfig.readSleep.Load() - time.Since(start); sleepFor > 0 {
 			_ = misc.SleepCtx(pw.ctx, sleepFor)
 		}
 	}
@@ -89,7 +89,7 @@ func (pw *partitionWorker) Work() bool {
 
 // SleepDurations returns the min and max sleep durations for the partitioned worker while not working
 func (pw *partitionWorker) SleepDurations() (min, max time.Duration) {
-	return pw.rt.reloadableConfig.readSleep, pw.rt.reloadableConfig.readSleep * 10
+	return pw.rt.reloadableConfig.readSleep.Load(), pw.rt.reloadableConfig.readSleep.Load() * 10
 }
 
 // Stop stops the partitioned worker by closing the input channel of all its internal workers and waiting for them to finish

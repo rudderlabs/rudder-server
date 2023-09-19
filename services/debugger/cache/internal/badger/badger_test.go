@@ -108,7 +108,7 @@ var _ = Describe("cache", func() {
 
 		It("should only keep the last x values for the same key", func() {
 			var values [][]byte
-			for i := 0; i <= e.limiter; i++ {
+			for i := 0; i <= e.limiter.Load(); i++ {
 				value := []byte(fmt.Sprintf("test_value_%d", i))
 				Expect(e.Update(testKey, value)).To(BeNil())
 				values = append(values, value)
@@ -116,14 +116,14 @@ var _ = Describe("cache", func() {
 
 			v, err := e.Read(testKey)
 			Expect(err).To(BeNil())
-			Expect(len(v)).To(Equal(e.limiter))
+			Expect(len(v)).To(Equal(e.limiter.Load()))
 
 			Expect(v).To(Equal(values[1:]))
 		})
 
 		It("Cache expiry", func() {
 			Expect(e.Update(testKey, testValue1)).To(BeNil())
-			time.Sleep(e.ttl)
+			time.Sleep(e.ttl.Load())
 			Expect(e.Update(testKey, testValue2)).To(BeNil())
 			v, err := e.Read(testKey)
 			Expect(err).To(BeNil())

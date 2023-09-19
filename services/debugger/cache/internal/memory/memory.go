@@ -6,6 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type cacheItem[E any] struct {
@@ -17,16 +18,15 @@ type cacheItem[E any] struct {
 loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
 */
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (c *Cache[E]) loadCacheConfig() {
-	if c.size == 0 {
-		config.RegisterIntConfigVariable(3, &c.size, true, 1, "LiveEvent.cache.size")
+	if c.size == nil {
+		c.size = config.GetReloadableIntVar(3, 1, "LiveEvent.cache.size")
 	}
-	if c.keyTTL == 0 {
-		config.RegisterDurationConfigVariable(3, &c.keyTTL, true, time.Hour, "LiveEvent.cache.ttl") // default keyTTL is 30 days
+	if c.keyTTL == nil {
+		c.keyTTL = config.GetReloadableDurationVar(3, time.Hour, "LiveEvent.cache.ttl") // default keyTTL is 30 days
 	}
-	if c.cleanupFreq == 0 {
-		config.RegisterDurationConfigVariable(15, &c.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
+	if c.cleanupFreq == nil {
+		c.cleanupFreq = config.GetReloadableDurationVar(15, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	}
 }
 
@@ -37,9 +37,9 @@ key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
 	lock        sync.RWMutex
-	keyTTL      time.Duration // Time after which the data will be expired and removed from the cache
-	cleanupFreq time.Duration // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
-	size        int           // This is the size upto which this cache can store a value corresponding to any key
+	keyTTL      misc.ValueLoader[time.Duration] // Time after which the data will be expired and removed from the cache
+	cleanupFreq misc.ValueLoader[time.Duration] // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
+	size        misc.ValueLoader[int]           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem[E]
 
 	done   chan struct{}
@@ -57,7 +57,7 @@ func New[E any]() (*Cache[E], error) {
 	}
 
 	c.loadCacheConfig()
-	c.cacheMap = make(map[string]*cacheItem[E], c.size)
+	c.cacheMap = make(map[string]*cacheItem[E], c.size.Load())
 
 	rruntime.Go(func() {
 		for {
@@ -65,9 +65,9 @@ func New[E any]() (*Cache[E], error) {
 			case <-c.done:
 				close(c.closed)
 				return
-			case <-time.After(c.cleanupFreq):
+			case <-time.After(c.cleanupFreq.Load()):
 				now := time.Now()
-				expThreshold := now.Add(-c.keyTTL)
+				expThreshold := now.Add(-c.keyTTL.Load())
 				c.lock.Lock()
 				for k, v := range c.cacheMap {
 					if v.lastAccess.Before(expThreshold) {
@@ -90,12 +90,12 @@ func (c *Cache[E]) Update(key string, value E) error {
 	defer c.lock.Unlock()
 
 	if _, ok := c.cacheMap[key]; !ok {
-		c.cacheMap[key] = &cacheItem[E]{data: make([]E, 0, c.size)}
+		c.cacheMap[key] = &cacheItem[E]{data: make([]E, 0, c.size.Load())}
 	}
 	tempCacheElement := c.cacheMap[key].data
 	tempCacheElement = append(tempCacheElement, value)
-	if len(tempCacheElement) > c.size {
-		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.size:]
+	if len(tempCacheElement) > c.size.Load() {
+		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.size.Load():]
 	}
 	c.cacheMap[key].data = tempCacheElement
 	c.cacheMap[key].lastAccess = time.Now()

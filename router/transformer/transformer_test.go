@@ -349,7 +349,7 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *chi.Mux
 func TestTransformNoValidationErrors(t *testing.T) {
 	initMocks(t)
 	config.Reset()
-	pkgLogger = logger.NOP
+	loggerOverride = logger.NOP
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
@@ -381,7 +381,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 func TestTransformValidationUnmarshallingError(t *testing.T) {
 	initMocks(t)
 	config.Reset()
-	pkgLogger = logger.NOP
+	loggerOverride = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid response: invalid json for input:"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -413,7 +413,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 func TestTransformValidationInOutMismatchError(t *testing.T) {
 	initMocks(t)
 	config.Reset()
-	pkgLogger = logger.NOP
+	loggerOverride = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid output size: 4 for input size: 3"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -453,7 +453,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	initMocks(t)
 	config.Reset()
-	pkgLogger = logger.NOP
+	loggerOverride = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid jobIDs: [4]"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -544,7 +544,7 @@ func initMocks(t *testing.T) {
 	mockRudderStats.EXPECT().SendTiming(gomock.Any()).AnyTimes()
 	mockRudderStats.EXPECT().Increment().AnyTimes()
 
-	pkgLogger = logger.NOP
+	loggerOverride = logger.NOP
 }
 
 func normalizeErrors(transformerResponse []types.DestinationJobT, prefix string) {

@@ -258,7 +258,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 					t.Logf("%d/%d done (%d drained)", done, total, drained)
 				}
 				return done == total
-			}, 360*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
+			}, 120*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
 
 			require.False(t, t.Failed(), "webhook shouldn't have failed")
 

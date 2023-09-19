@@ -70,8 +70,8 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 type Handle struct {
 	configBackendURL               string
 	started                        bool
-	disableTransformationUploads   *config.Reloadable[bool]
-	limitEventsInMemory            *config.Reloadable[int]
+	disableTransformationUploads   misc.ValueLoader[bool]
+	limitEventsInMemory            misc.ValueLoader[int]
 	uploader                       debugger.Uploader[*TransformStatusT]
 	log                            logger.Logger
 	transformationCacheMap         cache.Cache[TransformationStatusT]
