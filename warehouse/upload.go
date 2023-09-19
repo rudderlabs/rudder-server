@@ -91,7 +91,6 @@ type UploadJob struct {
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PGNotifier
 	schemaHandle         *Schema
-	uploadSchema         model.Schema
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -327,7 +326,6 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
 
-	job.uploadSchema = uploadSchema
 	job.upload.UploadSchema = uploadSchema
 
 	return nil
@@ -474,8 +472,6 @@ func (job *UploadJob) run() (err error) {
 	if hasSchemaChanged {
 		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
-
-	job.uploadSchema = job.upload.UploadSchema
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1978,7 +1974,7 @@ func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSch
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
-	return job.uploadSchema[tableName]
+	return job.upload.UploadSchema[tableName]
 }
 
 func (job *UploadJob) GetSingleLoadFile(ctx context.Context, tableName string) (whutils.LoadFile, error) {
