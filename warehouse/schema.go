@@ -61,12 +61,13 @@ func NewSchema(
 	db *sqlquerywrapper.DB,
 	warehouse model.Warehouse,
 	conf *config.Config,
+	logger logger.Logger,
 ) *Schema {
 	return &Schema{
 		warehouse:                        warehouse,
 		schemaRepo:                       repo.NewWHSchemas(db),
 		stagingFileRepo:                  repo.NewStagingFiles(db),
-		log:                              logger.NewLogger().Child("warehouse").Child("schema"),
+		log:                              logger,
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
 		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),

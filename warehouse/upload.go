@@ -198,6 +198,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 			f.dbHandle,
 			dto.Warehouse,
 			config.Default,
+			f.logger.Child("warehouse").Child("schema"),
 		),
 
 		upload:         dto.Upload,
