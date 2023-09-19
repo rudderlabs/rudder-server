@@ -36,11 +36,11 @@ type JobsForwarder struct {
 	pulsarClient   *pulsar.Client          // pulsar client used to create producers
 	pulsarProducer pulsar.ProducerAdapter  // pulsar producer used to forward jobs to pulsar
 
-	topic                string        // topic to which jobs are forwarded
-	maxSampleSize        int64         // max payload size for the samples to include in the schema messages
-	initialRetryInterval time.Duration // initial retry interval for the backoff mechanism
-	maxRetryInterval     time.Duration // max retry interval for the backoff mechanism
-	maxRetryElapsedTime  time.Duration // max retry elapsed time for the backoff mechanism
+	topic                string                          // topic to which jobs are forwarded
+	maxSampleSize        misc.ValueLoader[int64]         // max payload size for the samples to include in the schema messages
+	initialRetryInterval misc.ValueLoader[time.Duration] // initial retry interval for the backoff mechanism
+	maxRetryInterval     misc.ValueLoader[time.Duration] // max retry interval for the backoff mechanism
+	maxRetryElapsedTime  misc.ValueLoader[time.Duration] // max retry elapsed time for the backoff mechanism
 }
 
 // NewJobsForwarder returns a new, properly initialized, JobsForwarder
@@ -58,12 +58,11 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	return &forwarder
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func (jf *JobsForwarder) setupReloadableVars() {
-	config.RegisterDurationConfigVariable(10, &jf.initialRetryInterval, true, time.Second, "SchemaForwarder.initialRetryInterval")
-	config.RegisterDurationConfigVariable(60, &jf.maxRetryInterval, true, time.Second, "SchemaForwarder.maxRetryInterval")
-	config.RegisterDurationConfigVariable(60, &jf.maxRetryElapsedTime, true, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
-	config.RegisterInt64ConfigVariable(10*bytesize.KB, &jf.maxSampleSize, true, 1, "SchemaForwarder.maxSampleSize")
+	jf.initialRetryInterval = config.GetReloadableDurationVar(10, time.Second, "SchemaForwarder.initialRetryInterval")
+	jf.maxRetryInterval = config.GetReloadableDurationVar(60, time.Second, "SchemaForwarder.maxRetryInterval")
+	jf.maxRetryElapsedTime = config.GetReloadableDurationVar(60, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
+	jf.maxSampleSize = config.GetReloadableInt64Var(10*bytesize.KB, 1, "SchemaForwarder.maxSampleSize")
 }
 
 // Start starts the forwarder which will start forwarding jobs from database to the appropriate pulsar topics
@@ -123,7 +122,7 @@ func (jf *JobsForwarder) Start() error {
 				messageBatches := schemaBatcher.GetMessageBatches()
 				for _, messageBatch := range messageBatches {
 					if !bytes.Equal(messageBatch.Message.Sample, []byte("{}")) && // if the sample is not an empty json object (redacted) and
-						(len(messageBatch.Message.Sample) > int(jf.maxSampleSize) || // sample is too big or
+						(len(messageBatch.Message.Sample) > int(jf.maxSampleSize.Load()) || // sample is too big or
 							!jf.sampler.Sample(messageBatch.Message.Key.String())) { // sample should be skipped
 						messageBatch.Message.Sample = nil // by setting to sample to nil we are instructing the schema worker to keep the previous sample
 					}
@@ -179,9 +178,9 @@ func (jf *JobsForwarder) Start() error {
 
 				// Retry to forward the batches to pulsar until there are no more messageBatches to retry or until maxRetryElapsedTime is reached
 				expB := backoff.NewExponentialBackOff()
-				expB.InitialInterval = jf.initialRetryInterval
-				expB.MaxInterval = jf.maxRetryInterval
-				expB.MaxElapsedTime = jf.maxRetryElapsedTime
+				expB.InitialInterval = jf.initialRetryInterval.Load()
+				expB.MaxInterval = jf.maxRetryInterval.Load()
+				expB.MaxElapsedTime = jf.maxRetryElapsedTime.Load()
 				if err = backoff.Retry(tryForward, backoff.WithContext(expB, ctx)); err != nil {
 					errorResponse, _ := json.Marshal(map[string]string{"error": err.Error()})
 					var abortedCount int

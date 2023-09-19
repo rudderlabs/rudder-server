@@ -14,6 +14,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -176,11 +177,11 @@ func (m *mockWorkerHandle) logger() logger.Logger {
 func (m *mockWorkerHandle) config() workerHandleConfig {
 	return workerHandleConfig{
 		enablePipelining:      m.pipelining,
-		maxEventsToProcess:    m.loopEvents,
+		maxEventsToProcess:    misc.SingleValueLoader(m.loopEvents),
 		pipelineBufferedItems: 1,
 		subJobSize:            10,
-		readLoopSleep:         1 * time.Millisecond,
-		maxLoopSleep:          100 * time.Millisecond,
+		readLoopSleep:         misc.SingleValueLoader(1 * time.Millisecond),
+		maxLoopSleep:          misc.SingleValueLoader(100 * time.Millisecond),
 	}
 }
 
