@@ -80,6 +80,7 @@ type Handle struct {
 	jobdDBMaxRetries             misc.ValueLoader[int]
 	minIdleSleep                 misc.ValueLoader[time.Duration]
 	uploadFreq                   misc.ValueLoader[time.Duration]
+	mainLoopFreq                 misc.ValueLoader[time.Duration]
 	disableEgress                bool
 	toAbortDestinationIDs        misc.ValueLoader[string]
 	warehouseServiceMaxRetryTime misc.ValueLoader[time.Duration]
@@ -149,7 +150,7 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
-			mainLoopSleep = brt.uploadFreq.Load()
+			mainLoopSleep = brt.mainLoopFreq.Load()
 		}
 	}
 }
