@@ -109,6 +109,7 @@ type Notifier struct {
 	repo                notifierRepo
 	workspaceIdentifier string
 	batchIDGenerator    func() uuid.UUID
+	randGenerator       *rand.Rand
 	now                 func() time.Time
 	background          struct {
 		group       *errgroup.Group
@@ -157,6 +158,7 @@ func New(
 		statsFactory:        statsFactory,
 		workspaceIdentifier: workspaceIdentifier,
 		batchIDGenerator:    misc.FastUUID,
+		randGenerator:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		now:                 time.Now,
 	}
 
@@ -315,8 +317,16 @@ func (n *Notifier) ClearJobs(ctx context.Context) error {
 	return nil
 }
 
-func (n *Notifier) GetDBHandle() *sql.DB {
-	return n.db.DB
+func (n *Notifier) CheckHealth(ctx context.Context) bool {
+	healthCheckMsg := "Rudder Warehouse DB Health Check"
+	msg := ""
+
+	err := n.db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
+	if err != nil {
+		return false
+	}
+
+	return healthCheckMsg == msg
 }
 
 // Publish inserts the payloads into the database and returns a channel of type PublishResponse
@@ -349,7 +359,7 @@ func (n *Notifier) trackBatch(
 	ctx context.Context,
 	batchID string,
 ) <-chan *PublishResponse {
-	publishResCh := make(chan *PublishResponse)
+	publishResCh := make(chan *PublishResponse, 1)
 
 	n.background.group.Go(func() error {
 		defer close(publishResCh)
@@ -419,7 +429,7 @@ func (n *Notifier) Subscribe(
 	jobsCh := make(chan *ClaimJob, bufferSize)
 
 	nextPollInterval := func(pollSleep time.Duration) time.Duration {
-		pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
+		pollSleep = 2*pollSleep + time.Duration(n.randGenerator.Intn(100))*time.Millisecond
 
 		if pollSleep < n.config.maxPollSleep.Load() {
 			return pollSleep
@@ -476,7 +486,7 @@ func (n *Notifier) claim(
 	claimStartTime := n.now()
 
 	claimedJob, err := n.repo.claim(ctx, workerID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("no jobs found: %w", err)
 	}
 	if err != nil {

@@ -182,7 +182,7 @@ func TestRepo(t *testing.T) {
 			}
 		})
 
-		t.Run("without metadata", func(t *testing.T) {
+		t.Run("without upload schema", func(t *testing.T) {
 			publishRequest := PublishRequest{
 				Payloads: []json.RawMessage{
 					json.RawMessage(`{"id":"11"}`),

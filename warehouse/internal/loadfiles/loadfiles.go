@@ -108,10 +108,6 @@ type WorkerJobRequest struct {
 	LoadFileType                 string
 }
 
-type WorkerJobRequestMetadata struct {
-	UploadSchema model.Schema
-}
-
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", defaultPublishBatchSize)
 	mapConfig := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
@@ -239,12 +235,13 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
-		metadata := WorkerJobRequestMetadata{
+		uploadSchemaJSON, err := json.Marshal(struct {
+			UploadSchema model.Schema
+		}{
 			UploadSchema: job.Upload.UploadSchema,
-		}
-		metadataJSON, err := json.Marshal(metadata)
+		})
 		if err != nil {
-			return 0, 0, fmt.Errorf("error marshalling metadata: %w", err)
+			return 0, 0, fmt.Errorf("error marshalling upload schema: %w", err)
 		}
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
@@ -252,7 +249,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		ch, err := lf.Notifier.Publish(ctx, &notifier.PublishRequest{
 			Payloads:     messages,
 			JobType:      notifier.JobTypeUpload,
-			UploadSchema: metadataJSON,
+			UploadSchema: uploadSchemaJSON,
 			Priority:     job.Upload.Priority,
 		})
 		if err != nil {

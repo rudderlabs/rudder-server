@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"testing"
+	"time"
 
 	"github.com/samber/lo"
 
@@ -48,6 +48,100 @@ func TestNotifier(t *testing.T) {
 		workerID            = "test_worker"
 	)
 
+	t.Run("clear jobs", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		publishRequest := &notifier.PublishRequest{
+			Payloads: []json.RawMessage{
+				json.RawMessage(`{"id":"1"}`),
+				json.RawMessage(`{"id":"2"}`),
+				json.RawMessage(`{"id":"3"}`),
+				json.RawMessage(`{"id":"4"}`),
+				json.RawMessage(`{"id":"5"}`),
+			},
+			JobType:      notifier.JobTypeUpload,
+			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
+			Priority:     50,
+		}
+
+		count := func(t testing.TB) int {
+			t.Helper()
+
+			var count int
+			err := pgResource.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_notifier_queue;").Scan(&count)
+			require.NoError(t, err)
+			return count
+		}
+
+		notifierWithIdentifier := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+		err := notifierWithIdentifier.Setup(ctx, pgResource.DBDsn)
+		require.NoError(t, err)
+
+		notifierWithoutIdentifier := notifier.New(config.Default, logger.NOP, stats.Default, "")
+		err = notifierWithoutIdentifier.Setup(ctx, pgResource.DBDsn)
+		require.NoError(t, err)
+
+		t.Run("without workspace identifier", func(t *testing.T) {
+			_, err = notifierWithIdentifier.Publish(ctx, publishRequest)
+			require.NoError(t, err)
+			require.Equal(t, len(publishRequest.Payloads), count(t))
+
+			err = notifierWithoutIdentifier.ClearJobs(ctx)
+			require.NoError(t, err)
+			require.Equal(t, len(publishRequest.Payloads), count(t))
+
+			err = notifierWithIdentifier.ClearJobs(ctx)
+			require.NoError(t, err)
+			require.Zero(t, count(t))
+		})
+
+		t.Run("with workspace identifier", func(t *testing.T) {
+			_, err = notifierWithoutIdentifier.Publish(ctx, publishRequest)
+			require.NoError(t, err)
+			require.Equal(t, len(publishRequest.Payloads), count(t))
+
+			err = notifierWithIdentifier.ClearJobs(ctx)
+			require.NoError(t, err)
+			require.Equal(t, len(publishRequest.Payloads), count(t))
+
+			err = notifierWithoutIdentifier.ClearJobs(ctx)
+			require.NoError(t, err)
+			require.Equal(t, len(publishRequest.Payloads), count(t))
+		})
+
+		t.Run("context cancelled", func(t *testing.T) {
+			cancelledCtx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			err = notifierWithIdentifier.ClearJobs(cancelledCtx)
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	})
+	t.Run("health check", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		t.Run("success", func(t *testing.T) {
+			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+			err := n.Setup(ctx, pgResource.DBDsn)
+			require.NoError(t, err)
+			require.True(t, n.CheckHealth(ctx))
+		})
+		t.Run("context cancelled", func(t *testing.T) {
+			cancelledCtx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+			err := n.Setup(ctx, pgResource.DBDsn)
+			require.NoError(t, err)
+			require.False(t, n.CheckHealth(cancelledCtx))
+		})
+	})
 	t.Run("basic workflow", func(t *testing.T) {
 		t.Parallel()
 
@@ -209,7 +303,7 @@ func TestNotifier(t *testing.T) {
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
 			JobType:      notifier.JobTypeUpload,
-			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
 
@@ -299,7 +393,7 @@ func TestNotifier(t *testing.T) {
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
 			JobType:      notifier.JobTypeUpload,
-			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
 
@@ -389,7 +483,7 @@ func TestNotifier(t *testing.T) {
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
 			JobType:      notifier.JobTypeUpload,
-			UploadSchema: json.RawMessage(`{"mid": "1"}`),
+			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
 
@@ -481,18 +575,52 @@ func TestNotifier(t *testing.T) {
 		pgResource := setup(t)
 		ctx := context.Background()
 
-		port, err := strconv.Atoi(pgResource.Port)
-		require.NoError(t, err)
-
 		c := config.New()
 		c.Set("PGNOTIFIER_DB_HOST", pgResource.Host)
 		c.Set("PGNOTIFIER_DB_USER", pgResource.User)
 		c.Set("PGNOTIFIER_DB_NAME", pgResource.Database)
-		c.Set("PGNOTIFIER_DB_PORT", port)
+		c.Set("PGNOTIFIER_DB_PORT", pgResource.Port)
 		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
 
 		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
-		err = n.Setup(ctx, pgResource.DBDsn)
+		err := n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
+	})
+	t.Run("maintenance workflow", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+
+		ctx := context.Background()
+
+		c := config.New()
+		c.Set("PgNotifier.jobOrphanTimeout", "1s")
+
+		g, _ := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
+			err := n.Setup(ctx, pgResource.DBDsn)
+			require.NoError(t, err)
+
+			err = n.RunMaintenance(ctxWithTimeout)
+			require.NoError(t, err)
+			return nil
+		})
+		g.Go(func() error {
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
+			err := n.Setup(ctx, pgResource.DBDsn)
+			require.NoError(t, err)
+
+			err = n.RunMaintenance(ctxWithTimeout)
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, g.Wait())
 	})
 }

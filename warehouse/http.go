@@ -179,7 +179,7 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if a.config.runningMode != DegradedMode {
-		if !checkHealth(ctx, a.notifier.GetDBHandle()) {
+		if !a.notifier.CheckHealth(ctx) {
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
