@@ -598,6 +598,8 @@ func (job *UploadJob) run() (err error) {
 			wg.Add(3)
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				var succeededUserTableCount int
 				for _, userTable := range userTables {
 					if _, ok := currentJobSucceededTables[userTable]; ok {
@@ -605,19 +607,19 @@ func (job *UploadJob) run() (err error) {
 					}
 				}
 				if succeededUserTableCount >= len(userTables) {
-					wg.Done()
 					return
 				}
-				err = job.exportUserTables(loadFilesTableMap)
+				err := job.exportUserTables(loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				var succeededIdentityTableCount int
 				for _, identityTable := range identityTables {
 					if _, ok := currentJobSucceededTables[identityTable]; ok {
@@ -625,30 +627,29 @@ func (job *UploadJob) run() (err error) {
 					}
 				}
 				if succeededIdentityTableCount >= len(identityTables) {
-					wg.Done()
 					return
 				}
-				err = job.exportIdentities()
+				err := job.exportIdentities()
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				specialTables := make([]string, 0, len(userTables)+len(identityTables))
 				specialTables = append(specialTables, userTables...)
 				specialTables = append(specialTables, identityTables...)
 
-				err = job.exportRegularTables(specialTables, loadFilesTableMap)
+				err := job.exportRegularTables(specialTables, loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			wg.Wait()
