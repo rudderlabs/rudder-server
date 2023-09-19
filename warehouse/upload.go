@@ -990,7 +990,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	wg.Add(len(uploadSchema))
 
 	var alteredSchemaInAtLeastOneTable atomic.Bool
-	loadChan := make(chan struct{}, parallelLoads)
+	concurrencyGuard := make(chan struct{}, parallelLoads)
 
 	var (
 		err                       error
@@ -1018,30 +1018,30 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		}
 		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
-			wg.Done()
 			if slices.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
 				status := model.TableUploadExported
 				_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
 					Status: &status,
 				})
 			}
+			wg.Done()
 			continue
 		}
-		tName := tableName
-		loadChan <- struct{}{}
+		tableName := tableName
+		concurrencyGuard <- struct{}{}
 		rruntime.GoForWarehouse(func() {
-			alteredSchema, err := job.loadTable(tName)
+			alteredSchema, err := job.loadTable(tableName)
 			if alteredSchema {
 				alteredSchemaInAtLeastOneTable.Store(true)
 			}
-
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
 				loadErrorLock.Unlock()
 			}
+
+			<-concurrencyGuard
 			wg.Done()
-			<-loadChan
 		})
 	}
 	wg.Wait()
