@@ -3,8 +3,9 @@ package manager
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

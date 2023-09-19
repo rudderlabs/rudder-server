@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"golang.org/x/exp/slices"
 
@@ -428,6 +429,7 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, rs.loadTableStrategy(),
 	)
 	log.Infow("started loading")
 
@@ -435,12 +437,7 @@ func (rs *Redshift) loadTable(
 	if err != nil {
 		return nil, "", fmt.Errorf("generating manifest: %w", err)
 	}
-	log.Infow("Generated manifest", "manifestLocation", manifestLocation)
-
-	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
-	if err != nil {
-		return nil, "", fmt.Errorf("getting temporary s3 credentials: %w", err)
-	}
+	log.Infow("generated manifest", "manifestLocation", manifestLocation)
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -474,19 +471,13 @@ func (rs *Redshift) loadTable(
 		}
 	}()
 
-	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
-	if region == "" {
-		region = "us-east-1"
-	}
-
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
 
 	log.Infow("copying data into staging table")
 	err = rs.copyIntoLoadTable(
-		ctx, txn,
-		stagingTableName, manifestS3Location, region,
-		tempAccessKeyId, tempSecretAccessKey, token, strKeys,
+		ctx, txn, stagingTableName,
+		manifestLocation, strKeys,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("copy into: %w", err)
@@ -523,17 +514,30 @@ func (rs *Redshift) loadTable(
 	}, stagingTableName, nil
 }
 
+func (rs *Redshift) loadTableStrategy() string {
+	if slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID) {
+		return "APPEND"
+	}
+	return "MERGE"
+}
+
 func (rs *Redshift) copyIntoLoadTable(
 	ctx context.Context,
 	txn *sqlmiddleware.Tx,
 	stagingTableName string,
-	manifestS3Location string,
-	region string,
-	tempAccessKeyId string,
-	tempSecretAccessKey string,
-	token string,
+	manifestLocation string,
 	strKeys []string,
 ) error {
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
+	if err != nil {
+		return fmt.Errorf("getting temporary s3 credentials: %w", err)
+	}
+
+	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`%q`, name)
 	}, ",")
@@ -641,7 +645,7 @@ func (rs *Redshift) deleteFromLoadTable(
 
 	result, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err))
+		return 0, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
 	}
 	return result.RowsAffected()
 }
@@ -690,7 +694,7 @@ func (rs *Redshift) insertIntoLoadTable(
 
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into original table: %w", err)
+		return 0, fmt.Errorf("inserting into main table: %w", err)
 	}
 	return r.RowsAffected()
 }
@@ -861,7 +865,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 			logfield.Error, err.Error(),
 		)
 		return map[string]error{
-			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err)),
+			warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
 		}
 	}
 

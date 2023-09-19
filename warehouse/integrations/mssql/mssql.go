@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"net"
 	"net/url"
@@ -18,6 +17,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -182,7 +183,14 @@ func (ms *MSSQL) connect() (*sqlmw.DB, error) {
 		db,
 		sqlmw.WithStats(ms.stats),
 		sqlmw.WithLogger(ms.logger),
-		sqlmw.WithKeyAndValues(ms.defaultLogFields()),
+		sqlmw.WithKeyAndValues([]any{
+			logfield.SourceID, ms.Warehouse.Source.ID,
+			logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, ms.Warehouse.Destination.ID,
+			logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
+			logfield.Namespace, ms.Namespace,
+		}),
 		sqlmw.WithQueryTimeout(ms.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(ms.config.slowQueryThreshold),
 	)
@@ -198,17 +206,6 @@ func (ms *MSSQL) connectionCredentials() *credentials {
 		port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
 		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.connectTimeout,
-	}
-}
-
-func (ms *MSSQL) defaultLogFields() []any {
-	return []any{
-		logfield.SourceID, ms.Warehouse.Source.ID,
-		logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, ms.Warehouse.Destination.ID,
-		logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
-		logfield.Namespace, ms.Namespace,
 	}
 }
 
@@ -274,12 +271,12 @@ func (ms *MSSQL) loadTable(
 	log.Infow("started loading")
 
 	fileNames, err := ms.LoadFileDownLoader.Download(ctx, tableName)
-	defer func() {
-		misc.RemoveFilePaths(fileNames...)
-	}()
 	if err != nil {
 		return nil, "", fmt.Errorf("downloading load files: %w", err)
 	}
+	defer func() {
+		misc.RemoveFilePaths(fileNames...)
+	}()
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -300,8 +297,7 @@ func (ms *MSSQL) loadTable(
 		SELECT
 		  TOP 0 * INTO %[1]s.%[2]s
 		FROM
-		  %[1]s.%[3]s;
-`,
+		  %[1]s.%[3]s;`,
 		ms.Namespace,
 		stagingTableName,
 		tableName,
@@ -385,6 +381,127 @@ func (ms *MSSQL) loadTable(
 	}, stagingTableName, nil
 }
 
+func (ms *MSSQL) loadDataIntoStagingTable(
+	ctx context.Context,
+	log logger.Logger,
+	stmt *sql.Stmt,
+	fileName string,
+	sortedColumnKeys []string,
+	tableSchemaInUpload model.TableSchema,
+) error {
+	gzipFile, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("opening file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipFile.Close()
+	}()
+
+	gzipReader, err := gzip.NewReader(gzipFile)
+	if err != nil {
+		return fmt.Errorf("reading file %s: %w", fileName, err)
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+
+	csvReader := csv.NewReader(gzipReader)
+
+	for {
+		var record []string
+		record, err = csvReader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("reading file %s: %w", fileName, err)
+		}
+		if len(sortedColumnKeys) != len(record) {
+			return fmt.Errorf("mismatch in number of columns for file %s: actual count: %d, expected count: %d",
+				fileName,
+				len(record),
+				len(sortedColumnKeys),
+			)
+		}
+
+		recordInterface := make([]interface{}, 0, len(record))
+		for _, value := range record {
+			if strings.TrimSpace(value) == "" {
+				recordInterface = append(recordInterface, nil)
+			} else {
+				recordInterface = append(recordInterface, value)
+			}
+		}
+
+		finalColumnValues := make([]interface{}, 0, len(record))
+		for index, value := range recordInterface {
+			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
+			if value == nil {
+				log.Warnw("found nil value",
+					logfield.ColumnType, valueType,
+					logfield.ColumnName, sortedColumnKeys[index],
+				)
+
+				finalColumnValues = append(finalColumnValues, nil)
+				continue
+			}
+
+			processedVal, err := ms.ProcessColumnValue(
+				value.(string),
+				valueType,
+			)
+			if err != nil {
+				log.Warnw("mismatch in datatype",
+					logfield.ColumnType, valueType,
+					logfield.ColumnName, sortedColumnKeys[index],
+					logfield.ColumnValue, value,
+					logfield.Error, err,
+				)
+				finalColumnValues = append(finalColumnValues, nil)
+			} else {
+				finalColumnValues = append(finalColumnValues, processedVal)
+			}
+		}
+
+		_, err = stmt.ExecContext(ctx, finalColumnValues...)
+		if err != nil {
+			return fmt.Errorf("exec statement error: %w", err)
+		}
+	}
+	return nil
+}
+
+func (as *MSSQL) ProcessColumnValue(
+	value string,
+	valueType string,
+) (interface{}, error) {
+	switch valueType {
+	case "int":
+		return strconv.Atoi(value)
+	case "float":
+		return strconv.ParseFloat(value, 64)
+	case "datetime":
+		return time.Parse(time.RFC3339, value)
+	case "boolean":
+		return strconv.ParseBool(value)
+	case "string":
+		if len(value) > mssqlStringLengthLimit {
+			value = value[:mssqlStringLengthLimit]
+		}
+		if !hasDiacritics(value) {
+			return value, nil
+		} else {
+			byteArr := str2ucs2(value)
+			if len(byteArr) > mssqlStringLengthLimit {
+				byteArr = byteArr[:mssqlStringLengthLimit]
+			}
+			return byteArr, nil
+		}
+	default:
+		return value, nil
+	}
+}
+
 func (ms *MSSQL) deleteFromLoadTable(
 	ctx context.Context,
 	txn *sqlmw.Tx,
@@ -414,8 +531,7 @@ func (ms *MSSQL) deleteFromLoadTable(
 		WHERE
 		  (
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );
-`,
+		  );`,
 		ms.Namespace,
 		tableName,
 		stagingTableName,
@@ -425,7 +541,7 @@ func (ms *MSSQL) deleteFromLoadTable(
 
 	r, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from original table: %w", err)
+		return 0, fmt.Errorf("deleting from main table: %w", err)
 	}
 	return r.RowsAffected()
 }
@@ -463,8 +579,7 @@ func (ms *MSSQL) insertIntoLoadTable(
 			  %[1]q.%[4]q
 		  ) AS _
 		WHERE
-		  _rudder_staging_row_number = 1;
-`,
+		  _rudder_staging_row_number = 1;`,
 		ms.Namespace,
 		tableName,
 		quotedColumnNames,
@@ -474,151 +589,9 @@ func (ms *MSSQL) insertIntoLoadTable(
 
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into original table: %w", err)
+		return 0, fmt.Errorf("inserting into main table: %w", err)
 	}
 	return r.RowsAffected()
-}
-
-func (ms *MSSQL) loadDataIntoStagingTable(
-	ctx context.Context,
-	log logger.Logger,
-	stmt *sql.Stmt,
-	fileName string,
-	sortedColumnKeys []string,
-	tableSchemaInUpload model.TableSchema,
-) error {
-	gzipFile, err := os.Open(fileName)
-	if err != nil {
-		return fmt.Errorf("opening file %s: %w", fileName, err)
-	}
-	defer func() {
-		_ = gzipFile.Close()
-	}()
-
-	gzipReader, err := gzip.NewReader(gzipFile)
-	if err != nil {
-		return fmt.Errorf("reading file %s: %w", fileName, err)
-	}
-	defer func() {
-		_ = gzipReader.Close()
-	}()
-
-	csvReader := csv.NewReader(gzipReader)
-
-	for {
-		var record []string
-		record, err = csvReader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("reading file %s: %w", fileName, err)
-		}
-		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d, error: %w",
-				fileName,
-				len(record),
-				len(sortedColumnKeys),
-				err,
-			)
-		}
-
-		recordInterface := make([]interface{}, 0, len(record))
-		for _, value := range record {
-			if strings.TrimSpace(value) == "" {
-				recordInterface = append(recordInterface, nil)
-			} else {
-				recordInterface = append(recordInterface, value)
-			}
-		}
-
-		finalColumnValues := make([]interface{}, 0, len(record))
-		for index, value := range recordInterface {
-			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
-			if value == nil {
-				log.Debugw("found nil value", "type", valueType, "column", sortedColumnKeys[index])
-
-				finalColumnValues = append(finalColumnValues, nil)
-				continue
-			}
-
-			strValue := value.(string)
-
-			switch valueType {
-			case "int":
-				if convertedValue, err := strconv.Atoi(strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "float":
-				if convertedValue, err := strconv.ParseFloat(strValue, 64); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "datetime":
-				// TODO : handling milli?
-				if convertedValue, err := time.Parse(time.RFC3339, strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-				// TODO : handling all cases?
-			case "boolean":
-				if convertedValue, err := strconv.ParseBool(strValue); err != nil {
-					log.Warnw("mismatch in datatype", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue, logfield.Error, err)
-
-					finalColumnValues = append(finalColumnValues, nil)
-				} else {
-					finalColumnValues = append(finalColumnValues, convertedValue)
-				}
-			case "string":
-				// Enabling diacritic support is essential to correctly handle characters with diacritics,
-				// such as Ü,ç, Ç, ©, ∆, ß, á, ù, ñ, ê. This ensures that these characters are processed
-				// and stored accurately in the database.
-
-				// The current approach serves as a substitute for a specific pull request (PR)
-				// that aimed to address this issue: https://github.com/denisenkom/go-mssqldb/pull/576/files.
-
-				// An alternate method to achieve diacritic support is to use 'nvarchar' data type instead of 'varchar'.
-				// However, the chosen approach may be more suitable for the current application's requirements.
-
-				if len(strValue) > mssqlStringLengthLimit {
-					strValue = strValue[:mssqlStringLengthLimit]
-				}
-
-				if !hasDiacritics(strValue) {
-					log.Debugw("non-diacritic", logfield.ColumnType, valueType, logfield.ColumnName, sortedColumnKeys[index], logfield.ColumnValue, strValue)
-
-					finalColumnValues = append(finalColumnValues, strValue)
-				} else {
-					byteArr := str2ucs2(strValue)
-
-					// This is needed as with above operation every character occupies 2 bytes
-					if len(byteArr) > mssqlStringLengthLimit {
-						byteArr = byteArr[:mssqlStringLengthLimit]
-					}
-
-					finalColumnValues = append(finalColumnValues, byteArr)
-				}
-			default:
-				finalColumnValues = append(finalColumnValues, value)
-			}
-		}
-
-		_, err = stmt.ExecContext(ctx, finalColumnValues...)
-		if err != nil {
-			return fmt.Errorf("exec statement error: %w", err)
-		}
-	}
-	return nil
 }
 
 // Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
@@ -733,7 +706,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	ms.logger.Infof("MSSQL: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		ms.logger.Errorf("MSSQL: Error deleting from original table for dedup: %v\n", err)
+		ms.logger.Errorf("MSSQL: Error deleting from main table for dedup: %v\n", err)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -762,8 +735,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 
 func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');
-`, ms.Namespace, ms.Namespace)
+    EXEC('CREATE SCHEMA [%s]');`, ms.Namespace, ms.Namespace)
 	ms.logger.Infof("MSSQL: Creating schema name in mssql for MSSQL:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	if err == io.EOF {
@@ -818,8 +790,7 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 			  WHERE
 				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
 				AND name = '%[3]s'
-			)
-`,
+			)`,
 			ms.Namespace,
 			tableName,
 			columnsInfo[0].Name,
@@ -937,8 +908,7 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 			INFORMATION_SCHEMA.COLUMNS
 		WHERE
 			table_schema = @schema
-			and table_name not like @prefix
-`
+			and table_name not like @prefix`
 	rows, err := ms.DB.QueryContext(ctx, sqlStatement,
 		sql.Named("schema", ms.Namespace),
 		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),

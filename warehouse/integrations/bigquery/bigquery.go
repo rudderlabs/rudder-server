@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/samber/lo"
 
@@ -151,7 +152,7 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 	if bq.middleware != nil {
 		return bq.middleware
 	}
-	middleware := middleware.New(
+	return middleware.New(
 		bq.db,
 		middleware.WithLogger(bq.logger),
 		middleware.WithKeyAndValues(
@@ -164,7 +165,6 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 		),
 		middleware.WithSlowQueryThreshold(bq.config.slowQueryThreshold),
 	)
-	return middleware
 }
 
 func tableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
@@ -448,22 +448,22 @@ func (bq *BigQuery) loadTableByAppend(
 	log.Infow("loading data into main table")
 	job, err := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef).Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("running loader: %w", err)
+		return nil, nil, fmt.Errorf("moving data into main table: %w", err)
 	}
 
-	log.Infow("waiting for load job to complete", "jobID", job.ID())
+	log.Infow("waiting for append job to complete", "jobID", job.ID())
 	status, err := job.Wait(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("waiting for job: %w", err)
+		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status: %w", err)
+		return nil, nil, fmt.Errorf("status for append job: %w", err)
 	}
 
-	log.Infow("getting job statistics")
+	log.Infow("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting job statistics: %w", err)
+		return nil, nil, fmt.Errorf("append job statistics: %w", err)
 	}
 
 	log.Infow("completed loading")
@@ -489,14 +489,14 @@ func (bq *BigQuery) jobStatistics(
 		return nil, fmt.Errorf("creating service: %w", err)
 	}
 
-	bqJob, err := bqService.NewJobsService(serv).Get(
+	bqJobGetCall := bqService.NewJobsService(serv).Get(
 		job.ProjectID(),
 		job.ID(),
-	).Context(ctx).Location(job.Location()).Fields("statistics").Do()
+	)
+	bqJob, err := bqJobGetCall.Context(ctx).Location(job.Location()).Fields("statistics").Do()
 	if err != nil {
 		return nil, fmt.Errorf("getting job: %w", err)
 	}
-
 	return bqJob.Statistics, nil
 }
 
@@ -529,7 +529,7 @@ func (bq *BigQuery) loadTableByMerge(
 	log.Infow("loading data into staging table")
 	job, err := bq.db.Dataset(bq.namespace).Table(stagingTableName).LoaderFrom(gcsRef).Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("running loader: %w", err)
+		return nil, nil, fmt.Errorf("loading into staging table: %w", err)
 	}
 
 	log.Infow("waiting for load job to complete", "jobID", job.ID())
@@ -538,7 +538,7 @@ func (bq *BigQuery) loadTableByMerge(
 		return nil, nil, fmt.Errorf("waiting for job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status: %w", err)
+		return nil, nil, fmt.Errorf("status for job: %w", err)
 	}
 
 	if !skipTempTableDelete {
@@ -546,13 +546,11 @@ func (bq *BigQuery) loadTableByMerge(
 	}
 
 	tableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
-
 	tableColNames := lo.MapToSlice(tableColMap, func(colName, _ string) string {
 		return fmt.Sprintf("`%s`", colName)
 	})
 
 	columnNames := strings.Join(tableColNames, ",")
-
 	stagingColumnNames := strings.Join(lo.Map(tableColNames, func(colName string, _ int) string {
 		return fmt.Sprintf(`staging.%s`, colName)
 	}), ",")
@@ -613,25 +611,25 @@ func (bq *BigQuery) loadTableByMerge(
 		orderByClause,
 	)
 
-	log.Infow("merging data from staging table into original table")
+	log.Infow("merging data from staging table into main table")
 	job, err = bq.getMiddleware().Run(ctx, bq.db.Query(mergeIntoStmt))
 	if err != nil {
-		return nil, nil, fmt.Errorf("merge: running loader: %w", err)
+		return nil, nil, fmt.Errorf("moving data to main table: %w", err)
 	}
 
 	log.Infow("waiting for merge job to complete", "jobID", job.ID())
 	status, err = job.Wait(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("merge: waiting for job: %w", err)
+		return nil, nil, fmt.Errorf("waiting for merge job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("merge: status: %w", err)
+		return nil, nil, fmt.Errorf("status for merge job: %w", err)
 	}
 
-	log.Infow("getting job statistics")
+	log.Infow("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("job statistics: %w", err)
+		return nil, nil, fmt.Errorf("merge job statistics: %w", err)
 	}
 
 	log.Infow("completed loading")

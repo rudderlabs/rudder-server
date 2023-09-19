@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"net"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/samber/lo"
 
@@ -179,7 +180,14 @@ func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
 		db,
 		sqlmw.WithStats(as.stats),
 		sqlmw.WithLogger(as.logger),
-		sqlmw.WithKeyAndValues(as.defaultLogFields()),
+		sqlmw.WithKeyAndValues([]any{
+			logfield.SourceID, as.Warehouse.Source.ID,
+			logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, as.Warehouse.Destination.ID,
+			logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, as.Warehouse.WorkspaceID,
+			logfield.Namespace, as.Namespace,
+		}),
 		sqlmw.WithQueryTimeout(as.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(as.config.slowQueryThreshold),
 	)
@@ -195,17 +203,6 @@ func (as *AzureSynapse) connectionCredentials() *credentials {
 		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
 		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
 		timeout:  as.connectTimeout,
-	}
-}
-
-func (as *AzureSynapse) defaultLogFields() []any {
-	return []any{
-		logfield.SourceID, as.Warehouse.Source.ID,
-		logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, as.Warehouse.Destination.ID,
-		logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-		logfield.Namespace, as.Namespace,
 	}
 }
 
@@ -239,12 +236,12 @@ func (as *AzureSynapse) loadTable(
 	log.Infow("started loading")
 
 	fileNames, err := as.LoadFileDownLoader.Download(ctx, tableName)
-	defer func() {
-		misc.RemoveFilePaths(fileNames...)
-	}()
 	if err != nil {
 		return nil, "", fmt.Errorf("downloading load files: %w", err)
 	}
+	defer func() {
+		misc.RemoveFilePaths(fileNames...)
+	}()
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -265,8 +262,7 @@ func (as *AzureSynapse) loadTable(
 		SELECT
 		  TOP 0 * INTO %[1]s.%[2]s
 		FROM
-		  %[1]s.%[3]s;
-`,
+		  %[1]s.%[3]s;`,
 		as.Namespace,
 		stagingTableName,
 		tableName,
@@ -320,7 +316,7 @@ func (as *AzureSynapse) loadTable(
 			extraColumns, tableSchemaInUpload,
 		)
 		if err != nil {
-			return nil, "", fmt.Errorf("loadinto data into staging table: %w", err)
+			return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", fileName, err)
 		}
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
@@ -342,7 +338,7 @@ func (as *AzureSynapse) loadTable(
 		stagingTableName, sortedColumnKeys,
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("insert into: %w", err)
+		return nil, "", fmt.Errorf("insert into load table: %w", err)
 	}
 
 	log.Infow("committing transaction")
@@ -394,7 +390,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 			return fmt.Errorf("reading record from %s: %w", fileName, err)
 		}
 		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d",
+			return fmt.Errorf("mismatch in number of columns for file %s: actual count: %d, expected count: %d",
 				fileName,
 				len(record),
 				len(sortedColumnKeys),
@@ -455,7 +451,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 
 		_, err = stmt.ExecContext(ctx, finalColumnValues...)
 		if err != nil {
-			return fmt.Errorf("exec statement error: %w", err)
+			return fmt.Errorf("exec statement record: %w", err)
 		}
 	}
 	return nil
@@ -521,8 +517,7 @@ func (as *AzureSynapse) deleteFromLoadTable(
 		WHERE
 		  (
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );
-`,
+		  );`,
 		as.Namespace,
 		tableName,
 		stagingTableName,
@@ -532,7 +527,7 @@ func (as *AzureSynapse) deleteFromLoadTable(
 
 	r, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from original table: %w", err)
+		return 0, fmt.Errorf("deleting frommain table: %w", err)
 	}
 	return r.RowsAffected()
 }
@@ -570,8 +565,7 @@ func (as *AzureSynapse) insertIntoLoadTable(
 			  %[1]q.%[4]q
 		  ) AS _
 		WHERE
-		  _rudder_staging_row_number = 1;
-`,
+		  _rudder_staging_row_number = 1;`,
 		as.Namespace,
 		tableName,
 		quotedColumnNames,
@@ -581,7 +575,7 @@ func (as *AzureSynapse) insertIntoLoadTable(
 
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into original table: %w", err)
+		return 0, fmt.Errorf("inserting intomain table: %w", err)
 	}
 	return r.RowsAffected()
 }
@@ -696,7 +690,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	as.logger.Infof("AZ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		as.logger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
+		as.logger.Errorf("AZ: Error deleting frommain table for dedup: %v\n", err)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -729,8 +723,7 @@ func (*AzureSynapse) DeleteBy(context.Context, []string, warehouseutils.DeleteBy
 
 func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');
-`, as.Namespace, as.Namespace)
+    EXEC('CREATE SCHEMA [%s]');`, as.Namespace, as.Namespace)
 	as.logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.ExecContext(ctx, sqlStatement)
 	if err == io.EOF {
@@ -785,8 +778,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 			  WHERE
 				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
 				AND name = '%[3]s'
-			)
-`,
+			)`,
 			as.Namespace,
 			tableName,
 			columnsInfo[0].Name,

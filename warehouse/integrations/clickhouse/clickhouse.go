@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"net/url"
 	"os"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"

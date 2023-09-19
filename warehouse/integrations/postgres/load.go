@@ -7,10 +7,11 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -38,6 +39,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.Loa
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, pg.loadTableStrategy(),
 	)
 	log.Infow("started loading")
 
@@ -76,6 +78,7 @@ func (pg *Postgres) loadTable(
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, pg.loadTableStrategy(),
 	)
 
 	log.Infow("setting search path")
@@ -89,12 +92,12 @@ func (pg *Postgres) loadTable(
 	}
 
 	loadFiles, err := pg.LoadFileDownloader.Download(ctx, tableName)
-	defer func() {
-		misc.RemoveFilePaths(loadFiles...)
-	}()
 	if err != nil {
 		return nil, "", fmt.Errorf("downloading load files: %w", err)
 	}
+	defer func() {
+		misc.RemoveFilePaths(loadFiles...)
+	}()
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -164,6 +167,71 @@ func (pg *Postgres) loadTable(
 	}, stagingTableName, nil
 }
 
+func (pg *Postgres) loadDataIntoStagingTable(
+	ctx context.Context,
+	stmt *sql.Stmt,
+	fileName string,
+	sortedColumnKeys []string,
+) error {
+	gzipFile, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("opening load file: %w", err)
+	}
+	defer func() {
+		_ = gzipFile.Close()
+	}()
+
+	gzReader, err := gzip.NewReader(gzipFile)
+	if err != nil {
+		return fmt.Errorf("reading gzip load file: %w", err)
+	}
+	defer func() {
+		_ = gzReader.Close()
+	}()
+
+	csvReader := csv.NewReader(gzReader)
+
+	for {
+		var record []string
+		record, err = csvReader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("reading file %s: %w", fileName, err)
+		}
+		if len(sortedColumnKeys) != len(record) {
+			return fmt.Errorf("mismatch in number of columns for file %s: actual count: %d, expected count: %d",
+				fileName,
+				len(record),
+				len(sortedColumnKeys),
+			)
+		}
+
+		recordInterface := make([]interface{}, 0, len(record))
+		for _, value := range record {
+			if strings.TrimSpace(value) == "" {
+				recordInterface = append(recordInterface, nil)
+			} else {
+				recordInterface = append(recordInterface, value)
+			}
+		}
+
+		_, err = stmt.ExecContext(ctx, recordInterface...)
+		if err != nil {
+			return fmt.Errorf("exec statement: %w", err)
+		}
+	}
+	return nil
+}
+
+func (pg *Postgres) loadTableStrategy() string {
+	if slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+		return "APPEND"
+	}
+	return "MERGE"
+}
+
 func (pg *Postgres) deleteFromLoadTable(
 	ctx context.Context,
 	txn *sqlmiddleware.Tx,
@@ -207,7 +275,7 @@ func (pg *Postgres) deleteFromLoadTable(
 
 	result, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from original table for dedup: %w", err)
+		return 0, fmt.Errorf("deleting from main table for dedup: %w", err)
 	}
 	return result.RowsAffected()
 }
@@ -256,68 +324,9 @@ func (pg *Postgres) insertIntoLoadTable(
 
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into original table: %w", err)
+		return 0, fmt.Errorf("inserting into main table: %w", err)
 	}
 	return r.RowsAffected()
-}
-
-func (pg *Postgres) loadDataIntoStagingTable(
-	ctx context.Context,
-	stmt *sql.Stmt,
-	fileName string,
-	sortedColumnKeys []string,
-) error {
-	gzipFile, err := os.Open(fileName)
-	if err != nil {
-		return fmt.Errorf("opening load file: %w", err)
-	}
-	defer func() {
-		_ = gzipFile.Close()
-	}()
-
-	gzReader, err := gzip.NewReader(gzipFile)
-	if err != nil {
-		return fmt.Errorf("reading gzip load file: %w", err)
-	}
-	defer func() {
-		_ = gzReader.Close()
-	}()
-
-	csvReader := csv.NewReader(gzReader)
-
-	for {
-		var record []string
-		record, err = csvReader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("reading file %s: %w", fileName, err)
-		}
-		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: expected count: %d, actual count: %d, error: %w",
-				fileName,
-				len(record),
-				len(sortedColumnKeys),
-				err,
-			)
-		}
-
-		recordInterface := make([]interface{}, 0, len(record))
-		for _, value := range record {
-			if strings.TrimSpace(value) == "" {
-				recordInterface = append(recordInterface, nil)
-			} else {
-				recordInterface = append(recordInterface, value)
-			}
-		}
-
-		_, err = stmt.ExecContext(ctx, recordInterface...)
-		if err != nil {
-			return fmt.Errorf("exec statement: %w", err)
-		}
-	}
-	return nil
 }
 
 func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {

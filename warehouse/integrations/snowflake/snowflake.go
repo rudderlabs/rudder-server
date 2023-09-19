@@ -7,12 +7,13 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
@@ -345,7 +346,7 @@ func (sf *Snowflake) loadTable(
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
 	skipClosingDBSession bool,
-) (*types.LoadTableStats, tableLoadResp, error) {
+) (*types.LoadTableStats, *tableLoadResp, error) {
 	var (
 		db  *sqlmw.DB
 		err error
@@ -364,7 +365,7 @@ func (sf *Snowflake) loadTable(
 	log.Infow("started loading")
 
 	if db, err = sf.connect(ctx, optionalCreds{schemaName: sf.Namespace}); err != nil {
-		return nil, tableLoadResp{}, fmt.Errorf("connect: %w", err)
+		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
 	if !skipClosingDBSession {
@@ -372,25 +373,29 @@ func (sf *Snowflake) loadTable(
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := whutils.StagingTableName(provider, tableName, tableNameLimit)
+	stagingTableName := whutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
+	)
 	strKeys := sf.getSortedColumnsFromTableSchema(tableSchemaInUpload)
 	sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	if sf.ShouldAppend() {
-		var rowsInserted int64
-		rowsInserted, err = sf.copyInto(
+		log.Infow("copying data into staging table")
+		rowsInserted, err := sf.copyInto(
 			ctx, db, schemaIdentifier, tableName,
 			sortedColumnNames, tableName, log,
 		)
 		if err != nil {
-			return nil, tableLoadResp{}, err
+			return nil, nil, fmt.Errorf("copyInto: %w", err)
 		}
 
 		log.Infow("completed loading")
 
-		resp := tableLoadResp{
+		resp := &tableLoadResp{
 			db:           db,
 			stagingTable: tableName,
 		}
@@ -400,43 +405,73 @@ func (sf *Snowflake) loadTable(
 		return loadTableStats, resp, nil
 	}
 
+	log.Infow("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
 		schemaIdentifier,
 		stagingTableName,
 		tableName,
 	)
-
-	log.Debugw("creating temporary table", lf.StagingTableName, stagingTableName)
 	if _, err = db.ExecContext(ctx, createStagingTableStmt); err != nil {
-		sf.logger.Warnw("failure creating temporary table",
-			lf.StagingTableName, stagingTableName,
-			lf.Error, err.Error(),
-		)
-		return nil, tableLoadResp{}, fmt.Errorf("create temporary table: %w", err)
+		return nil, nil, fmt.Errorf("create staging table: %w", err)
 	}
 
+	log.Infow("copying data into staging table")
 	_, err = sf.copyInto(
 		ctx, db, schemaIdentifier, tableName,
 		sortedColumnNames, stagingTableName, log,
 	)
 	if err != nil {
-		return nil, tableLoadResp{}, fmt.Errorf("copy into: %w", err)
+		return nil, nil, fmt.Errorf("copy into: %w", err)
 	}
 
-	var (
-		primaryKey              = "ID"
-		partitionKey            = `"ID"`
-		keepLatestRecordOnDedup = sf.Uploader.ShouldOnDedupUseNewRecord()
+	duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
+	if err != nil {
+		log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
+	} else if len(duplicates) > 0 {
+		uploadID, _ := whutils.UploadIDFromCtx(ctx)
 
-		additionalJoinClause string
+		sort.Slice(duplicates, func(i, j int) bool {
+			return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
+		})
 
-		insertedRows int64
-		updatedRows  int64
+		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+			return item.String()
+		})
+		log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+	}
+
+	log.Infow("merge data into load table")
+	loadTableStats, err := sf.mergeIntoLoadTable(
+		ctx, db, schemaIdentifier, tableName, stagingTableName,
+		sortedColumnNames, strKeys,
 	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merge into load table: %w", err)
+	}
 
+	log.Infow("completed loading")
+
+	resp := &tableLoadResp{
+		db:           db,
+		stagingTable: stagingTableName,
+	}
+	return loadTableStats, resp, nil
+}
+
+func (sf *Snowflake) mergeIntoLoadTable(
+	ctx context.Context,
+	db *sqlmw.DB,
+	schemaIdentifier,
+	tableName string,
+	stagingTableName string,
+	sortedColumnNames string,
+	strKeys []string,
+) (*types.LoadTableStats, error) {
+	primaryKey := "ID"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
+	partitionKey := `"ID"`
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
@@ -444,76 +479,58 @@ func (sf *Snowflake) loadTable(
 	stagingColumnNames := sf.joinColumnsWithFormatting(strKeys, `staging.%q`)
 	columnsWithValues := sf.joinColumnsWithFormatting(strKeys, `original.%[1]q = staging.%[1]q`)
 
+	var additionalJoinClause string
 	if tableName == discardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND original.%[1]q = staging.%[1]q AND original.%[2]q = staging.%[2]q`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
 	updateSet := columnsWithValues
-	if !keepLatestRecordOnDedup {
+	if !sf.Uploader.ShouldOnDedupUseNewRecord() {
 		// This is being added in order to get the updates count
 		updateSet = fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
 	}
 
-	mergeStmt := sf.mergeIntoStmt(
-		schemaIdentifier,
-		tableName,
-		stagingTableName,
-		partitionKey,
-		primaryKey,
-		additionalJoinClause,
-		sortedColumnNames,
-		stagingColumnNames,
+	mergeStmt := fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
+	  SELECT *
+	  FROM
+		(
+		  SELECT *,
+			row_number() OVER (
+			  PARTITION BY %[4]s
+			  ORDER BY
+				RECEIVED_AT DESC
+			) AS _rudder_staging_row_number
+		  FROM
+			%[1]s.%[3]q
+		) AS q
+	  WHERE
+		_rudder_staging_row_number = 1
+	) AS staging ON (
+	  original.%[5]q = staging.%[5]q %[6]s
+	)
+	WHEN NOT MATCHED THEN
+	  INSERT (%[7]s) VALUES (%[8]s)
+	WHEN MATCHED THEN
+	  UPDATE SET %[9]s;`,
+		schemaIdentifier, tableName, stagingTableName,
+		partitionKey, primaryKey, additionalJoinClause,
+		sortedColumnNames, stagingColumnNames,
 		updateSet,
 	)
 
-	log.Infow("deduplication", lf.Query, mergeStmt)
-
-	row := db.QueryRowContext(ctx, mergeStmt)
-	if row.Err() != nil {
-		log.Warnw("failure running deduplication",
-			lf.Query, mergeStmt,
-			lf.Error, row.Err().Error(),
-		)
-		return nil, tableLoadResp{}, fmt.Errorf("merge into table: %w", row.Err())
+	var rowsInserted, rowsUpdated int64
+	err := db.QueryRowContext(ctx, mergeStmt).Scan(
+		&rowsInserted,
+		&rowsUpdated,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("executing merge command: %w", err)
 	}
 
-	if err = row.Scan(&insertedRows, &updatedRows); err != nil {
-		log.Warnw("getting rows affected for dedup",
-			lf.Query, mergeStmt,
-			lf.Error, err.Error(),
-		)
-		return nil, tableLoadResp{}, fmt.Errorf("getting rows affected for dedup: %w", err)
-	}
-
-	if updatedRows > 0 {
-		duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
-		if err != nil {
-			log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
-		} else if len(duplicates) > 0 {
-			uploadID, _ := whutils.UploadIDFromCtx(ctx)
-
-			sort.Slice(duplicates, func(i, j int) bool {
-				return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
-			})
-
-			formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
-				return item.String()
-			})
-			log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
-		}
-	}
-
-	log.Infow("completed loading")
-
-	resp := tableLoadResp{
-		db:           db,
-		stagingTable: stagingTableName,
-	}
-	loadTableStats := &types.LoadTableStats{
-		RowsInserted: insertedRows,
-		RowsUpdated:  updatedRows,
-	}
-	return loadTableStats, resp, nil
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted,
+		RowsUpdated:  rowsUpdated,
+	}, nil
 }
 
 func (sf *Snowflake) getSortedColumnsFromTableSchema(tableSchemaInUpload model.TableSchema) []string {
@@ -666,43 +683,6 @@ func (sf *Snowflake) copyInto(
 		return 0, fmt.Errorf("iterating over rows: %w", err)
 	}
 	return rowsInserted, nil
-}
-
-func (sf *Snowflake) mergeIntoStmt(
-	schemaIdentifier, tableName, stagingTableName,
-	partitionKey,
-	primaryKey, additionalJoinClause,
-	sortedColumnNames, stagingColumnNames,
-	updateSet string,
-) string {
-	return fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
-	  SELECT *
-	  FROM
-		(
-		  SELECT *,
-			row_number() OVER (
-			  PARTITION BY %[4]s
-			  ORDER BY
-				RECEIVED_AT DESC
-			) AS _rudder_staging_row_number
-		  FROM
-			%[1]s.%[3]q
-		) AS q
-	  WHERE
-		_rudder_staging_row_number = 1
-	) AS staging ON (
-	  original.%[5]q = staging.%[5]q %[6]s
-	)
-	WHEN NOT MATCHED THEN
-	  INSERT (%[7]s) VALUES (%[8]s)
-	WHEN MATCHED THEN
-	  UPDATE SET %[9]s;`,
-		schemaIdentifier, tableName, stagingTableName,
-		partitionKey,
-		primaryKey, additionalJoinClause,
-		sortedColumnNames, stagingColumnNames,
-		updateSet,
-	)
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {

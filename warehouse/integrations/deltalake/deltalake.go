@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
@@ -547,7 +548,10 @@ func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.Al
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+func (d *Deltalake) LoadTable(
+	ctx context.Context,
+	tableName string,
+) (*types.LoadTableStats, error) {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
@@ -603,10 +607,10 @@ func (d *Deltalake) loadTable(
 		tableSchemaInUpload, tableSchemaAfterUpload,
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("copy into: %w", err)
+		return nil, "", fmt.Errorf("copy into staging table: %w", err)
 	}
 
-	log.Infow("moving data from main table to staging table")
+	log.Infow("moving data from staging table to main table")
 	var loadTableStat *types.LoadTableStats
 	if d.ShouldAppend() {
 		loadTableStat, err = d.insertIntoLoadTable(
@@ -699,7 +703,7 @@ func (d *Deltalake) copyIntoLoadTable(
 	}
 
 	if _, err := d.DB.ExecContext(ctx, copyStmt); err != nil {
-		return fmt.Errorf("running COPY command: %w", err)
+		return fmt.Errorf("executing copy command: %w", err)
 	}
 	return nil
 }
@@ -819,7 +823,7 @@ func (d *Deltalake) mergeIntoLoadTable(
 		&rowsInserted,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("running MERGE command: %w", err)
+		return nil, fmt.Errorf("executing merge command: %w", err)
 	}
 
 	return &types.LoadTableStats{

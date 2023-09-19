@@ -3,7 +3,6 @@ package azuresynapse_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -240,78 +239,4 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
-}
-
-func TestAzureSynapse_ProcessColumnValue(t *testing.T) {
-	testCases := []struct {
-		name      string
-		value     string
-		valueType string
-		expected  interface{}
-		wantError error
-	}{
-		{
-			name:      "valid integers",
-			value:     "123",
-			valueType: "int",
-			expected:  123,
-		},
-		{
-			name:      "invalid integers",
-			value:     "123.456",
-			valueType: "int",
-			wantError: errors.New("invalid value for int: 123.456"),
-		},
-		{
-			name:      "valid floats",
-			value:     "123.456",
-			valueType: "float",
-			expected:  123.456,
-		},
-		{
-			name:      "invalid floats",
-			value:     "123",
-			valueType: "float",
-			wantError: errors.New("invalid value for float: 123"),
-		},
-		{
-			name:      "valid booleans",
-			value:     "true",
-			valueType: "boolean",
-			expected:  true,
-		},
-		{
-			name:      "invalid booleans",
-			value:     "123",
-			valueType: "boolean",
-			wantError: errors.New("invalid value for boolean: 123"),
-		},
-		{
-			name:      "valid datetime",
-			value:     "2021-01-01T00:00:00Z",
-			valueType: "datetime",
-			expected:  "2021-01-01T00:00:00Z",
-		},
-		{
-			name:      "invalid datetime",
-			value:     "123",
-			valueType: "datetime",
-			wantError: errors.New("invalid value for datetime: 123"),
-		},
-		{
-			name:      "strings withing 512",
-			value:     "123",
-			valueType: "string",
-			expected:  "123",
-		},
-		{
-			name:      "strings greater than 512",
-			value:     "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
-			valueType: "string",
-			wantError: errors.New("invalid value for string: 12345678901234567890123456789012345678901234567890123456789012345678901234567890"),
-		},
-		{
-			name: "invalid strings",
-		},
-	}
 }
