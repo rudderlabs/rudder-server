@@ -126,8 +126,8 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	sh.skipDeprecatedColumns(warehouseSchema)
-	sh.skipDeprecatedColumns(unrecognizedWarehouseSchema)
+	sh.removeDeprecatedColumns(warehouseSchema)
+	sh.removeDeprecatedColumns(unrecognizedWarehouseSchema)
 
 	sh.schemaInWarehouse = warehouseSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
@@ -135,8 +135,8 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	return nil
 }
 
-// skipDeprecatedColumns skips deprecated columns from the schema
-func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
+// removeDeprecatedColumns skips deprecated columns from the schema map
+func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if deprecatedColumnsRegex.MatchString(columnName) {
@@ -150,7 +150,6 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 					logfield.ColumnName, columnName,
 				)
 				delete(schema[tableName], columnName)
-				continue
 			}
 		}
 	}
