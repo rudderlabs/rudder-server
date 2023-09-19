@@ -1998,6 +1998,14 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 					proc.storePlocker.Lock(destID)
 					defer proc.storePlocker.Unlock(destID)
 				}
+			} else {
+				proc.logger.Warnw("empty storeMessage.routerDestIDs",
+					"expected",
+					lo.Uniq(
+						lo.Map(destJobs, func(j *jobsdb.JobT, _ int) string {
+							return gjson.GetBytes(j.Parameters, "destination_id").String()
+						}),
+					))
 			}
 			err := misc.RetryWithNotify(
 				context.Background(),
