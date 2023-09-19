@@ -585,17 +585,16 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 
 func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 	testCases := []struct {
-		name          string
-		tableName     string
-		currentSchema model.Schema
-		uploadSchema  model.Schema
-		expected      warehouseutils.TableSchemaDiff
+		name              string
+		tableName         string
+		currentSchema     model.Schema
+		uploadTableSchema model.TableSchema
+		expected          warehouseutils.TableSchemaDiff
 	}{
 		{
 			name:          "empty current and upload schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema:  model.Schema{},
 			expected: warehouseutils.TableSchemaDiff{
 				ColumnMap:        model.TableSchema{},
 				UpdatedSchema:    model.TableSchema{},
@@ -606,10 +605,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 			name:          "empty current schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value",
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
@@ -631,10 +628,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value-1",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           false,
@@ -655,10 +650,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
@@ -683,10 +676,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "text",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "text",
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
@@ -710,9 +701,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 
 			sch := Schema{
 				schemaInWarehouse: tc.currentSchema,
-				uploadSchema:      tc.uploadSchema,
 			}
-			diff := sch.generateTableSchemaDiff(tc.tableName)
+			diff := sch.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
@@ -1901,13 +1891,13 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			err := sh.prepareUploadSchema(ctx, stagingFiles)
+			uploadSchema, err := sh.prepareUploadSchema(ctx, stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedSchema, sh.uploadSchema)
+			require.Equal(t, tc.expectedSchema, uploadSchema)
 		})
 	}
 }
