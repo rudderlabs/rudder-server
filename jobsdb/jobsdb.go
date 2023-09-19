@@ -857,7 +857,7 @@ func (jd *Handle) workersAndAuxSetup() {
 
 func (jd *Handle) loadConfig() {
 	// maxTableSizeInMB: Maximum Table size in MB
-	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(1000000, 300, "JobsDB.maxTableSizeInMB")
+	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(300, 1000000, "JobsDB.maxTableSizeInMB")
 	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	// addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
