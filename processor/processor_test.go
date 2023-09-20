@@ -2490,7 +2490,7 @@ var _ = Describe("Static Function Tests", func() {
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, transformer.TrackingPlanValidationStage, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, types.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))
