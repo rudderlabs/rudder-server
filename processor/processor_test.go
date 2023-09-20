@@ -2336,6 +2336,383 @@ var _ = Describe("Static Function Tests", func() {
 		})
 	})
 
+	Context("generateFilteredAndAddedMetrics Tests", func() {
+		It("should generate filtered and added metrics correctly", func() {
+			// Define input values
+			inPU := "some-in-pu"
+			pu := "some-pu"
+			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4", "message-id-5", "message-id-6"}
+			messageIdKeyMap := map[string]string{
+				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-5": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-6": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			}
+			inCountMetadataMap := map[string]MetricMetadata{
+				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-1",
+					destinationID:           "some-destination-id-1",
+					sourceTaskRunID:         "some-source-task-run-id-1",
+					sourceJobID:             "some-source-job-id-1",
+					sourceJobRunID:          "some-source-job-run-id-1",
+					sourceDefinitionID:      "some-source-definition-id-1",
+					destinationDefinitionID: "some-destination-definition-id-1",
+					sourceCategory:          "some-source-category-1",
+					transformationID:        "some-transformation-id-1",
+					transformationVersionID: "some-transformation-version-id-1",
+					trackingPlanID:          "some-tracking-plan-id-1",
+					trackingPlanVersion:     1,
+				},
+				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-2",
+					destinationID:           "some-destination-id-2",
+					sourceTaskRunID:         "some-source-task-run-id-2",
+					sourceJobID:             "some-source-job-id-2",
+					sourceJobRunID:          "some-source-job-run-id-2",
+					sourceDefinitionID:      "some-source-definition-id-2",
+					destinationDefinitionID: "some-destination-definition-id-2",
+					sourceCategory:          "some-source-category-2",
+					transformationID:        "some-transformation-id-2",
+					transformationVersionID: "some-transformation-version-id-2",
+					trackingPlanID:          "some-tracking-plan-id-2",
+					trackingPlanVersion:     2,
+				},
+				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-3",
+					destinationID:           "some-destination-id-3",
+					sourceTaskRunID:         "some-source-task-run-id-3",
+					sourceJobID:             "some-source-job-id-3",
+					sourceJobRunID:          "some-source-job-run-id-3",
+					sourceDefinitionID:      "some-source-definition-id-3",
+					destinationDefinitionID: "some-destination-definition-id-3",
+					sourceCategory:          "some-source-category-3",
+					transformationID:        "some-transformation-id-3",
+					transformationVersionID: "some-transformation-version-id-3",
+					trackingPlanID:          "some-tracking-plan-id-3",
+					trackingPlanVersion:     3,
+				},
+				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-4",
+					destinationID:           "some-destination-id-4",
+					sourceTaskRunID:         "some-source-task-run-id-4",
+					sourceJobID:             "some-source-job-id-4",
+					sourceJobRunID:          "some-source-job-run-id-4",
+					sourceDefinitionID:      "some-source-definition-id-4",
+					destinationDefinitionID: "some-destination-definition-id-4",
+					sourceCategory:          "some-source-category-4",
+					transformationID:        "some-transformation-id-4",
+					transformationVersionID: "some-transformation-version-id-4",
+					trackingPlanID:          "some-tracking-plan-id-4",
+					trackingPlanVersion:     4,
+				},
+			}
+			outputEvents := []transformer.TransformerEvent{
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-1",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-2",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-2",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-2",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-6",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-6",
+					},
+				},
+			}
+			failedEvents := []transformer.TransformerResponse{
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-3",
+					},
+				},
+			}
+
+			// Call the function
+			filteredMetrics, addedMetrics := generateFilteredAndAddedMetrics(inPU, pu, messageIds, messageIdKeyMap, inCountMetadataMap, outputEvents, failedEvents)
+
+			// Check the results
+			Expect(len(filteredMetrics)).To(Equal(1))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceID).To(Equal("some-source-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.DestinationID).To(Equal("some-destination-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceTaskRunID).To(Equal("some-source-task-run-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceJobID).To(Equal("some-source-job-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceJobRunID).To(Equal("some-source-job-run-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceDefinitionId).To(Equal("some-source-definition-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.DestinationDefinitionId).To(Equal("some-destination-definition-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceCategory).To(Equal("some-source-category-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TransformationID).To(Equal("some-transformation-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TransformationVersionID).To(Equal("some-transformation-version-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TrackingPlanID).To(Equal("some-tracking-plan-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TrackingPlanVersion).To(Equal(int(4)))
+			Expect(filteredMetrics[0].PUDetails.InPU).To(Equal("some-in-pu"))
+			Expect(filteredMetrics[0].PUDetails.PU).To(Equal("some-pu"))
+			Expect(filteredMetrics[0].StatusDetail.Status).To(Equal(types.FilteredStatus))
+			Expect(filteredMetrics[0].StatusDetail.Count).To(Equal(int64(2)))
+			Expect(filteredMetrics[0].StatusDetail.EventName).To(Equal("add-to-cart"))
+			Expect(filteredMetrics[0].StatusDetail.EventType).To(Equal("track"))
+
+			Expect(len(addedMetrics)).To(Equal(1))
+			Expect(addedMetrics[0].ConnectionDetails.SourceID).To(Equal("some-source-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.DestinationID).To(Equal("some-destination-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.SourceTaskRunID).To(Equal("some-source-task-run-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.SourceJobID).To(Equal("some-source-job-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.SourceJobRunID).To(Equal("some-source-job-run-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.SourceDefinitionId).To(Equal("some-source-definition-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.DestinationDefinitionId).To(Equal("some-destination-definition-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.SourceCategory).To(Equal("some-source-category-2"))
+			Expect(addedMetrics[0].ConnectionDetails.TransformationID).To(Equal("some-transformation-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.TransformationVersionID).To(Equal("some-transformation-version-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.TrackingPlanID).To(Equal("some-tracking-plan-id-2"))
+			Expect(addedMetrics[0].ConnectionDetails.TrackingPlanVersion).To(Equal(int(2)))
+			Expect(addedMetrics[0].PUDetails.InPU).To(Equal("some-in-pu"))
+			Expect(addedMetrics[0].PUDetails.PU).To(Equal("some-pu"))
+			Expect(addedMetrics[0].StatusDetail.Status).To(Equal(types.AddedStatus))
+			Expect(addedMetrics[0].StatusDetail.Count).To(Equal(int64(3)))
+			Expect(addedMetrics[0].StatusDetail.EventName).To(Equal("add-to-cart"))
+			Expect(addedMetrics[0].StatusDetail.EventType).To(Equal("track"))
+		})
+
+		It("should generate filtered and added metrics for transformBatch response", func() {
+			// Define input values
+			inPU := "some-in-pu"
+			pu := "some-pu"
+			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4"}
+			messageIdKeyMap := map[string]string{
+				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			}
+			inCountMetadataMap := map[string]MetricMetadata{
+				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-1",
+					destinationID:           "some-destination-id-1",
+					sourceTaskRunID:         "some-source-task-run-id-1",
+					sourceJobID:             "some-source-job-id-1",
+					sourceJobRunID:          "some-source-job-run-id-1",
+					sourceDefinitionID:      "some-source-definition-id-1",
+					destinationDefinitionID: "some-destination-definition-id-1",
+					sourceCategory:          "some-source-category-1",
+					transformationID:        "some-transformation-id-1",
+					transformationVersionID: "some-transformation-version-id-1",
+					trackingPlanID:          "some-tracking-plan-id-1",
+					trackingPlanVersion:     1,
+				},
+				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-2",
+					destinationID:           "some-destination-id-2",
+					sourceTaskRunID:         "some-source-task-run-id-2",
+					sourceJobID:             "some-source-job-id-2",
+					sourceJobRunID:          "some-source-job-run-id-2",
+					sourceDefinitionID:      "some-source-definition-id-2",
+					destinationDefinitionID: "some-destination-definition-id-2",
+					sourceCategory:          "some-source-category-2",
+					transformationID:        "some-transformation-id-2",
+					transformationVersionID: "some-transformation-version-id-2",
+					trackingPlanID:          "some-tracking-plan-id-2",
+					trackingPlanVersion:     2,
+				},
+				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-3",
+					destinationID:           "some-destination-id-3",
+					sourceTaskRunID:         "some-source-task-run-id-3",
+					sourceJobID:             "some-source-job-id-3",
+					sourceJobRunID:          "some-source-job-run-id-3",
+					sourceDefinitionID:      "some-source-definition-id-3",
+					destinationDefinitionID: "some-destination-definition-id-3",
+					sourceCategory:          "some-source-category-3",
+					transformationID:        "some-transformation-id-3",
+					transformationVersionID: "some-transformation-version-id-3",
+					trackingPlanID:          "some-tracking-plan-id-3",
+					trackingPlanVersion:     3,
+				},
+				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-4",
+					destinationID:           "some-destination-id-4",
+					sourceTaskRunID:         "some-source-task-run-id-4",
+					sourceJobID:             "some-source-job-id-4",
+					sourceJobRunID:          "some-source-job-run-id-4",
+					sourceDefinitionID:      "some-source-definition-id-4",
+					destinationDefinitionID: "some-destination-definition-id-4",
+					sourceCategory:          "some-source-category-4",
+					transformationID:        "some-transformation-id-4",
+					transformationVersionID: "some-transformation-version-id-4",
+					trackingPlanID:          "some-tracking-plan-id-4",
+					trackingPlanVersion:     4,
+				},
+			}
+			outputEvents := []transformer.TransformerEvent{
+				{
+					Metadata: transformer.Metadata{
+						MessageIDs: []string{"message-id-1", "message-id-2"},
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageIDs: []string{"message-id-1", "message-id-2"},
+					},
+				},
+			}
+			failedEvents := []transformer.TransformerResponse{
+				{
+					Metadata: transformer.Metadata{
+						MessageIDs: []string{"message-id-3"},
+					},
+				},
+			}
+
+			// Call the function
+			filteredMetrics, addedMetrics := generateFilteredAndAddedMetrics(inPU, pu, messageIds, messageIdKeyMap, inCountMetadataMap, outputEvents, failedEvents)
+
+			// Check the results
+			Expect(len(filteredMetrics)).To(Equal(1))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceID).To(Equal("some-source-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.DestinationID).To(Equal("some-destination-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceTaskRunID).To(Equal("some-source-task-run-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceJobID).To(Equal("some-source-job-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceJobRunID).To(Equal("some-source-job-run-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceDefinitionId).To(Equal("some-source-definition-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.DestinationDefinitionId).To(Equal("some-destination-definition-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.SourceCategory).To(Equal("some-source-category-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TransformationID).To(Equal("some-transformation-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TransformationVersionID).To(Equal("some-transformation-version-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TrackingPlanID).To(Equal("some-tracking-plan-id-4"))
+			Expect(filteredMetrics[0].ConnectionDetails.TrackingPlanVersion).To(Equal(int(4)))
+			Expect(filteredMetrics[0].PUDetails.InPU).To(Equal("some-in-pu"))
+			Expect(filteredMetrics[0].PUDetails.PU).To(Equal("some-pu"))
+			Expect(filteredMetrics[0].StatusDetail.Status).To(Equal(types.FilteredStatus))
+			Expect(filteredMetrics[0].StatusDetail.Count).To(Equal(int64(1)))
+			Expect(filteredMetrics[0].StatusDetail.EventName).To(Equal("add-to-cart"))
+			Expect(filteredMetrics[0].StatusDetail.EventType).To(Equal("track"))
+
+			Expect(len(addedMetrics)).To(Equal(0))
+		})
+
+		It("should not generate filtered and added metrics if no drops or additions are done", func() {
+			// Define input values
+			inPU := "some-in-pu"
+			pu := "some-pu"
+			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4"}
+			messageIdKeyMap := map[string]string{
+				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			}
+			inCountMetadataMap := map[string]MetricMetadata{
+				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-1",
+					destinationID:           "some-destination-id-1",
+					sourceTaskRunID:         "some-source-task-run-id-1",
+					sourceJobID:             "some-source-job-id-1",
+					sourceJobRunID:          "some-source-job-run-id-1",
+					sourceDefinitionID:      "some-source-definition-id-1",
+					destinationDefinitionID: "some-destination-definition-id-1",
+					sourceCategory:          "some-source-category-1",
+					transformationID:        "some-transformation-id-1",
+					transformationVersionID: "some-transformation-version-id-1",
+					trackingPlanID:          "some-tracking-plan-id-1",
+					trackingPlanVersion:     1,
+				},
+				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-2",
+					destinationID:           "some-destination-id-2",
+					sourceTaskRunID:         "some-source-task-run-id-2",
+					sourceJobID:             "some-source-job-id-2",
+					sourceJobRunID:          "some-source-job-run-id-2",
+					sourceDefinitionID:      "some-source-definition-id-2",
+					destinationDefinitionID: "some-destination-definition-id-2",
+					sourceCategory:          "some-source-category-2",
+					transformationID:        "some-transformation-id-2",
+					transformationVersionID: "some-transformation-version-id-2",
+					trackingPlanID:          "some-tracking-plan-id-2",
+					trackingPlanVersion:     2,
+				},
+				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-3",
+					destinationID:           "some-destination-id-3",
+					sourceTaskRunID:         "some-source-task-run-id-3",
+					sourceJobID:             "some-source-job-id-3",
+					sourceJobRunID:          "some-source-job-run-id-3",
+					sourceDefinitionID:      "some-source-definition-id-3",
+					destinationDefinitionID: "some-destination-definition-id-3",
+					sourceCategory:          "some-source-category-3",
+					transformationID:        "some-transformation-id-3",
+					transformationVersionID: "some-transformation-version-id-3",
+					trackingPlanID:          "some-tracking-plan-id-3",
+					trackingPlanVersion:     3,
+				},
+				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+					sourceID:                "some-source-id-4",
+					destinationID:           "some-destination-id-4",
+					sourceTaskRunID:         "some-source-task-run-id-4",
+					sourceJobID:             "some-source-job-id-4",
+					sourceJobRunID:          "some-source-job-run-id-4",
+					sourceDefinitionID:      "some-source-definition-id-4",
+					destinationDefinitionID: "some-destination-definition-id-4",
+					sourceCategory:          "some-source-category-4",
+					transformationID:        "some-transformation-id-4",
+					transformationVersionID: "some-transformation-version-id-4",
+					trackingPlanID:          "some-tracking-plan-id-4",
+					trackingPlanVersion:     4,
+				},
+			}
+			outputEvents := []transformer.TransformerEvent{
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-1",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-2",
+					},
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-3",
+					},
+				},
+			}
+			failedEvents := []transformer.TransformerResponse{
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-id-4",
+					},
+				},
+			}
+
+			// Call the function
+			filteredMetrics, addedMetrics := generateFilteredAndAddedMetrics(inPU, pu, messageIds, messageIdKeyMap, inCountMetadataMap, outputEvents, failedEvents)
+
+			// Check the results
+			Expect(len(filteredMetrics)).To(Equal(0))
+
+			Expect(len(addedMetrics)).To(Equal(0))
+		})
+	})
+
 	Context("updateMetricMaps Tests", func() {
 		It("Should update metric maps", func() {
 			proc := NewHandle(nil)
