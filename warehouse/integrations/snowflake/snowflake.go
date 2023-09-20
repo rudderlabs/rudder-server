@@ -545,7 +545,12 @@ func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) 
 	}, ",")
 }
 
-func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, mainTableName, stagingTableName string) ([]duplicateMessage, error) {
+func (sf *Snowflake) sampleDuplicateMessages(
+	ctx context.Context,
+	db *sqlmw.DB,
+	mainTableName,
+	stagingTableName string,
+) ([]duplicateMessage, error) {
 	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
 		return nil, nil
 	}
@@ -571,6 +576,7 @@ func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, 
 				FROM
 			  		`+stagingTable+`
 		  	)
+        ORDER BY RECEIVED_AT ASC
 		LIMIT
 		  ?;
 `,
