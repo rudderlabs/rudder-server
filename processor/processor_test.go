@@ -4142,7 +4142,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
 }
 
-func assertReport(metric *types.PUReportedMetric, expectedMetric *types.PUReportedMetric) {
+func assertReport(metric, expectedMetric *types.PUReportedMetric) {
 	Expect(metric.ConnectionDetails.SourceID).To(Equal(expectedMetric.ConnectionDetails.SourceID))
 	Expect(metric.ConnectionDetails.DestinationID).To(Equal(expectedMetric.ConnectionDetails.DestinationID))
 	Expect(metric.ConnectionDetails.SourceJobID).To(Equal(expectedMetric.ConnectionDetails.SourceJobID))
