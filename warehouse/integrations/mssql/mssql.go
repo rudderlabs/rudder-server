@@ -446,7 +446,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 				continue
 			}
 
-			processedVal, err := ms.ProcessColumnValue(
+			processedVal, err := ms.processColumnValue(
 				value.(string),
 				valueType,
 			)
@@ -471,20 +471,20 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *MSSQL) ProcessColumnValue(
+func (as *MSSQL) processColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
 	switch valueType {
-	case "int":
+	case string(model.IntDataType):
 		return strconv.Atoi(value)
-	case "float":
+	case string(model.FloatDataType):
 		return strconv.ParseFloat(value, 64)
-	case "datetime":
+	case string(model.DateTimeDataType):
 		return time.Parse(time.RFC3339, value)
-	case "boolean":
+	case string(model.BooleanDataType):
 		return strconv.ParseBool(value)
-	case "string":
+	case string(model.StringDataType):
 		if len(value) > mssqlStringLengthLimit {
 			value = value[:mssqlStringLengthLimit]
 		}

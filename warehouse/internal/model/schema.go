@@ -16,6 +16,7 @@ const (
 	FloatDataType          SchemaType = "float"
 	JSONDataType           SchemaType = "json"
 	TextDataType           SchemaType = "text"
+	DateTimeDataType       SchemaType = "datetime"
 	ArrayOfBooleanDatatype SchemaType = "array(boolean)"
 )
 

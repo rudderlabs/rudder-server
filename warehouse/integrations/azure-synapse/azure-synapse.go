@@ -410,13 +410,16 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 		for index, value := range recordInterface {
 			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 			if value == nil {
-				log.Debugw("found nil value", "type", valueType, "column", sortedColumnKeys[index])
+				log.Debugw("found nil value",
+					logfield.ColumnType, valueType,
+					logfield.ColumnName, sortedColumnKeys[index],
+				)
 
 				finalColumnValues = append(finalColumnValues, nil)
 				continue
 			}
 
-			processedVal, err := as.ProcessColumnValue(
+			processedVal, err := as.processColumnValue(
 				value.(string),
 				valueType,
 			)
@@ -457,20 +460,20 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *AzureSynapse) ProcessColumnValue(
+func (as *AzureSynapse) processColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
 	switch valueType {
-	case "int":
+	case string(model.IntDataType):
 		return strconv.Atoi(value)
-	case "float":
+	case string(model.FloatDataType):
 		return strconv.ParseFloat(value, 64)
-	case "datetime":
+	case string(model.DateTimeDataType):
 		return time.Parse(time.RFC3339, value)
-	case "boolean":
+	case string(model.BooleanDataType):
 		return strconv.ParseBool(value)
-	case "string":
+	case string(model.StringDataType):
 		if len(value) > mssqlStringLengthLimit {
 			value = value[:mssqlStringLengthLimit]
 		}
