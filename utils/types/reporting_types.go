@@ -21,7 +21,9 @@ const (
 )
 
 var (
-	DiffStatus = "diff"
+	DiffStatus     = "diff"
+	FilteredStatus = "filtered"
+	AddedStatus    = "added"
 
 	// Module names
 	GATEWAY                = "gateway"

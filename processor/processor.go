@@ -1372,6 +1372,107 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
+func generateFilteredAndAddedMetrics(inPU, pu string, messageIds []string, messageIdKeyMap map[string]string, inCountMetadataMap map[string]MetricMetadata, outputEvents []transformer.TransformerEvent, failedEvents []transformer.TransformerResponse) ([]*types.PUReportedMetric, []*types.PUReportedMetric) {
+	successMessageIdMap := make(map[string]int)
+	failedMessageIdMap := make(map[string]int)
+	for _, event := range outputEvents {
+		// handle transformBatch user transformation
+		// consider it as success if messageId is present in Metadata.MessageIDs of output event
+		// but do not increment to not count it as newly added event
+		if event.Metadata.MessageID == "" {
+			for _, messageId := range event.Metadata.MessageIDs {
+				if _, ok := successMessageIdMap[messageId]; !ok {
+					successMessageIdMap[messageId] = 0
+				}
+			}
+			continue
+		}
+
+		if _, ok := successMessageIdMap[event.Metadata.MessageID]; !ok {
+			successMessageIdMap[event.Metadata.MessageID] = 0
+		}
+		successMessageIdMap[event.Metadata.MessageID] += 1
+	}
+	for _, event := range failedEvents {
+		// handle transformBatch user transformation
+		// consider it as failed if messageId is present in Metadata.MessageIDs of failed event
+		if event.Metadata.MessageID == "" {
+			for _, messageId := range event.Metadata.MessageIDs {
+				if _, ok := failedMessageIdMap[messageId]; !ok {
+					failedMessageIdMap[messageId] = 0
+				}
+				failedMessageIdMap[messageId] += 1
+			}
+			continue
+		}
+
+		if _, ok := failedMessageIdMap[event.Metadata.MessageID]; !ok {
+			failedMessageIdMap[event.Metadata.MessageID] = 0
+		}
+		failedMessageIdMap[event.Metadata.MessageID] += 1
+	}
+
+	filteredMetricsMap := make(map[string]*types.PUReportedMetric)
+	addedMetricsMap := make(map[string]*types.PUReportedMetric)
+	for _, messageId := range messageIds {
+		outCount, successOk := successMessageIdMap[messageId]
+		_, failedOk := failedMessageIdMap[messageId]
+		noMessageIdInOutput := !successOk && !failedOk
+		multipleMessageIdInOutput := successOk && outCount > 1
+
+		if noMessageIdInOutput || multipleMessageIdInOutput {
+			key := messageIdKeyMap[messageId]
+			metricMetadata := inCountMetadataMap[key]
+			var eventName, eventType string
+			splitKey := strings.Split(key, MetricKeyDelimiter)
+			if len(splitKey) < 5 {
+				eventName = ""
+				eventType = ""
+			} else {
+				eventName = splitKey[3]
+				eventType = splitKey[4]
+			}
+			metricKey := strings.Join([]string{metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationID, metricMetadata.transformationVersionID, metricMetadata.trackingPlanID, fmt.Sprintf("%d", metricMetadata.trackingPlanVersion), eventName, eventType}, MetricKeyDelimiter)
+
+			if noMessageIdInOutput {
+				if _, ok := filteredMetricsMap[metricKey]; !ok {
+					filteredMetricsMap[metricKey] = &types.PUReportedMetric{
+						ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationID, metricMetadata.transformationVersionID, metricMetadata.trackingPlanID, metricMetadata.trackingPlanVersion),
+						PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+						StatusDetail:      types.CreateStatusDetail(types.FilteredStatus, 1, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
+					}
+				} else {
+					filteredMetricsMap[metricKey].StatusDetail.Count += 1
+				}
+			}
+
+			if multipleMessageIdInOutput {
+				if _, ok := addedMetricsMap[metricKey]; !ok {
+					addedMetricsMap[metricKey] = &types.PUReportedMetric{
+						ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationID, metricMetadata.transformationVersionID, metricMetadata.trackingPlanID, metricMetadata.trackingPlanVersion),
+						PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+						StatusDetail:      types.CreateStatusDetail(types.AddedStatus, int64(outCount-1), 0, 0, "", []byte(`{}`), eventName, eventType, ""),
+					}
+				} else {
+					addedMetricsMap[metricKey].StatusDetail.Count += 1
+				}
+			}
+		}
+	}
+
+	filteredMetrics := make([]*types.PUReportedMetric, 0, len(filteredMetricsMap))
+	for _, metric := range filteredMetricsMap {
+		filteredMetrics = append(filteredMetrics, metric)
+	}
+
+	addedMetrics := make([]*types.PUReportedMetric, 0, len(addedMetricsMap))
+	for _, metric := range addedMetricsMap {
+		addedMetrics = append(addedMetrics, metric)
+	}
+
+	return filteredMetrics, addedMetrics
+}
+
 type dupStatKey struct {
 	sourceID  string
 	equalSize bool
@@ -2174,7 +2275,8 @@ func (proc *Handle) transformSrcDest(
 
 	var inCountMap map[string]int64
 	var inCountMetadataMap map[string]MetricMetadata
-
+	var messageIds []string
+	messageIdKeyMap := make(map[string]string)
 	// REPORTING - START
 	if proc.isReportingEnabled() {
 		// Grouping events by sourceid + destinationid + jobruniD + eventName + eventType to find the count
@@ -2189,6 +2291,8 @@ func (proc *Handle) transformSrcDest(
 				event.Metadata.EventName,
 				event.Metadata.EventType,
 			}, MetricKeyDelimiter)
+			messageIds = append(messageIds, event.Metadata.MessageID)
+			messageIdKeyMap[event.Metadata.MessageID] = key
 			if _, ok := inCountMap[key]; !ok {
 				inCountMap[key] = 0
 			}
@@ -2246,6 +2350,7 @@ func (proc *Handle) transformSrcDest(
 
 			// REPORTING - START
 			if proc.isReportingEnabled() {
+				filteredMetrics, addedMetrics := generateFilteredAndAddedMetrics(types.DESTINATION_FILTER, types.USER_TRANSFORMER, messageIds, messageIdKeyMap, inCountMetadataMap, eventsToTransform, response.FailedEvents)
 				diffMetrics := getDiffMetrics(
 					types.DESTINATION_FILTER,
 					types.USER_TRANSFORMER,
@@ -2257,6 +2362,8 @@ func (proc *Handle) transformSrcDest(
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, failedMetrics...)
 				reportMetrics = append(reportMetrics, diffMetrics...)
+				reportMetrics = append(reportMetrics, filteredMetrics...)
+				reportMetrics = append(reportMetrics, addedMetrics...)
 
 				// successCountMap will be inCountMap for filtering events based on supported event types
 				inCountMap = successCountMap
