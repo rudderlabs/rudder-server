@@ -2249,20 +2249,35 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("getDiffMetrics Tests", func() {
 		It("Should match diffMetrics response for Empty Inputs", func() {
-			response := getDiffMetrics("some-string-1", "some-string-2", map[string]MetricMetadata{}, map[string]int64{}, map[string]int64{}, map[string]int64{})
+			response := getDiffMetrics("some-string-1", "some-string-2", map[metricKey]MetricMetadata{}, map[metricKey]int64{}, map[metricKey]int64{}, map[metricKey]int64{})
 			Expect(len(response)).To(Equal(0))
 		})
 
 		It("Should match diffMetrics response for Valid Inputs", func() {
-			inCountMetadataMap := map[string]MetricMetadata{
-				"some-key-1": {
+			metricKey1 := metricKey{
+				sourceID:       "some-source-id-1",
+				destinationID:  "some-destination-id-1",
+				sourceJobRunID: "some-source-job-run-id-1",
+				eventName:      "some-event-name-1",
+				eventType:      "some-event-type-1",
+			}
+			metricKey2 := metricKey{
+				sourceID:       "some-source-id-2",
+				destinationID:  "some-destination-id-2",
+				sourceJobRunID: "some-source-job-run-id-2",
+				eventName:      "some-event-name-2",
+				eventType:      "some-event-type-2",
+			}
+
+			inCountMetadataMap := map[metricKey]MetricMetadata{
+				metricKey1: {
 					sourceID:        "some-source-id-1",
 					destinationID:   "some-destination-id-1",
 					sourceJobRunID:  "some-source-job-run-id-1",
 					sourceJobID:     "some-source-job-id-1",
 					sourceTaskRunID: "some-source-task-run-id-1",
 				},
-				"some-key-2": {
+				metricKey2: {
 					sourceID:        "some-source-id-2",
 					destinationID:   "some-destination-id-2",
 					sourceJobRunID:  "some-source-job-run-id-2",
@@ -2271,17 +2286,17 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			inCountMap := map[string]int64{
-				"some-key-1": 3,
-				"some-key-2": 4,
+			inCountMap := map[metricKey]int64{
+				metricKey1: 3,
+				metricKey2: 4,
 			}
-			successCountMap := map[string]int64{
-				"some-key-1": 5,
-				"some-key-2": 6,
+			successCountMap := map[metricKey]int64{
+				metricKey1: 5,
+				metricKey2: 6,
 			}
-			failedCountMap := map[string]int64{
-				"some-key-1": 1,
-				"some-key-2": 2,
+			failedCountMap := map[metricKey]int64{
+				metricKey1: 1,
+				metricKey2: 2,
 			}
 
 			expectedResponse := []*types.PUReportedMetric{
@@ -2342,16 +2357,45 @@ var _ = Describe("Static Function Tests", func() {
 			inPU := "some-in-pu"
 			pu := "some-pu"
 			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4", "message-id-5", "message-id-6"}
-			messageIdKeyMap := map[string]string{
-				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-5": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-6": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			metricKey1 := metricKey{
+				sourceID:       "source-1",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-1",
+				eventName:      "add-to-cart",
+				eventType:      "track",
 			}
-			inCountMetadataMap := map[string]MetricMetadata{
-				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+			metricKey2 := metricKey{
+				sourceID:       "source-2",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-2",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey3 := metricKey{
+				sourceID:       "source-3",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-3",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey4 := metricKey{
+				sourceID:       "source-4",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-4",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+
+			messageIdKeyMap := map[string]metricKey{
+				"message-id-1": metricKey1,
+				"message-id-2": metricKey2,
+				"message-id-3": metricKey3,
+				"message-id-4": metricKey4,
+				"message-id-5": metricKey4,
+				"message-id-6": metricKey2,
+			}
+			inCountMetadataMap := map[metricKey]MetricMetadata{
+				metricKey1: {
 					sourceID:                "some-source-id-1",
 					destinationID:           "some-destination-id-1",
 					sourceTaskRunID:         "some-source-task-run-id-1",
@@ -2365,7 +2409,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-1",
 					trackingPlanVersion:     1,
 				},
-				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey2: {
 					sourceID:                "some-source-id-2",
 					destinationID:           "some-destination-id-2",
 					sourceTaskRunID:         "some-source-task-run-id-2",
@@ -2379,7 +2423,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-2",
 					trackingPlanVersion:     2,
 				},
-				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey3: {
 					sourceID:                "some-source-id-3",
 					destinationID:           "some-destination-id-3",
 					sourceTaskRunID:         "some-source-task-run-id-3",
@@ -2393,7 +2437,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-3",
 					trackingPlanVersion:     3,
 				},
-				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey4: {
 					sourceID:                "some-source-id-4",
 					destinationID:           "some-destination-id-4",
 					sourceTaskRunID:         "some-source-task-run-id-4",
@@ -2498,14 +2542,42 @@ var _ = Describe("Static Function Tests", func() {
 			inPU := "some-in-pu"
 			pu := "some-pu"
 			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4"}
-			messageIdKeyMap := map[string]string{
-				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			metricKey1 := metricKey{
+				sourceID:       "source-1",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-1",
+				eventName:      "add-to-cart",
+				eventType:      "track",
 			}
-			inCountMetadataMap := map[string]MetricMetadata{
-				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+			metricKey2 := metricKey{
+				sourceID:       "source-2",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-2",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey3 := metricKey{
+				sourceID:       "source-3",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-3",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey4 := metricKey{
+				sourceID:       "source-4",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-4",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			messageIdKeyMap := map[string]metricKey{
+				"message-id-1": metricKey1,
+				"message-id-2": metricKey2,
+				"message-id-3": metricKey3,
+				"message-id-4": metricKey4,
+			}
+			inCountMetadataMap := map[metricKey]MetricMetadata{
+				metricKey1: {
 					sourceID:                "some-source-id-1",
 					destinationID:           "some-destination-id-1",
 					sourceTaskRunID:         "some-source-task-run-id-1",
@@ -2519,7 +2591,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-1",
 					trackingPlanVersion:     1,
 				},
-				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey2: {
 					sourceID:                "some-source-id-2",
 					destinationID:           "some-destination-id-2",
 					sourceTaskRunID:         "some-source-task-run-id-2",
@@ -2533,7 +2605,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-2",
 					trackingPlanVersion:     2,
 				},
-				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey3: {
 					sourceID:                "some-source-id-3",
 					destinationID:           "some-destination-id-3",
 					sourceTaskRunID:         "some-source-task-run-id-3",
@@ -2547,7 +2619,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-3",
 					trackingPlanVersion:     3,
 				},
-				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey4: {
 					sourceID:                "some-source-id-4",
 					destinationID:           "some-destination-id-4",
 					sourceTaskRunID:         "some-source-task-run-id-4",
@@ -2614,14 +2686,42 @@ var _ = Describe("Static Function Tests", func() {
 			inPU := "some-in-pu"
 			pu := "some-pu"
 			messageIds := []string{"message-id-1", "message-id-2", "message-id-3", "message-id-4"}
-			messageIdKeyMap := map[string]string{
-				"message-id-1": "source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-2": "source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-3": "source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
-				"message-id-4": "source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track",
+			metricKey1 := metricKey{
+				sourceID:       "source-1",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-1",
+				eventName:      "add-to-cart",
+				eventType:      "track",
 			}
-			inCountMetadataMap := map[string]MetricMetadata{
-				"source-1!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+			metricKey2 := metricKey{
+				sourceID:       "source-2",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-2",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey3 := metricKey{
+				sourceID:       "source-3",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-3",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			metricKey4 := metricKey{
+				sourceID:       "source-4",
+				destinationID:  "destination-1",
+				sourceJobRunID: "source-job-run-4",
+				eventName:      "add-to-cart",
+				eventType:      "track",
+			}
+			messageIdKeyMap := map[string]metricKey{
+				"message-id-1": metricKey1,
+				"message-id-2": metricKey2,
+				"message-id-3": metricKey3,
+				"message-id-4": metricKey4,
+			}
+			inCountMetadataMap := map[metricKey]MetricMetadata{
+				metricKey1: {
 					sourceID:                "some-source-id-1",
 					destinationID:           "some-destination-id-1",
 					sourceTaskRunID:         "some-source-task-run-id-1",
@@ -2635,7 +2735,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-1",
 					trackingPlanVersion:     1,
 				},
-				"source-2!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey2: {
 					sourceID:                "some-source-id-2",
 					destinationID:           "some-destination-id-2",
 					sourceTaskRunID:         "some-source-task-run-id-2",
@@ -2649,7 +2749,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-2",
 					trackingPlanVersion:     2,
 				},
-				"source-3!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey3: {
 					sourceID:                "some-source-id-3",
 					destinationID:           "some-destination-id-3",
 					sourceTaskRunID:         "some-source-task-run-id-3",
@@ -2663,7 +2763,7 @@ var _ = Describe("Static Function Tests", func() {
 					trackingPlanID:          "some-tracking-plan-id-3",
 					trackingPlanVersion:     3,
 				},
-				"source-4!<<#>>!dest-1!<<#>>!!<<#>>!add-to-cart!<<#>>!track": {
+				metricKey4: {
 					sourceID:                "some-source-id-4",
 					destinationID:           "some-destination-id-4",
 					sourceTaskRunID:         "some-source-task-run-id-4",
@@ -2775,8 +2875,8 @@ var _ = Describe("Static Function Tests", func() {
 			}
 			connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 			statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
-			countMap := make(map[string]int64)
-			countMetadataMap := make(map[string]MetricMetadata)
+			countMap := make(map[metricKey]int64)
+			countMetadataMap := make(map[metricKey]MetricMetadata)
 			// update metric maps
 			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, transformer.TrackingPlanValidationStage, func() json.RawMessage { return []byte(`{}`) })
 
