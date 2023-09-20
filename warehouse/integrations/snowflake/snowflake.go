@@ -401,6 +401,23 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		return tableLoadResp{}, err
 	}
 
+	duplicates, err := sf.sampleDuplicateMessages(
+		ctx,
+		db,
+		tableName,
+		stagingTableName,
+	)
+	if err != nil {
+		log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
+	} else if len(duplicates) > 0 {
+		uploadID, _ := whutils.UploadIDFromCtx(ctx)
+
+		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+			return item.String()
+		})
+		log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+	}
+
 	var (
 		primaryKey              = "ID"
 		partitionKey            = `"ID"`
@@ -472,24 +489,6 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"tableName":      tableName,
 	}).Count(int(updated))
 
-	if updated > 0 {
-		duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
-		if err != nil {
-			log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
-		} else if len(duplicates) > 0 {
-			uploadID, _ := whutils.UploadIDFromCtx(ctx)
-
-			sort.Slice(duplicates, func(i, j int) bool {
-				return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
-			})
-
-			formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
-				return item.String()
-			})
-			log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
-		}
-	}
-
 	log.Infow("completed loading")
 
 	return tableLoadResp{
@@ -510,7 +509,12 @@ func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) 
 	}, ",")
 }
 
-func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, mainTableName, stagingTableName string) ([]duplicateMessage, error) {
+func (sf *Snowflake) sampleDuplicateMessages(
+	ctx context.Context,
+	db *sqlmw.DB,
+	mainTableName,
+	stagingTableName string,
+) ([]duplicateMessage, error) {
 	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
 		return nil, nil
 	}
@@ -536,6 +540,7 @@ func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, 
 				FROM
 			  		`+stagingTable+`
 		  	)
+        ORDER BY RECEIVED_AT ASC
 		LIMIT
 		  ?;
 `,
