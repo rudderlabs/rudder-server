@@ -17,6 +17,10 @@ service Warehouse {
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
   rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
+  rpc FailedBatches(FailedBatchRequest) returns (FailedBatchResponse);
+  rpc FailedBatchDetails(FailedBatchDetailsRequest) returns (FailedBatchDetailsResponse);
+  rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
+  rpc RetryFailedBatch(RetryFailedBatchRequest) returns (FailedBatchDetailsResponse);
 }
 
 message Pagination {
@@ -109,11 +113,75 @@ message RetryWHUploadsResponse {
 }
 
 message ValidateObjectStorageRequest {
-  string type=1;
-  google.protobuf.Struct config=2;
+  string type = 1;
+  google.protobuf.Struct config = 2;
 }
 
 message ValidateObjectStorageResponse{
-  bool isValid=2;
-  string error=3;
+  bool isValid = 2;
+  string error = 3;
+}
+
+message FailedBatchRequest{
+  string destinationID = 1;
+  string workspaceID = 2;
+  int64 intervalInHrs = 3;
+}
+
+message FailedBatchResponse{
+  string errorCategory = 1;
+  string sourceID = 2;
+  int64 count = 3;
+  google.protobuf.Timestamp lastHappened = 4;
+  string status = 5;
+}
+
+message FailedBatchDetailsRequest{
+  string destinationID = 1;
+  string workspaceID = 2;
+  int64 intervalInHrs = 3;
+  string errorCategory = 4;
+  string sourceID = 5;
+  string status = 6;
+}
+
+message FailedBatchDetailsResponse{
+  string errorCategory = 1;
+  string sourceID = 2;
+  int64 count = 3;
+  google.protobuf.Timestamp lastHappened = 4;
+  string status = 5;
+  string error = 6;
+}
+
+message RetryFailedBatchesRequest{
+  string destinationID = 1;
+  string workspaceID = 2;
+  int64 intervalInHrs = 3;
+}
+
+message RetryFailedBatchesResponse{
+  string errorCategory = 1;
+  string sourceID = 2;
+  int64 count = 3;
+  google.protobuf.Timestamp lastHappened = 4;
+  string status = 5;
+}
+
+message RetryFailedBatchRequest{
+  string destinationID = 1;
+  string workspaceID = 2;
+  int64 intervalInHrs = 3;
+  string errorCategory = 4;
+  string sourceID = 5;
+  string status = 6;
+}
+
+message RetryFailedBatchResponse{
+  string errorCategory = 1;
+  string sourceID = 2;
+  int64 count = 3;
+  google.protobuf.Timestamp lastHappened = 4;
+  string status = 5;
+  string error = 6;
 }

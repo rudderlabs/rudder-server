@@ -1046,3 +1046,134 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 	}
 	return &latestUploadInfo, nil
 }
+
+func (uploads *Uploads) failedBatchesFromTableUploads(
+	ctx context.Context,
+	req model.FailedBatchRequest,
+) ([]model.FailedBatchResponse, error) {
+	stmt := `
+		SELECT
+			coalesce(tu.error_category, 'default') AS error_category,
+			ut.source_id,
+			sum(tu.total_events),
+            max(ut.updated_at),
+		    CASE
+				WHEN ut.status LIKE '%failed%' THEN 'failed'
+				ELSE ut.status
+			END AS status
+		FROM
+			` + uploadsTableName + ` ut
+		LEFT JOIN
+			` + tableUploadTableName + ` tu
+		ON
+			ut.id = tu.upload_id
+		WHERE
+			ut.destination_id = $1 AND
+			ut.workspace_id = $2 AND
+			ut.created_at > NOW() - $3 * INTERVAL '1 HOUR' AND
+			ut.status ~~ ANY($4) AND
+			tu.total_events IS NOT NULL
+		GROUP BY
+			tu.error_category,
+			ut.source_id,
+			CASE
+				WHEN ut.status LIKE '%failed%' THEN 'failed'
+				ELSE ut.status
+			END;
+	`
+	stmtArgs := []interface{}{
+		req.DestinationID,
+		req.WorkspaceID,
+		req.IntervalInHrs,
+		pq.Array([]string{model.Waiting, model.Failed, model.Aborted}),
+	}
+
+	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("querying failed batches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var failedBatches []model.FailedBatchResponse
+	for rows.Next() {
+		var failedBatch model.FailedBatchResponse
+		err := rows.Scan(
+			&failedBatch.ErrorCategory,
+			&failedBatch.SourceID,
+			&failedBatch.Count,
+			&failedBatch.LastHappened,
+			&failedBatch.Status,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning failed batches: %w", err)
+		}
+		failedBatches = append(failedBatches, failedBatch)
+	}
+
+	return failedBatches, nil
+}
+
+func (uploads *Uploads) failedBatchesFromStagingFiles(
+	ctx context.Context,
+	req model.FailedBatchRequest,
+) ([]model.FailedBatchResponse, error) {
+	stmt := `
+		SELECT
+			coalesce(st.error_category, 'default') AS error_category,
+			ut.source_id,
+			sum(st.total_events),
+            max(ut.updated_at),
+		    CASE
+				WHEN ut.status LIKE '%failed%' THEN 'failed'
+				ELSE ut.status
+			END AS status
+		FROM
+			` + uploadsTableName + ` ut
+		LEFT JOIN
+			` + stagingTableName + ` st
+		ON
+			ut.id = st.upload_id
+		WHERE
+			ut.destination_id = $1 AND
+			ut.workspace_id = $2 AND
+			ut.created_at > NOW() - $3 * INTERVAL '1 HOUR' AND
+			ut.status ~~ ANY($4) AND
+		GROUP BY
+			st.error_category,
+			ut.source_id,
+			CASE
+				WHEN ut.status LIKE '%failed%' THEN 'failed'
+				ELSE ut.status
+			END;
+	`
+	stmtArgs := []interface{}{
+		req.DestinationID,
+		req.WorkspaceID,
+		req.IntervalInHrs,
+		pq.Array([]string{model.Waiting, model.Failed, model.Aborted}),
+	}
+
+	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("querying failed batches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var failedBatches []model.FailedBatchResponse
+	for rows.Next() {
+		var failedBatch model.FailedBatchResponse
+		err := rows.Scan(
+			&failedBatch.ErrorCategory,
+			&failedBatch.SourceID,
+			&failedBatch.Count,
+			&failedBatch.LastHappened,
+			&failedBatch.Status,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning failed batches: %w", err)
+		}
+		failedBatches = append(failedBatches, failedBatch)
+	}
+
+	return failedBatches, nil
+}

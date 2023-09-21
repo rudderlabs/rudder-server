@@ -451,7 +451,7 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 		lf.SourceID, req.SourceId,
 		lf.DestinationID, req.DestinationId,
 		lf.DestinationType, req.DestinationType,
-		"intervalInHours", req.IntervalInHours,
+		lf.IntervalInHours, req.IntervalInHours,
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -505,7 +505,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 		lf.SourceID, req.SourceId,
 		lf.DestinationID, req.DestinationId,
 		lf.DestinationType, req.DestinationType,
-		"intervalInHours", req.IntervalInHours,
+		lf.IntervalInHours, req.IntervalInHours,
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -790,4 +790,31 @@ func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap m
 		// In case we don't have the key, simply replace it with replaceWith
 		configMap[keyToReplace] = replaceWith
 	}
+}
+
+func (g *GRPC) FailedBatches(ctx context.Context, request *proto.FailedBatchRequest) (*proto.FailedBatchResponse, error) {
+	g.logger.Infow("Getting warehouse uploads",
+		lf.WorkspaceID, request.GetWorkspaceID(),
+		lf.IntervalInHours, request.GetIntervalInHrs(),
+		lf.DestinationID, request.GetDestinationID(),
+	)
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.GetWorkspaceID()]
+	if len(sourceIDs) == 0 {
+		return &proto.FailedBatchResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.GetWorkspaceID())
+	}
+
+}
+
+func (g *GRPC) FailedBatchDetails(context.Context, *proto.FailedBatchDetailsRequest) (*proto.FailedBatchDetailsResponse, error) {
+
+}
+
+func (g *GRPC) RetryFailedBatches(context.Context, *proto.RetryFailedBatchesRequest) (*proto.RetryFailedBatchesResponse, error) {
+
+}
+
+func (g *GRPC) RetryFailedBatch(context.Context, *proto.RetryFailedBatchRequest) (*proto.FailedBatchDetailsResponse, error) {
+
 }
