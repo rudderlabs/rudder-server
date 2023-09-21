@@ -68,9 +68,9 @@ func Test_subjectCache(t *testing.T) {
 
 	t.Run("a write during read(jobs found) removes the preRead subject", func(t *testing.T) {
 		c := subjectcache.New()
-		c.SetPreRead("foo.*")             // getJobs will call SetPreRead
-		c.Remove("foo.bar")               // write will call Remove
-		c.RemovePreRead("foo.*")          // getJobs will call RemovePreRead(jobs found)
-		require.True(t, c.Check("foo.*")) // next iteration of getJobs
+		c.SetPreRead("foo.*")              // getJobs will call SetPreRead
+		c.Remove("foo.bar")                // write will call Remove
+		c.RemovePreRead("foo.*")           // getJobs will call RemovePreRead(jobs found)
+		require.False(t, c.Check("foo.*")) // next iteration of getJobs
 	})
 }
