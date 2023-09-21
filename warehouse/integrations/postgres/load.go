@@ -82,12 +82,12 @@ func (pg *Postgres) loadTable(
 	)
 
 	log.Infow("setting search path")
-	searchPathQueryStmt := fmt.Sprintf(`
+	searchPathStmt := fmt.Sprintf(`
 		SET search_path TO %q;
 `,
 		pg.Namespace,
 	)
-	if _, err := txn.ExecContext(ctx, searchPathQueryStmt); err != nil {
+	if _, err := txn.ExecContext(ctx, searchPathStmt); err != nil {
 		return nil, "", fmt.Errorf("setting search path: %w", err)
 	}
 
