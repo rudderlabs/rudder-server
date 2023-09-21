@@ -51,7 +51,7 @@ type Schema struct {
 	enableIDResolution               bool
 }
 
-func NewSchema(
+func New(
 	db *sqlquerywrapper.DB,
 	warehouse model.Warehouse,
 	conf *config.Config,

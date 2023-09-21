@@ -194,7 +194,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logger:               f.logger,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle: schema.NewSchema(
+		schemaHandle: schema.New(
 			f.dbHandle,
 			dto.Warehouse,
 			config.Default,
