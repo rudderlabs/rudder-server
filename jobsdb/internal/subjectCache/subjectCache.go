@@ -184,7 +184,7 @@ func (c *cacheMap) ClearDS(dsIndex string) {
 		if !ok {
 			panic(fmt.Sprintf("invalid key type: %v", k))
 		}
-		if strings.HasPrefix(key, dsIndex) {
+		if strings.HasPrefix(key, dsIndex+".") {
 			c.Delete(k)
 		}
 		return true
