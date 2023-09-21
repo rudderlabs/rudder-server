@@ -143,8 +143,6 @@ func newRouter(
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
 	r.db = db
-	// We now have access to the warehouseDBHandle through
-	// which we will be running the db calls.
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)

@@ -388,7 +388,7 @@ func TestApp(t *testing.T) {
 		require.NoError(t, a.Setup(ctx))
 		require.NoError(t, a.monitorDestRouters(ctx))
 	})
-	t.Run("recovery mode", func(t *testing.T) {
+	t.Run("rudder core recovery mode", func(t *testing.T) {
 		db.CurrentMode = "degraded"
 		t.Cleanup(func() {
 			db.CurrentMode = "normal"
@@ -415,15 +415,7 @@ func TestApp(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockLogger := mock_logger.NewMockLogger(ctrl)
-			mockLogger.EXPECT().Child(gomock.Any()).AnyTimes().Return(mockLogger)
-			mockLogger.EXPECT().Info("Starting Warehouse service...").Times(1)
-			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infow(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
-
-			a := NewApp(mockApp, c, mockLogger, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+			a := NewApp(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 
@@ -479,6 +471,7 @@ func TestApp(t *testing.T) {
 			mockLogger.EXPECT().Child(gomock.Any()).AnyTimes().Return(mockLogger)
 			mockLogger.EXPECT().Info("Skipping start of warehouse service...").Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Infof(gomock.Any()).AnyTimes()
 
 			a := NewApp(mockApp, c, mockLogger, stats.Default, &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
