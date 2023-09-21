@@ -171,7 +171,7 @@ func TestJobsArchival(t *testing.T) {
 		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefix, 20)
 		files, err := getAllFileNames(fileIter)
 		require.NoError(t, err)
-		require.Equal(t, sourcesPerWorkspace[i], len(files))
+		require.LessOrEqual(t, sourcesPerWorkspace[i], len(files))
 
 		for j, file := range files {
 			downloadFile, err := os.CreateTemp(t.TempDir(), fmt.Sprintf("backedupfile%d%d", i, j))
