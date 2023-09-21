@@ -7,19 +7,16 @@ import (
 	"reflect"
 	"regexp"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -30,7 +27,9 @@ var (
 // deprecatedColumnsRegex
 // This regex is used to identify deprecated columns in the warehouse
 // Example: abc-deprecated-dba626a7-406a-4757-b3e0-3875559c5840
-var deprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var deprecatedColumnsRegex = regexp.MustCompile(
+	`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
+)
 
 type schemaRepo interface {
 	GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error)
@@ -50,7 +49,6 @@ type Schema struct {
 	localSchema                      model.Schema
 	schemaInWarehouse                model.Schema
 	unrecognizedSchemaInWarehouse    model.Schema
-	uploadSchema                     model.Schema
 	schemaRepo                       schemaRepo
 	stagingFileRepo                  stagingFileRepo
 	log                              logger.Logger
@@ -63,12 +61,13 @@ func NewSchema(
 	db *sqlquerywrapper.DB,
 	warehouse model.Warehouse,
 	conf *config.Config,
+	logger logger.Logger,
 ) *Schema {
 	return &Schema{
 		warehouse:                        warehouse,
 		schemaRepo:                       repo.NewWHSchemas(db),
 		stagingFileRepo:                  repo.NewStagingFiles(db),
-		log:                              logger.NewLogger().Child("warehouse").Child("schema"),
+		log:                              logger,
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
 		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
@@ -128,8 +127,8 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	sh.skipDeprecatedColumns(warehouseSchema)
-	sh.skipDeprecatedColumns(unrecognizedWarehouseSchema)
+	sh.removeDeprecatedColumns(warehouseSchema)
+	sh.removeDeprecatedColumns(unrecognizedWarehouseSchema)
 
 	sh.schemaInWarehouse = warehouseSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
@@ -137,8 +136,8 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	return nil
 }
 
-// skipDeprecatedColumns skips deprecated columns from the schema
-func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
+// removeDeprecatedColumns skips deprecated columns from the schema map
+func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if deprecatedColumnsRegex.MatchString(columnName) {
@@ -152,20 +151,18 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 					logfield.ColumnName, columnName,
 				)
 				delete(schema[tableName], columnName)
-				continue
 			}
 		}
 	}
 }
 
-func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) error {
+func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
 	if err != nil {
-		return fmt.Errorf("consolidating staging files schema: %w", err)
+		return nil, fmt.Errorf("consolidating staging files schema: %w", err)
 	}
 
-	sh.uploadSchema = consolidatedSchema
-	return nil
+	return consolidatedSchema, nil
 }
 
 // consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
@@ -248,10 +245,10 @@ func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema
 // Removes the user_id column from the users table
 func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehouseType string, warehouseSchema model.Schema) model.Schema {
 	var (
-		usersTable      = warehouseutils.ToProviderCase(warehouseType, warehouseutils.UsersTable)
-		identifiesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentifiesTable)
-		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
-		IDColumn        = warehouseutils.ToProviderCase(warehouseType, "id")
+		usersTable      = whutils.ToProviderCase(warehouseType, whutils.UsersTable)
+		identifiesTable = whutils.ToProviderCase(warehouseType, whutils.IdentifiesTable)
+		userIDColumn    = whutils.ToProviderCase(warehouseType, "user_id")
+		IDColumn        = whutils.ToProviderCase(warehouseType, "id")
 	)
 	if _, ok := consolidatedSchema[usersTable]; !ok {
 		return consolidatedSchema
@@ -279,15 +276,15 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
 	discards := model.TableSchema{}
 
-	for colName, colType := range warehouseutils.DiscardsSchema {
-		discards[warehouseutils.ToProviderCase(warehouseType, colName)] = colType
+	for colName, colType := range whutils.DiscardsSchema {
+		discards[whutils.ToProviderCase(warehouseType, colName)] = colType
 	}
 
-	if warehouseType == warehouseutils.BQ {
-		discards[warehouseutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
+	if warehouseType == whutils.BQ {
+		discards[whutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
 	}
 
-	consolidatedSchema[warehouseutils.ToProviderCase(warehouseType, warehouseutils.DiscardsTable)] = discards
+	consolidatedSchema[whutils.ToProviderCase(warehouseType, whutils.DiscardsTable)] = discards
 	return consolidatedSchema
 }
 
@@ -297,28 +294,28 @@ func enhanceSchemaWithIDResolution(consolidatedSchema model.Schema, isIDResoluti
 		return consolidatedSchema
 	}
 	var (
-		mergeRulesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMergeRulesTable)
-		mappingsTable   = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMappingsTable)
+		mergeRulesTable = whutils.ToProviderCase(warehouseType, whutils.IdentityMergeRulesTable)
+		mappingsTable   = whutils.ToProviderCase(warehouseType, whutils.IdentityMappingsTable)
 	)
 	if _, ok := consolidatedSchema[mergeRulesTable]; ok {
 		consolidatedSchema[mergeRulesTable] = model.TableSchema{
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_type"):  "string",
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_value"): "string",
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_type"):  "string",
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_value"): "string",
+			whutils.ToProviderCase(warehouseType, "merge_property_1_type"):  "string",
+			whutils.ToProviderCase(warehouseType, "merge_property_1_value"): "string",
+			whutils.ToProviderCase(warehouseType, "merge_property_2_type"):  "string",
+			whutils.ToProviderCase(warehouseType, "merge_property_2_value"): "string",
 		}
 		consolidatedSchema[mappingsTable] = model.TableSchema{
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_type"):  "string",
-			warehouseutils.ToProviderCase(warehouseType, "merge_property_value"): "string",
-			warehouseutils.ToProviderCase(warehouseType, "rudder_id"):            "string",
-			warehouseutils.ToProviderCase(warehouseType, "updated_at"):           "datetime",
+			whutils.ToProviderCase(warehouseType, "merge_property_type"):  "string",
+			whutils.ToProviderCase(warehouseType, "merge_property_value"): "string",
+			whutils.ToProviderCase(warehouseType, "rudder_id"):            "string",
+			whutils.ToProviderCase(warehouseType, "updated_at"):           "datetime",
 		}
 	}
 	return consolidatedSchema
 }
 
 func (sh *Schema) isIDResolutionEnabled() bool {
-	return sh.enableIDResolution && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
 // hasSchemaChanged compares the localSchema with the schemaInWarehouse
@@ -350,9 +347,9 @@ func (sh *Schema) hasSchemaChanged() bool {
 	return false
 }
 
-// generateTableSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
-	diff := warehouseutils.TableSchemaDiff{
+// TableSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff {
+	diff := whutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
 		AlteredColumnMap: make(model.TableSchema),
@@ -360,13 +357,13 @@ func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.Table
 
 	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
 	if !ok {
-		if _, ok := sh.uploadSchema[tableName]; !ok {
+		if len(tableSchema) == 0 {
 			return diff
 		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
-		diff.ColumnMap = sh.uploadSchema[tableName]
-		diff.UpdatedSchema = sh.uploadSchema[tableName]
+		diff.ColumnMap = tableSchema
+		diff.UpdatedSchema = tableSchema
 		return diff
 	}
 
@@ -375,7 +372,7 @@ func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.Table
 	}
 
 	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range sh.uploadSchema[tableName] {
+	for columnName, columnType := range tableSchema {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
