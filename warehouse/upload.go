@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+  "github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -73,7 +73,7 @@ type UploadJobFactory struct {
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *notifier.Notifier
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -89,7 +89,7 @@ type UploadJob struct {
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *notifier.Notifier
 	schemaHandle         *Schema
 	conf                 *config.Config
 	logger               logger.Logger
@@ -187,7 +187,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
-		pgNotifier:           f.pgNotifier,
+		notifier:             f.notifier,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,

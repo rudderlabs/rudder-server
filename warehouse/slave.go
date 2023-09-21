@@ -3,6 +3,8 @@ package warehouse
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -11,14 +13,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type slaveNotifier interface {
-	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan pgnotifier.Claim
-	RunMaintenanceWorker(ctx context.Context) error
-	UpdateClaimedEvent(claim *pgnotifier.Claim, response *pgnotifier.ClaimResponse)
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *notifier.ClaimJob
+	RunMaintenance(ctx context.Context) error
+	UpdateClaim(ctx context.Context, job *notifier.ClaimJob, response *notifier.ClaimJobResponse)
 }
 
 type slave struct {
@@ -78,7 +79,7 @@ func (s *slave) setupSlave(ctx context.Context) error {
 	}
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return s.notifier.RunMaintenanceWorker(gCtx)
+		return s.notifier.RunMaintenance(gCtx)
 	}))
 
 	return g.Wait()
