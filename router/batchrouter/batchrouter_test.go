@@ -267,6 +267,7 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
 			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.mainLoopFreq = misc.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)

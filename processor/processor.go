@@ -1916,6 +1916,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
+	sm.routerDestIDs = append(sm.routerDestIDs, subJob.routerDestIDs...)
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
 	for dupStatKey, count := range subJob.sourceDupStats {
@@ -1997,6 +1998,14 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 					proc.storePlocker.Lock(destID)
 					defer proc.storePlocker.Unlock(destID)
 				}
+			} else {
+				proc.logger.Warnw("empty storeMessage.routerDestIDs",
+					"expected",
+					lo.Uniq(
+						lo.Map(destJobs, func(j *jobsdb.JobT, _ int) string {
+							return gjson.GetBytes(j.Parameters, "destination_id").String()
+						}),
+					))
 			}
 			err := misc.RetryWithNotify(
 				context.Background(),
