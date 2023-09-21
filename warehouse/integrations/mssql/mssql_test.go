@@ -4,8 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/golang/mock/gomock"
-	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -13,10 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"os"
-	"strconv"
-	"testing"
-	"time"
 
 	"github.com/rudderlabs/compose-test/compose"
 
@@ -295,12 +297,10 @@ func TestIntegration(t *testing.T) {
 
 func TestMSSQL_LoadTable(t *testing.T) {
 	const (
-		sourceID         = "test_source-id"
-		destinationID    = "test_destination-id"
-		namespace        = "test_namespace"
-		workspaceID      = "test_workspace-id"
-		loadObjectFolder = "rudder-warehouse-load-objects"
-		destinationType  = warehouseutils.MSSQL
+		sourceID        = "test_source-id"
+		destinationID   = "test_destination-id"
+		workspaceID     = "test_workspace-id"
+		destinationType = warehouseutils.AzureSynapse
 
 		host     = "localhost"
 		database = "master"
@@ -325,39 +325,65 @@ func TestMSSQL_LoadTable(t *testing.T) {
 
 	minioPort := c.Port("minio", 9000)
 	mssqlPort := c.Port("mssql", 1433)
-	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+	minioEndpoint := net.JoinHostPort("localhost", strconv.Itoa(minioPort))
 
 	ctx := context.Background()
 
-	warehouse := model.Warehouse{
-		Source: backendconfig.SourceT{
-			ID: sourceID,
-		},
-		Destination: backendconfig.DestinationT{
-			ID: destinationID,
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: destinationType,
+	warehouseModel := func(namespace string) model.Warehouse {
+		return model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
 			},
-			Config: map[string]interface{}{
-				"host":             host,
-				"database":         database,
-				"user":             user,
-				"password":         password,
-				"port":             strconv.Itoa(mssqlPort),
-				"sslMode":          "disable",
-				"namespace":        "",
-				"bucketProvider":   "MINIO",
-				"bucketName":       bucketName,
-				"accessKeyID":      accessKeyID,
-				"secretAccessKey":  secretAccessKey,
-				"useSSL":           false,
-				"endPoint":         minioEndpoint,
-				"syncFrequency":    "30",
-				"useRudderStorage": false,
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destinationType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(mssqlPort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
 			},
-		},
-		WorkspaceID: workspaceID,
-		Namespace:   namespace,
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+	}
+
+	schemaInUpload := model.TableSchema{
+		"test_bool":     "boolean",
+		"test_datetime": "datetime",
+		"test_float":    "float",
+		"test_int":      "int",
+		"test_string":   "string",
+		"id":            "string",
+		"received_at":   "datetime",
+	}
+	schemaInWarehouse := model.TableSchema{
+		"test_bool":           "boolean",
+		"test_datetime":       "datetime",
+		"test_float":          "float",
+		"test_int":            "int",
+		"test_string":         "string",
+		"id":                  "string",
+		"received_at":         "datetime",
+		"extra_test_bool":     "boolean",
+		"extra_test_datetime": "datetime",
+		"extra_test_float":    "float",
+		"extra_test_int":      "int",
+		"extra_test_string":   "string",
 	}
 
 	fm, err := filemanager.New(&filemanager.Settings{
@@ -377,71 +403,44 @@ func TestMSSQL_LoadTable(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	t.Run("load table stats", func(t *testing.T) {
-		tableName := "load_table_stats_test_table"
-
-		f, err := os.Open("testdata/load.csv.gz")
-		require.NoError(t, err)
-
-		defer func() { _ = f.Close() }()
-
-		uploadOutput, err := fm.Upload(
-			context.Background(), f, loadObjectFolder,
-			tableName, sourceID, uuid.New().String()+"-"+tableName,
-		)
-		require.NoError(t, err)
-
+	uploader := func(
+		t testing.TB,
+		loadFiles []warehouseutils.LoadFile,
+		tableName string,
+		schemaInUpload model.TableSchema,
+		schemaInWarehouse model.TableSchema,
+	) warehouseutils.Uploader {
 		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
 		mockUploader := mockuploader.NewMockUploader(ctrl)
 		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return([]warehouseutils.LoadFile{{
-			Location: uploadOutput.Location,
-		}}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
-		}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}).AnyTimes()
+		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+
+		return mockUploader
+	}
+
+	t.Run("load table stats", func(t *testing.T) {
+		namespace := "load_table_stats_test_namespace"
+		tableName := "load_table_stats_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+		warehouse := warehouseModel(namespace)
 
 		ms := mssql.New(config.Default, logger.NOP, stats.Default)
-		err = ms.Setup(ctx, warehouse, mockUploader)
+		err := ms.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ms.CreateSchema(ctx)
 		require.NoError(t, err)
 
-		err = ms.CreateTable(ctx, tableName, model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		})
+		err = ms.CreateTable(ctx, tableName, schemaInWarehouse)
 		require.NoError(t, err)
 
 		loadTableStat, err := ms.LoadTable(ctx, tableName)
@@ -453,168 +452,103 @@ func TestMSSQL_LoadTable(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, loadTableStat.RowsInserted, int64(0))
 		require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+		records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.7500000000", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.7500000000", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
 	})
 	t.Run("schema does not exists", func(t *testing.T) {
+		namespace := "schema_not_exists_test_namespace"
 		tableName := "schema_not_exists_test_table"
 
-		f, err := os.Open("testdata/load.csv.gz")
-		require.NoError(t, err)
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
 
-		defer func() { _ = f.Close() }()
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		uploadOutput, err := fm.Upload(
-			context.Background(), f, loadObjectFolder,
-			tableName, sourceID, uuid.New().String()+"-"+tableName,
-		)
-		require.NoError(t, err)
-
-		ctrl := gomock.NewController(t)
-		mockUploader := mockuploader.NewMockUploader(ctrl)
-		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return([]warehouseutils.LoadFile{{
-			Location: uploadOutput.Location,
-		}}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
-		}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}).AnyTimes()
+		warehouse := warehouseModel(namespace)
 
 		ms := mssql.New(config.Default, logger.NOP, stats.Default)
-		err = ms.Setup(ctx, warehouse, mockUploader)
+		err := ms.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		loadTableStat, err := ms.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "reating temporary table: mssql: Invalid object name 'test_namespace.schema_not_exists_test_table'.")
+		require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'schema_not_exists_test_namespace.schema_not_exists_test_table'.")
 		require.Nil(t, loadTableStat)
 	})
 	t.Run("table does not exists", func(t *testing.T) {
+		namespace := "table_not_exists_test_namespace"
 		tableName := "table_not_exists_test_table"
 
-		f, err := os.Open("testdata/load.csv.gz")
-		require.NoError(t, err)
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
 
-		defer func() { _ = f.Close() }()
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		uploadOutput, err := fm.Upload(
-			context.Background(), f, loadObjectFolder,
-			tableName, sourceID, uuid.New().String()+"-"+tableName,
-		)
-		require.NoError(t, err)
-
-		ctrl := gomock.NewController(t)
-		mockUploader := mockuploader.NewMockUploader(ctrl)
-		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return([]warehouseutils.LoadFile{{
-			Location: uploadOutput.Location,
-		}}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
-		}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}).AnyTimes()
+		warehouse := warehouseModel(namespace)
 
 		ms := mssql.New(config.Default, logger.NOP, stats.Default)
-		err = ms.Setup(ctx, warehouse, mockUploader)
+		err := ms.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ms.CreateSchema(ctx)
 		require.NoError(t, err)
 
 		loadTableStat, err := ms.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'test_namespace.table_not_exists_test_table'.")
+		require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'table_not_exists_test_namespace.table_not_exists_test_table'.")
 		require.Nil(t, loadTableStat)
 	})
 	t.Run("load file does not exists", func(t *testing.T) {
+		namespace := "load_file_not_exists_test_namespace"
 		tableName := "load_file_not_exists_test_table"
 
-		ctrl := gomock.NewController(t)
-		mockUploader := mockuploader.NewMockUploader(ctrl)
-		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return([]warehouseutils.LoadFile{{
+		loadFiles := []warehouseutils.LoadFile{{
 			Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
-		}}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
-		}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}).AnyTimes()
+		}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+		warehouse := warehouseModel(namespace)
 
 		ms := mssql.New(config.Default, logger.NOP, stats.Default)
-		err = ms.Setup(ctx, warehouse, mockUploader)
+		err := ms.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ms.CreateSchema(ctx)
 		require.NoError(t, err)
 
-		err = ms.CreateTable(ctx, tableName, model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		})
+		err = ms.CreateTable(ctx, tableName, schemaInWarehouse)
 		require.NoError(t, err)
 
 		loadTableStat, err := ms.LoadTable(ctx, tableName)
@@ -622,74 +556,140 @@ func TestMSSQL_LoadTable(t *testing.T) {
 		require.Nil(t, loadTableStat)
 	})
 	t.Run("mismatch in number of columns", func(t *testing.T) {
-		tableName := "mismatch_test_table"
+		namespace := "mismatch_columns_test_namespace"
+		tableName := "mismatch_columns_test_table"
 
-		f, err := os.Open("testdata/mismatch.csv.gz")
-		require.NoError(t, err)
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-		defer func() { _ = f.Close() }()
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		uploadOutput, err := fm.Upload(
-			context.Background(), f, loadObjectFolder,
-			tableName, sourceID, uuid.New().String()+"-"+tableName,
-		)
-		require.NoError(t, err)
-
-		ctrl := gomock.NewController(t)
-		mockUploader := mockuploader.NewMockUploader(ctrl)
-		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return([]warehouseutils.LoadFile{{
-			Location: uploadOutput.Location,
-		}}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
-		}).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}).AnyTimes()
+		warehouse := warehouseModel(namespace)
 
 		ms := mssql.New(config.Default, logger.NOP, stats.Default)
-		err = ms.Setup(ctx, warehouse, mockUploader)
+		err := ms.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ms.CreateSchema(ctx)
 		require.NoError(t, err)
 
-		err = ms.CreateTable(ctx, tableName, model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		})
+		err = ms.CreateTable(ctx, tableName, schemaInWarehouse)
 		require.NoError(t, err)
 
 		loadTableStat, err := ms.LoadTable(ctx, tableName)
 		require.ErrorContains(t, err, "mismatch in number of columns")
 		require.Nil(t, loadTableStat)
+	})
+	t.Run("mismatch in schema", func(t *testing.T) {
+		namespace := "mismatch_schema_test_namespace"
+		tableName := "mismatch_schema_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+		warehouse := warehouseModel(namespace)
+
+		ms := mssql.New(config.Default, logger.NOP, stats.Default)
+		err := ms.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = ms.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = ms.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := ms.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.7500000000", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.7500000000", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
+	})
+	t.Run("discards", func(t *testing.T) {
+		namespace := "discards_test_namespace"
+		tableName := warehouseutils.DiscardsTable
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+
+		warehouse := warehouseModel(namespace)
+
+		ms := mssql.New(config.Default, logger.NOP, stats.Default)
+		err := ms.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = ms.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = ms.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+		require.NoError(t, err)
+
+		loadTableStat, err := ms.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(6))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  column_name,
+				  column_value,
+				  received_at,
+				  row_id,
+				  table_name,
+				  uuid_ts
+				FROM
+				  %q.%q
+				ORDER BY row_id ASC;`,
+				namespace,
+				tableName,
+			),
+		)
+		require.Equal(t, records, [][]string{
+			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 +0000", "1", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 +0000", "2", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 +0000", "3", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "4", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 +0000", "5", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 +0000", "6", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+		})
 	})
 }

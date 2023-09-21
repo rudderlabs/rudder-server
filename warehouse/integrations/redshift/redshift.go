@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"golang.org/x/exp/slices"
@@ -164,18 +166,18 @@ type Redshift struct {
 	}
 }
 
-type S3ManifestEntryMetadata struct {
+type s3ManifestEntryMetadata struct {
 	ContentLength int64 `json:"content_length"`
 }
 
-type S3ManifestEntry struct {
+type s3ManifestEntry struct {
 	Url       string                  `json:"url"`
 	Mandatory bool                    `json:"mandatory"`
-	Metadata  S3ManifestEntryMetadata `json:"meta"`
+	Metadata  s3ManifestEntryMetadata `json:"meta"`
 }
 
-type S3Manifest struct {
-	Entries []S3ManifestEntry `json:"entries"`
+type s3Manifest struct {
+	Entries []s3ManifestEntry `json:"entries"`
 }
 
 type RedshiftCredentials struct {
@@ -349,40 +351,61 @@ func (rs *Redshift) createSchema(ctx context.Context) (err error) {
 }
 
 func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (string, error) {
-	loadFiles := rs.Uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
-	loadFiles = warehouseutils.GetS3Locations(loadFiles)
-	var manifest S3Manifest
-	for idx, loadFile := range loadFiles {
-		manifestEntry := S3ManifestEntry{Url: loadFile.Location, Mandatory: true}
+	loadFiles := warehouseutils.GetS3Locations(rs.Uploader.GetLoadFilesMetadata(
+		ctx,
+		warehouseutils.GetLoadFilesOptions{
+			Table: tableName,
+		},
+	))
+
+	entries := lo.Map(loadFiles, func(loadFile warehouseutils.LoadFile, index int) s3ManifestEntry {
+		manifestEntry := s3ManifestEntry{
+			Url:       loadFile.Location,
+			Mandatory: true,
+		}
+
 		// add contentLength to manifest entry if it exists
-		contentLength := gjson.Get(string(loadFiles[idx].Metadata), "content_length")
+		contentLength := gjson.Get(string(loadFile.Metadata), "content_length")
 		if contentLength.Exists() {
 			manifestEntry.Metadata.ContentLength = contentLength.Int()
 		}
-		manifest.Entries = append(manifest.Entries, manifestEntry)
-	}
-	rs.logger.Infof("RS: Generated manifest for table:%s", tableName)
-	manifestJSON, _ := json.Marshal(&manifest)
 
-	manifestFolder := misc.RudderRedshiftManifests
-	dirName := "/" + manifestFolder + "/"
+		return manifestEntry
+	})
+
+	manifestJSON, err := json.Marshal(&s3Manifest{
+		Entries: entries,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshalling manifest: %v", err)
+	}
+
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
 	}
-	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, misc.FastUUID().String())
+
+	localManifestPath := tmpDirPath + "/" + misc.RudderRedshiftManifests + "/" + misc.FastUUID().String()
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("creating manifest directory: %v", err)
 	}
-	defer misc.RemoveFilePaths(localManifestPath)
-	_ = os.WriteFile(localManifestPath, manifestJSON, 0o644)
+
+	defer func() {
+		misc.RemoveFilePaths(localManifestPath)
+	}()
+
+	err = os.WriteFile(localManifestPath, manifestJSON, 0o644)
+	if err != nil {
+		return "", fmt.Errorf("writing manifest to file: %v", err)
+	}
 
 	file, err := os.Open(localManifestPath)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("opening manifest file: %v", err)
 	}
 	defer func() { _ = file.Close() }()
+
 	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -393,12 +416,17 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 		}),
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("creating uploader: %w", err)
 	}
 
-	uploadOutput, err := uploader.Upload(ctx, file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, misc.FastUUID().String())
+	uploadOutput, err := uploader.Upload(
+		ctx, file, misc.RudderRedshiftManifests,
+		rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID,
+		time.Now().Format("01-02-2006"), tableName,
+		misc.FastUUID().String(),
+	)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("uploading manifest file: %w", err)
 	}
 
 	return uploadOutput.Location, nil

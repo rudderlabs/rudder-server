@@ -10,6 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -387,6 +396,545 @@ func TestIntegration(t *testing.T) {
 			RevisionID: destinationID,
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
+	})
+}
+
+func TestBigQuery_LoadTable(t *testing.T) {
+	if !bqHelper.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
+	}
+
+	const (
+		sourceID        = "test_source-id"
+		destinationID   = "test_destination-id"
+		workspaceID     = "test_workspace-id"
+		destinationType = warehouseutils.BQ
+	)
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
+	ctx := context.Background()
+
+	namespace := testhelper.RandSchema(destinationType)
+
+	credentials, err := bqHelper.GetBQTestCredentials()
+	require.NoError(t, err)
+
+	db, err := bigquery.NewClient(
+		ctx,
+		credentials.ProjectID, option.WithCredentialsJSON([]byte(credentials.Credentials)),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+				t.Logf("error deleting dataset: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	warehouseModel := func(namespace string) model.Warehouse {
+		return model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destinationType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+	}
+
+	schemaInUpload := model.TableSchema{
+		"test_bool":     "boolean",
+		"test_datetime": "datetime",
+		"test_float":    "float",
+		"test_int":      "int",
+		"test_string":   "string",
+		"id":            "string",
+		"received_at":   "datetime",
+	}
+	schemaInWarehouse := model.TableSchema{
+		"test_bool":           "boolean",
+		"test_datetime":       "datetime",
+		"test_float":          "float",
+		"test_int":            "int",
+		"test_string":         "string",
+		"id":                  "string",
+		"received_at":         "datetime",
+		"extra_test_bool":     "boolean",
+		"extra_test_datetime": "datetime",
+		"extra_test_float":    "float",
+		"extra_test_int":      "int",
+		"extra_test_string":   "string",
+	}
+
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: warehouseutils.GCS,
+		Config: map[string]any{
+			"project":     credentials.ProjectID,
+			"location":    credentials.Location,
+			"bucketName":  credentials.BucketName,
+			"credentials": credentials.Credentials,
+		},
+	})
+	require.NoError(t, err)
+
+	uploader := func(
+		t testing.TB,
+		loadFiles []warehouseutils.LoadFile,
+		tableName string,
+		schemaInUpload model.TableSchema,
+		schemaInWarehouse model.TableSchema,
+	) warehouseutils.Uploader {
+		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
+		mockUploader := mockuploader.NewMockUploader(ctrl)
+		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+				return slices.Clone(loadFiles)
+			},
+		).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+
+		return mockUploader
+	}
+
+	//partitionedTable := func(tableName string) string {
+	//	partitionDate := time.Now().Format("2006-01-02")
+	//	partitionedTable := fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
+	//	return partitionedTable
+	//}
+
+	t.Run("schema does not exists", func(t *testing.T) {
+		tableName := "schema_not_exists_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "googleapi: Error 404: Not found: Dataset "+credentials.ProjectID+":"+namespace+", notFound")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("table does not exists", func(t *testing.T) {
+		tableName := "table_not_exists_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Partitioning specification must be provided in order to create partitioned table")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("load table stats", func(t *testing.T) {
+		tableName := "load_table_stats_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		c := config.New()
+		c.Set("Warehouse.bigquery.isDedupEnabled", true)
+
+		bq := whbigquery.New(c, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		loadTableStat, err = bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(0))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+		records := bqHelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s
+				ORDER BY
+				  id`,
+				fmt.Sprintf("`%s`.`%s`", namespace, tableName),
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("append", func(t *testing.T) {
+		tableName := "append_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		loadTableStat, err = bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := bqHelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				WHERE
+				  _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+				time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+				time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("load file does not exists", func(t *testing.T) {
+		tableName := "load_file_not_exists_test_table"
+
+		loadFiles := []warehouseutils.LoadFile{{
+			Location: "https://storage.googleapis.com/project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz",
+		}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Access Denied: File gs://project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("mismatch in number of columns", func(t *testing.T) {
+		tableName := "mismatch_columns_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "JSON table encountered too many errors")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("mismatch in schema", func(t *testing.T) {
+		tableName := "mismatch_schema_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "JSON table encountered too many errors")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("discards", func(t *testing.T) {
+		tableName := warehouseutils.DiscardsTable
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, warehouseutils.DiscardsSchema,
+			warehouseutils.DiscardsSchema,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		bq := whbigquery.New(config.Default, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(6))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := bqHelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  column_name,
+				  column_value,
+				  received_at,
+				  row_id,
+				  table_name,
+				  uuid_ts
+				FROM
+				  %s
+				ORDER BY row_id ASC;`,
+				fmt.Sprintf("`%s`.`%s`", namespace, tableName),
+			),
+		)
+		require.Equal(t, records, [][]string{
+			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 UTC", "1", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 UTC", "2", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 UTC", "3", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "4", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 UTC", "5", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 UTC", "6", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+		})
+	})
+	t.Run("custom partition", func(t *testing.T) {
+		tableName := "partition_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		c := config.New()
+		c.Set("Warehouse.bigquery.customPartitionsEnabled", true)
+		c.Set("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", []string{workspaceID})
+
+		bq := whbigquery.New(c, logger.NOP)
+		err := bq.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = bq.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := bq.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := bqHelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				WHERE
+				  _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+				time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+				time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
 	})
 }
 

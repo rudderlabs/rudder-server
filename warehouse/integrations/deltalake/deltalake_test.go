@@ -12,6 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -472,6 +477,672 @@ func TestDeltalake_ShouldAppend(t *testing.T) {
 			require.Equal(t, d.ShouldAppend(), tc.expected)
 		})
 	}
+}
+
+func TestDeltalake_LoadTable(t *testing.T) {
+	if !testCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+	}
+
+	const (
+		sourceID        = "test_source-id"
+		destinationID   = "test_destination-id"
+		workspaceID     = "test_workspace-id"
+		destinationType = warehouseutils.DELTALAKE
+	)
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
+	ctx := context.Background()
+
+	namespace := testhelper.RandSchema(destinationType)
+
+	credentials, err := deltaLakeTestCredentials()
+	require.NoError(t, err)
+	port, err := strconv.Atoi(credentials.Port)
+	require.NoError(t, err)
+
+	connector, err := dbsql.NewConnector(
+		dbsql.WithServerHostname(credentials.Host),
+		dbsql.WithPort(port),
+		dbsql.WithHTTPPath(credentials.Path),
+		dbsql.WithAccessToken(credentials.Token),
+		dbsql.WithSessionParams(map[string]string{
+			"ansi_mode": "false",
+		}),
+	)
+	require.NoError(t, err)
+
+	db := sql.OpenDB(connector)
+	require.NoError(t, db.Ping())
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+				t.Logf("error deleting schema: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	warehouseModel := func(namespace string) model.Warehouse {
+		return model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destinationType,
+				},
+				Config: map[string]any{
+					"host":           credentials.Host,
+					"port":           credentials.Port,
+					"path":           credentials.Path,
+					"token":          credentials.Token,
+					"namespace":      namespace,
+					"bucketProvider": warehouseutils.AzureBlob,
+					"containerName":  credentials.ContainerName,
+					"accountName":    credentials.AccountName,
+					"accountKey":     credentials.AccountKey,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+	}
+
+	schemaInUpload := model.TableSchema{
+		"test_bool":     "boolean",
+		"test_datetime": "datetime",
+		"test_float":    "float",
+		"test_int":      "int",
+		"test_string":   "string",
+		"id":            "string",
+		"received_at":   "datetime",
+	}
+	schemaInWarehouse := model.TableSchema{
+		"test_bool":           "boolean",
+		"test_datetime":       "datetime",
+		"test_float":          "float",
+		"test_int":            "int",
+		"test_string":         "string",
+		"id":                  "string",
+		"received_at":         "datetime",
+		"extra_test_bool":     "boolean",
+		"extra_test_datetime": "datetime",
+		"extra_test_float":    "float",
+		"extra_test_int":      "int",
+		"extra_test_string":   "string",
+	}
+
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: warehouseutils.AzureBlob,
+		Config: map[string]any{
+			"containerName":  credentials.ContainerName,
+			"accountName":    credentials.AccountName,
+			"accountKey":     credentials.AccountKey,
+			"bucketProvider": warehouseutils.AzureBlob,
+		},
+	})
+	require.NoError(t, err)
+
+	uploader := func(
+		t testing.TB,
+		loadFiles []warehouseutils.LoadFile,
+		tableName string,
+		schemaInUpload model.TableSchema,
+		schemaInWarehouse model.TableSchema,
+		loadFileType string,
+		canAppend bool,
+	) warehouseutils.Uploader {
+		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
+		eventTS, err := time.Parse(time.RFC3339, "2022-12-15T06:53:49.640Z")
+		require.NoError(t, err)
+
+		mockUploader := mockuploader.NewMockUploader(ctrl)
+		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+		mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
+		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+				return slices.Clone(loadFiles)
+			},
+		).AnyTimes()
+		mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+		mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
+		mockUploader.EXPECT().GetFirstLastEvent().Return(eventTS, eventTS).AnyTimes()
+
+		return mockUploader
+	}
+
+	t.Run("schema does not exists", func(t *testing.T) {
+		tableName := "schema_not_exists_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "The schema `"+namespace+"` cannot be found")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("table does not exists", func(t *testing.T) {
+		tableName := "table_not_exists_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "The table or view `"+namespace+"`.`table_not_exists_test_table` cannot be found")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("load table stats", func(t *testing.T) {
+		tableName := "load_table_stats_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		loadTableStat, err = d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(0))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("load file does not exists", func(t *testing.T) {
+		tableName := "load_file_not_exists_test_table"
+
+		loadFiles := []warehouseutils.LoadFile{{
+			Location: "https://account.blob.core.windows.net/container/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/a01af26e-4548-49ff-a895-258829cc1a83-load_file_not_exists_test_table/load.csv.gz",
+		}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Container container in account account.blob.core.windows.net not found")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("mismatch in number of columns", func(t *testing.T) {
+		tableName := "mismatch_columns_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("mismatch in schema", func(t *testing.T) {
+		tableName := "mismatch_schema_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("discards", func(t *testing.T) {
+		tableName := warehouseutils.DiscardsTable
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, warehouseutils.DiscardsSchema,
+			warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(6))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  column_name,
+				  column_value,
+				  received_at,
+				  row_id,
+				  table_name,
+				  uuid_ts
+				FROM
+				  %s.%s
+				ORDER BY row_id ASC;`,
+				namespace,
+				tableName,
+			),
+		)
+		require.Equal(t, records, [][]string{
+			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 UTC", "1", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 UTC", "2", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 UTC", "3", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "4", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 UTC", "5", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 UTC", "6", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+		})
+	})
+	t.Run("Parquet", func(t *testing.T) {
+		tableName := "parquet_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.parquet", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeParquet, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("append", func(t *testing.T) {
+		tableName := "append_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		c := config.New()
+		c.Set("Warehouse.deltalake.loadTableStrategy", "APPEND")
+
+		d := deltalake.New(c, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		loadTableStat, err = d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, d.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %s.%s
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+		})
+	})
+	t.Run("no partition", func(t *testing.T) {
+		tableName := "no_partition_stats_test_table"
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		d := deltalake.New(config.Default, logger.NOP, stats.Default)
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		_, err = d.DB.QueryContext(ctx, `
+			CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
+			  extra_test_bool BOOLEAN,
+			  extra_test_datetime TIMESTAMP,
+			  extra_test_float DOUBLE,
+			  extra_test_int BIGINT,
+			  extra_test_string STRING,
+			  id STRING,
+			  received_at TIMESTAMP,
+			  event_date DATE GENERATED ALWAYS AS (
+				CAST(received_at AS DATE)
+			  ),
+			  test_bool BOOLEAN,
+			  test_datetime TIMESTAMP,
+			  test_float DOUBLE,
+			  test_int BIGINT,
+			  test_string STRING
+			) USING DELTA;
+`)
+		require.NoError(t, err)
+
+		loadTableStat, err := d.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+	})
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {

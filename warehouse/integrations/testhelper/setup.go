@@ -1,12 +1,20 @@
 package testhelper
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/samber/lo"
+	"github.com/spf13/cast"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
@@ -241,4 +249,60 @@ func EnhanceWithDefaultEnvs(t testing.TB) {
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
+}
+
+func Upload(
+	t testing.TB,
+	fm filemanager.FileManager,
+	fileName string,
+	tableName string,
+) filemanager.UploadedFile {
+	t.Helper()
+
+	f, err := os.Open(fileName)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	loadObjectFolder := "rudder-warehouse-load-objects"
+	sourceID := "test_source-id"
+
+	uploadOutput, err := fm.Upload(
+		context.Background(), f, loadObjectFolder,
+		tableName, sourceID, uuid.New().String()+"-"+tableName,
+	)
+	require.NoError(t, err)
+
+	return uploadOutput
+}
+
+func RecordsFromWarehouse(
+	t testing.TB,
+	db *sql.DB,
+	query string,
+) [][]string {
+	t.Helper()
+
+	rows, err := db.QueryContext(context.Background(), query)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	_ = rows.Err()
+
+	columns, err := rows.Columns()
+	require.NoError(t, err)
+
+	var records [][]string
+	for rows.Next() {
+		resultSet := make([]any, len(columns))
+		resultSetPtrs := make([]any, len(columns))
+		for i := 0; i < len(columns); i++ {
+			resultSetPtrs[i] = &resultSet[i]
+		}
+		require.NoError(t, rows.Scan(resultSetPtrs...))
+
+		records = append(records, lo.Map(resultSet, func(item any, index int) string {
+			return cast.ToString(item)
+		}))
+	}
+	return records
 }

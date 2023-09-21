@@ -12,6 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/golang/mock/gomock"
 	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
@@ -61,7 +67,7 @@ func getSnowflakeTestCredentials(key string) (*testCredentials, error) {
 	var credentials testCredentials
 	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
-		return nil, fmt.Errorf("failed to snowflake redshift test credentials: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal snowflake test credentials: %w", err)
 	}
 	return &credentials, nil
 }
@@ -567,6 +573,618 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 			require.Equal(t, sf.ShouldAppend(), tc.expected)
 		})
 	}
+}
+
+func TestSnowflake_LoadTable(t *testing.T) {
+	if !isSnowflakeTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+	}
+
+	const (
+		sourceID        = "test_source-id"
+		destinationID   = "test_destination-id"
+		workspaceID     = "test_workspace-id"
+		destinationType = whutils.SNOWFLAKE
+	)
+
+	misc.Init()
+	validations.Init()
+	whutils.Init()
+
+	ctx := context.Background()
+
+	namespace := testhelper.RandSchema(destinationType)
+
+	credentials, err := getSnowflakeTestCredentials(testKey)
+	require.NoError(t, err)
+
+	urlConfig := sfdb.Config{
+		Account:   credentials.Account,
+		User:      credentials.User,
+		Role:      credentials.Role,
+		Password:  credentials.Password,
+		Database:  credentials.Database,
+		Warehouse: credentials.Warehouse,
+	}
+
+	dsn, err := sfdb.DSN(&urlConfig)
+	require.NoError(t, err)
+
+	db := getSnowflakeDB(t, dsn)
+	require.NoError(t, db.Ping())
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+				t.Logf("error deleting schema: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	warehouseModel := func(namespace string) model.Warehouse {
+		return model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destinationType,
+				},
+				Config: map[string]any{
+					"account":            credentials.Account,
+					"database":           credentials.Database,
+					"warehouse":          credentials.Warehouse,
+					"user":               credentials.User,
+					"password":           credentials.Password,
+					"cloudProvider":      "AWS",
+					"bucketName":         credentials.BucketName,
+					"storageIntegration": "",
+					"accessKeyID":        credentials.AccessKeyID,
+					"accessKey":          credentials.AccessKey,
+					"namespace":          namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+	}
+
+	schemaInUpload := model.TableSchema{
+		"TEST_BOOL":     "boolean",
+		"TEST_DATETIME": "datetime",
+		"TEST_FLOAT":    "float",
+		"TEST_INT":      "int",
+		"TEST_STRING":   "string",
+		"ID":            "string",
+		"RECEIVED_AT":   "datetime",
+	}
+	schemaInWarehouse := model.TableSchema{
+		"TEST_BOOL":           "boolean",
+		"TEST_DATETIME":       "datetime",
+		"TEST_FLOAT":          "float",
+		"TEST_INT":            "int",
+		"TEST_STRING":         "string",
+		"ID":                  "string",
+		"RECEIVED_AT":         "datetime",
+		"EXTRA_TEST_BOOL":     "boolean",
+		"EXTRA_TEST_DATETIME": "datetime",
+		"EXTRA_TEST_FLOAT":    "float",
+		"EXTRA_TEST_INT":      "int",
+		"EXTRA_TEST_STRING":   "string",
+	}
+
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: whutils.S3,
+		Config: map[string]any{
+			"bucketName":     credentials.BucketName,
+			"accessKeyID":    credentials.AccessKeyID,
+			"accessKey":      credentials.AccessKey,
+			"bucketProvider": whutils.S3,
+		},
+	})
+	require.NoError(t, err)
+
+	uploader := func(
+		t testing.TB,
+		loadFiles []whutils.LoadFile,
+		tableName string,
+		schemaInUpload model.TableSchema,
+		schemaInWarehouse model.TableSchema,
+		loadFileType string,
+		canAppend bool,
+		dedupUseNewRecord bool,
+	) whutils.Uploader {
+		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
+		mockUploader := mockuploader.NewMockUploader(ctrl)
+		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+		mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
+		mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(dedupUseNewRecord).AnyTimes()
+		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(ctx context.Context, options whutils.GetLoadFilesOptions) []whutils.LoadFile {
+				return slices.Clone(loadFiles)
+			},
+		).AnyTimes()
+		mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+		mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
+
+		return mockUploader
+	}
+
+	t.Run("schema does not exists", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "schema_not_exists_test_table")
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "The requested schema does not exist or not authorized.")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("table does not exists", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "table_not_exists_test_table")
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Object '"+credentials.Database+"."+namespace+"."+"TABLE_NOT_EXISTS_TEST_TABLE' does not exist or not authorized.")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("load table stats", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "load_table_stats_test_table")
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		c := config.New()
+		c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", []string{workspaceID})
+		c.Set("Warehouse.snowflake.debugDuplicateIntervalInDays", 1000)
+		c.Set("Warehouse.snowflake.debugDuplicateTables", []string{whutils.ToProviderCase(
+			whutils.SNOWFLAKE,
+			tableName,
+		)})
+
+		sf, err := snowflake.New(c, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		loadTableStat, err = sf.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(0))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+		records := testhelper.RecordsFromWarehouse(t, sf.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
+	})
+	t.Run("load file does not exists", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "load_file_not_exists_test_table")
+
+		loadFiles := []whutils.LoadFile{{
+			Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_table_stats_test_table/test_source-id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_table_stats_test_table/load.csv.gz",
+		}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Failure using stage area. Cause: [Access Denied (Status Code: 403; Error Code: AccessDenied)]")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("mismatch in number of columns", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "mismatch_columns_test_table")
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(14))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, sf.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
+	})
+	t.Run("mismatch in schema", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "mismatch_schema_test_table")
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, schemaInUpload,
+			schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.ErrorContains(t, err, "Numeric value '2022-12-15T06:53:49.640Z' is not recognized")
+		require.Nil(t, loadTableStat)
+	})
+	t.Run("discards", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.DiscardsTable)
+
+		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.csv.gz", tableName)
+
+		discardsSchema := lo.MapKeys(whutils.DiscardsSchema, func(_, key string) string {
+			return whutils.ToProviderCase(whutils.SNOWFLAKE, key)
+		})
+
+		loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+		mockUploader := uploader(
+			t, loadFiles, tableName, discardsSchema,
+			discardsSchema, whutils.LoadFileTypeCsv, false, false,
+		)
+
+		warehouse := warehouseModel(namespace)
+
+		sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+		require.NoError(t, err)
+		err = sf.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = sf.CreateSchema(ctx)
+		require.NoError(t, err)
+
+		err = sf.CreateTable(ctx, tableName, discardsSchema)
+		require.NoError(t, err)
+
+		loadTableStat, err := sf.LoadTable(ctx, tableName)
+		require.NoError(t, err)
+		require.Equal(t, loadTableStat.RowsInserted, int64(6))
+		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+		records := testhelper.RecordsFromWarehouse(t, sf.DB.DB,
+			fmt.Sprintf(`
+				SELECT
+				  COLUMN_NAME,
+				  COLUMN_VALUE,
+				  RECEIVED_AT,
+				  ROW_ID,
+				  TABLE_NAME,
+				  UUID_TS
+				FROM
+				  %q.%q
+				ORDER BY ROW_ID ASC;`,
+				namespace,
+				tableName,
+			),
+		)
+		require.Equal(t, records, [][]string{
+			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 +0000", "1", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 +0000", "2", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 +0000", "3", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "4", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 +0000", "5", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 +0000", "6", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+		})
+	})
+	t.Run("dedup", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "dedup_test_table")
+
+		run := func(
+			fileName string,
+			insertedRows int64,
+			updatedRows int64,
+		) {
+			uploadOutput := testhelper.Upload(t, fm, fileName, tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(
+				t, loadFiles, tableName, schemaInUpload,
+				schemaInWarehouse, whutils.LoadFileTypeCsv, false, true,
+			)
+
+			warehouse := warehouseModel(namespace)
+
+			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			require.NoError(t, err)
+			err = sf.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = sf.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := sf.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, insertedRows)
+			require.Equal(t, loadTableStat.RowsUpdated, updatedRows)
+		}
+
+		run("../testdata/load.csv.gz", 14, 0)
+		run("../testdata/dedup.csv.gz", 0, 14)
+
+		records := testhelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "521", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "75.125", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "75.125", "521", "world-hello"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "world-hello"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "75.125", "521", "world-hello"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "521", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "75.125", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "world-hello"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
+	})
+	t.Run("append", func(t *testing.T) {
+		tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "append_test_table")
+
+		run := func() {
+			uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(
+				t, loadFiles, tableName, schemaInUpload,
+				schemaInWarehouse, whutils.LoadFileTypeCsv, true, false,
+			)
+
+			warehouse := warehouseModel(namespace)
+
+			c := config.New()
+			c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
+
+			sf, err := snowflake.New(c, logger.NOP, stats.Default)
+			require.NoError(t, err)
+			err = sf.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = sf.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := sf.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+		}
+
+		run()
+		run()
+
+		records := testhelper.RecordsFromWarehouse(t, db,
+			fmt.Sprintf(`
+				SELECT
+				  id,
+				  received_at,
+				  test_bool,
+				  test_datetime,
+				  test_float,
+				  test_int,
+				  test_string
+				FROM
+				  %q.%q
+				ORDER BY
+				  id`,
+				namespace,
+				tableName,
+			),
+		)
+
+		require.Equal(t, records, [][]string{
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+		})
+	})
 }
 
 func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
