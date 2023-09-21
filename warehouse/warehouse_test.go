@@ -3,12 +3,13 @@ package warehouse
 import (
 	"context"
 	"fmt"
-	"github.com/ory/dockertest/v3"
 	"net"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ory/dockertest/v3"
 
 	"github.com/hashicorp/yamux"
 	"google.golang.org/grpc"

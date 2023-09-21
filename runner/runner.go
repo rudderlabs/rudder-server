@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bugsnag/bugsnag-go/v2"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 	"time"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 

@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/cenkalti/backoff"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
