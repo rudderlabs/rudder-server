@@ -248,7 +248,7 @@ func (w *worker) markStatus(
 						RetryTime:     time.Now(),
 					}
 				}),
-				nil,
+				"",
 				nil,
 			)
 		},

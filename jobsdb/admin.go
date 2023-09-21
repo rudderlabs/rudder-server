@@ -53,7 +53,7 @@ func (jd *Handle) deleteJobStatus() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.noResultsCache.InvalidateDataset(ds.Index)
+				jd.noJobsCache.ClearDS(ds.Index)
 			})
 		}
 
@@ -114,7 +114,7 @@ func (jd *Handle) failExecuting() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.noResultsCache.InvalidateDataset(ds.Index)
+				// jd.noResultsCache.InvalidateDataset(ds.Index)
 			})
 		}
 		return nil
@@ -209,7 +209,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 	}
 
 	if len(statusList) > 0 {
-		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
+		if err := jd.UpdateJobStatus(ctx, statusList, "", nil); err != nil {
 			return err
 		}
 		jd.logger.Infof("cleaned up %d old jobs", len(statusList))

@@ -67,7 +67,7 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
 	err := misc.RetryWithNotify(ctx, bf.conf.jobsDBQueryRequestTimeout, bf.conf.jobsDBMaxRetries, func(ctx context.Context) error {
 		return bf.jobsDB.WithUpdateSafeTx(ctx, func(txn jobsdb.UpdateSafeTx) error {
-			return bf.jobsDB.UpdateJobStatusInTx(ctx, txn, statusList, nil, nil)
+			return bf.jobsDB.UpdateJobStatusInTx(ctx, txn, statusList, "", nil)
 		})
 	}, bf.sendQueryRetryStats)
 	return err

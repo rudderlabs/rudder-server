@@ -137,7 +137,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 			err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-					err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
+					err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, brt.destType, parameterFilters)
 					if err != nil {
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
@@ -167,7 +167,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		}
 		// Mark the jobs as executing
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
+			return brt.jobsDB.UpdateJobStatus(ctx, statusList, brt.destType, parameterFilters)
 		}, brt.sendRetryUpdateStats)
 		if err != nil {
 			panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))

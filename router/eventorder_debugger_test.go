@@ -51,16 +51,16 @@ func TestEventOrderDebugInfo(t *testing.T) {
 		JobState:      jobsdb.Executing.State,
 		ErrorResponse: []byte("{}"),
 		Parameters:    []byte(`{}`),
-		JobParameters: []byte(`{"destination_id", "destination1"}`),
-	}}, nil, nil))
+		JobParameters: []byte(`{"destination_id": "destination1"}`),
+	}}, "", nil))
 	require.NoError(t, jdb.UpdateJobStatus(context.Background(), []*jobsdb.JobStatusT{{
 		WorkspaceId:   "workspace1",
 		JobID:         job.JobID,
 		JobState:      jobsdb.Succeeded.State,
 		ErrorResponse: []byte("{}"),
 		Parameters:    []byte(`{}`),
-		JobParameters: []byte(`{"destination_id", "destination1"}`),
-	}}, nil, nil))
+		JobParameters: []byte(`{"destination_id": "destination1"}`),
+	}}, "", nil))
 
 	rt := &Handle{
 		jobsDB: jdb,

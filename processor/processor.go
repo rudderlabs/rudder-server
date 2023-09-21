@@ -2067,7 +2067,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	txnStart := time.Now()
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
+			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, proc.config.GWCustomVal, nil)
 			if err != nil {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
@@ -2599,7 +2599,7 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 		eventCount = 0
 	}
 	queryParams := jobsdb.GetQueryParams{
-		CustomValFilters: []string{proc.config.GWCustomVal},
+		CustomVal:        proc.config.GWCustomVal,
 		JobsLimit:        proc.config.maxEventsToProcess.Load(),
 		EventsLimit:      eventCount,
 		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
@@ -2685,7 +2685,7 @@ func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
 	}
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{proc.config.GWCustomVal}, nil)
+		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, proc.config.GWCustomVal, nil)
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)

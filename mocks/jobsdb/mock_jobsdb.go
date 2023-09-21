@@ -381,7 +381,7 @@ func (mr *MockJobsDBMockRecorder) StoreInTx(arg0, arg1, arg2 interface{}) *gomoc
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockJobsDB) UpdateJobStatus(arg0 context.Context, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatus(arg0 context.Context, arg1 []*jobsdb.JobStatusT, arg2 string, arg3 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
@@ -395,7 +395,7 @@ func (mr *MockJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2, arg3 interfa
 }
 
 // UpdateJobStatusInTx mocks base method.
-func (m *MockJobsDB) UpdateJobStatusInTx(arg0 context.Context, arg1 jobsdb.UpdateSafeTx, arg2 []*jobsdb.JobStatusT, arg3 []string, arg4 []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatusInTx(arg0 context.Context, arg1 jobsdb.UpdateSafeTx, arg2 []*jobsdb.JobStatusT, arg3 string, arg4 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)

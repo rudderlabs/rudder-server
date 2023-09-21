@@ -284,7 +284,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		statusList = append(statusList, &status)
 	}
 	err := misc.RetryWithNotify(context.Background(), st.config.jobsDBCommandTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+		return st.errorDB.UpdateJobStatus(ctx, statusList, "", nil)
 	}, st.sendRetryUpdateStats)
 	if err != nil {
 		st.logger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
@@ -306,7 +306,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			var limitReached bool
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParams{
-				CustomValFilters:              []string{""},
+				CustomVal:                     "",
 				IgnoreCustomValFiltersInQuery: true,
 				JobsLimit:                     st.config.errDBReadBatchSize.Load(),
 				PayloadSizeLimit:              st.adaptiveLimit(st.config.payloadLimit.Load()),
@@ -411,7 +411,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				statusList = append(statusList, &status)
 			}
 			err := misc.RetryWithNotify(context.Background(), st.config.jobsDBCommandTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+				return st.errorDB.UpdateJobStatus(ctx, statusList, "", nil)
 			}, st.sendRetryUpdateStats)
 			if err != nil {
 				if ctx.Err() != nil { // we are shutting down

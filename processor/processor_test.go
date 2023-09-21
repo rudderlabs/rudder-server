@@ -1129,7 +1129,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
-					CustomValFilters: gatewayCustomVal,
+					CustomVal:        gatewayCustomVal[0],
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -1272,7 +1272,7 @@ var _ = Describe("Processor", Ordered, func() {
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
-					CustomValFilters: gatewayCustomVal,
+					CustomVal:        gatewayCustomVal[0],
 					JobsLimit:        processor.config.maxEventsToProcess.Load(),
 					EventsLimit:      processor.config.maxEventsToProcess.Load(),
 					PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -1341,7 +1341,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).After(callStoreRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
 					for i := range unprocessedJobsList {
@@ -1479,7 +1479,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
-				CustomValFilters: gatewayCustomVal,
+				CustomVal:        gatewayCustomVal[0],
 				JobsLimit:        processor.config.maxEventsToProcess.Load(),
 				EventsLimit:      processor.config.maxEventsToProcess.Load(),
 				PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -1548,7 +1548,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).After(callStoreBatchRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
@@ -1656,7 +1656,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).After(callStoreRouter)
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			Setup(processor, c, true, false)
@@ -1767,7 +1767,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
-				CustomValFilters: gatewayCustomVal,
+				CustomVal:        gatewayCustomVal[0],
 				JobsLimit:        processor.config.maxEventsToProcess.Load(),
 				EventsLimit:      processor.config.maxEventsToProcess.Load(),
 				PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -1782,7 +1782,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
@@ -1904,7 +1904,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
-				CustomValFilters: gatewayCustomVal,
+				CustomVal:        gatewayCustomVal[0],
 				JobsLimit:        processor.config.maxEventsToProcess.Load(),
 				EventsLimit:      processor.config.maxEventsToProcess.Load(),
 				PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -1928,7 +1928,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
@@ -1991,7 +1991,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
-				CustomValFilters: gatewayCustomVal,
+				CustomVal:        gatewayCustomVal[0],
 				JobsLimit:        processor.config.maxEventsToProcess.Load(),
 				EventsLimit:      processor.config.maxEventsToProcess.Load(),
 				PayloadSizeLimit: processor.payloadLimit.Load(),
@@ -2003,7 +2003,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal[0], nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)

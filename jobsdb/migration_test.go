@@ -58,7 +58,7 @@ func TestMigration(t *testing.T) {
 			jobDB.UpdateJobStatus(
 				context.Background(),
 				genJobStatuses(jobs[:9], "executing"),
-				[]string{customVal},
+				customVal,
 				[]ParameterFilterT{},
 			),
 		)
@@ -67,7 +67,7 @@ func TestMigration(t *testing.T) {
 			jobDB.UpdateJobStatus(
 				context.Background(),
 				genJobStatuses(jobs[:9], "succeeded"),
-				[]string{customVal},
+				customVal,
 				[]ParameterFilterT{},
 			),
 		)
@@ -77,7 +77,7 @@ func TestMigration(t *testing.T) {
 			jobDB.UpdateJobStatus(
 				context.Background(),
 				genJobStatuses(jobs[9:10], "executing"),
-				[]string{customVal},
+				customVal,
 				[]ParameterFilterT{},
 			),
 			`status update failed in 1st DS`,
@@ -87,7 +87,7 @@ func TestMigration(t *testing.T) {
 			jobDB.UpdateJobStatus(
 				context.Background(),
 				genJobStatuses(jobs[9:10], "failed"),
-				[]string{customVal},
+				customVal,
 				[]ParameterFilterT{},
 			),
 			`status update failed in 1st DS`,
@@ -115,7 +115,7 @@ func TestMigration(t *testing.T) {
 				jobDB.UpdateJobStatus(
 					context.Background(),
 					genJobStatuses(jobs[20:30], "executing"),
-					[]string{customVal},
+					customVal,
 					[]ParameterFilterT{},
 				),
 				`status update failed in 3rd DS`,
@@ -125,7 +125,7 @@ func TestMigration(t *testing.T) {
 				jobDB.UpdateJobStatus(
 					context.Background(),
 					genJobStatuses(jobs[20:30], "failed"),
-					[]string{customVal},
+					customVal,
 					[]ParameterFilterT{},
 				),
 				`status update failed in 3rd DS`,
@@ -248,7 +248,7 @@ func TestMigration(t *testing.T) {
 			jobs = append(jobs, &JobT{JobID: int64(i + 1)})
 		}
 		for i := 0; i < 5; i++ {
-			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
+			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), "test", []ParameterFilterT{}))
 		}
 		var count int
 		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1 `, tablePrefix)).Scan(&count))
@@ -260,7 +260,7 @@ func TestMigration(t *testing.T) {
 			jobs = append(jobs, &JobT{JobID: int64(i + 11)})
 		}
 		for i := 0; i < 10; i++ {
-			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
+			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), "test", []ParameterFilterT{}))
 		}
 		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2 `, tablePrefix)).Scan(&count))
 		require.EqualValues(t, 10*10, count)
@@ -326,7 +326,7 @@ func TestMigration(t *testing.T) {
 			jobs = append(jobs, &JobT{JobID: int64(i + 1)})
 		}
 		for i := 0; i < 4; i++ {
-			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
+			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), "test", []ParameterFilterT{}))
 		}
 
 		updatedTableSizes := getTableSizes(jobDB.getDSList())

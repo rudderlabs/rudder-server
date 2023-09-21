@@ -43,8 +43,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	subjectcache "github.com/rudderlabs/rudder-server/jobsdb/internal/subjectCache"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -81,7 +81,7 @@ type GetQueryParams struct {
 	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
 	IgnoreCustomValFiltersInQuery bool
 	WorkspaceID                   string
-	CustomValFilters              []string
+	CustomVal                     string
 	ParameterFilters              []ParameterFilterT
 	stateFilters                  []string
 	afterJobID                    *int64
@@ -268,14 +268,14 @@ type JobsDB interface {
 	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 
 	// UpdateJobStatus updates the provided job statuses
-	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customVal string, parameterFilters []ParameterFilterT) error
 
 	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
 	// Please ensure that you are using an UpdateSafeTx, e.g.
 	//    jobsdb.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 	//	      jobsdb.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
 	//    })
-	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customVal string, parameterFilters []ParameterFilterT) error
 
 	/* Queries */
 
@@ -344,14 +344,14 @@ customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
-func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customVal string, parameterFilters []ParameterFilterT) error {
 	updateCmd := func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
 		if len(statusList) == 0 {
 			return nil
 		}
-		tags := statTags{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+		tags := statTags{CustomValFilters: []string{customVal}, ParameterFilters: parameterFilters}
 		command := func() error {
-			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList, customValFilters, parameterFilters)
+			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList, customVal, parameterFilters)
 		}
 		err := executeDbRequest(jd, newWriteDbRequest("update_job_status", &tags, command))
 		return err
@@ -447,7 +447,7 @@ type Handle struct {
 	datasetRangeList []dataSetRangeT
 	dsListLock       *lock.Locker
 	dsMigrationLock  *lock.Locker
-	noResultsCache   *cache.NoResultsCache[ParameterFilterT]
+	noJobsCache      subjectcache.Cache
 
 	// table count stats
 	statTableCount        stats.Measurement
@@ -484,7 +484,7 @@ type Handle struct {
 	config *config.Config
 	conf   struct {
 		maxTableSize                   misc.ValueLoader[int64]
-		cacheExpiration                misc.ValueLoader[time.Duration]
+		cacheExpiration                func() time.Duration
 		addNewDSLoopSleepDuration      misc.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration misc.ValueLoader[time.Duration]
 		jobCleanupFrequency            misc.ValueLoader[time.Duration]
@@ -562,7 +562,7 @@ func (jd *Handle) assertError(err error) {
 			"error", err,
 			"tablePrefix", jd.tablePrefix,
 			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+			"noResultsCache", jd.noJobsCache.String())
 		panic(err)
 	}
 }
@@ -574,7 +574,7 @@ func (jd *Handle) assert(cond bool, errorString string) {
 			"errorString", errorString,
 			"tablePrefix", jd.tablePrefix,
 			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+			"noResultsCache", jd.noJobsCache.String())
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
 }
@@ -843,10 +843,7 @@ func (jd *Handle) init() {
 func (jd *Handle) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
-		cacheParameterFilters,
-		func() time.Duration { return jd.conf.cacheExpiration.Load() },
-	)
+	jd.noJobsCache = subjectcache.New()
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
@@ -858,7 +855,11 @@ func (jd *Handle) workersAndAuxSetup() {
 func (jd *Handle) loadConfig() {
 	// maxTableSizeInMB: Maximum Table size in MB
 	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(300, 1000000, "JobsDB.maxTableSizeInMB")
-	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	jd.conf.cacheExpiration = func() time.Duration {
+		return jd.config.GetDurationVar(
+			120, time.Minute, []string{"JobsDB.cacheExpiration"}...,
+		)
+	}
 	// addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
@@ -1580,8 +1581,7 @@ func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 }
 
 func (jd *Handle) postDropDs(ds dataSetT) {
-	jd.noResultsCache.InvalidateDataset(ds.Index)
-
+	jd.noJobsCache.ClearDS(ds.Index)
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
 		jd.statDropDSPeriod.Since(jd.dsDropTime)
@@ -1814,32 +1814,39 @@ func (jd *Handle) WithTx(f func(tx *Tx) error) error {
 }
 
 func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
-	cacheKeys := make(map[string]map[string]map[string]struct{})
+	cacheKeys := make(map[string]struct{})
 	for _, job := range jobList {
 		workspace := job.WorkspaceId
 		customVal := job.CustomVal
 
-		if _, ok := cacheKeys[workspace]; !ok {
-			cacheKeys[workspace] = make(map[string]map[string]struct{})
+		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+		if sourceID == "" {
+			sourceID = "source_id"
 		}
-		if _, ok := cacheKeys[workspace][customVal]; !ok {
-			cacheKeys[workspace][customVal] = make(map[string]struct{})
+		destID := gjson.GetBytes(job.Parameters, "destination_id").String()
+		if destID == "" {
+			destID = "destination_id"
+		}
+		if workspace == "" {
+			workspace = "workspace_id"
+		}
+		if customVal == "" {
+			customVal = "custom_val"
 		}
 
-		var params []string
-		var parameterFilters []ParameterFilterT
-
-		for _, key := range cacheParameterFilters {
-			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, fmt.Sprintf("%s:%s", key, val))
-			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
-		}
-
-		paramsKey := strings.Join(params, "#")
-		if _, ok := cacheKeys[workspace][customVal][paramsKey]; !ok {
-			cacheKeys[workspace][customVal][paramsKey] = struct{}{}
-			jd.noResultsCache.Invalidate(ds.Index, workspace, []string{customVal}, []string{Unprocessed.State}, parameterFilters)
-		}
+		cacheKey := fmt.Sprintf(
+			"%s.%s.%s.%s.%s.%s",
+			ds.Index,
+			workspace,
+			customVal,
+			sourceID,
+			destID,
+			Unprocessed.State,
+		)
+		cacheKeys[cacheKey] = struct{}{}
+	}
+	for cacheKey := range cacheKeys {
+		jd.noJobsCache.Remove(cacheKey)
 	}
 }
 
@@ -1931,7 +1938,7 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 	slices.Sort(params.stateFilters)
 	tags := statTags{
 		StateFilters:     params.stateFilters,
-		CustomValFilters: params.CustomValFilters,
+		CustomValFilters: []string{params.CustomVal},
 		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
@@ -2169,6 +2176,44 @@ type JobsResult struct {
 	PayloadSize   int64
 }
 
+func (jd *Handle) checkCache(ds dataSetT, workspace, customVal string, params []ParameterFilterT, state string) bool {
+	cacheKey := getJobsCacheKey(ds, workspace, customVal, params, state)
+	return jd.noJobsCache.Check(cacheKey)
+}
+
+func getJobsCacheKey(ds dataSetT, workspace, customVal string, params []ParameterFilterT, state string) string {
+	var sourceID, destID string
+	sourceIDs := lo.FilterMap(params, func(p ParameterFilterT, _ int) (string, bool) {
+		return p.Value, p.Name == "source_id"
+	})
+	if len(sourceIDs) == 0 {
+		sourceID = "*"
+	} else {
+		sourceID = sourceIDs[0]
+		if sourceID == "" {
+			sourceID = "*"
+		}
+	}
+	destIDs := lo.FilterMap(params, func(p ParameterFilterT, _ int) (string, bool) {
+		return p.Value, p.Name == "destination_id"
+	})
+	if len(destIDs) == 0 {
+		destID = "*"
+	} else {
+		destID = destIDs[0]
+		if destID == "" {
+			destID = "*"
+		}
+	}
+	if workspace == "" {
+		workspace = "*"
+	}
+	if customVal == "" {
+		customVal = "*"
+	}
+	return fmt.Sprintf("%s.%s.%s.%s.%s.%s", ds.Index, workspace, customVal, sourceID, destID, state)
+}
+
 /*
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
@@ -2176,42 +2221,40 @@ A JobsLimit less than or equal to zero indicates no limit.
 */
 func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	stateFilters := params.stateFilters
-	customValFilters := params.CustomValFilters
+	customVal := params.CustomVal
 	parameterFilters := params.ParameterFilters
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
-		jd.logger.Debugf("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		return JobsResult{}, false, nil
-	}
-
 	tags := statTags{
 		StateFilters:     stateFilters,
-		CustomValFilters: params.CustomValFilters,
+		CustomValFilters: []string{params.CustomVal},
 		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      workspaceID,
 	}
+	var err error
 
-	stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
-		return !jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+	stateFilters_ := lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
+		return !jd.checkCache(ds, workspaceID, customVal, parameterFilters, state)
 	})
+	if len(stateFilters_) == 0 {
+		jd.logger.Debugf("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customVal: %s, parameterFilters: %v", ds, stateFilters, customVal, parameterFilters)
+		return JobsResult{}, false, nil
+	}
+	stateFilters = stateFilters_
 
 	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
 
 	containsUnprocessed := lo.Contains(stateFilters, Unprocessed.State)
-	skipCacheResult := params.afterJobID != nil
-	cacheTx := map[string]*cache.NoResultTx[ParameterFilterT]{}
+	skipCacheResult := params.afterJobID != nil || (jd.ownerType == Read && lastDS)
 	if !skipCacheResult {
 		for _, state := range stateFilters {
-			// avoid setting result as noJobs if
-			//  (1) state is unprocessed and
-			//  (2) jobsdb owner is a reader and
-			//  (3) ds is the right most one
-			if state == Unprocessed.State && jd.ownerType == Read && lastDS {
-				continue
-			}
-			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+			jd.noJobsCache.SetPreRead(getJobsCacheKey(ds, workspaceID, customVal, parameterFilters, state))
+			defer func(state string) {
+				if err != nil {
+					jd.noJobsCache.RemovePreRead(getJobsCacheKey(ds, workspaceID, customVal, parameterFilters, state))
+				}
+			}(state)
 		}
 	}
 
@@ -2228,8 +2271,8 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.job_id > %d", *params.afterJobID))
 	}
 
-	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		filterConditions = append(filterConditions, constructQueryOR("jobs.custom_val", customValFilters))
+	if customVal != "" && !params.IgnoreCustomValFiltersInQuery {
+		filterConditions = append(filterConditions, constructQueryOR("jobs.custom_val", []string{customVal}))
 	}
 
 	if len(parameterFilters) > 0 {
@@ -2376,12 +2419,14 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	if !skipCacheResult {
-		for state, cacheTx := range cacheTx {
+		for _, state := range stateFilters {
 			// we are committing the cache Tx only if
 			// (a) no jobs are returned by the query or
 			// (b) the state is not present in the resultset and limits have not been reached
 			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
-				cacheTx.Commit()
+				jd.noJobsCache.CommitPreRead(getJobsCacheKey(ds, workspaceID, customVal, parameterFilters, state))
+			} else {
+				jd.noJobsCache.RemovePreRead(getJobsCacheKey(ds, workspaceID, customVal, parameterFilters, state))
 			}
 		}
 	}
@@ -2394,7 +2439,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}, true, nil
 }
 
-func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]map[string]map[ParameterFilterT]struct{}, err error) {
+func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]struct{}, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -2404,7 +2449,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		&tags,
 	).RecordDuration()()
 	// workspace -> state -> params
-	updatedStates = map[string]map[string]map[ParameterFilterT]struct{}{}
+	updatedStates = map[string]struct{}{}
 	store := func() error {
 		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 			"retry_time", "error_code", "error_response", "parameters"))
@@ -2415,18 +2460,30 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		defer func() { _ = stmt.Close() }()
 		for _, status := range statusList {
 			//  Handle the case when google analytics returns gif in response
-			if _, ok := updatedStates[status.WorkspaceId]; !ok {
-				updatedStates[status.WorkspaceId] = make(map[string]map[ParameterFilterT]struct{})
-			}
-			if _, ok := updatedStates[status.WorkspaceId][status.JobState]; !ok {
-				updatedStates[status.WorkspaceId][status.JobState] = make(map[ParameterFilterT]struct{})
-			}
+			var sourceID, destID, workspaceID string
 			if status.JobParameters != nil {
-				for _, param := range cacheParameterFilters {
-					v := gjson.GetBytes(status.JobParameters, param).Str
-					updatedStates[status.WorkspaceId][status.JobState][ParameterFilterT{Name: param, Value: v}] = struct{}{}
-				}
+				sourceID = gjson.GetBytes(status.JobParameters, "source_id").String()
+				destID = gjson.GetBytes(status.JobParameters, "destination_id").String()
 			}
+			if sourceID == "" {
+				sourceID = "source_id"
+			}
+			if destID == "" {
+				destID = "destination_id"
+			}
+			workspaceID = status.WorkspaceId
+			if workspaceID == "" {
+				workspaceID = "workspace_id"
+			}
+			cacheKey := strings.Join([]string{
+				ds.Index,
+				workspaceID,
+				"%s",
+				sourceID,
+				destID,
+				status.JobState,
+			}, ".")
+			updatedStates[cacheKey] = struct{}{}
 
 			if !utf8.ValidString(string(status.ErrorResponse)) {
 				status.ErrorResponse = []byte(`{}`)
@@ -2871,9 +2928,9 @@ func (jd *Handle) recoverFromJournal(owner OwnerType) {
 	jd.recoverFromCrash(owner, backupGoRoutine)
 }
 
-func (jd *Handle) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customVal string, parameterFilters []ParameterFilterT) error {
 	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
-		return jd.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
+		return jd.UpdateJobStatusInTx(ctx, tx, statusList, customVal, parameterFilters)
 	})
 }
 
@@ -2882,10 +2939,10 @@ internalUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, customVal string, parameterFilters []ParameterFilterT) error {
 	// capture stats
 	tags := statTags{
-		CustomValFilters: customValFilters,
+		CustomValFilters: []string{customVal},
 		ParameterFilters: parameterFilters,
 	}
 	defer jd.getTimerStat(
@@ -2900,24 +2957,14 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 		return err
 	}
 
+	if customVal == "" {
+		customVal = "custom_val"
+	}
 	tx.AddSuccessListener(func() {
-		// clear cache
-		for ds, dsKeys := range updatedStatesByDS {
-			if len(dsKeys) == 0 { // if no keys, we need to invalidate all keys
-				jd.noResultsCache.Invalidate(ds.Index, "", nil, nil, nil)
-			}
-			for workspace, wsKeys := range dsKeys {
-				if len(wsKeys) == 0 { // if no keys, we need to invalidate all keys
-					jd.noResultsCache.Invalidate(ds.Index, workspace, nil, nil, nil)
-				}
-				for state, parametersMap := range wsKeys {
-					stateList := []string{state}
-					if len(parametersMap) == 0 { // if no keys, we need to invalidate all keys
-						jd.noResultsCache.Invalidate(ds.Index, workspace, customValFilters, stateList, nil)
-					}
-					parameterFilters := lo.Keys(parametersMap)
-					jd.noResultsCache.Invalidate(ds.Index, workspace, customValFilters, stateList, parameterFilters)
-				}
+		for _, dsKeys := range updatedStatesByDS {
+			for key := range dsKeys {
+				cacheKey := fmt.Sprintf(key, customVal)
+				jd.noJobsCache.Remove(cacheKey)
 			}
 		}
 	})
@@ -2930,7 +2977,7 @@ doUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{}, err error) {
+func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]struct{}, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -2942,7 +2989,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 
 	// We scan through the list of jobs and map them to DS
 	var lastPos int
-	updatedStatesByDS = make(map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{})
+	updatedStatesByDS = make(map[dataSetT]map[string]struct{})
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
 		maxID := ds.maxJobID
@@ -2958,7 +3005,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
+				var updatedStates map[string]struct{}
 				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 				if err != nil {
 					return
@@ -2974,7 +3021,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
+			var updatedStates map[string]struct{}
 			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
 				return
@@ -2994,7 +3041,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
 		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
-		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
+		var updatedStates map[string]struct{}
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
 			return
@@ -3218,7 +3265,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	}
 	tags := &statTags{
 		StateFilters:     params.stateFilters,
-		CustomValFilters: params.CustomValFilters,
+		CustomValFilters: []string{params.CustomVal},
 		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
@@ -3328,7 +3375,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	slices.Sort(params.stateFilters)
 	tags := statTags{
 		StateFilters:     params.stateFilters,
-		CustomValFilters: params.CustomValFilters,
+		CustomValFilters: []string{params.CustomVal},
 		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}

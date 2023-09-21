@@ -40,8 +40,8 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 	}
 	for {
 		queryParams := jobsdb.GetQueryParams{
-			CustomValFilters: []string{"replay"},
-			JobsLimit:        handle.dbReadSize,
+			CustomVal: "replay",
+			JobsLimit: handle.dbReadSize,
 		}
 		jobsResult, err := handle.db.GetJobs(context.TODO(), []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
 		if err != nil {
@@ -58,8 +58,8 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 					context.TODO(),
 					[]string{jobsdb.Executing.State},
 					jobsdb.GetQueryParams{
-						CustomValFilters: []string{"replay"},
-						JobsLimit:        handle.dbReadSize,
+						CustomVal: "replay",
+						JobsLimit: handle.dbReadSize,
 					},
 				)
 				if err != nil {
@@ -111,7 +111,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		}
 
 		// Mark the jobs as executing
-		err = handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
+		err = handle.db.UpdateJobStatus(ctx, statusList, "replay", nil)
 		if err != nil {
 			panic(err)
 		}

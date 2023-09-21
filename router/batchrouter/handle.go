@@ -186,7 +186,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "getJobs", "destType": brt.destType, "partition": partition})
 	queryStart := time.Now()
 	queryParams := jobsdb.GetQueryParams{
-		CustomValFilters: []string{brt.destType},
+		CustomVal:        brt.destType,
 		JobsLimit:        brt.jobQueryBatchSize.Load(),
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
@@ -766,7 +766,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	// Mark the status of the jobs
 	err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+			err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, brt.destType, parameterFilters)
 			if err != nil {
 				brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 				return err
@@ -815,7 +815,7 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 func (brt *Handle) skipFetchingJobs(partition string) bool {
 	if slices.Contains(asyncDestinations, brt.destType) {
 		queryParams := jobsdb.GetQueryParams{
-			CustomValFilters: []string{brt.destType},
+			CustomVal:        brt.destType,
 			JobsLimit:        1,
 			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 		}

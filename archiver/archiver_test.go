@@ -268,7 +268,7 @@ func (jd jdWrapper) GetUnprocessed(
 func (jd jdWrapper) UpdateJobStatus(
 	ctx context.Context,
 	statusList []*jobsdb.JobStatusT,
-	customValFilters []string,
+	customVal string,
 	parameterFilters []jobsdb.ParameterFilterT,
 ) error {
 	atomic.AddInt32(jd.queries, 1)

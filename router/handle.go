@@ -189,7 +189,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		flushTime = time.Now()
 		// Mark the jobs as executing
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
+			return rt.jobsDB.UpdateJobStatus(ctx, statusList, rt.destType, nil)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
 			rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
@@ -399,7 +399,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destType}, nil)
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, rt.destType, nil)
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destType, err)
 				}
@@ -463,7 +463,7 @@ func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context,
 
 func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQueryParams {
 	params := jobsdb.GetQueryParams{
-		CustomValFilters: []string{rt.destType},
+		CustomVal:        rt.destType,
 		PayloadSizeLimit: rt.adaptiveLimit(rt.reloadableConfig.payloadLimit.Load()),
 		JobsLimit:        pickUpCount,
 	}

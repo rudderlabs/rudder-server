@@ -131,7 +131,7 @@ func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilte
 		return fmt.Sprintf(`%s.parameters->>'%s'='%s'`, alias, parameter.Name, parameter.Value)
 	})
 
-	return "(" + strings.Join(conditions, " OR ") + ")"
+	return "(" + strings.Join(conditions, " AND ") + ")"
 }
 
 // statTags is a struct to hold tags for stats

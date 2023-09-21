@@ -31,7 +31,7 @@ func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, l
 		return brt.jobsDB.GetImporting(
 			ctx,
 			jobsdb.GetQueryParams{
-				CustomValFilters: []string{brt.destType},
+				CustomVal:        brt.destType,
 				JobsLimit:        limit,
 				ParameterFilters: parameterFilters,
 				PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
@@ -46,7 +46,7 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 	parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
 	return misc.RetryWithNotify(ctx, brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+			err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, brt.destType, parameterFilters)
 			if err != nil {
 				return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 			}
@@ -678,7 +678,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	// Mark the status of the jobs
 	err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+			err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, brt.destType, parameterFilters)
 			if err != nil {
 				brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 				return err
