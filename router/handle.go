@@ -23,7 +23,6 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
@@ -592,7 +591,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 	destinationJob := params.destinationJob
 
 	if trRespStatusCode != http.StatusOK {
-		var destErrOutput integrations.TransResponseT
+		var destErrOutput transformer.TransResponseT
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
 			// Errors like OOM kills of transformer, transformer down etc...
 			// If destResBody comes out with a plain string, then this will occur
