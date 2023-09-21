@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -123,7 +124,7 @@ func (r *router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 		&upload.LoadFileEndID,
 		&upload.Error,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return
 	}
 	if err != nil {
