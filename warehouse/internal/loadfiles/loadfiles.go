@@ -6,6 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	stdjson "encoding/json"
+
 	"github.com/samber/lo"
 
 	"golang.org/x/exp/slices"
@@ -16,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -35,7 +38,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(ctx context.Context, payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
+	Publish(ctx context.Context, payload *notifier.PublishRequest) (ch <-chan *notifier.PublishResponse, err error)
 }
 
 type StageFileRepo interface {
@@ -67,6 +70,11 @@ type LoadFileGenerator struct {
 }
 
 type WorkerJobResponse struct {
+	StagingFileID int64            `json:"StagingFileID"`
+	Output        []LoadFileUpload `json:"Output"`
+}
+
+type LoadFileUpload struct {
 	TableName             string
 	Location              string
 	TotalRows             int
@@ -81,7 +89,6 @@ type WorkerJobRequest struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 model.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
@@ -97,7 +104,6 @@ type WorkerJobRequest struct {
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
-	Output                       []WorkerJobResponse
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
 }
@@ -193,7 +199,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	var sampleError error
 	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.JobPayload
+		var messages []stdjson.RawMessage
 		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
@@ -229,71 +235,89 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
-		schema := &job.Upload.UploadSchema
-
-		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		messagePayload := pgnotifier.MessagePayload{
-			Jobs:    messages,
-			JobType: "upload",
+		uploadSchemaJSON, err := json.Marshal(struct {
+			UploadSchema model.Schema
+		}{
+			UploadSchema: job.Upload.UploadSchema,
+		})
+		if err != nil {
+			return 0, 0, fmt.Errorf("error marshalling upload schema: %w", err)
 		}
 
-		ch, err := lf.Notifier.Publish(ctx, messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
+		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
+
+		ch, err := lf.Notifier.Publish(ctx, &notifier.PublishRequest{
+			Payloads:     messages,
+			JobType:      notifier.JobTypeUpload,
+			UploadSchema: uploadSchemaJSON,
+			Priority:     job.Upload.Priority,
+		})
 		if err != nil {
-			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)
+			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)
 		}
 		// set messages to nil to release mem allocated
 		messages = nil
 		startId := chunk[0].ID
 		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
-			responses := <-ch
-			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from PgNotifier",
+			responses, ok := <-ch
+			if !ok {
+				return fmt.Errorf("receiving notifier channel closed")
+			}
+
+			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from Notifier",
 				"startId", startId,
 				"endID", endId,
 				logfield.DestinationID, destType,
 				logfield.DestinationType, destID,
 			)
+			if responses.Err != nil {
+				return fmt.Errorf("receiving responses from notifier: %w", responses.Err)
+			}
+
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
-			for _, resp := range responses {
+			for _, resp := range responses.Jobs {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by pgnotifier is set on corresponding staging_file
+				// 1. any error returned by notifier is set on corresponding staging_file
 				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
-				if resp.Status == "aborted" {
+				var jobResponse WorkerJobResponse
+				if err := json.Unmarshal(resp.Payload, &jobResponse); err != nil {
+					return fmt.Errorf("unmarshalling response from notifier: %w", err)
+				}
+
+				if resp.Status == notifier.Aborted && resp.Error != nil {
 					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
-					sampleError = fmt.Errorf(resp.Error)
-					err = lf.StageRepo.SetErrorStatus(ctx, resp.JobID, sampleError)
+					sampleError = fmt.Errorf(resp.Error.Error())
+					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
 					if err != nil {
 						return fmt.Errorf("set staging file error status: %w", err)
 					}
 					continue
 				}
-				var output []WorkerJobResponse
-				err = json.Unmarshal(resp.Output, &output)
-				if err != nil {
-					return fmt.Errorf("unmarshalling response from pgnotifier: %w", err)
-				}
-				if len(output) == 0 {
-					lf.Logger.Errorf("[WH]: No LoadFiles returned by wh worker")
+
+				if len(jobResponse.Output) == 0 {
+					lf.Logger.Errorf("[WH]: No LoadFiles returned by worker")
 					continue
 				}
-				for i := range output {
+
+				for _, output := range jobResponse.Output {
 					loadFiles = append(loadFiles, model.LoadFile{
-						TableName:             output[i].TableName,
-						Location:              output[i].Location,
-						TotalRows:             output[i].TotalRows,
-						ContentLength:         output[i].ContentLength,
-						StagingFileID:         output[i].StagingFileID,
-						DestinationRevisionID: output[i].DestinationRevisionID,
-						UseRudderStorage:      output[i].UseRudderStorage,
+						TableName:             output.TableName,
+						Location:              output.Location,
+						TotalRows:             output.TotalRows,
+						ContentLength:         output.ContentLength,
+						StagingFileID:         output.StagingFileID,
+						DestinationRevisionID: output.DestinationRevisionID,
+						UseRudderStorage:      output.UseRudderStorage,
 						SourceID:              job.Upload.SourceID,
 						DestinationID:         job.Upload.DestinationID,
 						DestinationType:       job.Upload.DestinationType,
 					})
 				}
 
-				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
+				successfulStagingFileIDs = append(successfulStagingFileIDs, jobResponse.StagingFileID)
 			}
 
 			if len(loadFiles) == 0 {

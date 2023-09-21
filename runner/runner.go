@@ -35,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -323,7 +322,6 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	pgnotifier.Init()
 	warehouse.Init4()
 	validations.Init()
 	eventschema.Init()
