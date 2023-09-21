@@ -64,7 +64,7 @@ type ProxyRequestMetadata struct {
 
 type ProxyRequestPayload struct {
 	integrations.PostParametersT
-	Metadata ProxyRequestMetadata `json:"metadata,omitempty"`
+	Metadata []ProxyRequestMetadata `json:"metadata"`
 }
 type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
@@ -73,10 +73,23 @@ type ProxyRequestParams struct {
 	BaseUrl      string
 }
 
+type TransResponseT struct {
+	Message             string            `json:"message"`
+	DestinationResponse interface{}       `json:"destinationResponse"`
+	Response            []TPDestResponseT `json:"response"`
+	AuthErrorCategory   string            `json:"authErrorCategory"`
+}
+
+type TPDestResponseT struct {
+	StatusCode int                  `json:"statusCode"`
+	Metadata   ProxyRequestMetadata `json:"metadata"`
+	Error      string               `json:"error"`
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string, map[int64]int, map[int64]string)
 }
 
 // NewTransformer creates a new transformer
@@ -244,23 +257,32 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
-func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
+func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string, map[int64]int, map[int64]string) {
+	routerJobResponseCodes := make(map[int64]int)
+	routerJobResponseBodys := make(map[int64]string)
+
+	if len(proxyReqParams.ResponseData.Metadata) == 0 {
+		trans.logger.Warnf(`[TransformerProxy] (Dest-%[1]v) Input metadata is empty`, proxyReqParams.DestName)
+		return http.StatusBadRequest, "Input metadata is empty", "text/plain; charset=utf-8", routerJobResponseCodes, routerJobResponseBodys
+	}
+
 	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{
 		"destType":      proxyReqParams.DestName,
-		"workspaceId":   proxyReqParams.ResponseData.Metadata.WorkspaceID,
-		"destinationId": proxyReqParams.ResponseData.Metadata.DestinationID,
+		"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+		"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
 	}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
 	rdlTime := time.Now()
 	httpPrxResp := trans.doProxyRequest(ctx, proxyReqParams)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
+
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
 	stats.Default.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
 	stats.Default.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {
-		return respCode, requestError.Error(), "text/plain; charset=utf-8"
+		return respCode, requestError.Error(), "text/plain; charset=utf-8", routerJobResponseCodes, routerJobResponseBodys
 	}
 
 	/**
@@ -274,7 +296,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
-	transformerResponse := integrations.TransResponseT{
+	transformerResponse := TransResponseT{
 		Message: "[TransformerProxy]:: Default Message TransResponseT",
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
@@ -285,10 +307,22 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
 		respCode = http.StatusInternalServerError
-		return respCode, errStr, "text/plain; charset=utf-8"
+		return respCode, errStr, "text/plain; charset=utf-8", routerJobResponseCodes, routerJobResponseBodys
 	}
 
-	return respCode, string(respData), "application/json"
+	if len(transformerResponse.Response) > 0 {
+		for _, resp := range transformerResponse.Response {
+			routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
+			routerJobResponseBodys[resp.Metadata.JobID] = resp.Error
+		}
+	} else {
+		for _, m := range proxyReqParams.ResponseData.Metadata {
+			routerJobResponseCodes[m.JobID] = respCode
+			routerJobResponseBodys[m.JobID] = string(respData)
+		}
+	}
+
+	return respCode, string(respData), "application/json", routerJobResponseCodes, routerJobResponseBodys
 }
 
 func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
@@ -334,6 +368,8 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	if err != nil {
 		panic(err)
 	}
+
+	// trans.logger.Infof(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
 	proxyUrl := getProxyURL(destName, baseUrl)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
@@ -411,6 +447,8 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 			err:        err,
 		}
 	}
+
+	// trans.logger.Infof(`[TransformerProxy] (Dest-%[1]v) Proxy Request response - %[2]s`, destName, string(respData))
 
 	return httpProxyResponse{
 		respData:   respData,

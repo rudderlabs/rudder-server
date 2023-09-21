@@ -153,7 +153,7 @@ func (sp StoragePreferences) Backup(tableprefix string) bool {
 	case "gw":
 		return sp.GatewayDumps
 	case "rt":
-		return sp.RouterDumps
+		return sp.GatewayDumps // TODO special override (rt with gw)
 	case "batch_rt":
 		return sp.BatchRouterDumps
 	case "proc_error":

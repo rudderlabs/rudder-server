@@ -112,6 +112,12 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
 			},
 		},
 		{
@@ -145,6 +151,12 @@ func TestProxyRequest(t *testing.T) {
 						"XML":        map[string]interface{}{},
 					},
 					Files: map[string]interface{}{},
+				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
 				},
 			},
 		},
@@ -182,6 +194,12 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
 			},
 		},
 		{
@@ -217,6 +235,12 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
 			},
 		},
 		{
@@ -250,6 +274,12 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
 			},
 		},
 	}
@@ -268,7 +298,7 @@ func TestProxyRequest(t *testing.T) {
 					DestName:     "not_found_dest",
 					BaseUrl:      srv.URL,
 				}
-				stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
+				stCd, resp, contentType, _, _ := tr.ProxyRequest(ctx, reqParams)
 				assert.Equal(t, tc.expected.code, stCd)
 				require.Equal(t, tc.expected.contentType, contentType)
 				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
@@ -303,7 +333,7 @@ func TestProxyRequest(t *testing.T) {
 				DestName:     tc.destName,
 				BaseUrl:      srv.URL,
 			}
-			stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
+			stCd, resp, contentType, _, _ := tr.ProxyRequest(ctx, reqParams)
 
 			assert.Equal(t, tc.expected.code, stCd)
 			require.Equal(t, tc.expected.contentType, contentType)
