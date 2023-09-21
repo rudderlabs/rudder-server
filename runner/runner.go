@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"net/http"
 	"os"
 	"runtime"
@@ -11,14 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -336,7 +333,6 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	pgnotifier.Init()
 	validations.Init()
 	eventschema.Init()
 	eventschema.Init2()

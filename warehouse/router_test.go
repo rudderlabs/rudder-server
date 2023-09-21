@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -30,7 +32,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -43,8 +44,6 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-	pgnotifier.Init()
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -99,7 +98,8 @@ func TestRouter(t *testing.T) {
 
 		ctx := context.Background()
 
-		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
+		n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
@@ -130,7 +130,7 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			&notifier,
+			n,
 			tenantManager,
 			cp,
 			bcm,
@@ -200,7 +200,7 @@ func TestRouter(t *testing.T) {
 		r.destType = destinationType
 		r.logger = logger.NOP
 		r.triggerStore = &sync.Map{}
-		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.createJobMarkerMap = make(map[string]time.Time)
 
 		t.Run("no staging files", func(t *testing.T) {
@@ -353,7 +353,7 @@ func TestRouter(t *testing.T) {
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
-		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.triggerStore = &sync.Map{}
 		r.logger = logger.NOP
 
@@ -740,7 +740,7 @@ func TestRouter(t *testing.T) {
 		r.workerChannelMap = map[string]chan *UploadJob{
 			r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
 		}
-		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 			"destType": r.destType,
 		})
@@ -889,7 +889,7 @@ func TestRouter(t *testing.T) {
 			r.workerChannelMap = map[string]chan *UploadJob{
 				r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
 			}
-			r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+			r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 			r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 				"destType": r.destType,
 			})

@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/cenkalti/backoff"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -45,7 +45,7 @@ type App struct {
 	statsFactory       stats.Stats
 	bcConfig           backendconfig.BackendConfig
 	db                 *sqlmw.DB
-	notifier           *pgnotifier.PGNotifier
+	notifier           *notifier.Notifier
 	tenantManager      *multitenant.Manager
 	controlPlaneClient *controlplane.Client
 	bcManager          *backendConfigManager
@@ -96,12 +96,6 @@ func NewApp(
 		fileManagerFactory: fileManagerFactory,
 	}
 
-	if a.conf.IsSet("Warehouse.dbHandleTimeout") {
-		a.config.dbQueryTimeout = a.conf.GetDuration("Warehouse.dbHandleTimeout", 5, time.Minute)
-	} else {
-		a.config.dbQueryTimeout = a.conf.GetDuration("Warehouse.dbHandleTimeoutInMin", 5, time.Minute)
-	}
-
 	a.config.host = conf.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	a.config.user = conf.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
 	a.config.password = conf.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu")
@@ -114,6 +108,7 @@ func NewApp(
 	a.config.maxOpenConnections = conf.GetInt("Warehouse.maxOpenConnections", 20)
 	a.config.configBackendURL = conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	a.config.region = conf.GetString("region", "")
+	a.config.dbQueryTimeout = a.conf.GetDurationVar(5, time.Minute, "Warehouse.dbHandleTimeout", "Warehouse.dbHandleTimeoutInMin")
 
 	a.appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 
@@ -152,13 +147,11 @@ func (a *App) Setup(ctx context.Context) error {
 		config.GetKubeNamespace(),
 		misc.GetMD5Hash(config.GetWorkspaceToken()),
 	)
-	notifier, err := pgnotifier.New(workspaceIdentifier,
-		a.connectionString(),
-	)
+	a.notifier = notifier.New(a.conf, a.logger, a.statsFactory, workspaceIdentifier)
+	err := a.notifier.Setup(ctx, a.connectionString())
 	if err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
-	a.notifier = &notifier
 
 	a.sourcesManager = jobs.New(
 		ctx,
@@ -212,7 +205,8 @@ func (a *App) setupDatabase(ctx context.Context) error {
 	isCompatible, err := validators.IsPostgresCompatible(ctx, database)
 	if err != nil {
 		return fmt.Errorf("could not check compatibility: %w", err)
-	} else if !isCompatible {
+	}
+	if !isCompatible {
 		return errors.New("warehouse Service needs postgres version >= 10. Exiting")
 	}
 
@@ -407,6 +401,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	g.Go(func() error {
 		return a.api.Start(gCtx)
+	})
+	g.Go(func() error {
+		<-gCtx.Done()
+		return a.notifier.Shutdown()
 	})
 
 	return g.Wait()

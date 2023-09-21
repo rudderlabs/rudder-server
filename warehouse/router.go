@@ -12,6 +12,8 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -30,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -45,8 +46,8 @@ import (
 const defaultUploadPriority = 100
 
 type (
-	WorkerIdentifierT string
-	JobID             int64
+	workerIdentifierMapKey = string
+	jobID                  = int64
 )
 
 type router struct {
@@ -74,7 +75,7 @@ type router struct {
 	createJobMarkerMap     map[string]time.Time
 	createJobMarkerMapLock sync.RWMutex
 
-	inProgressMap     map[WorkerIdentifierT][]JobID
+	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
 
 	activeWorkerCount atomic.Int32
@@ -89,7 +90,7 @@ type router struct {
 	tenantManager    *multitenant.Manager
 	bcManager        *backendConfigManager
 	uploadJobFactory UploadJobFactory
-	notifier         *pgnotifier.PGNotifier
+	notifier         *notifier.Notifier
 
 	config struct {
 		uploadFreqInS                     int64
@@ -126,7 +127,7 @@ func newRouter(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
-	notifier *pgnotifier.PGNotifier,
+	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
@@ -161,7 +162,7 @@ func newRouter(
 	}
 
 	r.Enable()
-	r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
 	r.uploadJobFactory = UploadJobFactory{
 		app:                  app,
@@ -345,7 +346,7 @@ func (r *router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
 	defer r.inProgressMapLock.Unlock()
 
 	identifier := r.workerIdentifier(warehouse)
-	r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)], JobID(jobID))
+	r.inProgressMap[identifier] = append(r.inProgressMap[identifier], jobID)
 }
 
 func (r *router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
@@ -355,7 +356,7 @@ func (r *router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	identifier := r.workerIdentifier(warehouse)
 
 	if idx, inProgress := r.checkInProgressMap(jobID, identifier); inProgress {
-		r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)][:idx], r.inProgressMap[WorkerIdentifierT(identifier)][idx+1:]...)
+		r.inProgressMap[identifier] = append(r.inProgressMap[identifier][:idx], r.inProgressMap[identifier][idx+1:]...)
 	}
 }
 
@@ -373,15 +374,15 @@ func (r *router) getInProgressNamespaces() []string {
 	var identifiers []string
 	for k, v := range r.inProgressMap {
 		if len(v) >= r.config.maxConcurrentUploadJobs {
-			identifiers = append(identifiers, string(k))
+			identifiers = append(identifiers, k)
 		}
 	}
 	return identifiers
 }
 
 func (r *router) checkInProgressMap(jobID int64, identifier string) (int, bool) {
-	for idx, id := range r.inProgressMap[WorkerIdentifierT(identifier)] {
-		if jobID == int64(id) {
+	for idx, id := range r.inProgressMap[identifier] {
+		if jobID == id {
 			return idx, true
 		}
 	}

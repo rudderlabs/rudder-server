@@ -3,6 +3,7 @@ package warehouse
 import (
 	"context"
 	"fmt"
+	"github.com/ory/dockertest/v3"
 	"net"
 	"net/http"
 	"strconv"
@@ -18,10 +19,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 
 	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -47,7 +46,6 @@ import (
 func TestApp(t *testing.T) {
 	admin.Init()
 	misc.Init()
-	pgnotifier.Init()
 
 	const (
 		workspaceID              = "test_workspace_id"
