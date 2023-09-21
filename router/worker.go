@@ -326,14 +326,6 @@ func (w *worker) processDestinationJobs() {
 	defer w.batchTimeStat.RecordDuration()()
 
 	var respContentType string
-	var respStatusCode, prevRespStatusCode int
-	var respBody string
-	var respBodyTemp string
-
-	var destinationResponseHandler ResponseHandler
-	w.rt.destinationsMapMu.RLock()
-	destinationResponseHandler = w.rt.destinationResponseHandler
-	w.rt.destinationsMapMu.RUnlock()
 
 	/*
 		Batch
@@ -372,17 +364,21 @@ func (w *worker) processDestinationJobs() {
 	*/
 
 	failedJobOrderKeys := make(map[string]struct{})
-	routerJobResponses := make([]*JobResponse, 0)
+	var routerJobResponses []*JobResponse
 
 	sort.Slice(w.destinationJobs, func(i, j int) bool {
 		return w.destinationJobs[i].MinJobID() < w.destinationJobs[j].MinJobID()
 	})
 
 	for _, destinationJob := range w.destinationJobs {
+		var respStatusCodes map[int64]int
+		var respBodys map[int64]string
+
 		var errorAt string
 		respBodyArr := make([]string, 0)
+		transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			if w.canSendJobToDestination(prevRespStatusCode, failedJobOrderKeys, &destinationJob) {
+			if w.canSendJobToDestination(failedJobOrderKeys, &destinationJob) {
 				diagnosisStartTime := time.Now()
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -411,8 +407,9 @@ func (w *worker) processDestinationJobs() {
 				elapsed := time.Since(w.processingStartTime)
 				threshold := w.rt.reloadableConfig.routerTimeout.Load()
 				if elapsed > threshold {
-					respStatusCode = types.RouterTimedOutStatusCode
-					respBody = fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
+					respStatusCode := types.RouterTimedOutStatusCode
+					respBody := fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
+					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					w.logger.Debugf(
 						"Will drop with %d because of time expiry %v",
 						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
@@ -423,49 +420,59 @@ func (w *worker) processDestinationJobs() {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody = w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
+					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
+					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					errorAt = routerutils.ERROR_AT_CUST
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
 						errorAt = routerutils.ERROR_AT_TF
-						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+						respStatusCode, respBody := types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+						respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					} else {
+						var respStatusCode int
+						var respBodyTemp string
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
 							if err != nil {
 								errorAt = routerutils.ERROR_AT_TF
-								respStatusCode, respBodyTemp = http.StatusBadRequest, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+								respStatusCode, respBodyTemp = http.StatusInternalServerError, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
+								break
 							} else {
 								// stat start
 								w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
 								// transformer proxy start
 								errorAt = routerutils.ERROR_AT_DEL
-								if w.rt.reloadableConfig.transformerProxy.Load() {
+								if transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, w.rt.destType, jobID)
 
 									// setting metadata
-									firstJobMetadata := destinationJob.JobMetadataArray[0]
+									var m []transformer.ProxyRequestMetadata
+									for _, jobMetadata := range destinationJob.JobMetadataArray {
+										m = append(m, transformer.ProxyRequestMetadata{
+											SourceID:      jobMetadata.SourceID,
+											DestinationID: jobMetadata.DestinationID,
+											WorkspaceID:   jobMetadata.WorkspaceID,
+											JobID:         jobMetadata.JobID,
+											AttemptNum:    jobMetadata.AttemptNum,
+											DestInfo:      jobMetadata.DestInfo,
+											Secret:        jobMetadata.Secret,
+										})
+									}
 									proxyReqparams := &transformer.ProxyRequestParams{
 										DestName: w.rt.destType,
 										JobID:    jobID,
 										ResponseData: transformer.ProxyRequestPayload{
 											PostParametersT: val,
-											Metadata: transformer.ProxyRequestMetadata{
-												SourceID:      firstJobMetadata.SourceID,
-												DestinationID: firstJobMetadata.DestinationID,
-												WorkspaceID:   firstJobMetadata.WorkspaceID,
-												JobID:         firstJobMetadata.JobID,
-												AttemptNum:    firstJobMetadata.AttemptNum,
-												DestInfo:      firstJobMetadata.DestInfo,
-												Secret:        firstJobMetadata.Secret,
-											},
+											Metadata:        m,
 										},
 									}
 									rtlTime := time.Now()
-									respStatusCode, respBodyTemp, respContentType = w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
+									var proxyRespStatusCode int
+									var proxyRespBodyTemp string
+									proxyRespStatusCode, proxyRespBodyTemp, respContentType, respStatusCodes, respBodys = w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									w.routerProxyStat.SendTiming(time.Since(rtlTime))
 									w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 									authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
@@ -476,9 +483,9 @@ func (w *worker) processDestinationJobs() {
 											ctx:            ctx,
 											destinationJob: destinationJob,
 											workerID:       w.id,
-											trRespStCd:     respStatusCode,
-											trRespBody:     respBodyTemp,
-											secret:         firstJobMetadata.Secret,
+											trRespStCd:     proxyRespStatusCode,
+											trRespBody:     proxyRespBodyTemp,
+											secret:         m[0].Secret,
 										})
 									}
 								} else {
@@ -499,8 +506,12 @@ func (w *worker) processDestinationJobs() {
 								}
 							}
 						}
-						respBody = strings.Join(respBodyArr, " ")
-						if w.rt.reloadableConfig.transformerProxy.Load() {
+						if !transformerProxy {
+							respBody := strings.Join(respBodyArr, " ")
+							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
+						}
+
+						if transformerProxy {
 							stats.Default.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
 								"destType":      w.rt.destType,
 								"destinationId": destinationJob.Destination.ID,
@@ -508,8 +519,7 @@ func (w *worker) processDestinationJobs() {
 								"workspaceId":   workspaceID,
 							}).Count(len(result))
 
-							w.logger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, w.rt.destType,
-								destinationJob.JobMetadataArray[0].JobID,
+							w.logger.Debugf(`[TransformerProxy] (Dest-%v) Input Router Events: %v, Out router events: %v`, w.rt.destType,
 								len(result),
 								len(respBodyArr),
 							)
@@ -526,37 +536,24 @@ func (w *worker) processDestinationJobs() {
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
 
-				// Using response status code and body to get response code rudder router logic is based on.
-				// Works when transformer proxy in disabled
-				if !w.rt.reloadableConfig.transformerProxy.Load() && destinationResponseHandler != nil {
-					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
-				}
-
 				w.deliveryTimeStat.SendTiming(timeTaken)
 				deliveryLatencyStat.Since(startedAt)
 
 				// END: request to destination endpoint
 
-				// Failure - Save response body
-				// Success - Skip saving response body
-				// By default we get some config from dest def
-				// We can override via env saveDestinationResponseOverride
-
-				if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", w.rt.destType, false) && !w.rt.saveDestinationResponse {
-					respBody = ""
-				}
-
-				w.updateReqMetrics(respStatusCode, &diagnosisStartTime)
+				w.updateReqMetrics(respStatusCodes, &diagnosisStartTime)
 			} else {
-				respStatusCode = http.StatusInternalServerError
+				respStatusCode := http.StatusInternalServerError
+				var respBody string
 				if !w.rt.enableBatching {
 					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
 				}
+				respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 				errorAt = routerutils.ERROR_AT_TF
 			}
 		} else {
-			respStatusCode = destinationJob.StatusCode
-			respBody = destinationJob.Error
+			respStatusCode := destinationJob.StatusCode
+			respBody := destinationJob.Error
 			switch destinationJob.StatusCode {
 			case utilTypes.FilterEventCode:
 				if respBody == "" {
@@ -569,38 +566,11 @@ func (w *worker) processDestinationJobs() {
 			default:
 				errorAt = routerutils.ERROR_AT_TF
 			}
+			respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 		}
 
-		prevRespStatusCode = respStatusCode
-
-		if !isJobTerminated(respStatusCode) {
-			for _, metadata := range destinationJob.JobMetadataArray {
-				failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
-			}
-		}
-
-		// assigning the destinationJob to a local variable (_destinationJob), so that
-		// elements in routerJobResponses have pointer to the right job.
-		_destinationJob := destinationJob
-
-		// TODO: remove this once we enforce the necessary validations in the transformer's response
-		dedupedJobMetadata := lo.UniqBy(_destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT) int64 {
-			return jobMetadata.JobID
-		})
-		for _, destinationJobMetadata := range dedupedJobMetadata {
-			_destinationJobMetadata := destinationJobMetadata
-			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
-			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
-
-			routerJobResponses = append(routerJobResponses, &JobResponse{
-				jobID:                  destinationJobMetadata.JobID,
-				destinationJob:         &_destinationJob,
-				destinationJobMetadata: &_destinationJobMetadata,
-				respStatusCode:         respStatusCode,
-				respBody:               respBody,
-				errorAt:                errorAt,
-			})
-		}
+		w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
+		routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 	}
 
 	sort.Slice(routerJobResponses, func(i, j int) bool {
@@ -614,7 +584,7 @@ func (w *worker) processDestinationJobs() {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
 		destinationJob := routerJobResponse.destinationJob
 		attemptNum := destinationJobMetadata.AttemptNum
-		respStatusCode = routerJobResponse.respStatusCode
+		respStatusCode := routerJobResponse.respStatusCode
 		status := jobsdb.JobStatusT{
 			JobID:         destinationJobMetadata.JobID,
 			AttemptNum:    attemptNum,
@@ -688,19 +658,89 @@ func (w *worker) processDestinationJobs() {
 	w.destinationJobs = nil
 }
 
-func (w *worker) canSendJobToDestination(prevRespStatusCode int, failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT) bool {
-	if prevRespStatusCode == 0 {
-		return true
+func (w *worker) hydrateRespStatusCodes(destinationJob *types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string) {
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if _, ok := respStatusCodes[metadata.JobID]; !ok {
+			respStatusCodes[metadata.JobID] = http.StatusInternalServerError
+			respBodys[metadata.JobID] = "Response for this job is expected but not found"
+		}
+	}
+}
+
+func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT, respStatusCodes map[int64]int) {
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if !isJobTerminated(respStatusCodes[metadata.JobID]) {
+			failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+		}
+	}
+}
+
+func (w *worker) prepareRouterJobResponses(_destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string, transformerProxy bool) []*JobResponse {
+	w.hydrateRespStatusCodes(&_destinationJob, respStatusCodes, respBodys)
+
+	var destinationResponseHandler ResponseHandler
+	w.rt.destinationsMapMu.RLock()
+	destinationResponseHandler = w.rt.destinationResponseHandler
+	w.rt.destinationsMapMu.RUnlock()
+
+	// Using response status code and body to get response code rudder router logic is based on.
+	// Works when transformer proxy in disabled
+	if !transformerProxy && destinationResponseHandler != nil {
+		for k, respStatusCode := range respStatusCodes {
+			respStatusCodes[k] = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBodys[k])
+		}
 	}
 
+	// Failure - Save response body
+	// Success - Skip saving response body
+	// By default we get some config from dest def
+	// We can override via env saveDestinationResponseOverride
+
+	for k, respStatusCode := range respStatusCodes {
+		if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", w.rt.destType, false) && !w.rt.saveDestinationResponse {
+			respBodys[k] = ""
+		}
+	}
+
+	routerJobResponses := make([]*JobResponse, 0)
+
+	// TODO: remove this once we enforce the necessary validations in the transformer's response
+	dedupedJobMetadata := lo.UniqBy(_destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT) int64 {
+		return jobMetadata.JobID
+	})
+	for _, destinationJobMetadata := range dedupedJobMetadata {
+		_destinationJobMetadata := destinationJobMetadata
+		// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
+		// elements in routerJobResponses have pointer to the right destinationJobMetadata.
+
+		routerJobResponses = append(routerJobResponses, &JobResponse{
+			jobID:                  destinationJobMetadata.JobID,
+			destinationJob:         &_destinationJob,
+			destinationJobMetadata: &_destinationJobMetadata,
+			respStatusCode:         respStatusCodes[destinationJobMetadata.JobID],
+			respBody:               respBodys[destinationJobMetadata.JobID],
+			errorAt:                errorAt,
+		})
+	}
+
+	return routerJobResponses
+}
+
+func (w *worker) prepareResponsesForJobs(destinationJob *types.DestinationJobT, respStatusCode int, respBody string) (map[int64]int, map[int64]string) {
+	respStatusCodes := make(map[int64]int)
+	respBodys := make(map[int64]string)
+	for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		respStatusCodes[destinationJobMetadata.JobID] = respStatusCode
+		respBodys[destinationJobMetadata.JobID] = respBody
+	}
+
+	return respStatusCodes, respBodys
+}
+
+func (w *worker) canSendJobToDestination(failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT) bool {
 	if !w.rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, letting the next jobs pass
 		return true
-	}
-
-	// If batching is enabled, we send the request only if the previous one succeeds
-	if w.rt.enableBatching {
-		return isSuccessStatus(prevRespStatusCode)
 	}
 
 	// If the destinationJob has come through router transform,
@@ -714,16 +754,18 @@ func (w *worker) canSendJobToDestination(prevRespStatusCode int, failedJobOrderK
 	return true
 }
 
-func (w *worker) updateReqMetrics(respStatusCode int, diagnosisStartTime *time.Time) {
-	var reqMetric requestMetric
+func (w *worker) updateReqMetrics(respStatusCodes map[int64]int, diagnosisStartTime *time.Time) {
+	for _, respStatusCode := range respStatusCodes {
+		var reqMetric requestMetric
 
-	if isSuccessStatus(respStatusCode) {
-		reqMetric.RequestSuccess++
-	} else {
-		reqMetric.RequestRetries++
+		if isSuccessStatus(respStatusCode) {
+			reqMetric.RequestSuccess++
+		} else {
+			reqMetric.RequestRetries++
+		}
+		reqMetric.RequestCompletedTime = time.Since(*diagnosisStartTime)
+		w.rt.trackRequestMetrics(reqMetric)
 	}
-	reqMetric.RequestCompletedTime = time.Since(*diagnosisStartTime)
-	w.rt.trackRequestMetrics(reqMetric)
 }
 
 func (w *worker) allowRouterAbortedAlert(errorAt string) bool {
