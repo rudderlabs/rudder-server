@@ -1407,7 +1407,7 @@ func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (error
 }
 
 // getNewTimings appends current status with current time to timings column
-// e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+// e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716}] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings) {
 	timings, err := repo.NewUploads(job.dbHandle).UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
@@ -1451,6 +1451,12 @@ type UploadStatusOpts struct {
 
 func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	job.logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	defer func() {
+		if err != nil {
+			job.logger.Warnw("error setting upload status", logfield.Error, err.Error())
+		}
+	}()
+
 	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumn{
@@ -1469,14 +1475,15 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
+		var txn *sqlquerywrapper.Tx
+		txn, err = job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
 		if err != nil {
-			return err
+			return
 		}
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
-			return err
+			return
 		}
 		if job.config.reportingEnabled {
 			job.app.Features().Reporting.GetReportingInstance().Report(
@@ -1484,9 +1491,11 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 				txn.GetTx(),
 			)
 		}
-		return txn.Commit()
+		err = txn.Commit()
+		return
 	}
-	return job.setUploadColumns(uploadColumnOpts)
+	err = job.setUploadColumns(uploadColumnOpts)
+	return
 }
 
 // Set LoadFileIDs
@@ -1751,7 +1760,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	return state, err
 }
 
-func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)
+func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = job.config.minUploadBackoff
