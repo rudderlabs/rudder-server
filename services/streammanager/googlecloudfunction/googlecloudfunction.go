@@ -1,6 +1,6 @@
 //go:generate mockgen -destination=../../../mocks/services/streammanager/googlecloudfunction/mock_googlecloudfunction.go -package mock_googlecloudfunction github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction GoogleCloudFunctionClient
 
-package cloudfunctions
+package googlecloudfunction
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -54,9 +55,9 @@ func init() {
 }
 
 type GoogleCloudFunctionProducer struct {
-	client GoogleCloudFunctionClient
-	opts   common.Opts
-	config *Config
+	client     GoogleCloudFunctionClient
+	httpClient *http.Client
+	config     *Config
 }
 
 type GoogleCloudFunctionClient interface {
@@ -91,7 +92,7 @@ func getConfig(config Config, client GoogleCloudFunctionClient) (*Config, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GoogleCloudFunctionProducer, error) {
+func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*GoogleCloudFunctionProducer, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -127,9 +128,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	}
 
 	return &GoogleCloudFunctionProducer{
-		client: client,
-		opts:   o,
-		config: destConfig,
+		client:     client,
+		httpClient: &http.Client{Timeout: 1 * time.Second},
+		config:     destConfig,
 	}, err
 }
 
@@ -168,13 +169,17 @@ func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, 
 	}
 
 	// Make the request using the client
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := producer.httpClient.Do(req)
+	if err != nil && os.IsTimeout(err) {
+		return http.StatusAccepted, "Success", "[GoogleCloudFunction] :: Function is called"
+	}
+
 	var responseBody []byte
 	defer resp.Body.Close()
 	if err == nil {
 		responseBody, err = io.ReadAll(resp.Body)
 	}
-	if err != nil {
+	if err != nil && !os.IsTimeout(err) {
 		responseMessage = err.Error()
 		statusCode = http.StatusBadRequest
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -186,15 +191,17 @@ func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, 
 		return statusCode, respStatus, responseMessage
 	}
 
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK || os.IsTimeout(err) {
+		statusCode = http.StatusOK
 		respStatus = "Success"
 		responseMessage = "[GoogleCloudFunction] :: Function call is executed"
 	} else {
+		statusCode = resp.StatusCode
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)
 		pkgLogger.Error(responseMessage)
 	}
-	return resp.StatusCode, respStatus, responseMessage
+	return statusCode, respStatus, responseMessage
 }
 
 // Initialize the Cloud Functions API client using service account credentials.
