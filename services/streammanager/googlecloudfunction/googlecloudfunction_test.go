@@ -18,9 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-var (
-	validData = "{\"type\": \"track\", \"event\": \"checkout started\"}"
-)
+var validData = "{\"type\": \"track\", \"event\": \"checkout started\"}"
 
 func TestNewProducer(t *testing.T) {
 	destinationConfig := map[string]interface{}{
