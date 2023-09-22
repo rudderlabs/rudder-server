@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"testing"
@@ -78,6 +77,7 @@ func TestIntegration(t *testing.T) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
+	region := "us-east-1"
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
 
@@ -106,10 +106,8 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
 	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_SLOW_QUERY_THRESHOLD", "0s")
 
 	svcDone := make(chan struct{})
 
@@ -128,6 +126,9 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
+		t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_SLOW_QUERY_THRESHOLD", "0s")
+
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
@@ -254,168 +255,140 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
-}
 
-func TestAzureSynapse_LoadTable(t *testing.T) {
-	const (
-		sourceID        = "test_source-id"
-		destinationID   = "test_destination-id"
-		workspaceID     = "test_workspace-id"
-		destinationType = warehouseutils.AzureSynapse
+	t.Run("Load Table", func(t *testing.T) {
+		const (
+			sourceID      = "test_source-id"
+			destinationID = "test_destination-id"
+			workspaceID   = "test_workspace-id"
+		)
 
-		host     = "localhost"
-		database = "master"
-		user     = "SA"
-		password = "reallyStrongPwd123"
-
-		bucketName      = "testbucket"
-		accessKeyID     = "MYACCESSKEY"
-		secretAccessKey = "MYSECRETKEY"
-		region          = "us-east-1"
-	)
-
-	misc.Init()
-	validations.Init()
-	warehouseutils.Init()
-
-	c := testcompose.New(t, compose.FilePaths([]string{
-		"testdata/docker-compose.yml",
-		"../testdata/docker-compose.minio.yml",
-	}))
-	c.Start(context.Background())
-
-	minioPort := c.Port("minio", 9000)
-	azureSynapsePort := c.Port("azure_synapse", 1433)
-	minioEndpoint := net.JoinHostPort("localhost", strconv.Itoa(minioPort))
-
-	ctx := context.Background()
-
-	warehouseModel := func(namespace string) model.Warehouse {
-		return model.Warehouse{
-			Source: backendconfig.SourceT{
-				ID: sourceID,
-			},
-			Destination: backendconfig.DestinationT{
-				ID: destinationID,
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: destinationType,
+		warehouseModel := func(namespace string) model.Warehouse {
+			return model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: sourceID,
 				},
-				Config: map[string]any{
-					"host":             host,
-					"database":         database,
-					"user":             user,
-					"password":         password,
-					"port":             strconv.Itoa(azureSynapsePort),
-					"sslMode":          "disable",
-					"namespace":        "",
-					"bucketProvider":   "MINIO",
-					"bucketName":       bucketName,
-					"accessKeyID":      accessKeyID,
-					"secretAccessKey":  secretAccessKey,
-					"useSSL":           false,
-					"endPoint":         minioEndpoint,
-					"syncFrequency":    "30",
-					"useRudderStorage": false,
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destType,
+					},
+					Config: map[string]any{
+						"host":             host,
+						"database":         database,
+						"user":             user,
+						"password":         password,
+						"port":             strconv.Itoa(azureSynapsePort),
+						"sslMode":          "disable",
+						"namespace":        "",
+						"bucketProvider":   "MINIO",
+						"bucketName":       bucketName,
+						"accessKeyID":      accessKeyID,
+						"secretAccessKey":  secretAccessKey,
+						"useSSL":           false,
+						"endPoint":         minioEndpoint,
+						"syncFrequency":    "30",
+						"useRudderStorage": false,
+					},
 				},
-			},
-			WorkspaceID: workspaceID,
-			Namespace:   namespace,
+				WorkspaceID: workspaceID,
+				Namespace:   namespace,
+			}
 		}
-	}
 
-	schemaInUpload := model.TableSchema{
-		"test_bool":     "boolean",
-		"test_datetime": "datetime",
-		"test_float":    "float",
-		"test_int":      "int",
-		"test_string":   "string",
-		"id":            "string",
-		"received_at":   "datetime",
-	}
-	schemaInWarehouse := model.TableSchema{
-		"test_bool":           "boolean",
-		"test_datetime":       "datetime",
-		"test_float":          "float",
-		"test_int":            "int",
-		"test_string":         "string",
-		"id":                  "string",
-		"received_at":         "datetime",
-		"extra_test_bool":     "boolean",
-		"extra_test_datetime": "datetime",
-		"extra_test_float":    "float",
-		"extra_test_int":      "int",
-		"extra_test_string":   "string",
-	}
+		schemaInUpload := model.TableSchema{
+			"test_bool":     "boolean",
+			"test_datetime": "datetime",
+			"test_float":    "float",
+			"test_int":      "int",
+			"test_string":   "string",
+			"id":            "string",
+			"received_at":   "datetime",
+		}
+		schemaInWarehouse := model.TableSchema{
+			"test_bool":           "boolean",
+			"test_datetime":       "datetime",
+			"test_float":          "float",
+			"test_int":            "int",
+			"test_string":         "string",
+			"id":                  "string",
+			"received_at":         "datetime",
+			"extra_test_bool":     "boolean",
+			"extra_test_datetime": "datetime",
+			"extra_test_float":    "float",
+			"extra_test_int":      "int",
+			"extra_test_string":   "string",
+		}
 
-	fm, err := filemanager.New(&filemanager.Settings{
-		Provider: warehouseutils.MINIO,
-		Config: map[string]any{
-			"bucketName":       bucketName,
-			"accessKeyID":      accessKeyID,
-			"secretAccessKey":  secretAccessKey,
-			"endPoint":         minioEndpoint,
-			"forcePathStyle":   true,
-			"s3ForcePathStyle": true,
-			"disableSSL":       true,
-			"region":           region,
-			"enableSSE":        false,
-			"bucketProvider":   warehouseutils.MINIO,
-		},
-	})
-	require.NoError(t, err)
-
-	uploader := func(
-		t testing.TB,
-		loadFiles []warehouseutils.LoadFile,
-		tableName string,
-		schemaInUpload model.TableSchema,
-		schemaInWarehouse model.TableSchema,
-	) warehouseutils.Uploader {
-		ctrl := gomock.NewController(t)
-		t.Cleanup(ctrl.Finish)
-
-		mockUploader := mockuploader.NewMockUploader(ctrl)
-		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-		mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
-		mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
-
-		return mockUploader
-	}
-
-	t.Run("load table stats", func(t *testing.T) {
-		namespace := "load_table_stats_test_namespace"
-		tableName := "load_table_stats_test_table"
-
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
-
-		warehouse := warehouseModel(namespace)
-
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: warehouseutils.MINIO,
+			Config: map[string]any{
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
+				"endPoint":         minioEndpoint,
+				"forcePathStyle":   true,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+				"enableSSE":        false,
+				"bucketProvider":   warehouseutils.MINIO,
+			},
+		})
 		require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+		uploader := func(
+			t testing.TB,
+			loadFiles []warehouseutils.LoadFile,
+			tableName string,
+			schemaInUpload model.TableSchema,
+			schemaInWarehouse model.TableSchema,
+		) warehouseutils.Uploader {
+			ctrl := gomock.NewController(t)
+			t.Cleanup(ctrl.Finish)
 
-		err = az.CreateTable(ctx, tableName, schemaInWarehouse)
-		require.NoError(t, err)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.NoError(t, err)
-		require.Equal(t, loadTableStat.RowsInserted, int64(14))
-		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+			return mockUploader
+		}
 
-		loadTableStat, err = az.LoadTable(ctx, tableName)
-		require.NoError(t, err)
-		require.Equal(t, loadTableStat.RowsInserted, int64(0))
-		require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+		t.Run("load table stats", func(t *testing.T) {
+			namespace := "load_table_stats_test_namespace"
+			tableName := "load_table_stats_test_table"
 
-		records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
-			fmt.Sprintf(`
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			warehouse := warehouseModel(namespace)
+
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			loadTableStat, err = az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(0))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+			records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
+				fmt.Sprintf(`
 				SELECT
 				  id,
 				  received_at,
@@ -428,147 +401,131 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 				  %q.%q
 				ORDER BY
 				  id`,
-				namespace,
-				tableName,
-			),
-		)
-
-		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, testhelper.LoadRecords())
 		})
-	})
-	t.Run("schema does not exists", func(t *testing.T) {
-		namespace := "schema_not_exists_test_namespace"
-		tableName := "schema_not_exists_test_table"
+		t.Run("schema does not exists", func(t *testing.T) {
+			namespace := "schema_not_exists_test_namespace"
+			tableName := "schema_not_exists_test_table"
 
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'schema_not_exists_test_namespace.schema_not_exists_test_table'.")
-		require.Nil(t, loadTableStat)
-	})
-	t.Run("table does not exists", func(t *testing.T) {
-		namespace := "table_not_exists_test_namespace"
-		tableName := "table_not_exists_test_table"
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'schema_not_exists_test_namespace.schema_not_exists_test_table'.")
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("table does not exists", func(t *testing.T) {
+			namespace := "table_not_exists_test_namespace"
+			tableName := "table_not_exists_test_table"
 
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'table_not_exists_test_namespace.table_not_exists_test_table'.")
-		require.Nil(t, loadTableStat)
-	})
-	t.Run("load file does not exists", func(t *testing.T) {
-		namespace := "load_file_not_exists_test_namespace"
-		tableName := "load_file_not_exists_test_table"
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'table_not_exists_test_namespace.table_not_exists_test_table'.")
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("load file does not exists", func(t *testing.T) {
+			namespace := "load_file_not_exists_test_namespace"
+			tableName := "load_file_not_exists_test_table"
 
-		loadFiles := []warehouseutils.LoadFile{{
-			Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
-		}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+			loadFiles := []warehouseutils.LoadFile{{
+				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
+			}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
 
-		err = az.CreateTable(ctx, tableName, schemaInWarehouse)
-		require.NoError(t, err)
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "downloading load files")
-		require.Nil(t, loadTableStat)
-	})
-	t.Run("mismatch in number of columns", func(t *testing.T) {
-		namespace := "mismatch_columns_test_namespace"
-		tableName := "mismatch_columns_test_table"
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.ErrorContains(t, err, "downloading load files")
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in number of columns", func(t *testing.T) {
+			namespace := "mismatch_columns_test_namespace"
+			tableName := "mismatch_columns_test_table"
 
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
 
-		err = az.CreateTable(ctx, tableName, schemaInWarehouse)
-		require.NoError(t, err)
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.ErrorContains(t, err, "mismatch in number of columns")
-		require.Nil(t, loadTableStat)
-	})
-	t.Run("mismatch in schema", func(t *testing.T) {
-		namespace := "mismatch_schema_test_namespace"
-		tableName := "mismatch_schema_test_table"
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.ErrorContains(t, err, "mismatch in number of columns")
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in schema", func(t *testing.T) {
+			namespace := "mismatch_schema_test_namespace"
+			tableName := "mismatch_schema_test_table"
 
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
 
-		err = az.CreateTable(ctx, tableName, schemaInWarehouse)
-		require.NoError(t, err)
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.NoError(t, err)
-		require.Equal(t, loadTableStat.RowsInserted, int64(14))
-		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-		records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
-			fmt.Sprintf(`
+			records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
+				fmt.Sprintf(`
 				SELECT
 				  id,
 				  received_at,
@@ -581,55 +538,40 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 				  %q.%q
 				ORDER BY
 				  id`,
-				namespace,
-				tableName,
-			),
-		)
-		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "", "", "", "", "", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, testhelper.MismatchSchemaRecords())
 		})
-	})
-	t.Run("discards", func(t *testing.T) {
-		namespace := "discards_test_namespace"
-		tableName := warehouseutils.DiscardsTable
+		t.Run("discards", func(t *testing.T) {
+			namespace := "discards_test_namespace"
+			tableName := warehouseutils.DiscardsTable
 
-		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
-		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-		mockUploader := uploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := uploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-		warehouse := warehouseModel(namespace)
+			warehouse := warehouseModel(namespace)
 
-		az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		err = az.CreateSchema(ctx)
-		require.NoError(t, err)
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
 
-		err = az.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
-		require.NoError(t, err)
+			err = az.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			require.NoError(t, err)
 
-		loadTableStat, err := az.LoadTable(ctx, tableName)
-		require.NoError(t, err)
-		require.Equal(t, loadTableStat.RowsInserted, int64(6))
-		require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(6))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-		records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
-			fmt.Sprintf(`
+			records := testhelper.RecordsFromWarehouse(t, az.DB.DB,
+				fmt.Sprintf(`
 				SELECT
 				  column_name,
 				  column_value,
@@ -640,17 +582,11 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 				FROM
 				  %q.%q
 				ORDER BY row_id ASC;`,
-				namespace,
-				tableName,
-			),
-		)
-		require.Equal(t, records, [][]string{
-			{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
-			{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
-			{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
-			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
-			{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
-			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, testhelper.DiscardRecords())
 		})
 	})
 }
