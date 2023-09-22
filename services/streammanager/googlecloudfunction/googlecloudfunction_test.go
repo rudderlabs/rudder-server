@@ -20,7 +20,6 @@ import (
 
 var (
 	validData = "{\"type\": \"track\", \"event\": \"checkout started\"}"
-	err       = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Bad Request</pre>\n</body>\n</html>\n"
 )
 
 func TestNewProducer(t *testing.T) {
@@ -40,7 +39,7 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer.client, producer.httpClient, producer.config)
 }
 
-func TestNewProduceForWithInvalidData(t *testing.T) {
+func TestNewProduceWithInvalidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 	}))
@@ -51,7 +50,7 @@ func TestNewProduceForWithInvalidData(t *testing.T) {
 		RequireAuthentication: false,
 		FunctionUrl:           testSrv.URL,
 	}
-	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", responseStatus)
@@ -72,7 +71,7 @@ func TestNewProduceForWithoutAuthenticationAndValidData(t *testing.T) {
 		RequireAuthentication: false,
 		FunctionUrl:           testSrv.URL,
 	}
-	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
 		map[string]string{})
@@ -98,7 +97,7 @@ func TestNewProduceForWithAuthenticationAndGetTokenFailed(t *testing.T) {
 		RequireAuthentication: true,
 		FunctionUrl:           testSrv.URL,
 	}
-	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	mockClient.EXPECT().
 		GetToken(gomock.Any(), testSrv.URL, gomock.Any()).
 		Return(nil, errors.New("token is failed to generate")).MaxTimes(1)
@@ -127,7 +126,7 @@ func TestNewProduceForWithAuthenticationAndValidData(t *testing.T) {
 		RequireAuthentication: true,
 		FunctionUrl:           testSrv.URL,
 	}
-	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	mockClient.EXPECT().
 		GetToken(gomock.Any(), testSrv.URL, gomock.Any()).
 		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).MaxTimes(1)
