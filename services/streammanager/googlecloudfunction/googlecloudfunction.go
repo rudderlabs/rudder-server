@@ -99,7 +99,9 @@ func getConfig(config Config, client GoogleCloudFunctionClient) (*Config, error)
 		config.Token = token
 		config.TokenCreatedAt = time.Now()
 	}
-	config.FunctionName = getFunctionName(config.FunctionUrl)
+	if config.FunctionEnvironment == "gen1" {
+		config.FunctionName = getFunctionName(config.FunctionUrl)
+	}
 	return &config, nil
 }
 
@@ -170,13 +172,6 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 
 	// Make the HTTP request
 	response, err := producer.client.InvokeGen1Function(functionName, requestPayload)
-	if response.Error != "" {
-		statCode := 400
-		respStatus = "Failure"
-		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)"
-		pkgLogger.Errorf("error while calling the Gen1 function :: %v", response.Error)
-		return statCode, respStatus, responseMessage
-	}
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -184,9 +179,16 @@ func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName st
 		pkgLogger.Errorf("error while calling the Gen1 function :: %v", err)
 		return statCode, respStatus, responseMessage
 	}
+	if response.Error != "" {
+		statCode := 400
+		respStatus = "Failure"
+		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)"
+		pkgLogger.Errorf("error while calling the Gen1 function :: %v", response.Error)
+		return statCode, respStatus, responseMessage
+	}
 
 	respStatus = "Success"
-	responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
+	responseMessage = "[GoogleCloudFunction] :: Function call is executed"
 	return http.StatusOK, respStatus, responseMessage
 }
 
@@ -212,7 +214,9 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 		}
 		destConfig.Token = token
 		destConfig.TokenCreatedAt = time.Now()
-		req.Header.Add("Authorization", "Bearer "+token.AccessToken)
+	}
+	if destConfig.RequireAuthentication && destConfig.Token != nil {
+		req.Header.Set("Authorization", "Bearer "+destConfig.Token.AccessToken)
 	}
 
 	// Make the request using the client
@@ -236,7 +240,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 
 	if resp.StatusCode == http.StatusOK {
 		respStatus = "Success"
-		responseMessage = "[GoogleCloudFunction] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
+		responseMessage = "[GoogleCloudFunction] :: Function call is executed"
 	} else {
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)

@@ -100,7 +100,7 @@ func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 		map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
-	assert.Contains(t, responseMessage, "Message Payload inserted with messageId")
+	assert.Contains(t, responseMessage, "Function call is executed")
 }
 
 func TestNewProduceForGen2WithAuthenticationAndGetTokenFailed(t *testing.T) {
@@ -160,7 +160,7 @@ func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 		map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
-	assert.Contains(t, responseMessage, "Message Payload inserted with messageId")
+	assert.Contains(t, responseMessage, "Function call is executed")
 }
 
 func TestProduceWithInvalidAndValidData(t *testing.T) {
@@ -227,5 +227,5 @@ func TestProduceWithInvalidAndValidData(t *testing.T) {
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, requestPayload)
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
-	assert.Equal(t, "[GoogleCloudFunction] :: Message Payload inserted with messageId :: ", respMsg)
+	assert.Equal(t, "[GoogleCloudFunction] :: Function call is executed", respMsg)
 }
