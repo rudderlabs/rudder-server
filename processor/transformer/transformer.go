@@ -208,8 +208,8 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
 	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	trans.config.maxHTTPConnections = conf.GetInt("Processor.maxHTTPConnections", 100)
-	trans.config.maxHTTPIdleConnections = conf.GetInt("Processor.maxHTTPIdleConnections", 5)
+	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
+	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -227,7 +227,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 				DisableKeepAlives:   trans.config.disableKeepAlives,
 				MaxConnsPerHost:     trans.config.maxHTTPConnections,
 				MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-				IdleConnTimeout:     time.Minute,
+				IdleConnTimeout:     30 * time.Second,
 			},
 			Timeout: trans.config.timeoutDuration,
 		}
