@@ -65,9 +65,9 @@ func RecordsFromWarehouse(
 		require.NoError(t, err)
 
 		records = append(records, lo.Map(row, func(item bigquery.Value, index int) string {
-			switch item.(type) {
+			switch item := item.(type) {
 			case time.Time:
-				return item.(time.Time).Format(time.RFC3339)
+				return item.Format(time.RFC3339)
 			default:
 				return cast.ToString(item)
 			}
