@@ -23,9 +23,8 @@ var (
 	err       = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Bad Request</pre>\n</body>\n</html>\n"
 )
 
-func TestNewProducerForGen1(t *testing.T) {
+func TestNewProducer(t *testing.T) {
 	destinationConfig := map[string]interface{}{
-		"FunctionEnvironment":    "gen1",
 		"GoogleCloudFunctionUrl": "https://us-location-project-name.cloudfunctions.net/function-x",
 		"Credentials":            "crdentials",
 		"RequireAuthentication":  false,
@@ -41,23 +40,7 @@ func TestNewProducerForGen1(t *testing.T) {
 	assert.NotNil(t, producer.client, producer.httpClient, producer.config)
 }
 
-func TestNewProducerForGen2(t *testing.T) {
-	destinationConfig := map[string]interface{}{
-		"FunctionEnvironment":    "gen2",
-		"GoogleCloudFunctionUrl": "sampleFunctionUrl",
-		"Credentials":            "crdentials",
-		"RequireAuthentication":  false,
-	}
-	destination := backendconfig.DestinationT{
-		Config: destinationConfig,
-	}
-	timeOut := 10 * time.Second
-	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
-	assert.Nil(t, err)
-	assert.NotNil(t, producer)
-}
-
-func TestNewProduceForGen2WithInvalidData(t *testing.T) {
+func TestNewProduceForWithInvalidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 	}))
@@ -75,7 +58,7 @@ func TestNewProduceForGen2WithInvalidData(t *testing.T) {
 	assert.Contains(t, responseMessage, "Bad Request")
 }
 
-func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
+func TestNewProduceForWithoutAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(validData))
 		if err != nil {
@@ -98,7 +81,7 @@ func TestNewProduceForGen2WithoutAuthenticationAndValidData(t *testing.T) {
 	assert.Contains(t, responseMessage, "Function call is executed")
 }
 
-func TestNewProduceForGen2WithAuthenticationAndGetTokenFailed(t *testing.T) {
+func TestNewProduceForWithAuthenticationAndGetTokenFailed(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -127,7 +110,7 @@ func TestNewProduceForGen2WithAuthenticationAndGetTokenFailed(t *testing.T) {
 	assert.Contains(t, responseMessage, "Failed to receive token")
 }
 
-func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
+func TestNewProduceForWithAuthenticationAndValidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer someAccessToken" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -155,70 +138,3 @@ func TestNewProduceForGen2WithAuthenticationAndValidData(t *testing.T) {
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function call is executed")
 }
-
-// func TestProduceWithInvalidAndValidData(t *testing.T) {
-// 	ctrl := gomock.NewController(t)
-// 	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
-// 	conf := &Config{}
-// 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf}
-
-// 	// Invalid Payload
-// 	sampleEventJson := []byte("invalid_json")
-// 	requestPayload := &cloudfunctions.CallFunctionRequest{
-// 		Data: "invalid_json",
-// 	}
-// 	mockClient.
-// 		EXPECT().
-// 		InvokeGen1Function(conf.FunctionName, requestPayload).
-// 		Return(&cloudfunctions.CallFunctionResponse{
-// 			Error: err,
-// 			ServerResponse: googleapi.ServerResponse{
-// 				HTTPStatusCode: http.StatusOK,
-// 			},
-// 		}, nil).
-// 		MaxTimes(1)
-// 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
-// 	assert.Equal(t, 400, statusCode)
-// 	assert.Equal(t, "Failure", statusMsg)
-// 	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
-
-// 	// Empty Payload
-// 	sampleEventJson = []byte("{}")
-// 	requestPayload = &cloudfunctions.CallFunctionRequest{
-// 		Data: "{}",
-// 	}
-// 	mockClient.
-// 		EXPECT().
-// 		InvokeGen1Function(conf.FunctionName, requestPayload).
-// 		Return(&cloudfunctions.CallFunctionResponse{
-// 			Error: err,
-// 			ServerResponse: googleapi.ServerResponse{
-// 				HTTPStatusCode: http.StatusOK,
-// 			},
-// 		}, nil).MaxTimes(1)
-
-// 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, requestPayload)
-// 	assert.Equal(t, 400, statusCode)
-// 	assert.Equal(t, "Failure", statusMsg)
-// 	assert.Equal(t, "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)", respMsg)
-
-// 	// Valid Data
-// 	sampleEventJson = []byte(validData)
-// 	requestPayload = &cloudfunctions.CallFunctionRequest{
-// 		Data: validData,
-// 	}
-// 	mockClient.
-// 		EXPECT().
-// 		InvokeGen1Function(conf.FunctionName, requestPayload).
-// 		Return(&cloudfunctions.CallFunctionResponse{
-// 			Error: "",
-// 			ServerResponse: googleapi.ServerResponse{
-// 				HTTPStatusCode: http.StatusOK,
-// 			},
-// 		}, nil).MaxTimes(1)
-
-// 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, requestPayload)
-// 	assert.Equal(t, 200, statusCode)
-// 	assert.Equal(t, "Success", statusMsg)
-// 	assert.Equal(t, "[GoogleCloudFunction] :: Function call is executed", respMsg)
-// }
