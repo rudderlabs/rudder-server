@@ -179,7 +179,7 @@ func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, 
 	if err == nil {
 		responseBody, err = io.ReadAll(resp.Body)
 	}
-	if err != nil && !os.IsTimeout(err) {
+	if err != nil {
 		responseMessage = err.Error()
 		statusCode = http.StatusBadRequest
 		if errors.Is(err, context.DeadlineExceeded) {
