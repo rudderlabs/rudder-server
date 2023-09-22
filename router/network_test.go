@@ -149,6 +149,7 @@ var _ = Describe("Network", func() {
 				"FORM": map[string]interface{}{},
 				"JSON": map[string]interface{}{},
 				"XML":  map[string]interface{}{},
+				"GZIP": map[string]interface{}{},
 			}
 			requestParams.Files = map[string]interface{}{}
 

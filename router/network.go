@@ -3,8 +3,10 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,6 +126,22 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
 				payload = strings.NewReader(formValues.Encode())
+			case "GZIP":
+				strValue, ok := bodyValue["payload"].(string)
+				if !ok {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to construct gzip payload. Unexpected transformer response"),
+					}
+				}
+				zippedData, err := base64.StdEncoding.DecodeString(strValue)
+				if err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to decode gzip data. Unexpected transformer response"),
+					}
+				}
+				payload = bytes.NewBuffer(zippedData)
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
 			}
