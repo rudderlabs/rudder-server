@@ -9,15 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/cloudfunctions/v1"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/idtoken"
 
 	"google.golang.org/api/option"
@@ -31,10 +27,8 @@ import (
 
 type Config struct {
 	Credentials           string        `json:"credentials"`
-	FunctionEnvironment   string        `json:"functionEnvironment"`
 	RequireAuthentication bool          `json:"requireAuthentication"`
 	FunctionUrl           string        `json:"googleCloudFunctionUrl"`
-	FunctionName          string        `json:"functionName"`
 	Token                 *oauth2.Token `json:"token"`
 	TokenCreatedAt        time.Time     `json:"tokenCreatedAt"`
 }
@@ -66,17 +60,11 @@ type GoogleCloudFunctionProducer struct {
 }
 
 type GoogleCloudFunctionClient interface {
-	InvokeGen1Function(name string, callfunctionrequest *cloudfunctions.CallFunctionRequest) (*cloudfunctions.CallFunctionResponse, error)
 	GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error)
 }
 
 type GoogleCloudFunctionClientImpl struct {
 	service *cloudfunctions.ProjectsLocationsFunctionsService
-}
-
-func (c *GoogleCloudFunctionClientImpl) InvokeGen1Function(name string, callfunctionrequest *cloudfunctions.CallFunctionRequest) (*cloudfunctions.CallFunctionResponse, error) {
-	call := c.service.Call(name, callfunctionrequest)
-	return call.Do()
 }
 
 func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
@@ -98,9 +86,6 @@ func getConfig(config Config, client GoogleCloudFunctionClient) (*Config, error)
 		}
 		config.Token = token
 		config.TokenCreatedAt = time.Now()
-	}
-	if config.FunctionEnvironment == "gen1" {
-		config.FunctionName = getFunctionName(config.FunctionUrl)
 	}
 	return &config, nil
 }
@@ -152,47 +137,10 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	destConfig := producer.config
 	parsedJSON := gjson.ParseBytes(jsonData)
 
-	if destConfig.FunctionEnvironment == "gen1" {
-		return producer.invokeGen1Functions(destConfig.FunctionName, parsedJSON)
-	}
-
-	return producer.invokeGen2Functions(destConfig, parsedJSON)
+	return producer.invokeFunctions(destConfig, parsedJSON)
 }
 
-func (producer *GoogleCloudFunctionProducer) invokeGen1Functions(functionName string, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
-	if producer.client == nil {
-		respStatus = "Failure"
-		responseMessage = "[GoogleCloudFunction]:: Failed to initialize client"
-		return 400, respStatus, responseMessage
-	}
-
-	requestPayload := &cloudfunctions.CallFunctionRequest{
-		Data: parsedJSON.Raw,
-	}
-
-	// Make the HTTP request
-	response, err := producer.client.InvokeGen1Function(functionName, requestPayload)
-	if err != nil {
-		statCode, serviceMessage := handleServiceError(err)
-		respStatus = "Failure"
-		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified :: " + serviceMessage
-		pkgLogger.Errorf("error while calling the Gen1 function :: %v", err)
-		return statCode, respStatus, responseMessage
-	}
-	if response.Error != "" {
-		statCode := 400
-		respStatus = "Failure"
-		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed (Not Modified)"
-		pkgLogger.Errorf("error while calling the Gen1 function :: %v", response.Error)
-		return statCode, respStatus, responseMessage
-	}
-
-	respStatus = "Success"
-	responseMessage = "[GoogleCloudFunction] :: Function call is executed"
-	return http.StatusOK, respStatus, responseMessage
-}
-
-func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleCloudFunctionProducer) invokeFunctions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.Raw)
@@ -200,8 +148,8 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, destConfig.FunctionUrl, strings.NewReader(string(jsonBytes)))
 	if err != nil {
-		pkgLogger.Errorf("Failed to create httpRequest for Gen2 Fn: %w", err)
-		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Gen2 Fn: %s", err.Error())
+		pkgLogger.Errorf("Failed to create httpRequest for Fn: %w", err)
+		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Fn: %s", err.Error())
 	}
 
 	// Set the appropriate headers
@@ -234,7 +182,7 @@ func (producer *GoogleCloudFunctionProducer) invokeGen2Functions(destConfig *Con
 		}
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage
-		pkgLogger.Errorf("error while calling the Gen2 function :: %v", err)
+		pkgLogger.Errorf("error while calling the function :: %v", err)
 		return statusCode, respStatus, responseMessage
 	}
 
@@ -258,81 +206,6 @@ func generateService(opts ...option.ClientOption) (*cloudfunctions.Service, erro
 		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: Unable to create cloudfunction service :: %w", err)
 	}
 	return cloudFunctionService, err
-}
-
-func getFunctionName(url string) (functionName string) {
-	if !isValidCloudFunctionURL(url) {
-		pkgLogger.Errorf("Invalid Function URL")
-		return
-	}
-
-	// Define a regular expression pattern to match URLs between "https://" and dot (.)
-	pattern := `https://(.*?)\.`
-
-	// Compile the regular expression pattern
-	regExp := regexp.MustCompile(pattern)
-
-	// Find all matches in the input string
-	matches := regExp.FindAllStringSubmatch(url, -1)
-
-	// Extract the captured groups
-	var resultArray []string
-	for _, match := range matches {
-		if len(match) > 1 {
-			resultArray = append(resultArray, match[1])
-		}
-	}
-
-	// Combine the first two elements
-	splitValues := strings.Split(resultArray[0], "-")
-	// Join the first two values with "-" and assign to region
-	region := strings.Join(splitValues[:2], "-")
-
-	// Join the rest of the values with "-" and assign to projectId
-	projectId := strings.Join(splitValues[2:], "-")
-
-	var gcFnName string
-
-	index := strings.Index(url, "cloudfunctions.net/")
-
-	pkgLogger.Debugf("Match found: %b", strconv.FormatBool(index != -1))
-	if index != -1 {
-		// Extract the substring after "cloudfunctions.net/"
-		gcFnName = url[index+len("cloudfunctions.net/"):]
-	}
-
-	functionName = "projects/" + projectId + "/locations/" + region + "/functions/" + gcFnName
-
-	return functionName
-}
-
-func isValidCloudFunctionURL(url string) bool {
-	// Define a regular expression pattern to match a valid Google Cloud Function URL
-	pattern := `^https:\/\/[a-z1-9-]+\.cloudfunctions\.net\/[a-zA-Z0-9_-]+$`
-
-	// Compile the regular expression
-	regex := regexp.MustCompile(pattern)
-
-	// Use the regular expression to check if the URL matches the pattern
-	return regex.MatchString(url)
-}
-
-// handleServiceError is created for fail safety, if in any case when err type is not googleapi.Error
-// server should not crash with a type error.
-func handleServiceError(err error) (statusCode int, responseMessage string) {
-	statusCode = 500
-	responseMessage = err.Error()
-
-	if err != nil && errors.Is(err, context.DeadlineExceeded) {
-		statusCode = 504
-	}
-
-	if reflect.TypeOf(err).String() == "*googleapi.Error" {
-		serviceErr := err.(*googleapi.Error)
-		statusCode = serviceErr.Code
-		responseMessage = serviceErr.Message
-	}
-	return statusCode, responseMessage
 }
 
 func (*GoogleCloudFunctionProducer) Close() error {
