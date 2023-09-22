@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"sync"
 
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -40,15 +41,19 @@ type fetchSchemaRepo interface {
 
 type Schema struct {
 	warehouse                        model.Warehouse
-	localSchema                      model.Schema
-	schemaInWarehouse                model.Schema
-	unrecognizedSchemaInWarehouse    model.Schema
 	schemaRepo                       schemaRepo
 	stagingFileRepo                  stagingFileRepo
 	log                              logger.Logger
 	stagingFilesSchemaPaginationSize int
 	skipDeepEqualSchemas             bool
 	enableIDResolution               bool
+
+	localSchema                     model.Schema
+	localSchemaMu                   sync.RWMutex
+	schemaInWarehouse               model.Schema
+	schemaInWarehouseMu             sync.RWMutex
+	unrecognizedSchemaInWarehouse   model.Schema
+	unrecognizedSchemaInWarehouseMu sync.RWMutex
 }
 
 func New(
@@ -73,10 +78,7 @@ func (sh *Schema) ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, s
 	consolidatedSchema := model.Schema{}
 	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
-		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(
-			ctx,
-			repo.StagingFileIDs(batch),
-		)
+		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(ctx, repo.StagingFileIDs(batch))
 		if err != nil {
 			return nil, fmt.Errorf("getting staging files schema: %v", err)
 		}
@@ -84,33 +86,25 @@ func (sh *Schema) ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, s
 		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
 
+	sh.localSchemaMu.RLock()
 	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
 	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.localSchema)
+	sh.localSchemaMu.RUnlock()
+
 	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
 	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
+
 	return consolidatedSchema, nil
 }
 
 func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, uploadID int64) error {
-	return sh.UpdateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
 }
 
-func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		UploadID:        uploadId,
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-	})
-	if err != nil {
-		return fmt.Errorf("updating local schema: %w", err)
-	}
-
-	sh.localSchema = updatedSchema
-
-	return nil
+func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadID int64, updatedSchema model.Schema) error {
+	return sh.updateLocalSchema(ctx, uploadID, updatedSchema)
 }
 
 func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
@@ -139,6 +133,11 @@ func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	sh.removeDeprecatedColumns(warehouseSchema)
 	sh.removeDeprecatedColumns(unrecognizedWarehouseSchema)
 
+	sh.schemaInWarehouseMu.Lock()
+	defer sh.schemaInWarehouseMu.Unlock()
+	sh.unrecognizedSchemaInWarehouseMu.Lock()
+	defer sh.unrecognizedSchemaInWarehouseMu.Unlock()
+
 	sh.schemaInWarehouse = warehouseSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
 
@@ -146,16 +145,20 @@ func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 }
 
 func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	if err := sh.fetchSchemaFromLocal(ctx); err != nil {
+	localSchema, err := sh.GetLocalSchema(ctx)
+	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
 	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
 		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged := sh.hasSchemaChanged()
+	sh.schemaInWarehouseMu.RLock()
+	schemaChanged := sh.hasSchemaChanged(localSchema)
+	defer sh.schemaInWarehouseMu.RUnlock()
 	if schemaChanged {
-		if err := sh.UpdateLocalSchema(ctx, uploadID, sh.schemaInWarehouse); err != nil {
+		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+		if err != nil {
 			return false, fmt.Errorf("updating local schema: %w", err)
 		}
 	}
@@ -171,7 +174,10 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 		AlteredColumnMap: make(model.TableSchema),
 	}
 
+	sh.schemaInWarehouseMu.RLock()
 	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
+	sh.schemaInWarehouseMu.RUnlock()
+
 	if !ok {
 		if len(tableSchema) == 0 {
 			return diff
@@ -203,10 +209,14 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 }
 
 func (sh *Schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
 	return sh.schemaInWarehouse[tableName]
 }
 
 func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
+	sh.schemaInWarehouseMu.Lock()
+	defer sh.schemaInWarehouseMu.Unlock()
 	if sh.schemaInWarehouse == nil {
 		sh.schemaInWarehouse = make(model.Schema)
 	}
@@ -214,14 +224,20 @@ func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model
 }
 
 func (sh *Schema) IsWarehouseSchemaEmpty() bool {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
 	return len(sh.schemaInWarehouse) == 0
 }
 
 func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
 	return len(sh.schemaInWarehouse[tableName])
 }
 
 func (sh *Schema) IsColumnInUnrecognizedSchema(t, c string) bool {
+	sh.unrecognizedSchemaInWarehouseMu.RLock()
+	defer sh.unrecognizedSchemaInWarehouseMu.RUnlock()
 	s, ok := sh.unrecognizedSchemaInWarehouse[t]
 	if ok {
 		_, ok = s[c]
@@ -229,14 +245,22 @@ func (sh *Schema) IsColumnInUnrecognizedSchema(t, c string) bool {
 	return ok
 }
 
-// fetchSchemaFromLocal fetches schema from local
-func (sh *Schema) fetchSchemaFromLocal(ctx context.Context) error {
-	localSchema, err := sh.GetLocalSchema(ctx)
+func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
+		UploadID:        uploadId,
+		SourceID:        sh.warehouse.Source.ID,
+		Namespace:       sh.warehouse.Namespace,
+		DestinationID:   sh.warehouse.Destination.ID,
+		DestinationType: sh.warehouse.Type,
+		Schema:          updatedSchema,
+	})
 	if err != nil {
-		return fmt.Errorf("fetching schema from local: %w", err)
+		return fmt.Errorf("updating local schema: %w", err)
 	}
 
-	sh.localSchema = localSchema
+	sh.localSchemaMu.Lock()
+	sh.localSchema = updatedSchema
+	sh.localSchemaMu.Unlock()
 
 	return nil
 }
@@ -392,14 +416,14 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 }
 
 // hasSchemaChanged compares the localSchema with the schemaInWarehouse
-func (sh *Schema) hasSchemaChanged() bool {
+func (sh *Schema) hasSchemaChanged(localSchema model.Schema) bool {
 	if !sh.skipDeepEqualSchemas {
-		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
+		eq := reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
 		return !eq
 	}
 	// Iterating through all tableName in the localSchema
-	for tableName := range sh.localSchema {
-		localColumns := sh.localSchema[tableName]
+	for tableName := range localSchema {
+		localColumns := localSchema[tableName]
 		warehouseColumns, whColumnsExist := sh.schemaInWarehouse[tableName]
 
 		// If warehouse does  not contain the specified table return true.

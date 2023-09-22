@@ -78,7 +78,7 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 			name:          "no schema in db",
 			mockSchema:    model.WHSchema{},
 			mockSchemaErr: nil,
-			wantSchema:    model.Schema{},
+			wantSchema:    nil,
 			wantError:     nil,
 		},
 		{
@@ -149,7 +149,6 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			err = sch.fetchSchemaFromLocal(ctx)
 			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
@@ -596,10 +595,9 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 					Type: warehouseutils.SNOWFLAKE,
 				},
 				skipDeepEqualSchemas: tc.skipDeepEquals,
-				localSchema:          tc.localSchema,
 				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, sch.hasSchemaChanged())
+			require.Equal(t, tc.expected, sch.hasSchemaChanged(tc.localSchema))
 		})
 	}
 }
