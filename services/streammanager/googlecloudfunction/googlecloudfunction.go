@@ -137,10 +137,10 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	destConfig := producer.config
 	parsedJSON := gjson.ParseBytes(jsonData)
 
-	return producer.invokeFunctions(destConfig, parsedJSON)
+	return producer.invokeFunction(destConfig, parsedJSON)
 }
 
-func (producer *GoogleCloudFunctionProducer) invokeFunctions(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
 	ctx := context.Background()
 
 	jsonBytes := []byte(parsedJSON.Raw)
