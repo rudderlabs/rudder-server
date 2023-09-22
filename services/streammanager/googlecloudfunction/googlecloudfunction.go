@@ -3,6 +3,7 @@
 package googlecloudfunction
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,17 +11,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
-	"google.golang.org/api/cloudfunctions/v1"
 	"google.golang.org/api/idtoken"
 
 	"google.golang.org/api/option"
 
-	"github.com/tidwall/gjson"
-
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -32,6 +30,7 @@ type Config struct {
 	FunctionUrl           string        `json:"googleCloudFunctionUrl"`
 	Token                 *oauth2.Token `json:"token"`
 	TokenCreatedAt        time.Time     `json:"tokenCreatedAt"`
+	TokenTimeout          time.Duration `json:"tokenTimeout"`
 }
 
 func (config *Config) shouldGenerateToken() bool {
@@ -41,7 +40,17 @@ func (config *Config) shouldGenerateToken() bool {
 	if config.Token == nil {
 		return true
 	}
-	return time.Since(config.TokenCreatedAt) > 55*time.Minute
+	return time.Since(config.TokenCreatedAt) > config.TokenTimeout
+}
+
+func (config *Config) generateToken(ctx context.Context, client GoogleCloudFunctionClient) error {
+	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials)))
+	if err != nil {
+		return err
+	}
+	config.Token = token
+	config.TokenCreatedAt = time.Now()
+	return nil
 }
 
 var pkgLogger logger.Logger
@@ -56,17 +65,15 @@ func init() {
 
 type GoogleCloudFunctionProducer struct {
 	client     GoogleCloudFunctionClient
-	httpClient *http.Client
 	config     *Config
+	httpClient *http.Client
 }
 
 type GoogleCloudFunctionClient interface {
 	GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error)
 }
 
-type GoogleCloudFunctionClientImpl struct {
-	service *cloudfunctions.ProjectsLocationsFunctionsService
-}
+type GoogleCloudFunctionClientImpl struct{}
 
 func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
 	ts, err := idtoken.NewTokenSource(ctx, functionUrl, opts...)
@@ -79,75 +86,40 @@ func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUr
 	return ts.Token()
 }
 
-func getConfig(config Config, client GoogleCloudFunctionClient) (*Config, error) {
-	if config.RequireAuthentication {
-		token, err := client.GetToken(context.Background(), config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials)))
-		if err != nil {
-			return nil, err
-		}
-		config.Token = token
-		config.TokenCreatedAt = time.Now()
-	}
-	return &config, nil
+func getFunctionConfig(fnConfig Config, client GoogleCloudFunctionClient) (*Config, error) {
+	fnConfig.TokenTimeout = config.GetDurationVar(55, time.Minute, "google.cloudfunction.token.timeout")
+	return &fnConfig, nil
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*GoogleCloudFunctionProducer, error) {
-	var config Config
+	var fnConfig Config
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleCloudFunction] Error while marshalling destination config: %w", err)
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = json.Unmarshal(jsonConfig, &fnConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleCloudFunction] Error in GoogleCloudFunction while unmarshalling destination config: %w", err)
 	}
 
-	opts := []option.ClientOption{
-		option.WithoutAuthentication(),
-	}
-
-	if config.RequireAuthentication {
-		opts = []option.ClientOption{
-			option.WithCredentialsJSON([]byte(config.Credentials)),
-		}
-	}
-
-	service, err := generateService(opts...)
-	// If err is not nil then return
-	if err != nil {
-		pkgLogger.Errorf("Error in generation of service: %w", err)
-		return nil, err
-	}
-
-	client := &GoogleCloudFunctionClientImpl{service: service.Projects.Locations.Functions}
-	destConfig, err := getConfig(config, client)
+	client := &GoogleCloudFunctionClientImpl{}
+	destConfig, err := getFunctionConfig(fnConfig, client)
 	if err != nil {
 		pkgLogger.Errorf("Error in getting config: %w", err)
 		return nil, err
 	}
 
 	return &GoogleCloudFunctionProducer{
-		client:     client,
 		httpClient: &http.Client{Timeout: 1 * time.Second},
+		client:     client,
 		config:     destConfig,
 	}, err
 }
 
 func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
-	destConfig := producer.config
-	parsedJSON := gjson.ParseBytes(jsonData)
-
-	return producer.invokeFunction(destConfig, parsedJSON)
-}
-
-func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, parsedJSON gjson.Result) (statusCode int, respStatus, responseMessage string) {
-	ctx := context.Background()
-
-	jsonBytes := []byte(parsedJSON.Raw)
-
 	// Create a POST request
-	req, err := http.NewRequest(http.MethodPost, destConfig.FunctionUrl, strings.NewReader(string(jsonBytes)))
+	req, err := http.NewRequest(http.MethodPost, producer.config.FunctionUrl, bytes.NewReader(jsonData))
 	if err != nil {
 		pkgLogger.Errorf("Failed to create httpRequest for Fn: %w", err)
 		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Fn: %s", err.Error())
@@ -155,17 +127,15 @@ func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, 
 
 	// Set the appropriate headers
 	req.Header.Set("Content-Type", "application/json")
-	if destConfig.shouldGenerateToken() {
-		token, err := producer.client.GetToken(ctx, destConfig.FunctionUrl, option.WithCredentialsJSON([]byte(destConfig.Credentials)))
+	if producer.config.shouldGenerateToken() {
+		err := producer.config.generateToken(context.Background(), producer.client)
 		if err != nil {
 			pkgLogger.Errorf("failed to receive token: %w", err)
 			return http.StatusUnauthorized, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
 		}
-		destConfig.Token = token
-		destConfig.TokenCreatedAt = time.Now()
 	}
-	if destConfig.RequireAuthentication && destConfig.Token != nil {
-		req.Header.Set("Authorization", "Bearer "+destConfig.Token.AccessToken)
+	if producer.config.RequireAuthentication && producer.config.Token != nil {
+		req.Header.Set("Authorization", "Bearer "+producer.config.Token.AccessToken)
 	}
 
 	// Make the request using the client
@@ -181,41 +151,24 @@ func (producer *GoogleCloudFunctionProducer) invokeFunction(destConfig *Config, 
 	}
 	if err != nil {
 		responseMessage = err.Error()
-		statusCode = http.StatusBadRequest
-		if errors.Is(err, context.DeadlineExceeded) {
-			statusCode = http.StatusGatewayTimeout
-		}
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage
 		pkgLogger.Errorf("error while calling the function :: %v", err)
-		return statusCode, respStatus, responseMessage
+		return http.StatusBadRequest, respStatus, responseMessage
 	}
 
-	if resp.StatusCode == http.StatusOK || os.IsTimeout(err) {
-		statusCode = http.StatusOK
+	if resp.StatusCode == http.StatusOK {
 		respStatus = "Success"
 		responseMessage = "[GoogleCloudFunction] :: Function call is executed"
 	} else {
-		statusCode = resp.StatusCode
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)
 		pkgLogger.Error(responseMessage)
 	}
-	return statusCode, respStatus, responseMessage
+	return resp.StatusCode, respStatus, responseMessage
 }
 
-// Initialize the Cloud Functions API client using service account credentials.
-func generateService(opts ...option.ClientOption) (*cloudfunctions.Service, error) {
-	ctx := context.Background()
-
-	cloudFunctionService, err := cloudfunctions.NewService(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleCloudFunction] error  :: Unable to create cloudfunction service :: %w", err)
-	}
-	return cloudFunctionService, err
-}
-
-func (*GoogleCloudFunctionProducer) Close() error {
-	// no-op
+func (producer *GoogleCloudFunctionProducer) Close() error {
+	producer.httpClient.CloseIdleConnections()
 	return nil
 }
