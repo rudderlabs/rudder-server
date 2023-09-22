@@ -86,8 +86,8 @@ func TestColumnCountStat(t *testing.T) {
 
 	var (
 		workspaceID     = "test-workspaceID"
-		destinationID   = "test-desinationID"
-		destinationName = "test-desinationName"
+		destinationID   = "test-destinationID"
+		destinationName = "test-destinationName"
 		sourceID        = "test-sourceID"
 		sourceName      = "test-sourceName"
 		tableName       = "test-table"

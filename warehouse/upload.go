@@ -309,7 +309,7 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	uploadSchema, err := job.schemaHandle.PrepareUploadSchema(job.ctx, job.stagingFiles)
+	uploadSchema, err := job.schemaHandle.ConsolidateStagingFilesUsingLocalSchema(job.ctx, job.stagingFiles)
 	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
@@ -1938,7 +1938,6 @@ func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
 	return job.schemaHandle.IsWarehouseSchemaEmpty()
 }
 
-// GetTableSchemaInWarehouse TODO check usage of this function
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
 	return job.schemaHandle.GetTableSchemaInWarehouse(tableName)
 }
@@ -2081,12 +2080,10 @@ func initializeStateMachine() {
 	abortState.nextState = nil
 }
 
-// GetLocalSchema TODO check usage of this function
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	return job.schemaHandle.GetLocalSchema(ctx)
 }
 
-// UpdateLocalSchema TODO check usage of this function
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
 	return job.schemaHandle.UpdateLocalSchema(ctx, job.upload.ID, schema)
 }
