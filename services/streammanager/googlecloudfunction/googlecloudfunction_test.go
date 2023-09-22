@@ -154,7 +154,8 @@ func TestNewProduceWhenRequestTimedout(t *testing.T) {
 		RequireAuthentication: true,
 		FunctionUrl:           testSrv.URL,
 	}
-	producer := &GoogleCloudFunctionProducer{client: mockClient,
+	producer := &GoogleCloudFunctionProducer{
+		client:     mockClient,
 		config:     conf,
 		httpClient: &http.Client{Timeout: 1 * time.Millisecond},
 	}
