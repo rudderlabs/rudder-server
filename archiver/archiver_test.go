@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -32,7 +34,7 @@ import (
 
 func TestJobsArchival(t *testing.T) {
 	var (
-		prefix        = "some-prefix"
+		prefix        = trand.String(10)
 		minioResource []*destination.MINIOResource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
@@ -171,7 +173,9 @@ func TestJobsArchival(t *testing.T) {
 		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefix, 20)
 		files, err := getAllFileNames(fileIter)
 		require.NoError(t, err)
-		require.LessOrEqual(t, sourcesPerWorkspace[i], len(files))
+		require.Equal(t, sourcesPerWorkspace[i], len(files),
+			fmt.Sprintf("found files: %s for workspace: %s", strings.Join(files, ", "), workspace),
+		)
 
 		for j, file := range files {
 			downloadFile, err := os.CreateTemp(t.TempDir(), fmt.Sprintf("backedupfile%d%d", i, j))
