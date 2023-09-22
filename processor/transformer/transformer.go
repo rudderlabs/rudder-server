@@ -79,6 +79,13 @@ type Metadata struct {
 	SourceDefinitionType    string   `json:"-"`
 }
 
+func (m Metadata) GetMessagesIDs() []string {
+	if len(m.MessageIDs) > 0 {
+		return m.MessageIDs
+	}
+	return []string{m.MessageID}
+}
+
 type TransformerEvent struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    Metadata                   `json:"metadata"`

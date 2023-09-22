@@ -530,7 +530,7 @@ func (as *AzureSynapse) deleteFromLoadTable(
 
 	r, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting frommain table: %w", err)
+		return 0, fmt.Errorf("deleting from main table: %w", err)
 	}
 	return r.RowsAffected()
 }
@@ -693,7 +693,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	as.logger.Infof("AZ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		as.logger.Errorf("AZ: Error deleting frommain table for dedup: %v\n", err)
+		as.logger.Errorf("AZ: Error deleting from main table for dedup: %v\n", err)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return

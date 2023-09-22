@@ -12,24 +12,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -42,7 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
@@ -75,7 +73,7 @@ type UploadJobFactory struct {
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *notifier.Notifier
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -91,7 +89,7 @@ type UploadJob struct {
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *pgnotifier.PGNotifier
+	notifier             *notifier.Notifier
 	schemaHandle         *Schema
 	conf                 *config.Config
 	logger               logger.Logger
@@ -103,7 +101,6 @@ type UploadJob struct {
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
 	schemaLock     sync.Mutex
-	uploadLock     sync.Mutex
 	alertSender    alerta.AlertSender
 	now            func() time.Time
 
@@ -168,8 +165,8 @@ const (
 )
 
 var (
-	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
-	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE, warehouseutils.BQ}
+	alwaysMarkExported                               = []string{whutils.DiscardsTable}
+	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
 	mergeSourceCategoryMap                           = map[string]struct{}{
 		"cloud":           {},
 		"singer-protocol": {},
@@ -181,7 +178,7 @@ func init() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
-	ujCtx := warehouseutils.CtxWithUploadID(ctx, dto.Upload.ID)
+	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
 
 	uj := &UploadJob{
 		ctx:                  ujCtx,
@@ -189,7 +186,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
-		pgNotifier:           f.pgNotifier,
+		notifier:             f.notifier,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,
@@ -200,6 +197,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 			f.dbHandle,
 			dto.Warehouse,
 			config.Default,
+			f.logger.Child("warehouse").Child("schema"),
 		),
 
 		upload:         dto.Upload,
@@ -224,8 +222,8 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
 	uj.config.alwaysRegenerateAllLoadFiles = f.conf.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", warehouseutils.WHDestNameMap[uj.upload.DestinationType]), 100)
-	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[uj.upload.DestinationType]), nil)
+	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
+	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
 
 	if f.conf.IsSet("Warehouse.longRunningUploadStatThreshold") {
 		uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDuration("Warehouse.longRunningUploadStatThreshold", 120, time.Minute)
@@ -265,19 +263,19 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 }
 
 func (job *UploadJob) identifiesTableName() string {
-	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
+	return whutils.ToProviderCase(job.warehouse.Type, whutils.IdentifiesTable)
 }
 
 func (job *UploadJob) usersTableName() string {
-	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.UsersTable)
+	return whutils.ToProviderCase(job.warehouse.Type, whutils.UsersTable)
 }
 
 func (job *UploadJob) identityMergeRulesTableName() string {
-	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
+	return whutils.ToProviderCase(job.warehouse.Type, whutils.IdentityMergeRulesTable)
 }
 
 func (job *UploadJob) identityMappingsTableName() string {
-	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
+	return whutils.ToProviderCase(job.warehouse.Type, whutils.IdentityMappingsTable)
 }
 
 func (job *UploadJob) trackLongRunningUpload() chan struct{} {
@@ -303,16 +301,24 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	if err := job.schemaHandle.prepareUploadSchema(
-		job.ctx,
-		job.stagingFiles,
-	); err != nil {
+	uploadSchema, err := job.schemaHandle.prepareUploadSchema(job.ctx, job.stagingFiles)
+	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
+	marshalledSchema, err := json.Marshal(uploadSchema)
+	if err != nil {
+		panic(err)
+	}
+
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
+		{Column: UploadSchemaField, Value: marshalledSchema},
+	}})
+	if err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
+
+	job.upload.UploadSchema = uploadSchema
 
 	return nil
 }
@@ -324,9 +330,9 @@ func (job *UploadJob) initTableUploads() error {
 	for t := range schemaForUpload {
 		tables = append(tables, t)
 		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
-		if slices.Contains(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
-			if _, ok := schemaForUpload[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)]; !ok {
-				tables = append(tables, warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable))
+		if slices.Contains(whutils.IdentityEnabledWarehouses, destType) && t == whutils.ToProviderCase(destType, whutils.IdentityMergeRulesTable) {
+			if _, ok := schemaForUpload[whutils.ToProviderCase(destType, whutils.IdentityMappingsTable)]; !ok {
+				tables = append(tables, whutils.ToProviderCase(destType, whutils.IdentityMappingsTable))
 			}
 		}
 	}
@@ -391,9 +397,9 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		  row_number = 1
 		  AND table_name != '%[3]s';
 	`,
-		warehouseutils.WarehouseLoadFilesTable,
+		whutils.WarehouseLoadFilesTable,
 		misc.IntArrayToString(job.stagingFileIDs, ","),
-		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
+		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	)
 	if err := job.dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
 		job.logger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -424,8 +430,6 @@ func (job *UploadJob) run() (err error) {
 		ch <- struct{}{}
 	}()
 
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
 	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadLastExecAtField, Value: job.now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
@@ -435,7 +439,7 @@ func (job *UploadJob) run() (err error) {
 	}
 
 	whManager := job.whManager
-	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+	whManager.SetConnectionTimeout(whutils.GetConnectionTimeout(
 		job.warehouse.Type, job.warehouse.Destination.ID,
 	))
 	err = whManager.Setup(job.ctx, job.warehouse, job)
@@ -458,8 +462,6 @@ func (job *UploadJob) run() (err error) {
 	if hasSchemaChanged {
 		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
-
-	job.schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -582,6 +584,8 @@ func (job *UploadJob) run() (err error) {
 			wg.Add(3)
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				var succeededUserTableCount int
 				for _, userTable := range userTables {
 					if _, ok := currentJobSucceededTables[userTable]; ok {
@@ -589,19 +593,19 @@ func (job *UploadJob) run() (err error) {
 					}
 				}
 				if succeededUserTableCount >= len(userTables) {
-					wg.Done()
 					return
 				}
-				err = job.exportUserTables(loadFilesTableMap)
+				err := job.exportUserTables(loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				var succeededIdentityTableCount int
 				for _, identityTable := range identityTables {
 					if _, ok := currentJobSucceededTables[identityTable]; ok {
@@ -609,30 +613,29 @@ func (job *UploadJob) run() (err error) {
 					}
 				}
 				if succeededIdentityTableCount >= len(identityTables) {
-					wg.Done()
 					return
 				}
-				err = job.exportIdentities()
+				err := job.exportIdentities()
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			rruntime.GoForWarehouse(func() {
+				defer wg.Done()
+
 				specialTables := make([]string, 0, len(userTables)+len(identityTables))
 				specialTables = append(specialTables, userTables...)
 				specialTables = append(specialTables, identityTables...)
 
-				err = job.exportRegularTables(specialTables, loadFilesTableMap)
+				err := job.exportRegularTables(specialTables, loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
 					loadErrorLock.Unlock()
 				}
-				wg.Done()
 			})
 
 			wg.Wait()
@@ -732,7 +735,7 @@ func (job *UploadJob) exportUserTables(loadFilesTableMap map[tableNameT]bool) (e
 func (job *UploadJob) exportIdentities() (err error) {
 	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
-	if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+	if whutils.IDResolutionEnabled() && slices.Contains(whutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			defer job.stats.identityTablesLoadTime.RecordDuration()()
 
@@ -829,7 +832,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 	return idr.Resolve(job.ctx)
 }
 
-func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiff) (err error) {
+func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.TableSchemaDiff) (err error) {
 	job.logger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	if tableSchemaDiff.TableToBeCreated {
 		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
@@ -929,7 +932,7 @@ func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string,
 func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) (err error) {
 	job.logger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
-	var columnsToAdd []warehouseutils.ColumnInfo
+	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
 		// columns present in unrecognized schema should be skipped
 		if unrecognizedSchema, ok := job.schemaHandle.unrecognizedSchemaInWarehouse[tName]; ok {
@@ -938,7 +941,7 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 			}
 		}
 
-		columnsToAdd = append(columnsToAdd, warehouseutils.ColumnInfo{Name: columnName, Type: columnType})
+		columnsToAdd = append(columnsToAdd, whutils.ColumnInfo{Name: columnName, Type: columnType})
 	}
 
 	chunks := lo.Chunk(columnsToAdd, job.config.columnsBatchSize)
@@ -979,7 +982,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	wg.Add(len(uploadSchema))
 
 	var alteredSchemaInAtLeastOneTable atomic.Bool
-	loadChan := make(chan struct{}, parallelLoads)
+	concurrencyGuard := make(chan struct{}, parallelLoads)
 
 	var (
 		err                       error
@@ -1007,30 +1010,30 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		}
 		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
-			wg.Done()
 			if slices.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
 				status := model.TableUploadExported
 				_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
 					Status: &status,
 				})
 			}
+			wg.Done()
 			continue
 		}
-		tName := tableName
-		loadChan <- struct{}{}
+		tableName := tableName
+		concurrencyGuard <- struct{}{}
 		rruntime.GoForWarehouse(func() {
-			alteredSchema, err := job.loadTable(tName)
+			alteredSchema, err := job.loadTable(tableName)
 			if alteredSchema {
 				alteredSchemaInAtLeastOneTable.Store(true)
 			}
-
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
 				loadErrorLock.Unlock()
 			}
+
+			<-concurrencyGuard
 			wg.Done()
-			<-loadChan
 		})
 	}
 	wg.Wait()
@@ -1044,7 +1047,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tName)
+	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, job.GetTableSchemaInUpload(tName))
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1114,8 +1117,8 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		return alteredSchema, fmt.Errorf("get table upload: %w", errEventCount)
 	}
 
-	job.guageStat(`post_load_table_rows_estimate`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(tableUpload.TotalEvents))
-	job.guageStat(`post_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(loadTableStat.RowsInserted))
+	job.guageStat(`post_load_table_rows_estimate`, whutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(tableUpload.TotalEvents))
+	job.guageStat(`post_load_table_rows`, whutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(loadTableStat.RowsInserted))
 
 	status = model.TableUploadExported
 	_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tName, repo.TableUploadSetOptions{
@@ -1140,7 +1143,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	)
 
 	switch job.warehouse.Type {
-	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
+	case whutils.S3Datalake, whutils.GCSDatalake, whutils.AzureDatalake:
 		return
 	}
 
@@ -1150,7 +1153,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []warehouseutils.Tag{
+	tags := []whutils.Tag{
 		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
@@ -1283,7 +1286,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tableName)
+		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, job.GetTableSchemaInUpload(tableName))
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1402,14 +1405,14 @@ func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
 		WHERE
 		  id = %d;
 `,
-		warehouseutils.WarehouseUploadsTable,
+		whutils.WarehouseUploadsTable,
 		job.upload.ID,
 	)
 	err := job.dbHandle.QueryRowContext(job.ctx, sqlStatement).Scan(&firstTiming)
 	if err != nil {
 		return
 	}
-	_, timing = warehouseutils.TimingFromJSONString(firstTiming)
+	_, timing = whutils.TimingFromJSONString(firstTiming)
 	return timing
 }
 
@@ -1459,16 +1462,6 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	return job.setUploadColumns(uploadColumnOpts)
 }
 
-// SetUploadSchema
-func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
-	marshalledSchema, err := json.Marshal(consolidatedSchema)
-	if err != nil {
-		panic(err)
-	}
-	job.upload.UploadSchema = consolidatedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
-}
-
 // Set LoadFileIDs
 func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error {
 	if startLoadFileID > endLoadFileID {
@@ -1510,9 +1503,8 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 		SET
 		  %s
 		WHERE
-		  id = $1;
-`,
-		warehouseutils.WarehouseUploadsTable,
+		  id = $1;`,
+		whutils.WarehouseUploadsTable,
 		columns,
 	)
 
@@ -1633,7 +1625,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
-	serializedErr = warehouseutils.SanitizeJSON(serializedErr)
+	serializedErr = whutils.SanitizeJSON(serializedErr)
 
 	uploadColumns := []UploadColumn{
 		{Column: "status", Value: state},
@@ -1651,7 +1643,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 	inputCount, _ := repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
-		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
+		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
 
 	failCount := inputCount - outputCount
@@ -1718,11 +1710,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []warehouseutils.Tag{errorTags}
+		tags := []whutils.Tag{errorTags}
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, warehouseutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
+			tags = append(tags, whutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 			destCredentialsValidations = &valid
 		}
 
@@ -1774,7 +1766,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 			AND id <= $4
 		  );
 `,
-		warehouseutils.WarehouseLoadFilesTable,
+		whutils.WarehouseLoadFilesTable,
 	) /**/
 	sqlStatementArgs := []interface{}{
 		sourceID,
@@ -1810,8 +1802,8 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 
 func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (bool, error) {
 	var (
-		mergeRulesTable = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
-		mappingsTable   = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
+		mergeRulesTable = whutils.ToProviderCase(job.warehouse.Type, whutils.IdentityMergeRulesTable)
+		mappingsTable   = whutils.ToProviderCase(job.warehouse.Type, whutils.IdentityMappingsTable)
 		tu              model.TableUpload
 		err             error
 	)
@@ -1831,7 +1823,7 @@ func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (
 	return true, nil
 }
 
-func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehouseutils.GetLoadFilesOptions) (loadFiles []warehouseutils.LoadFile) {
+func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.GetLoadFilesOptions) (loadFiles []whutils.LoadFile) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1867,7 +1859,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 		  row_number = 1
 		%[4]s;
 `,
-		warehouseutils.WarehouseLoadFilesTable,
+		whutils.WarehouseLoadFilesTable,
 		misc.IntArrayToString(job.stagingFileIDs, ","),
 		tableFilterSQL,
 		limitSQL,
@@ -1887,7 +1879,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 		if err != nil {
 			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		loadFiles = append(loadFiles, warehouseutils.LoadFile{
+		loadFiles = append(loadFiles, whutils.LoadFile{
 			Location: location,
 			Metadata: metadata,
 		})
@@ -1899,7 +1891,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 }
 
 func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName string) (location string, err error) {
-	locations := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName, Limit: 1})
+	locations := job.GetLoadFilesMetadata(ctx, whutils.GetLoadFilesOptions{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`no load file found for table:%s`, tableName)
 	}
@@ -1918,20 +1910,20 @@ func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSch
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
-	return job.schemaHandle.uploadSchema[tableName]
+	return job.upload.UploadSchema[tableName]
 }
 
-func (job *UploadJob) GetSingleLoadFile(ctx context.Context, tableName string) (warehouseutils.LoadFile, error) {
+func (job *UploadJob) GetSingleLoadFile(ctx context.Context, tableName string) (whutils.LoadFile, error) {
 	var (
 		tableUpload model.TableUpload
 		err         error
 	)
 
 	if tableUpload, err = job.tableUploadsRepo.GetByUploadIDAndTableName(ctx, job.upload.ID, tableName); err != nil {
-		return warehouseutils.LoadFile{}, fmt.Errorf("get single load file: %w", err)
+		return whutils.LoadFile{}, fmt.Errorf("get single load file: %w", err)
 	}
 
-	return warehouseutils.LoadFile{Location: tableUpload.Location}, err
+	return whutils.LoadFile{Location: tableUpload.Location}, err
 }
 
 func (job *UploadJob) ShouldOnDedupUseNewRecord() bool {
@@ -2064,7 +2056,7 @@ func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
-	if !slices.Contains(warehouseutils.TimeWindowDestinations, job.upload.DestinationType) {
+	if !slices.Contains(whutils.TimeWindowDestinations, job.upload.DestinationType) {
 		return nil
 	}
 
@@ -2079,7 +2071,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 
 	// Refresh partitions if exists
 	for tableName := range job.upload.UploadSchema {
-		loadFiles := job.GetLoadFilesMetadata(job.ctx, warehouseutils.GetLoadFilesOptions{
+		loadFiles := job.GetLoadFilesMetadata(job.ctx, whutils.GetLoadFilesOptions{
 			Table:   tableName,
 			StartID: loadFileStartID,
 			EndID:   loadFileEndID,

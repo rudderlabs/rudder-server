@@ -240,18 +240,19 @@ func (uploads *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, 
 }
 
 func (uploads *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
-	row := uploads.db.QueryRowContext(ctx, `
-		SELECT
+	row := uploads.db.QueryRowContext(ctx,
+		`SELECT
 		`+uploadColumns+`
 		FROM
 		`+uploadsTableName+`
 		WHERE
-			id = $1
-	`, id)
+			id = $1`,
+		id,
+	)
 
 	var upload model.Upload
 	err := scanUpload(row.Scan, &upload)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Upload{}, model.ErrUploadNotFound
 	}
 	if err != nil {

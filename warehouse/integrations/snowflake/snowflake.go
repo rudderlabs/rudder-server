@@ -661,20 +661,22 @@ func (sf *Snowflake) copyInto(
 		return item == "rows_loaded"
 	})
 	if !found {
+		sf.logger.Warnw("rows_loaded column not found in copy command result", "columns", columns)
 		return 0, nil
 	}
 
-	resultSet := make([]interface{}, len(columns))
-	resultSetPtrs := make([]interface{}, len(columns))
-	for i := 0; i < len(columns); i++ {
-		resultSetPtrs[i] = &resultSet[i]
-	}
-	rowsInserted := int64(0)
-
+	var rowsInserted int64
 	for rows.Next() {
+		resultSet := make([]any, len(columns))
+		resultSetPtrs := make([]any, len(columns))
+		for i := 0; i < len(columns); i++ {
+			resultSetPtrs[i] = &resultSet[i]
+		}
+
 		if err := rows.Scan(resultSetPtrs...); err != nil {
 			return 0, fmt.Errorf("scanning row: %w", err)
 		}
+
 		countString, ok := resultSet[index].(string)
 		if !ok {
 			return 0, fmt.Errorf("count not a string")

@@ -298,6 +298,7 @@ func RecordsFromWarehouse(
 		for i := 0; i < len(columns); i++ {
 			resultSetPtrs[i] = &resultSet[i]
 		}
+
 		require.NoError(t, rows.Scan(resultSetPtrs...))
 
 		records = append(records, lo.Map(resultSet, func(item any, index int) string {
