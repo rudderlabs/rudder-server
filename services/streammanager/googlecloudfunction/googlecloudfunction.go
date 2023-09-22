@@ -85,9 +85,9 @@ func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUr
 	return ts.Token()
 }
 
-func getFunctionConfig(fnConfig Config, client GoogleCloudFunctionClient) (*Config, error) {
+func getFunctionConfig(fnConfig Config) *Config {
 	fnConfig.TokenTimeout = config.GetDurationVar(55, time.Minute, "google.cloudfunction.token.timeout")
-	return &fnConfig, nil
+	return &fnConfig
 }
 
 // NewProducer creates a producer based on destination config
@@ -103,11 +103,7 @@ func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*Googl
 	}
 
 	client := &GoogleCloudFunctionClientImpl{}
-	destConfig, err := getFunctionConfig(fnConfig, client)
-	if err != nil {
-		pkgLogger.Errorf("Error in getting config: %w", err)
-		return nil, err
-	}
+	destConfig := getFunctionConfig(fnConfig)
 
 	return &GoogleCloudFunctionProducer{
 		httpClient: &http.Client{Timeout: 1 * time.Second},
