@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/bigquery"
 
@@ -64,7 +65,12 @@ func RecordsFromWarehouse(
 		require.NoError(t, err)
 
 		records = append(records, lo.Map(row, func(item bigquery.Value, index int) string {
-			return cast.ToString(item)
+			switch item.(type) {
+			case time.Time:
+				return item.(time.Time).Format(time.RFC3339)
+			default:
+				return cast.ToString(item)
+			}
 		}))
 	}
 

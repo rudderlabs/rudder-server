@@ -387,7 +387,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		namespace := "load_table_stats_test_namespace"
 		tableName := "load_table_stats_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -421,7 +421,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 				  received_at,
 				  test_bool,
 				  test_datetime,
-				  test_float,
+				  cast(test_float AS float) AS test_float,
 				  test_int,
 				  test_string
 				FROM
@@ -434,27 +434,27 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		)
 
 		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.7500000000", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.7500000000", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 		})
 	})
 	t.Run("schema does not exists", func(t *testing.T) {
 		namespace := "schema_not_exists_test_namespace"
 		tableName := "schema_not_exists_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -473,7 +473,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		namespace := "table_not_exists_test_namespace"
 		tableName := "table_not_exists_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -520,7 +520,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		namespace := "mismatch_columns_test_namespace"
 		tableName := "mismatch_columns_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -545,7 +545,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		namespace := "mismatch_schema_test_namespace"
 		tableName := "mismatch_schema_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -574,7 +574,7 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 				  received_at,
 				  test_bool,
 				  test_datetime,
-				  test_float,
+				  cast(test_float AS float) AS test_float,
 				  test_int,
 				  test_string
 				FROM
@@ -587,26 +587,26 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 		)
 		require.Equal(t, records, [][]string{
 			{"6734e5db-f918-4efe-1421-872f66e235c5", "", "", "", "", "", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "2022-12-15 06:53:49.64 +0000 +0000", "126.7500000000", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "2022-12-15 06:53:49.64 +0000 +0000", "125.7500000000", "125", "hello-world"},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
 			{"7274e5db-f918-4efe-1454-872f66e235c5", "", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "125.7500000000", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "", "2022-12-15 06:53:49.64 +0000 +0000", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 		})
 	})
 	t.Run("discards", func(t *testing.T) {
 		namespace := "discards_test_namespace"
 		tableName := warehouseutils.DiscardsTable
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.csv.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
@@ -645,12 +645,12 @@ func TestAzureSynapse_LoadTable(t *testing.T) {
 			),
 		)
 		require.Equal(t, records, [][]string{
-			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 +0000", "1", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
-			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 +0000", "2", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
-			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 +0000", "3", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
-			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 +0000", "4", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
-			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 +0000", "5", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
-			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 +0000", "6", "test_table", "2022-12-15 06:53:49.64 +0000 +0000"},
+			{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
 		})
 	})
 }

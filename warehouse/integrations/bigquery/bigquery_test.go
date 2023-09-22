@@ -522,16 +522,10 @@ func TestBigQuery_LoadTable(t *testing.T) {
 		return mockUploader
 	}
 
-	//partitionedTable := func(tableName string) string {
-	//	partitionDate := time.Now().Format("2006-01-02")
-	//	partitionedTable := fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
-	//	return partitionedTable
-	//}
-
 	t.Run("schema does not exists", func(t *testing.T) {
 		tableName := "schema_not_exists_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -552,7 +546,7 @@ func TestBigQuery_LoadTable(t *testing.T) {
 	t.Run("table does not exists", func(t *testing.T) {
 		tableName := "table_not_exists_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -576,7 +570,7 @@ func TestBigQuery_LoadTable(t *testing.T) {
 	t.Run("load table stats", func(t *testing.T) {
 		tableName := "load_table_stats_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -628,26 +622,26 @@ func TestBigQuery_LoadTable(t *testing.T) {
 		)
 
 		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 		})
 	})
 	t.Run("append", func(t *testing.T) {
 		tableName := "append_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -701,34 +695,34 @@ func TestBigQuery_LoadTable(t *testing.T) {
 		)
 
 		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 		})
 	})
 	t.Run("load file does not exists", func(t *testing.T) {
@@ -761,7 +755,7 @@ func TestBigQuery_LoadTable(t *testing.T) {
 	t.Run("mismatch in number of columns", func(t *testing.T) {
 		tableName := "mismatch_columns_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-columns.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -788,7 +782,7 @@ func TestBigQuery_LoadTable(t *testing.T) {
 	t.Run("mismatch in schema", func(t *testing.T) {
 		tableName := "mismatch_schema_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/mismatch-schema.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -815,7 +809,7 @@ func TestBigQuery_LoadTable(t *testing.T) {
 	t.Run("discards", func(t *testing.T) {
 		tableName := warehouseutils.DiscardsTable
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/discards.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -856,18 +850,18 @@ func TestBigQuery_LoadTable(t *testing.T) {
 			),
 		)
 		require.Equal(t, records, [][]string{
-			{"context_screen_density", "125.75", "2022-12-15 06:53:49.64 +0000 UTC", "1", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
-			{"context_screen_density", "125", "2022-12-15 06:53:49.64 +0000 UTC", "2", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
-			{"context_screen_density", "true", "2022-12-15 06:53:49.64 +0000 UTC", "3", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
-			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "4", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
-			{"context_screen_density", "hello-world", "2022-12-15 06:53:49.64 +0000 UTC", "5", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
-			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15 06:53:49.64 +0000 UTC", "6", "test_table", "2022-12-15 06:53:49.64 +0000 UTC"},
+			{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
+			{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
 		})
 	})
 	t.Run("custom partition", func(t *testing.T) {
 		tableName := "partition_test_table"
 
-		uploadOutput := testhelper.Upload(t, fm, "../testdata/load.json.gz", tableName)
+		uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
 
 		loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 		mockUploader := uploader(
@@ -920,20 +914,20 @@ func TestBigQuery_LoadTable(t *testing.T) {
 		)
 
 		require.Equal(t, records, [][]string{
-			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
-			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "2022-12-15 06:53:49.64 +0000 UTC", "126.75", "126", "hello-world"},
-			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "false", "", "", "", ""},
-			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "2022-12-15 06:53:49.64 +0000 UTC", "125.75", "125", "hello-world"},
-			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "125", ""},
-			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", ""},
-			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "125.75", "", ""},
-			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "true", "", "", "", ""},
-			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "", "", "", "hello-world"},
-			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15 06:53:49.64 +0000 UTC", "", "2022-12-15 06:53:49.64 +0000 UTC", "", "", ""},
+			{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+			{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+			{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+			{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+			{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+			{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+			{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+			{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+			{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 		})
 	})
 }
