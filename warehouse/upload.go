@@ -1934,12 +1934,8 @@ func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName s
 	return locations[0].Location, nil
 }
 
-// GetSchemaInWarehouse TODO check usage of this function
-func (job *UploadJob) GetSchemaInWarehouse() (schema model.Schema) {
-	if job.schemaHandle == nil {
-		return
-	}
-	return job.schemaHandle.GetSchemaInWarehouse()
+func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
+	return job.schemaHandle.IsWarehouseSchemaEmpty()
 }
 
 // GetTableSchemaInWarehouse TODO check usage of this function

@@ -892,7 +892,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 }
 
 func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
-	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+	if !ch.Uploader.IsWarehouseSchemaEmpty() {
 		return nil
 	}
 

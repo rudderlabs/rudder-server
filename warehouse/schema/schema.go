@@ -402,10 +402,6 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 	return diff
 }
 
-func (sh *Schema) GetSchemaInWarehouse() model.Schema {
-	return sh.schemaInWarehouse
-}
-
 func (sh *Schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
 	return sh.schemaInWarehouse[tableName]
 }
