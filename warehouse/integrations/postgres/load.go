@@ -80,6 +80,7 @@ func (pg *Postgres) loadTable(
 		logfield.TableName, tableName,
 		logfield.LoadTableStrategy, pg.loadTableStrategy(),
 	)
+	log.Infow("started loading")
 
 	log.Infow("setting search path")
 	searchPathStmt := fmt.Sprintf(`
@@ -105,7 +106,7 @@ func (pg *Postgres) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating temporary table")
+	log.Infow("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
 		ON COMMIT PRESERVE ROWS;
@@ -122,7 +123,7 @@ func (pg *Postgres) loadTable(
 		tableSchemaInUpload,
 	)
 
-	log.Infow("copying data into staging table")
+	log.Infow("creating prepared stmt for loading data")
 	copyInStmt := pq.CopyIn(stagingTableName, sortedColumnKeys...)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {
@@ -143,13 +144,16 @@ func (pg *Postgres) loadTable(
 		return nil, "", fmt.Errorf("executing copyIn statement: %w", err)
 	}
 
-	log.Infow("deleting from load table")
-	rowsDeleted, err := pg.deleteFromLoadTable(
-		ctx, txn, tableName,
-		stagingTableName,
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("delete from load table: %w", err)
+	var rowsDeleted int64
+	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+		log.Infow("deleting from load table")
+		rowsDeleted, err = pg.deleteFromLoadTable(
+			ctx, txn, tableName,
+			stagingTableName,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("delete from load table: %w", err)
+		}
 	}
 
 	log.Infow("inserting into load table")
@@ -197,11 +201,10 @@ func (pg *Postgres) loadDataIntoStagingTable(
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("reading file %s: %w", fileName, err)
+			return fmt.Errorf("reading file: %w", err)
 		}
 		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: actual count: %d, expected count: %d",
-				fileName,
+			return fmt.Errorf("mismatch in number of columns: actual count: %d, expected count: %d",
 				len(record),
 				len(sortedColumnKeys),
 			)
@@ -237,10 +240,6 @@ func (pg *Postgres) deleteFromLoadTable(
 	tableName string,
 	stagingTableName string,
 ) (int64, error) {
-	if slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
-		return 0, nil
-	}
-
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column

@@ -110,19 +110,18 @@ type UploadJob struct {
 	pendingTableUploadsError error
 
 	config struct {
-		refreshPartitionBatchSize                        int
-		retryTimeWindow                                  time.Duration
-		minRetryAttempts                                 int
-		disableAlter                                     bool
-		minUploadBackoff                                 time.Duration
-		maxUploadBackoff                                 time.Duration
-		alwaysRegenerateAllLoadFiles                     bool
-		reportingEnabled                                 bool
-		disableGenerateTableLoadCountMetricsWorkspaceIDs []string
-		maxParallelLoadsWorkspaceIDs                     map[string]interface{}
-		columnsBatchSize                                 int
-		longRunningUploadStatThresholdInMin              time.Duration
-		tableCountQueryTimeout                           time.Duration
+		refreshPartitionBatchSize           int
+		retryTimeWindow                     time.Duration
+		minRetryAttempts                    int
+		disableAlter                        bool
+		minUploadBackoff                    time.Duration
+		maxUploadBackoff                    time.Duration
+		alwaysRegenerateAllLoadFiles        bool
+		reportingEnabled                    bool
+		maxParallelLoadsWorkspaceIDs        map[string]interface{}
+		columnsBatchSize                    int
+		longRunningUploadStatThresholdInMin time.Duration
+		tableCountQueryTimeout              time.Duration
 	}
 
 	errorHandler    ErrorHandler

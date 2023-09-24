@@ -167,7 +167,7 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 	)
 }
 
-func tableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
+func getTableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
 	return lo.MapToSlice(tableSchema, func(columnName, columnType string) *bigquery.FieldSchema {
 		return &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]}
 	})
@@ -181,7 +181,7 @@ func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err erro
 
 func (bq *BigQuery) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) error {
 	bq.logger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
-	sampleSchema := tableSchema(columnMap)
+	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
@@ -513,11 +513,11 @@ func (bq *BigQuery) loadTableByMerge(
 		tableNameLimit,
 	)
 
-	sampleSchema := tableSchema(bq.uploader.GetTableSchemaInWarehouse(
+	sampleSchema := getTableSchema(bq.uploader.GetTableSchemaInWarehouse(
 		tableName,
 	))
 
-	log.Infow("creating temporary table")
+	log.Infow("creating staging table")
 	err := bq.db.Dataset(bq.namespace).Table(stagingTableName).Create(ctx, &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},

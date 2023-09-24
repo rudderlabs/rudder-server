@@ -473,7 +473,7 @@ func (rs *Redshift) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating temporary table")
+	log.Infow("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
 		rs.Namespace,
 		stagingTableName,
@@ -502,22 +502,25 @@ func (rs *Redshift) loadTable(
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
 
-	log.Infow("copying data into staging table")
+	log.Infow("loading data into staging table")
 	err = rs.copyIntoLoadTable(
 		ctx, txn, stagingTableName,
 		manifestLocation, strKeys,
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("copy into: %w", err)
+		return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 	}
 
-	log.Infow("deleting from load table")
-	rowsDeleted, err := rs.deleteFromLoadTable(
-		ctx, txn, tableName,
-		stagingTableName, tableSchemaAfterUpload,
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("delete from load table: %w", err)
+	var rowsDeleted int64
+	if slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID) {
+		log.Infow("deleting from load table")
+		rowsDeleted, err = rs.deleteFromLoadTable(
+			ctx, txn, tableName,
+			stagingTableName, tableSchemaAfterUpload,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("delete from load table: %w", err)
+		}
 	}
 
 	log.Infow("inserting into load table")
@@ -626,10 +629,6 @@ func (rs *Redshift) deleteFromLoadTable(
 	stagingTableName string,
 	tableSchemaAfterUpload model.TableSchema,
 ) (int64, error) {
-	if slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID) {
-		return 0, nil
-	}
-
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
