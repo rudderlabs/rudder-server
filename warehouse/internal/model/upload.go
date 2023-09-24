@@ -37,8 +37,9 @@ const (
 )
 
 var (
-	ErrUploadNotFound = errors.New("upload not found")
-	ErrNoUploadsFound = errors.New("no uploads found")
+	ErrUploadNotFound      = errors.New("upload not found")
+	ErrFailedBatchNotFound = errors.New("failed batch not found")
+	ErrNoUploadsFound      = errors.New("no uploads found")
 )
 
 type Upload struct {
@@ -105,7 +106,7 @@ type Matcher interface {
 	MatchString(string) bool
 }
 
-type JobErrorType string
+type JobErrorType = string
 
 type JobError struct {
 	Type   JobErrorType

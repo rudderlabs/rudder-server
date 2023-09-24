@@ -1724,3 +1724,655 @@ func TestUploads_GetLatestUploadInfo(t *testing.T) {
 		require.Nil(t, latestInfo)
 	})
 }
+
+func TestUploads_FailedBatchOperations(t *testing.T) {
+	const (
+		sourceID      = "source_id"
+		destinationID = "destination_id"
+		workspaceID   = "workspace_id"
+	)
+
+	ctx := context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	intervalInHours := time.Since(now.Add(-12*time.Hour)) / time.Hour
+
+	prepareData := func(
+		db *sqlmiddleware.DB,
+		status string,
+		error json.RawMessage,
+		errorCategory string,
+		generateTableUploads bool,
+		timings model.Timings,
+	) {
+		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+		repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+
+		var stagingFiles []*model.StagingFile
+		for i := 0; i < 10; i++ {
+			stagingFile := &model.StagingFile{
+				WorkspaceID:   workspaceID,
+				Location:      "s3://bucket/path/to/file",
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+				TotalEvents:   60,
+				FirstEventAt:  now,
+				LastEventAt:   now,
+			}
+			stagingFileWithSchema := stagingFile.WithSchema(json.RawMessage(`{"type": "object"}`))
+
+			stagingID, err := repoStaging.Insert(ctx, &stagingFileWithSchema)
+			require.NoError(t, err)
+
+			stagingFile.ID = stagingID
+			stagingFiles = append(stagingFiles, stagingFile)
+		}
+
+		uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: warehouseutils.POSTGRES,
+			Status:          status,
+			UploadSchema:    model.Schema{},
+			WorkspaceID:     workspaceID,
+		}, stagingFiles)
+		require.NoError(t, err)
+
+		if len(error) > 0 {
+			errorJson, err := json.Marshal(error)
+			require.NoError(t, err)
+
+			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
+				errorJson,
+				errorCategory,
+				uploadID,
+			)
+			require.NoError(t, err)
+		}
+		if len(timings) > 0 {
+			timingsJson, err := json.Marshal(timings)
+			require.NoError(t, err)
+
+			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET timings = $1 WHERE id = $2`,
+				timingsJson,
+				uploadID,
+			)
+			require.NoError(t, err)
+		}
+
+		if generateTableUploads {
+			tables := []string{
+				"table_1",
+				"table_2",
+				"table_3",
+				"table_4",
+				"table_5",
+				warehouseutils.DiscardsTable,
+				warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.DiscardsTable),
+			}
+			err = repoTableUpload.Insert(ctx, uploadID, tables)
+			require.NoError(t, err)
+
+			totalEvents := int64(100)
+			for _, table := range tables {
+				err = repoTableUpload.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
+					TotalEvents: &totalEvents,
+					Status:      &status,
+				})
+				require.NoError(t, err)
+			}
+		}
+	}
+
+	t.Run("Failed Batches", func(t *testing.T) {
+		t.Run("empty", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+			}{
+				{
+					status:              model.Waiting,
+					prepareTableUploads: false,
+				},
+				{
+					status:              model.ExportedData,
+					prepareTableUploads: true,
+				},
+				{
+					status:              model.ExportedData,
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, model.Timings{},
+				)
+			}
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Empty(t, failedBatches)
+
+			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Zero(t, retries)
+		})
+		t.Run("pick from table uploads", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+			}{
+				{
+					status:              "created_remote_schema_failed",
+					error:               json.RawMessage(`{"message": "error"}`),
+					prepareTableUploads: true,
+					errorCategory:       "default",
+				},
+				{
+					status:              "aborted",
+					error:               json.RawMessage(`{"message": "error"}`),
+					prepareTableUploads: true,
+					errorCategory:       model.PermissionError,
+				},
+				{
+					status:              "exported_data",
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, model.Timings{},
+				)
+			}
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+				{
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Count:         500,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+				{
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Count:         500,
+					LastHappened:  now.UTC(),
+					Status:        model.Aborted,
+				},
+			})
+
+			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Equal(t, retries, int64(2))
+		})
+		t.Run("pick from staging files", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+			}{
+				{
+					status:        "internal_processing_failed",
+					error:         json.RawMessage(`{"message": "error"}`),
+					errorCategory: "default",
+				},
+				{
+					status:        "generating_load_files_failed",
+					error:         json.RawMessage(`{"message": "error"}`),
+					errorCategory: model.PermissionError,
+				},
+				{
+					status:              "exported_data",
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, model.Timings{},
+				)
+			}
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+				{
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Count:         600,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+				{
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Count:         600,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+			})
+
+			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Equal(t, retries, int64(2))
+		})
+		t.Run("overlapping batches between table uploads and staging files", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+			}{
+				{
+					status:        "internal_processing_failed",
+					error:         json.RawMessage(`{"message": "error"}`),
+					errorCategory: "default",
+				},
+				{
+					status:        "generating_load_files_failed",
+					error:         json.RawMessage(`{"message": "error"}`),
+					errorCategory: "default",
+				},
+				{
+					status:              "exporting_data_failed",
+					error:               json.RawMessage(`{"message": "error"}`),
+					errorCategory:       model.PermissionError,
+					prepareTableUploads: true,
+				},
+				{
+					status:              "aborted",
+					error:               json.RawMessage(`{"message": "error"}`),
+					prepareTableUploads: true,
+					errorCategory:       model.ResourceNotFoundError,
+				},
+				{
+					status:              "exported_data",
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, model.Timings{},
+				)
+			}
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+				{
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Count:         1200,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+				{
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Count:         500,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+				{
+					ErrorCategory: model.ResourceNotFoundError,
+					SourceID:      sourceID,
+					Count:         500,
+					LastHappened:  now.UTC(),
+					Status:        model.Aborted,
+				},
+			})
+
+			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Equal(t, retries, int64(4))
+		})
+		t.Run("non-overlapping batches between table uploads and staging files", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+			}{
+				{
+					status:        "generating_load_files_failed",
+					error:         json.RawMessage(`{"message": "error"}`),
+					errorCategory: model.PermissionError,
+				},
+				{
+					status:              "exporting_data_failed",
+					error:               json.RawMessage(`{"message": "error"}`),
+					errorCategory:       model.PermissionError,
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, model.Timings{},
+				)
+			}
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+				{
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Count:         1100,
+					LastHappened:  now.UTC(),
+					Status:        model.Failed,
+				},
+			})
+
+			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				IntervalInHrs: int64(intervalInHours),
+			})
+			require.NoError(t, err)
+			require.Equal(t, retries, int64(2))
+		})
+		t.Run("context cancelled", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{})
+			require.ErrorIs(t, err, context.Canceled)
+			require.Empty(t, failedBatches)
+		})
+	})
+	t.Run("Failed Batch", func(t *testing.T) {
+		t.Run("filters", func(t *testing.T) {
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+				timings             model.Timings
+			}{
+				{
+					status:        "internal_processing_failed",
+					error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					errorCategory: "default",
+					timings: model.Timings{
+						{
+							"internal_processing_failed": now,
+						},
+					},
+				},
+				{
+					status:        "generating_load_files_failed",
+					error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					errorCategory: "default",
+					timings: model.Timings{
+						{
+							"generating_load_files_failed": now,
+						},
+					},
+				},
+				{
+					status:              "exporting_data_failed",
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					errorCategory:       model.PermissionError,
+					prepareTableUploads: true,
+					timings: model.Timings{
+						{
+							"exporting_data_failed": now,
+						},
+					},
+				},
+				{
+					status:              "aborted",
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					prepareTableUploads: true,
+					errorCategory:       model.ResourceNotFoundError,
+					timings: model.Timings{
+						{
+							"exporting_data_failed": now,
+						},
+					},
+				},
+				{
+					status:              "exported_data",
+					prepareTableUploads: true,
+				},
+			}
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			for _, entry := range entries {
+				prepareData(
+					db,
+					entry.status, entry.error, entry.errorCategory,
+					entry.prepareTableUploads, entry.timings,
+				)
+			}
+
+			t.Run("errorCategory=default, status=failed", func(t *testing.T) {
+				failedBatchDetails, err := repoUpload.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Status:        model.Failed,
+				})
+				require.NoError(t, err)
+				require.EqualValues(t, failedBatchDetails, &model.RetrieveFailedBatchResponse{
+					Error:         "some error",
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Status:        model.Failed,
+					LastHappened:  now.UTC(),
+				})
+
+				retries, err := repoUpload.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: "default",
+					SourceID:      sourceID,
+					Status:        model.Failed,
+				})
+				require.NoError(t, err)
+				require.Equal(t, retries, int64(2))
+			})
+			t.Run("errorCategory=resourceNotFound, status=aborted", func(t *testing.T) {
+				failedBatchDetails, err := repoUpload.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: model.ResourceNotFoundError,
+					SourceID:      sourceID,
+					Status:        model.Aborted,
+				})
+				require.NoError(t, err)
+				require.EqualValues(t, failedBatchDetails, &model.RetrieveFailedBatchResponse{
+					Error:         "some error",
+					ErrorCategory: model.ResourceNotFoundError,
+					SourceID:      sourceID,
+					Status:        model.Aborted,
+					LastHappened:  now.UTC(),
+				})
+
+				retries, err := repoUpload.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: model.ResourceNotFoundError,
+					SourceID:      sourceID,
+					Status:        model.Aborted,
+				})
+				require.NoError(t, err)
+				require.Equal(t, retries, int64(1))
+			})
+			t.Run("errorCategory=permissionError, status=failed", func(t *testing.T) {
+				failedBatchDetails, err := repoUpload.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Status:        model.Failed,
+				})
+				require.NoError(t, err)
+				require.EqualValues(t, failedBatchDetails, &model.RetrieveFailedBatchResponse{
+					Error:         "some error",
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Status:        model.Failed,
+					LastHappened:  now.UTC(),
+				})
+
+				retries, err := repoUpload.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: model.PermissionError,
+					SourceID:      sourceID,
+					Status:        model.Failed,
+				})
+				require.NoError(t, err)
+				require.Equal(t, retries, int64(1))
+			})
+			t.Run("errorCategory=invalid, status=invalid", func(t *testing.T) {
+				failedBatchDetails, err := repoUpload.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: "invalid",
+					SourceID:      sourceID,
+					Status:        "invalid",
+				})
+				require.ErrorIs(t, err, model.ErrFailedBatchNotFound)
+				require.Nil(t, failedBatchDetails)
+
+				retries, err := repoUpload.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{
+					DestinationID: destinationID,
+					WorkspaceID:   workspaceID,
+					IntervalInHrs: int64(intervalInHours),
+					ErrorCategory: "invalid",
+					SourceID:      sourceID,
+					Status:        "invalid",
+				})
+				require.NoError(t, err)
+				require.Zero(t, retries)
+			})
+		})
+		t.Run("context cancelled", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			db := setupDB(t)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			failedBatchDetails, err := repoUpload.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{})
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, failedBatchDetails)
+
+			retries, err := repoUpload.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{})
+			require.ErrorIs(t, err, context.Canceled)
+			require.Zero(t, retries)
+		})
+	})
+}

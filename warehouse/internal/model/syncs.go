@@ -34,21 +34,21 @@ type TableUploadInfo struct {
 	Duration   int64
 }
 
-type FailedBatchRequest struct {
+type RetrieveFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	IntervalInHrs int64
 }
 
-type FailedBatchResponse struct {
+type RetrieveFailedBatchesResponse struct {
 	ErrorCategory string
 	SourceID      string
 	Count         int64
-	LastHappened  time.Duration
+	LastHappened  time.Time
 	Status        string
 }
 
-type FailedBatchDetailsRequest struct {
+type RetrieveFailedBatchRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	IntervalInHrs int64
@@ -57,27 +57,18 @@ type FailedBatchDetailsRequest struct {
 	Status        string
 }
 
-type FailedBatchDetailsResponse struct {
-	ErrorCategory string
-	SourceID      string
-	Count         int64
-	LastHappened  time.Duration
-	Status        string
+type RetrieveFailedBatchResponse struct {
 	Error         string
+	ErrorCategory string
+	SourceID      string
+	Status        string
+	LastHappened  time.Time
 }
 
 type RetryFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	IntervalInHrs int64
-}
-
-type RetryFailedBatchesResponse struct {
-	ErrorCategory string
-	SourceID      string
-	Count         int64
-	LastHappened  time.Duration
-	Status        string
 }
 
 type RetryFailedBatchRequest struct {
@@ -87,13 +78,4 @@ type RetryFailedBatchRequest struct {
 	ErrorCategory string
 	SourceID      string
 	Status        string
-}
-
-type RetryFailedBatchResponse struct {
-	ErrorCategory string
-	SourceID      string
-	Count         int64
-	LastHappened  time.Duration
-	Status        string
-	Error         string
 }

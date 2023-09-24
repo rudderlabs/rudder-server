@@ -15,6 +15,8 @@ const (
 	Namespace                  = "namespace"
 	Schema                     = "schema"
 	Error                      = "error"
+	Status                     = "status"
+	ErrorCategory              = "errorCategory"
 	TableName                  = "tableName"
 	ColumnName                 = "columnName"
 	ColumnType                 = "columnType"
