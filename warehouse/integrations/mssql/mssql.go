@@ -292,7 +292,7 @@ func (ms *MSSQL) loadTable(
 	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
 	// - Refer to Microsoft's documentation on temporary tables at
 	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
-	log.Infow("creating temporary table")
+	log.Infow("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		SELECT
 		  TOP 0 * INTO %[1]s.%[2]s
@@ -326,7 +326,7 @@ func (ms *MSSQL) loadTable(
 		tableSchemaInUpload,
 	)
 
-	log.Infow("copying data into staging table")
+	log.Infow("creating prepared stmt for loading data")
 	copyInStmt := mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
 		sortedColumnKeys...,
 	)
@@ -391,7 +391,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 ) error {
 	gzipFile, err := os.Open(fileName)
 	if err != nil {
-		return fmt.Errorf("opening file %s: %w", fileName, err)
+		return fmt.Errorf("opening file: %w", err)
 	}
 	defer func() {
 		_ = gzipFile.Close()
@@ -399,7 +399,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 
 	gzipReader, err := gzip.NewReader(gzipFile)
 	if err != nil {
-		return fmt.Errorf("reading file %s: %w", fileName, err)
+		return fmt.Errorf("reading file: %w", err)
 	}
 	defer func() {
 		_ = gzipReader.Close()
@@ -414,11 +414,10 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("reading file %s: %w", fileName, err)
+			return fmt.Errorf("reading file: %w", err)
 		}
 		if len(sortedColumnKeys) != len(record) {
-			return fmt.Errorf("mismatch in number of columns for file %s: actual count: %d, expected count: %d",
-				fileName,
+			return fmt.Errorf("mismatch in number of columns: actual count: %d, expected count: %d",
 				len(record),
 				len(sortedColumnKeys),
 			)

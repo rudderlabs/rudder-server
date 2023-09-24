@@ -590,7 +590,7 @@ func (d *Deltalake) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating temporary table")
+	log.Infow("creating staging table")
 	if err := d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
