@@ -3,6 +3,7 @@ package testhelper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -45,7 +46,9 @@ func IsBQTestCredentialsAvailable() bool {
 	return err == nil
 }
 
-func RecordsFromWarehouse(
+// RetrieveRecordsFromWarehouse retrieves records from the warehouse based on the given query.
+// It returns a slice of slices, where each inner slice represents a record's values.
+func RetrieveRecordsFromWarehouse(
 	t testing.TB,
 	db *bigquery.Client,
 	query string,
@@ -58,8 +61,7 @@ func RecordsFromWarehouse(
 	var records [][]string
 	for {
 		var row []bigquery.Value
-		err = it.Next(&row)
-		if err == iterator.Done {
+		if errors.Is(it.Next(&row), iterator.Done) {
 			break
 		}
 		require.NoError(t, err)
@@ -73,6 +75,5 @@ func RecordsFromWarehouse(
 			}
 		}))
 	}
-
 	return records
 }

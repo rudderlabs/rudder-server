@@ -400,9 +400,9 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Load Table", func(t *testing.T) {
 		const (
-			sourceID        = "test_source-id"
-			destinationID   = "test_destination-id"
-			workspaceID     = "test_workspace-id"
+			sourceID        = "test_source_id"
+			destinationID   = "test_destination_id"
+			workspaceID     = "test_workspace_id"
 			destinationType = warehouseutils.BQ
 		)
 
@@ -586,7 +586,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(0))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-			records := bqHelper.RecordsFromWarehouse(t, db,
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -603,7 +603,7 @@ func TestIntegration(t *testing.T) {
 					fmt.Sprintf("`%s`.`%s`", namespace, tableName),
 				),
 			)
-			require.Equal(t, records, testhelper.LoadRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("append", func(t *testing.T) {
 			tableName := "append_test_table"
@@ -638,7 +638,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := bqHelper.RecordsFromWarehouse(t, db,
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -660,13 +660,13 @@ func TestIntegration(t *testing.T) {
 					time.Now().Add(+24*time.Hour).Format("2006-01-02"),
 				),
 			)
-			require.Equal(t, records, testhelper.AppendRecords())
+			require.Equal(t, records, testhelper.AppendTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
 			loadFiles := []warehouseutils.LoadFile{{
-				Location: "https://storage.googleapis.com/project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz",
+				Location: "https://storage.googleapis.com/project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz",
 			}}
 			mockUploader := uploader(
 				t, loadFiles, tableName, schemaInUpload,
@@ -686,7 +686,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Access Denied: File gs://project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz")
+			require.ErrorContains(t, err, "Access Denied: File gs://project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz")
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {
@@ -771,7 +771,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := bqHelper.RecordsFromWarehouse(t, db,
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  column_name,
@@ -786,7 +786,7 @@ func TestIntegration(t *testing.T) {
 					fmt.Sprintf("`%s`.`%s`", namespace, tableName),
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardRecords())
+			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
 		t.Run("custom partition", func(t *testing.T) {
 			tableName := "partition_test_table"
@@ -820,7 +820,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := bqHelper.RecordsFromWarehouse(t, db,
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -842,7 +842,126 @@ func TestIntegration(t *testing.T) {
 					time.Now().Add(+24*time.Hour).Format("2006-01-02"),
 				),
 			)
-			require.Equal(t, records, testhelper.LoadRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
+		})
+	})
+
+	t.Run("IsEmpty", func(t *testing.T) {
+		namespace := testhelper.RandSchema(warehouseutils.BQ)
+
+		credentials, err := bqHelper.GetBQTestCredentials()
+		require.NoError(t, err)
+
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
+		ctx := context.Background()
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.BQ,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
+		mockUploader := mockuploader.NewMockUploader(ctrl)
+		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+
+		insertRecords := func(t testing.TB, tableName string) {
+			t.Helper()
+
+			query := db.Query(`
+				INSERT INTO ` + tableName + ` (
+				  id, received_at, test_bool, test_datetime,
+				  test_float, test_int, test_string
+				)
+				VALUES
+				  (
+					'1', '2020-01-01 00:00:00', true,
+					'2020-01-01 00:00:00', 1.1, 1, 'test'
+				  );`,
+			)
+			job, err := query.Run(ctx)
+			require.NoError(t, err)
+
+			status, err := job.Wait(ctx)
+			require.NoError(t, err)
+			require.Nil(t, status.Err())
+		}
+
+		t.Run("tables doesn't exists", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.True(t, isEmpty)
+		})
+		t.Run("tables empty", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			tables := []string{"pages", "screens"}
+			for _, table := range tables {
+				err = bq.CreateTable(ctx, table, model.TableSchema{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+				})
+				require.NoError(t, err)
+			}
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.True(t, isEmpty)
+		})
+		t.Run("tables not empty", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			insertRecords(t, fmt.Sprintf("`%s`.`%s`", namespace, "pages"))
+			insertRecords(t, fmt.Sprintf("`%s`.`%s`", namespace, "screens"))
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.False(t, isEmpty)
 		})
 	})
 }

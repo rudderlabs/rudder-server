@@ -264,7 +264,7 @@ func UploadLoadFile(
 	defer func() { _ = f.Close() }()
 
 	loadObjectFolder := "rudder-warehouse-load-objects"
-	sourceID := "test_source-id"
+	sourceID := "test_source_id"
 
 	uploadOutput, err := fm.Upload(
 		context.Background(), f, loadObjectFolder,
@@ -275,7 +275,9 @@ func UploadLoadFile(
 	return uploadOutput
 }
 
-func RecordsFromWarehouse(
+// RetrieveRecordsFromWarehouse retrieves records from the warehouse based on the given query.
+// It returns a slice of slices, where each inner slice represents a record's values.
+func RetrieveRecordsFromWarehouse(
 	t testing.TB,
 	db *sql.DB,
 	query string,
@@ -299,7 +301,8 @@ func RecordsFromWarehouse(
 			resultSetPtrs[i] = &resultSet[i]
 		}
 
-		require.NoError(t, rows.Scan(resultSetPtrs...))
+		err = rows.Scan(resultSetPtrs...)
+		require.NoError(t, err)
 
 		records = append(records, lo.Map(resultSet, func(item any, index int) string {
 			switch item := item.(type) {
@@ -313,7 +316,9 @@ func RecordsFromWarehouse(
 	return records
 }
 
-func LoadRecords() [][]string {
+// SampleTestRecords returns a set of records for testing default loading scenarios.
+// It uses testdata/load.* as the source of data.
+func SampleTestRecords() [][]string {
 	return [][]string{
 		{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
 		{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
@@ -332,7 +337,9 @@ func LoadRecords() [][]string {
 	}
 }
 
-func AppendRecords() [][]string {
+// AppendTestRecords returns a set of records for testing append scenarios.
+// It uses testdata/load.* twice as the source of data.
+func AppendTestRecords() [][]string {
 	return [][]string{
 		{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
 		{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
@@ -365,7 +372,9 @@ func AppendRecords() [][]string {
 	}
 }
 
-func DiscardRecords() [][]string {
+// DiscardTestRecords returns a set of records for testing rudder discards.
+// It uses testdata/discards.* as the source of data.
+func DiscardTestRecords() [][]string {
 	return [][]string{
 		{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
 		{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
@@ -376,7 +385,9 @@ func DiscardRecords() [][]string {
 	}
 }
 
-func DedupRecords() [][]string {
+// DedupTestRecords returns a set of records for testing deduplication scenarios.
+// It uses testdata/dedup.* as the source of data.
+func DedupTestRecords() [][]string {
 	return [][]string{
 		{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "521", ""},
 		{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "75.125", "", ""},
@@ -395,7 +406,9 @@ func DedupRecords() [][]string {
 	}
 }
 
-func MismatchSchemaRecords() [][]string {
+// MismatchSchemaTestRecords returns a set of records for testing schema mismatch scenarios.
+// It uses testdata/mismatch-schema.* as the source of data.
+func MismatchSchemaTestRecords() [][]string {
 	return [][]string{
 		{"6734e5db-f918-4efe-1421-872f66e235c5", "", "", "", "", "", ""},
 		{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},

@@ -197,8 +197,8 @@ func consolidateStagingSchemas(consolidatedSchema model.Schema, schemas []model.
 				consolidatedSchema[tableName] = model.TableSchema{}
 			}
 			for columnName, columnType := range columnMap {
-				if model.SchemaType(columnType) == model.TextDataType {
-					consolidatedSchema[tableName][columnName] = string(model.TextDataType)
+				if columnType == model.TextDataType {
+					consolidatedSchema[tableName][columnName] = model.TextDataType
 					continue
 				}
 
@@ -225,8 +225,8 @@ func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema
 			}
 
 			var (
-				consolidatedSchemaType = model.SchemaType(consolidatedSchema[tableName][columnName])
-				warehouseSchemaType    = model.SchemaType(columnType)
+				consolidatedSchemaType = consolidatedSchema[tableName][columnName]
+				warehouseSchemaType    = columnType
 			)
 
 			if consolidatedSchemaType == model.TextDataType && warehouseSchemaType == model.StringDataType {

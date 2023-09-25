@@ -356,9 +356,9 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Load Table", func(t *testing.T) {
 		const (
-			sourceID        = "test_source-id"
-			destinationID   = "test_destination-id"
-			workspaceID     = "test_workspace-id"
+			sourceID        = "test_source_id"
+			destinationID   = "test_destination_id"
+			workspaceID     = "test_workspace_id"
 			destinationType = warehouseutils.RS
 		)
 
@@ -545,7 +545,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(0))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-			records := testhelper.RecordsFromWarehouse(t, rs.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -563,13 +563,13 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.LoadRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
 			loadFiles := []warehouseutils.LoadFile{{
-				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
+				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
 			}}
 			mockUploader := uploader(
 				t, loadFiles, tableName, schemaInUpload,
@@ -674,7 +674,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RecordsFromWarehouse(t, rs.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  column_name,
@@ -690,7 +690,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardRecords())
+			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
 		t.Run("dedup", func(t *testing.T) {
 			tableName := "dedup_test_table"
@@ -730,7 +730,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RecordsFromWarehouse(t, rs.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -748,7 +748,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.AppendRecords())
+			require.Equal(t, records, testhelper.AppendTestRecords())
 		})
 	})
 }

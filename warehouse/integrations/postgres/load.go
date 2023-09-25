@@ -83,9 +83,7 @@ func (pg *Postgres) loadTable(
 	log.Infow("started loading")
 
 	log.Infow("setting search path")
-	searchPathStmt := fmt.Sprintf(`
-		SET search_path TO %q;
-`,
+	searchPathStmt := fmt.Sprintf(`SET search_path TO %q;`,
 		pg.Namespace,
 	)
 	if _, err := txn.ExecContext(ctx, searchPathStmt); err != nil {

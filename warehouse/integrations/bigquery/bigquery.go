@@ -915,7 +915,10 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 	return delSuccess
 }
 
-func (bq *BigQuery) IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+func (bq *BigQuery) IsEmpty(
+	ctx context.Context,
+	warehouse model.Warehouse,
+) (bool, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(project, bq.warehouse))
@@ -932,9 +935,11 @@ func (bq *BigQuery) IsEmpty(ctx context.Context, warehouse model.Warehouse) (boo
 
 	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, tableName := range tables {
-		if exists, err := bq.tableExists(ctx, tableName); err != nil {
+		exists, err := bq.tableExists(ctx, tableName)
+		if err != nil {
 			return false, fmt.Errorf("checking if table %s exists: %v", tableName, err)
-		} else if !exists {
+		}
+		if !exists {
 			continue
 		}
 

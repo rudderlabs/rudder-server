@@ -463,9 +463,9 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Load Table", func(t *testing.T) {
 		const (
-			sourceID      = "test_source-id"
-			destinationID = "test_destination-id"
-			workspaceID   = "test_workspace-id"
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
 		)
 
 		warehouseModel := func(namespace string) model.Warehouse {
@@ -595,7 +595,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(0))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-			records := testhelper.RecordsFromWarehouse(t, pg.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -613,7 +613,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.LoadRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("schema does not exists", func(t *testing.T) {
 			namespace := "schema_not_exists_test_namespace"
@@ -661,7 +661,7 @@ func TestIntegration(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
 			loadFiles := []warehouseutils.LoadFile{{
-				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
+				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
 			}}
 			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
@@ -757,7 +757,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RecordsFromWarehouse(t, pg.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  column_name,
@@ -773,7 +773,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardRecords())
+			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
 	})
 }

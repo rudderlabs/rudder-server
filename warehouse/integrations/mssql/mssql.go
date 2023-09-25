@@ -18,6 +18,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -47,9 +49,9 @@ const (
 )
 
 const (
-	mssqlStringLengthLimit = 512
-	provider               = warehouseutils.MSSQL
-	tableNameLimit         = 127
+	stringLengthLimit = 512
+	provider          = warehouseutils.MSSQL
+	tableNameLimit    = 127
 )
 
 var rudderDataTypesMapToMssql = map[string]string{
@@ -210,11 +212,10 @@ func (ms *MSSQL) connectionCredentials() *credentials {
 }
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
-	var arr []string
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
-	}
-	return strings.Join(arr, ",")
+	formattedColumns := lo.MapToSlice(columns, func(name, dataType string) string {
+		return fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType])
+	})
+	return strings.Join(formattedColumns, ",")
 }
 
 func (*MSSQL) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
@@ -445,7 +446,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 				continue
 			}
 
-			processedVal, err := ms.processColumnValue(
+			processedVal, err := ms.ProcessColumnValue(
 				value.(string),
 				valueType,
 			)
@@ -470,29 +471,29 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *MSSQL) processColumnValue(
+func (as *MSSQL) ProcessColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
 	switch valueType {
-	case string(model.IntDataType):
+	case model.IntDataType:
 		return strconv.Atoi(value)
-	case string(model.FloatDataType):
+	case model.FloatDataType:
 		return strconv.ParseFloat(value, 64)
-	case string(model.DateTimeDataType):
+	case model.DateTimeDataType:
 		return time.Parse(time.RFC3339, value)
-	case string(model.BooleanDataType):
+	case model.BooleanDataType:
 		return strconv.ParseBool(value)
-	case string(model.StringDataType):
-		if len(value) > mssqlStringLengthLimit {
-			value = value[:mssqlStringLengthLimit]
+	case model.StringDataType:
+		if len(value) > stringLengthLimit {
+			value = value[:stringLengthLimit]
 		}
 		if !hasDiacritics(value) {
 			return value, nil
 		} else {
 			byteArr := str2ucs2(value)
-			if len(byteArr) > mssqlStringLengthLimit {
-				byteArr = byteArr[:mssqlStringLengthLimit]
+			if len(byteArr) > stringLengthLimit {
+				byteArr = byteArr[:stringLengthLimit]
 			}
 			return byteArr, nil
 		}

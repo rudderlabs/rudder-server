@@ -267,8 +267,8 @@ func TestHandleSchemaChange(t *testing.T) {
 			t.Parallel()
 
 			newColumnVal, convError := handleSchemaChange(
-				model.SchemaType(tc.existingDatatype),
-				model.SchemaType(tc.currentDataType),
+				tc.existingDatatype,
+				tc.currentDataType,
 				tc.value,
 			)
 			require.Equal(t, newColumnVal, tc.newColumnVal)

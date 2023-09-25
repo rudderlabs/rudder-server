@@ -3,7 +3,7 @@ package model
 import "time"
 
 type (
-	SchemaType  string
+	SchemaType  = string
 	TableSchema map[string]string
 	Schema      map[string]TableSchema
 )

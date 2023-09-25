@@ -50,14 +50,14 @@ const (
 )
 
 const (
-	mssqlStringLengthLimit = 512
-	provider               = warehouseutils.AzureSynapse
-	tableNameLimit         = 127
+	stringLengthLimit = 512
+	provider          = warehouseutils.AzureSynapse
+	tableNameLimit    = 127
 )
 
 var errorsMappings []model.JobError
 
-var rudderDataTypesMapToMssql = map[string]string{
+var rudderDataTypesMapToAzureSynapse = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
 	"string":   "varchar(512)",
@@ -66,7 +66,7 @@ var rudderDataTypesMapToMssql = map[string]string{
 	"json":     "jsonb",
 }
 
-var mssqlDataTypesMapToRudder = map[string]string{
+var azureSynapseDataTypesMapToRudder = map[string]string{
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
@@ -207,11 +207,10 @@ func (as *AzureSynapse) connectionCredentials() *credentials {
 }
 
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
-	var arr []string
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
-	}
-	return strings.Join(arr, ",")
+	formattedColumns := lo.MapToSlice(columns, func(name, dataType string) string {
+		return fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToAzureSynapse[dataType])
+	})
+	return strings.Join(formattedColumns, ",")
 }
 
 func (*AzureSynapse) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
@@ -418,7 +417,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 				continue
 			}
 
-			processedVal, err := as.processColumnValue(
+			processedVal, err := as.ProcessColumnValue(
 				value.(string),
 				valueType,
 			)
@@ -459,29 +458,29 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *AzureSynapse) processColumnValue(
+func (as *AzureSynapse) ProcessColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
 	switch valueType {
-	case string(model.IntDataType):
+	case model.IntDataType:
 		return strconv.Atoi(value)
-	case string(model.FloatDataType):
+	case model.FloatDataType:
 		return strconv.ParseFloat(value, 64)
-	case string(model.DateTimeDataType):
+	case model.DateTimeDataType:
 		return time.Parse(time.RFC3339, value)
-	case string(model.BooleanDataType):
+	case model.BooleanDataType:
 		return strconv.ParseBool(value)
-	case string(model.StringDataType):
-		if len(value) > mssqlStringLengthLimit {
-			value = value[:mssqlStringLengthLimit]
+	case model.StringDataType:
+		if len(value) > stringLengthLimit {
+			value = value[:stringLengthLimit]
 		}
 		if !hasDiacritics(value) {
 			return value, nil
 		} else {
 			byteArr := str2ucs2(value)
-			if len(byteArr) > mssqlStringLengthLimit {
-				byteArr = byteArr[:mssqlStringLengthLimit]
+			if len(byteArr) > stringLengthLimit {
+				byteArr = byteArr[:stringLengthLimit]
 			}
 			return byteArr, nil
 		}
@@ -796,7 +795,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 	))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToAzureSynapse[columnInfo.Type]))
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
@@ -924,7 +923,7 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Sc
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(model.TableSchema)
 		}
-		if datatype, ok := mssqlDataTypesMapToRudder[columnType]; ok {
+		if datatype, ok := azureSynapseDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tableName]; !ok {

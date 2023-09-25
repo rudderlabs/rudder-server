@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,9 +298,9 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Load Table", func(t *testing.T) {
 		const (
-			sourceID      = "test_source-id"
-			destinationID = "test_destination-id"
-			workspaceID   = "test_workspace-id"
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
 		)
 
 		warehouseModel := func(namespace string) model.Warehouse {
@@ -426,7 +427,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(0))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-			records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -444,7 +445,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.LoadRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("schema does not exists", func(t *testing.T) {
 			namespace := "schema_not_exists_test_namespace"
@@ -492,7 +493,7 @@ func TestIntegration(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
 			loadFiles := []warehouseutils.LoadFile{{
-				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source-id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
+				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
 			}}
 			mockUploader := uploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
@@ -563,7 +564,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -581,7 +582,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.MismatchSchemaRecords())
+			require.Equal(t, records, testhelper.MismatchSchemaTestRecords())
 		})
 		t.Run("discards", func(t *testing.T) {
 			namespace := "discards_test_namespace"
@@ -609,7 +610,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RecordsFromWarehouse(t, ms.DB.DB,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  column_name,
@@ -625,7 +626,98 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardRecords())
+			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
 	})
+}
+
+func TestMSSQL_ProcessColumnValue(t *testing.T) {
+	testCases := []struct {
+		name          string
+		data          string
+		dataType      string
+		expectedValue interface{}
+		wantError     bool
+	}{
+		{
+			name:      "invalid integer",
+			data:      "1.01",
+			dataType:  model.IntDataType,
+			wantError: true,
+		},
+		{
+			name:          "valid integer",
+			data:          "1",
+			dataType:      model.IntDataType,
+			expectedValue: int64(1),
+		},
+		{
+			name:      "invalid float",
+			data:      "test",
+			dataType:  model.FloatDataType,
+			wantError: true,
+		},
+		{
+			name:          "valid float",
+			data:          "1.01",
+			dataType:      model.FloatDataType,
+			expectedValue: float64(1.01),
+		},
+		{
+			name:      "invalid boolean",
+			data:      "test",
+			dataType:  model.BooleanDataType,
+			wantError: true,
+		},
+		{
+			name:          "valid boolean",
+			data:          "true",
+			dataType:      model.BooleanDataType,
+			expectedValue: true,
+		},
+		{
+			name:      "invalid datetime",
+			data:      "1",
+			dataType:  model.DateTimeDataType,
+			wantError: true,
+		},
+		{
+			name:          "valid datetime",
+			data:          "2020-01-01T00:00:00Z",
+			dataType:      model.DateTimeDataType,
+			expectedValue: time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:          "valid string",
+			data:          "test",
+			dataType:      model.StringDataType,
+			expectedValue: "test",
+		},
+		{
+			name:          "valid string exceeding max length",
+			data:          strings.Repeat("test", 200),
+			dataType:      model.StringDataType,
+			expectedValue: strings.Repeat("test", 128),
+		},
+		{
+			name:          "valid string with diacritics",
+			data:          "tést",
+			dataType:      model.StringDataType,
+			expectedValue: []byte{0x74, 0x0, 0xe9, 0x0, 0x73, 0x0, 0x74, 0x0},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+
+			value, err := ms.ProcessColumnValue(tc.data, tc.dataType)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.EqualValues(t, tc.expectedValue, value)
+			require.NoError(t, err)
+		})
+	}
 }
