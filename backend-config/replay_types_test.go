@@ -21,11 +21,12 @@ func TestApplyReplayConfig(t *testing.T) {
 					Destinations: []DestinationT{
 						{
 							ID:                 "d-1",
-							IsProcessorEnabled: true,
+							RevisionID:         "rev-1",
+							IsProcessorEnabled: false,
 						},
 						{
-							ID:                 "d-2",
-							IsProcessorEnabled: false,
+							ID:         "d-2",
+							RevisionID: "rev-2",
 						},
 					},
 				},
@@ -61,7 +62,8 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, map[string]interface{}{}, c.Sources[1].Config)
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
-		require.True(t, c.Sources[1].Destinations[0].IsProcessorEnabled)
+		require.Equal(t, true, c.Sources[1].Destinations[0].IsProcessorEnabled)
+		require.Equal(t, "rev-1", c.Sources[1].Destinations[0].RevisionID)
 	})
 
 	t.Run("Invalid Replay Config", func(t *testing.T) {
