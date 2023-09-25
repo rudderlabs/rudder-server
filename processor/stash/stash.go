@@ -312,56 +312,20 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				PayloadSizeLimit:              st.adaptiveLimit(st.config.payloadLimit.Load()),
 			}
 
-			if config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition after successful rollout of sinle query
-				toProcess, err := misc.QueryWithRetriesAndNotify(ctx, st.config.jobdDBQueryRequestTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-					return st.errorDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
-				}, st.sendQueryRetryStats)
-				if err != nil {
-					if ctx.Err() != nil { // we are shutting down
-						close(st.errProcessQ)
-						return //nolint:nilerr
-					}
-					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
-					panic(err)
+			toProcess, err := misc.QueryWithRetriesAndNotify(ctx, st.config.jobdDBQueryRequestTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
+				return st.errorDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
+			}, st.sendQueryRetryStats)
+			if err != nil {
+				if ctx.Err() != nil { // we are shutting down
+					close(st.errProcessQ)
+					return //nolint:nilerr
 				}
-
-				combinedList = toProcess.Jobs
-				limitReached = toProcess.LimitsReached
-			} else {
-				toRetry, err := misc.QueryWithRetriesAndNotify(ctx, st.config.jobdDBQueryRequestTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-					return st.errorDB.GetFailed(ctx, queryParams)
-				}, st.sendQueryRetryStats)
-				if err != nil {
-					if ctx.Err() != nil { // we are shutting down
-						close(st.errProcessQ)
-						return //nolint:nilerr
-					}
-					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
-					panic(err)
-				}
-
-				combinedList = toRetry.Jobs
-				limitReached = toRetry.LimitsReached
-				if !toRetry.LimitsReached {
-					queryParams.JobsLimit -= len(toRetry.Jobs)
-					if queryParams.PayloadSizeLimit > 0 {
-						queryParams.PayloadSizeLimit -= toRetry.PayloadSize
-					}
-					unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, st.config.jobdDBQueryRequestTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-						return st.errorDB.GetUnprocessed(ctx, queryParams)
-					}, st.sendQueryRetryStats)
-					if err != nil {
-						if ctx.Err() != nil { // we are shutting down
-							close(st.errProcessQ)
-							return
-						}
-						st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
-						panic(err)
-					}
-					combinedList = append(combinedList, unprocessed.Jobs...)
-					limitReached = unprocessed.LimitsReached
-				}
+				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
+				panic(err)
 			}
+
+			combinedList = toProcess.Jobs
+			limitReached = toProcess.LimitsReached
 
 			st.statErrDBR.Since(start)
 
@@ -410,10 +374,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			err := misc.RetryWithNotify(context.Background(), st.config.jobsDBCommandTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+			if err := misc.RetryWithNotify(context.Background(), st.config.jobsDBCommandTimeout.Load(), st.config.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
-			}, st.sendRetryUpdateStats)
-			if err != nil {
+			}, st.sendRetryUpdateStats); err != nil {
 				if ctx.Err() != nil { // we are shutting down
 					return //nolint:nilerr
 				}
