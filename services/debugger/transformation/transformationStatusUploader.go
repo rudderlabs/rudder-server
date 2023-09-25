@@ -70,8 +70,8 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 type Handle struct {
 	configBackendURL               string
 	started                        bool
-	disableTransformationUploads   *config.Reloadable[bool]
-	limitEventsInMemory            *config.Reloadable[int]
+	disableTransformationUploads   misc.ValueLoader[bool]
+	limitEventsInMemory            misc.ValueLoader[int]
 	uploader                       debugger.Uploader[*TransformStatusT]
 	log                            logger.Logger
 	transformationCacheMap         cache.Cache[TransformationStatusT]
@@ -370,8 +370,9 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 	}
 
 	for _, failedEvent := range tStatus.FailedEvents {
-		if len(failedEvent.Metadata.MessageIDs) > 0 {
-			for _, msgID := range failedEvent.Metadata.MessageIDs {
+		messageIDs := failedEvent.Metadata.GetMessagesIDs()
+		for _, msgID := range messageIDs {
+			if msgID != "" {
 				reportedMessageIDs[msgID] = struct{}{}
 				singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
 				eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
@@ -390,24 +391,6 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 					IsError:          true,
 				})
 			}
-		} else if failedEvent.Metadata.MessageID != "" {
-			reportedMessageIDs[failedEvent.Metadata.MessageID] = struct{}{}
-			singularEventWithReceivedAt := tStatus.EventsByMessageID[failedEvent.Metadata.MessageID]
-			eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-			eventAfter := &EventsAfterTransform{
-				Error:      failedEvent.Error,
-				ReceivedAt: time.Now().Format(misc.RFC3339Milli),
-				StatusCode: failedEvent.StatusCode,
-			}
-
-			h.RecordTransformationStatus(&TransformStatusT{
-				TransformationID: tID,
-				SourceID:         tStatus.SourceID,
-				DestinationID:    tStatus.DestID,
-				EventBefore:      eventBefore,
-				EventsAfter:      eventAfter,
-				IsError:          true,
-			})
 		}
 	}
 

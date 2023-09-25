@@ -22,7 +22,7 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
 	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
-	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess/w.handle.config().subJobSize+1))
+	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess.Load()/w.handle.config().subJobSize+1))
 	w.start()
 
 	return w
@@ -146,8 +146,8 @@ func (w *worker) Work() (worked bool) {
 
 		if !jobs.LimitsReached {
 			readLoopSleep := w.handle.config().readLoopSleep
-			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep {
-				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep-elapsed); err != nil {
+			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
+				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep.Load()-elapsed); err != nil {
 					return
 				}
 			}
@@ -160,7 +160,7 @@ func (w *worker) Work() (worked bool) {
 }
 
 func (w *worker) SleepDurations() (min, max time.Duration) {
-	return w.handle.config().readLoopSleep, w.handle.config().maxLoopSleep
+	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
 }
 
 // Stop stops the worker and waits until all its goroutines have stopped

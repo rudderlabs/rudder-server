@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -28,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -76,7 +78,7 @@ type router struct {
 	tenantManager    *multitenant.Manager
 	bcManager        *backendConfigManager
 	uploadJobFactory UploadJobFactory
-	notifier         *pgnotifier.PGNotifier
+	notifier         *notifier.Notifier
 
 	config struct {
 		noOfWorkers                       int
@@ -112,7 +114,7 @@ func newRouter(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
-	pgNotifier *pgnotifier.PGNotifier,
+	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
@@ -133,7 +135,7 @@ func newRouter(
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
 
-	r.notifier = pgNotifier
+	r.notifier = notifier
 	r.tenantManager = tenantManager
 	r.bcManager = bcManager
 	r.destType = destType
@@ -152,7 +154,7 @@ func newRouter(
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,
 		dbHandle:             r.dbHandle,
-		pgNotifier:           r.notifier,
+		notifier:             r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
@@ -396,12 +398,14 @@ loop:
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
+			var pqErr *pq.Error
 
+			switch true {
+			case errors.Is(err, context.Canceled),
+				errors.Is(err, context.DeadlineExceeded),
+				errors.As(err, &pqErr) && pqErr.Code == "57014":
 				break loop
-			} else {
+			default:
 				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
 
 				panic(err)

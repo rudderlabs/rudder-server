@@ -28,23 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	sourceTransformerURL       string
-	webhookBatchTimeout        time.Duration
-	maxTransformerProcess      int
-	maxWebhookBatchSize        int
-	webhookRetryMax            int
-	webhookRetryWaitMax        time.Duration
-	webhookRetryWaitMin        time.Duration
-	pkgLogger                  logger.Logger
-	sourceListForParsingParams []string
-)
-
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
-}
-
 type webhookT struct {
 	request     *http.Request
 	writer      http.ResponseWriter
@@ -66,6 +49,7 @@ type Webhook interface {
 }
 
 type HandleT struct {
+	logger        logger.Logger
 	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
@@ -78,6 +62,12 @@ type HandleT struct {
 	batchRequestsWg  sync.WaitGroup
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
+
+	config struct {
+		webhookBatchTimeout        misc.ValueLoader[time.Duration]
+		maxWebhookBatchSize        misc.ValueLoader[int]
+		sourceListForParsingParams []string
+	}
 }
 
 type webhookSourceStatT struct {
@@ -108,14 +98,14 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	if code != 0 {
 		statusCode = code
 	}
-	pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
+	webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
 }
 
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
-	pkgLogger.LogRequest(r)
+	webhook.logger.LogRequest(r)
 	atomic.AddUint64(&webhook.recvCount, 1)
 	sourceDefName := arctx.SourceDefName
 	var postFrom url.Values
@@ -218,7 +208,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode != 0 {
 			code = resp.StatusCode
 		}
-		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
+		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
 		ss.RequestFailed("error")
 		ss.Report(webhook.stats)
@@ -230,7 +220,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		payload = resp.OutputToSource.Body
 		w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
 	}
-	pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
+	webhook.logger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 	_, _ = w.Write(payload)
 	ss.RequestSucceeded()
 	ss.Report(webhook.stats)
@@ -238,7 +228,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
 	reqBuffer := make([]*webhookT, 0)
-	timeout := time.After(webhookBatchTimeout)
+	timeout := time.After(webhook.config.webhookBatchTimeout.Load())
 	for {
 		select {
 		case req, hasMore := <-requestQ:
@@ -253,13 +243,13 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 
 			// Append to request buffer
 			reqBuffer = append(reqBuffer, req)
-			if len(reqBuffer) == maxWebhookBatchSize {
+			if len(reqBuffer) == webhook.config.maxWebhookBatchSize.Load() {
 				breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
 				webhook.batchRequestQ <- &breq
 				reqBuffer = make([]*webhookT, 0)
 			}
 		case <-timeout:
-			timeout = time.After(webhookBatchTimeout)
+			timeout = time.After(webhook.config.webhookBatchTimeout.Load())
 			if len(reqBuffer) > 0 {
 				breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
 				webhook.batchRequestQ <- &breq
@@ -288,7 +278,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			if slices.Contains(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {
@@ -344,7 +334,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadWithSourceArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
 			reason = "in out mismatch"
-			pkgLogger.Errorf("%w", batchResponse.batchError)
+			bt.webhook.logger.Errorf("%w", batchResponse.batchError)
 		}
 		if batchResponse.batchError != nil {
 			if reason == "" {
@@ -354,7 +344,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
-			pkgLogger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
+			bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
 			bt.webhook.recordWebhookErrors(breq.sourceType, reason, webRequests, statusCode)
 
 			for _, req := range breq.batchRequest {
@@ -372,7 +362,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 			}
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
-				pkgLogger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
+				bt.webhook.logger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
 			}
 
 			continue
@@ -394,7 +384,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					reason = "enqueueInGateway failed"
 				}
 				if errMessage != "" {
-					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
+					bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
 					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadWithSourceArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
@@ -412,7 +402,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// Saving failures to errors jobsdb
 		if len(failedWebhookPayloads) > 0 {
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
-				pkgLogger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
+				bt.webhook.logger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
 			}
 		}
 	}
@@ -502,7 +492,7 @@ func (webhook *HandleT) printStats(ctx context.Context) {
 		if lastRecvCount != webhook.recvCount || lastAckCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
 			lastAckCount = webhook.ackCount
-			pkgLogger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+			webhook.logger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
 		}
 
 		select {

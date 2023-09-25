@@ -59,7 +59,7 @@ type workerJob struct {
 }
 
 func (w *worker) workLoop() {
-	timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout)
+	timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 	for {
 		select {
 		case message, hasMore := <-w.input:
@@ -89,7 +89,7 @@ func (w *worker) workLoop() {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
 			w.rt.destinationsMapMu.RLock()
-			abort, abortReason := routerutils.ToBeDrained(job, parameters.DestinationID, w.rt.reloadableConfig.toAbortDestinationIDs, w.rt.destinationsMap)
+			abort, abortReason := routerutils.ToBeDrained(job, parameters.DestinationID, w.rt.reloadableConfig.toAbortDestinationIDs.Load(), w.rt.destinationsMap)
 			abortTag := abortReason
 			w.rt.destinationsMapMu.RUnlock()
 			if !abort {
@@ -227,7 +227,7 @@ func (w *worker) workLoop() {
 					Destination: destination,
 				})
 
-				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker {
+				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
 					w.destinationJobs = w.batchTransform(w.routerJobs)
 					w.processDestinationJobs()
 				}
@@ -238,7 +238,7 @@ func (w *worker) workLoop() {
 					Destination: destination,
 				})
 
-				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker {
+				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
 					w.destinationJobs = w.transform(w.routerJobs)
 					w.processDestinationJobs()
 				}
@@ -252,7 +252,7 @@ func (w *worker) workLoop() {
 			}
 
 		case <-timeout:
-			timeout = time.After(w.rt.reloadableConfig.jobsBatchTimeout)
+			timeout = time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 
 			if len(w.routerJobs) > 0 {
 				if w.rt.enableBatching {
@@ -408,7 +408,7 @@ func (w *worker) processDestinationJobs() {
 				// In fact, the timeout should be more than the maximum latency allowed by these workers.
 				// Assuming 10s maximum latency
 				elapsed := time.Since(w.processingStartTime)
-				threshold := w.rt.reloadableConfig.routerTimeout
+				threshold := w.rt.reloadableConfig.routerTimeout.Load()
 				if elapsed > threshold {
 					respStatusCode = types.RouterTimedOutStatusCode
 					respBody = fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
@@ -441,7 +441,7 @@ func (w *worker) processDestinationJobs() {
 								w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
 								// transformer proxy start
 								errorAt = routerutils.ERROR_AT_DEL
-								if w.rt.reloadableConfig.transformerProxy {
+								if w.rt.reloadableConfig.transformerProxy.Load() {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, w.rt.destType, jobID)
 
@@ -499,7 +499,7 @@ func (w *worker) processDestinationJobs() {
 							}
 						}
 						respBody = strings.Join(respBodyArr, " ")
-						if w.rt.reloadableConfig.transformerProxy {
+						if w.rt.reloadableConfig.transformerProxy.Load() {
 							stats.Default.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
 								"destType":      w.rt.destType,
 								"destinationId": destinationJob.Destination.ID,
@@ -527,7 +527,7 @@ func (w *worker) processDestinationJobs() {
 
 				// Using response status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled
-				if !w.rt.reloadableConfig.transformerProxy && destinationResponseHandler != nil {
+				if !w.rt.reloadableConfig.transformerProxy.Load() && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
@@ -719,9 +719,9 @@ func (w *worker) allowRouterAbortedAlert(errorAt string) bool {
 	case routerutils.ERROR_AT_CUST:
 		return true
 	case routerutils.ERROR_AT_TF:
-		return !w.rt.reloadableConfig.skipRtAbortAlertForTransformation
+		return !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load()
 	case routerutils.ERROR_AT_DEL:
-		return !w.rt.reloadableConfig.transformerProxy && !w.rt.reloadableConfig.skipRtAbortAlertForDelivery
+		return !w.rt.reloadableConfig.transformerProxy.Load() && !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 	default:
 		return true
 	}
@@ -768,7 +768,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		// 1. if job failed and
 		// 2. if router job undergoes batching or dest transform.
 		if payload != nil && (w.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			if w.rt.reloadableConfig.savePayloadOnError {
+			if w.rt.reloadableConfig.savePayloadOnError.Load() {
 				status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
 			}
 		}
@@ -783,7 +783,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		} else {
 			status.JobState = jobsdb.Failed.State
 			if !w.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
-				status.RetryTime = status.ExecTime.Add(nextAttemptAfter(status.AttemptNum, w.rt.reloadableConfig.minRetryBackoff, w.rt.reloadableConfig.maxRetryBackoff))
+				status.RetryTime = status.ExecTime.Add(nextAttemptAfter(status.AttemptNum, w.rt.reloadableConfig.minRetryBackoff.Load(), w.rt.reloadableConfig.maxRetryBackoff.Load()))
 			}
 		}
 
@@ -807,7 +807,7 @@ func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destinat
 	var alert bool
 	alert = w.allowRouterAbortedAlert(errorAt)
 	if status.JobState == jobsdb.Succeeded.State {
-		alert = !w.rt.reloadableConfig.skipRtAbortAlertForTransformation || !w.rt.reloadableConfig.skipRtAbortAlertForDelivery
+		alert = !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load() || !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 		errorAt = ""
 	}
 	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
@@ -883,7 +883,7 @@ func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	}
 	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
 	return (respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
-		(time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.retryTimeWindow && status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForJob) // retry time window exceeded
+		(time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.retryTimeWindow.Load() && status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForJob.Load()) // retry time window exceeded
 }
 
 // AvailableSlots returns the number of available slots in the worker's input channel
@@ -915,7 +915,7 @@ func (w *worker) accept(wj workerJob) {
 
 func (w *worker) trackStuckDelivery() chan struct{} {
 	var d time.Duration
-	if w.rt.reloadableConfig.transformerProxy {
+	if w.rt.reloadableConfig.transformerProxy.Load() {
 		d = (w.rt.transformerTimeout + w.rt.netClientTimeout) * 2
 	} else {
 		d = w.rt.netClientTimeout * 2

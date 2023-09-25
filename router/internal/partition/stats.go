@@ -90,8 +90,15 @@ func (s *Stats) All() map[string]PartitionStats {
 	s.pstatsMu.RUnlock()
 
 	// highest throughput wins
-	slices.SortFunc(pstats, func(first, second PartitionStats) bool {
-		return first.NormalizedThroughput < second.NormalizedThroughput
+	slices.SortFunc(pstats, func(first, second PartitionStats) int {
+		a, b := first.NormalizedThroughput, second.NormalizedThroughput
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return +1
+		}
+		return 0
 	})
 
 	for i := range pstats {

@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // DeliveryStatusT is a structure to hold everything related to event delivery
@@ -38,7 +39,7 @@ type Handle struct {
 	configBackendURL                  string
 	log                               logger.Logger
 	started                           bool
-	disableEventDeliveryStatusUploads *config.Reloadable[bool]
+	disableEventDeliveryStatusUploads misc.ValueLoader[bool]
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
 	uploadEnabledDestinationIDs       map[string]bool

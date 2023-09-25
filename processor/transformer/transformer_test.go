@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/stretchr/testify/require"
@@ -151,6 +152,8 @@ func TestTransformer(t *testing.T) {
 		tr.guardConcurrency = make(chan struct{}, 200)
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+
+		tr.config.maxRetry = misc.SingleValueLoader(1)
 
 		tc := []struct {
 			batchSize   int
@@ -296,8 +299,8 @@ func TestTransformer(t *testing.T) {
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = client
-				tr.config.maxRetry = tc.retries
-				tr.config.failOnUserTransformTimeout = tc.failOnUserTransformTimeout
+				tr.config.maxRetry = misc.SingleValueLoader(tc.retries)
+				tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(tc.failOnUserTransformTimeout)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 				if tc.expectPanic {
@@ -350,7 +353,8 @@ func TestTransformer(t *testing.T) {
 		tr.logger = logger.NOP
 		tr.conf = config.Default
 		tr.client = srv.Client()
-		tr.config.maxRetry = 1
+		tr.config.maxRetry = misc.SingleValueLoader(1)
+		tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(false)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 		rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
@@ -470,8 +474,9 @@ func TestTransformer(t *testing.T) {
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = srv.Client()
-				tr.config.maxRetry = tc.retries
-				tr.config.failOnError = tc.failOnError
+				tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(false)
+				tr.config.maxRetry = misc.SingleValueLoader(tc.retries)
+				tr.config.failOnError = misc.SingleValueLoader(tc.failOnError)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 				if tc.expectPanic {
@@ -563,6 +568,7 @@ func TestTransformer(t *testing.T) {
 				tr.conf = config.Default
 				tr.logger = logger.NOP
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+				tr.config.maxRetry = misc.SingleValueLoader(1)
 
 				if tc.expectPanic {
 					require.Panics(t, func() {

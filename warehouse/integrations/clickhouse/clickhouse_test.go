@@ -630,6 +630,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 	workspaceID := "test_workspace_id"
 	namespace := "test_namespace"
 	provider := "MINIO"
+	timeout := 5 * time.Second
 
 	dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
 		"localhost", clickhousePort, databaseName, password, user,
@@ -653,16 +654,16 @@ func TestClickhouse_TestConnection(t *testing.T) {
 		},
 		{
 			name:    "Success",
-			timeout: warehouseutils.TestConnectionTimeout,
+			timeout: timeout,
 		},
 		{
 			name:     "TLS config",
-			timeout:  warehouseutils.TestConnectionTimeout,
+			timeout:  timeout,
 			tlConfig: "test-tls-config",
 		},
 		{
 			name:      "No such host",
-			timeout:   warehouseutils.TestConnectionTimeout,
+			timeout:   timeout,
 			wantError: errors.New(`dial tcp: lookup clickhouse`),
 			host:      "clickhouse",
 		},

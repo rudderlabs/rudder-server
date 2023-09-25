@@ -5,12 +5,14 @@ package webhook
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
@@ -43,15 +45,30 @@ func newWebhookStats() *webhookStatsT {
 }
 
 func Setup(gwHandle Gateway, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
-	webhook := &HandleT{gwHandle: gwHandle, stats: stat}
+	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
+
+	sourceTransformerURL := strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/{version}/sources"
+	// Number of incoming webhooks that are batched before calling source transformer
+	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
+	// Timeout after which batch is formed anyway with whatever webhooks are available
+	webhook.config.webhookBatchTimeout = config.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
+	// Multiple source transformers are used to generate rudder events from webhooks
+	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
+	// Parse all query params from sources mentioned in this list
+	webhook.config.sourceListForParsingParams = config.GetStringSliceVar(make([]string, 0), "Gateway.webhook.sourceListForParsingParams")
+	// lowercasing the strings in sourceListForParsingParams
+	for i, s := range webhook.config.sourceListForParsingParams {
+		webhook.config.sourceListForParsingParams[i] = strings.ToLower(s)
+	}
+
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
 	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
 	webhook.netClient.Logger = nil // to avoid debug logs
-	webhook.netClient.RetryWaitMin = webhookRetryWaitMin
-	webhook.netClient.RetryWaitMax = webhookRetryWaitMax
-	webhook.netClient.RetryMax = webhookRetryMax
+	webhook.netClient.RetryWaitMin = config.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
+	webhook.netClient.RetryWaitMax = config.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
+	webhook.netClient.RetryMax = config.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
