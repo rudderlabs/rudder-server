@@ -2289,6 +2289,7 @@ func (proc *Handle) transformSrcDest(
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
 			routerDestIDs:   routerDestIDs,
+			droppedJobs:     droppedJobs,
 		}
 	}
 
@@ -2311,9 +2312,9 @@ func (proc *Handle) transformSrcDest(
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), failedJobs...)...)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	// REPORTING - START
@@ -2354,6 +2355,7 @@ func (proc *Handle) transformSrcDest(
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
 			routerDestIDs:   routerDestIDs,
+			droppedJobs:     droppedJobs,
 		}
 	}
 
