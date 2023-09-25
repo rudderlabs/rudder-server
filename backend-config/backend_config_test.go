@@ -25,6 +25,7 @@ import (
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -324,7 +325,7 @@ func TestWaitForConfig(t *testing.T) {
 		defer ctrl.Finish()
 
 		pkgLogger = logger.NOP
-		pollInterval = time.Millisecond
+		pollInterval = misc.SingleValueLoader(time.Millisecond)
 		bc := &backendConfigImpl{initialized: false}
 
 		var done int32

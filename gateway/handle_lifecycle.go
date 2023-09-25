@@ -64,41 +64,40 @@ func (gw *Handle) Setup(
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
 
-	config.RegisterDurationConfigVariable(30, &gw.conf.httpTimeout, false, time.Second, "Gateway.httpTimeout")
+	gw.conf.httpTimeout = config.GetDurationVar(30, time.Second, "Gateway.httpTimeout")
 	// Port where GW is running
-	config.RegisterIntConfigVariable(8080, &gw.conf.webPort, false, 1, "Gateway.webPort")
+	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
 	// Number of incoming requests that are batched before handing off to write workers
-	config.RegisterIntConfigVariable(128, &gw.conf.maxUserWebRequestBatchSize, false, 1, "Gateway.maxUserRequestBatchSize")
+	gw.conf.maxUserWebRequestBatchSize = config.GetIntVar(128, 1, "Gateway.maxUserRequestBatchSize")
 	// Number of userWorkerBatchRequest that are batched before initiating write
-	config.RegisterIntConfigVariable(128, &gw.conf.maxDBBatchSize, false, 1, "Gateway.maxDBBatchSize")
-	// Timeout after which batch is formed anyway with whatever requests
-	// are available
-	config.RegisterDurationConfigVariable(15, &gw.conf.userWebRequestBatchTimeout, true, time.Millisecond, []string{"Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS"}...)
-	config.RegisterDurationConfigVariable(5, &gw.conf.dbBatchWriteTimeout, true, time.Millisecond, []string{"Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS"}...)
+	gw.conf.maxDBBatchSize = config.GetIntVar(128, 1, "Gateway.maxDBBatchSize")
 	// Multiple workers are used to batch user web requests
-	config.RegisterIntConfigVariable(64, &gw.conf.maxUserWebRequestWorkerProcess, false, 1, "Gateway.maxUserWebRequestWorkerProcess")
+	gw.conf.maxUserWebRequestWorkerProcess = config.GetIntVar(64, 1, "Gateway.maxUserWebRequestWorkerProcess")
 	// Multiple DB writers are used to write data to DB
-	config.RegisterIntConfigVariable(256, &gw.conf.maxDBWriterProcess, false, 1, "Gateway.maxDBWriterProcess")
-	// Maximum request size to gateway
-	config.RegisterIntConfigVariable(4000, &gw.conf.maxReqSize, true, 1024, "Gateway.maxReqSizeInKB")
-	// Enable rate limit on incoming events. false by default
-	config.RegisterBoolConfigVariable(false, &gw.conf.enableRateLimit, true, "Gateway.enableRateLimit")
-	// Enable suppress user feature. false by default
-	config.RegisterBoolConfigVariable(true, &gw.conf.enableSuppressUserFeature, false, "Gateway.enableSuppressUserFeature")
-	// EventSchemas feature. false by default
-	config.RegisterBoolConfigVariable(false, &gw.conf.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
-	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(60, &gw.conf.diagnosisTickerTime, false, time.Second, []string{"Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS"}...)
+	gw.conf.maxDBWriterProcess = config.GetIntVar(256, 1, "Gateway.maxDBWriterProcess")
+	// Timeout after which batch is formed anyway with whatever requests are available
+	gw.conf.userWebRequestBatchTimeout = config.GetReloadableDurationVar(15, time.Millisecond, "Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS")
+	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
-	config.RegisterBoolConfigVariable(false, &gw.conf.allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	config.RegisterBoolConfigVariable(true, &gw.conf.gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
-	config.RegisterDurationConfigVariable(0, &gw.conf.ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(0, &gw.conf.ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(10, &gw.conf.WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(720, &gw.conf.IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
-	config.RegisterIntConfigVariable(524288, &gw.conf.maxHeaderBytes, false, 1, "MaxHeaderBytes")
+	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
+	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
+	// Maximum request size to gateway
+	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
+	// Enable rate limit on incoming events. false by default
+	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
+	// Enable suppress user feature. false by default
+	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
+	// EventSchemas feature. false by default
+	gw.conf.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
+	// Time period for diagnosis ticker
+	gw.conf.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS")
+	gw.conf.ReadTimeout = config.GetDurationVar(0, time.Second, "ReadTimeout", "ReadTimeOutInSec")
+	gw.conf.ReadHeaderTimeout = config.GetDurationVar(0, time.Second, "ReadHeaderTimeout", "ReadHeaderTimeoutInSec")
+	gw.conf.WriteTimeout = config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec")
+	gw.conf.IdleTimeout = config.GetDurationVar(720, time.Second, "IdleTimeout", "IdleTimeoutInSec")
+	gw.conf.maxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
 	// if set to '0', it means disabled.
-	config.RegisterIntConfigVariable(50000, &gw.conf.maxConcurrentRequests, false, 1, "Gateway.maxConcurrentRequests")
+	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
@@ -259,7 +258,7 @@ func (gw *Handle) initDBWriterWorkers(ctx context.Context) {
 func (gw *Handle) userWorkerRequestBatcher() {
 	userWorkerBatchRequestBuffer := make([]*userWorkerBatchRequestT, 0)
 
-	timeout := time.After(gw.conf.dbBatchWriteTimeout)
+	timeout := time.After(gw.conf.dbBatchWriteTimeout.Load())
 	for {
 		select {
 		case userWorkerBatchRequest, hasMore := <-gw.userWorkerBatchRequestQ:
@@ -279,7 +278,7 @@ func (gw *Handle) userWorkerRequestBatcher() {
 				userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 			}
 		case <-timeout:
-			timeout = time.After(gw.conf.dbBatchWriteTimeout)
+			timeout = time.After(gw.conf.dbBatchWriteTimeout.Load())
 			if len(userWorkerBatchRequestBuffer) > 0 {
 				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
 				gw.dbWorkersTimeOutStat.Count(1)
@@ -307,7 +306,7 @@ func (gw *Handle) dbWriterWorkerProcess() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 		err := gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			if gw.conf.gwAllowPartialWriteWithErrors {
+			if gw.conf.gwAllowPartialWriteWithErrors.Load() {
 				var err error
 				errorMessagesMap, err = gw.jobsDB.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
 				if err != nil {

@@ -13,8 +13,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-
-	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
+	snowflake "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -57,11 +56,6 @@ var partitionKeyMap = map[string]string{
 	usersTable:      `"ID"`,
 	identifiesTable: `"ID"`,
 	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
-}
-
-var mergeSourceCategoryMap = map[string]struct{}{
-	"cloud":           {},
-	"singer-protocol": {},
 }
 
 var (
@@ -407,6 +401,23 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		return tableLoadResp{}, err
 	}
 
+	duplicates, err := sf.sampleDuplicateMessages(
+		ctx,
+		db,
+		tableName,
+		stagingTableName,
+	)
+	if err != nil {
+		log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
+	} else if len(duplicates) > 0 {
+		uploadID, _ := whutils.UploadIDFromCtx(ctx)
+
+		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+			return item.String()
+		})
+		log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+	}
+
 	var (
 		primaryKey              = "ID"
 		partitionKey            = `"ID"`
@@ -478,24 +489,6 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"tableName":      tableName,
 	}).Count(int(updated))
 
-	if updated > 0 {
-		duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
-		if err != nil {
-			log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
-		} else if len(duplicates) > 0 {
-			uploadID, _ := whutils.UploadIDFromCtx(ctx)
-
-			sort.Slice(duplicates, func(i, j int) bool {
-				return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
-			})
-
-			formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
-				return item.String()
-			})
-			log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
-		}
-	}
-
 	log.Infow("completed loading")
 
 	return tableLoadResp{
@@ -516,7 +509,12 @@ func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) 
 	}, ",")
 }
 
-func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, mainTableName, stagingTableName string) ([]duplicateMessage, error) {
+func (sf *Snowflake) sampleDuplicateMessages(
+	ctx context.Context,
+	db *sqlmw.DB,
+	mainTableName,
+	stagingTableName string,
+) ([]duplicateMessage, error) {
 	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
 		return nil, nil
 	}
@@ -542,6 +540,7 @@ func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, 
 				FROM
 			  		`+stagingTable+`
 		  	)
+        ORDER BY RECEIVED_AT ASC
 		LIMIT
 		  ?;
 `,
@@ -820,12 +819,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-// ShouldAppend returns true if the load table strategy is append mode and the source category is not in "mergeSourceCategoryMap"
+// ShouldAppend returns true if:
+// * the load table strategy is "append" mode
+// * the uploader says we can append
 func (sf *Snowflake) ShouldAppend() bool {
-	sourceCategory := sf.Warehouse.Source.SourceDefinition.Category
-	_, isMergeCategory := mergeSourceCategoryMap[sourceCategory]
-
-	return !isMergeCategory && sf.config.loadTableStrategy == loadTableStrategyAppendMode
+	return sf.config.loadTableStrategy == loadTableStrategyAppendMode && sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {

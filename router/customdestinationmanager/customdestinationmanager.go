@@ -76,10 +76,10 @@ func Init() {
 }
 
 func loadConfig() {
-	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD", "PERSONALIZE", "GOOGLESHEETS", "BQSTREAM", "LAMBDA"}
+	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD", "PERSONALIZE", "GOOGLESHEETS", "BQSTREAM", "LAMBDA", "GOOGLE_CLOUD_FUNCTION"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
-	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
+	disableEgress = config.GetBoolVar(false, "disableEgress")
 }
 
 // newClient delegates the call to the appropriate manager
@@ -337,7 +337,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 		for _, wConfig := range config {
 			for _, source := range wConfig.Sources {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == customManager.destType {
+					if destination.DestinationDefinition.Name == customManager.destType && destination.Enabled {
 						err := customManager.onNewDestination(destination)
 						if err != nil {
 							pkgLogger.Errorf(

@@ -65,15 +65,13 @@ type UploadT struct {
 	Payload []*TransformStatusT `json:"payload"`
 }
 
-type Opt func(*Handle)
-
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	configBackendURL               string
 	started                        bool
-	disableTransformationUploads   bool
-	limitEventsInMemory            int
+	disableTransformationUploads   misc.ValueLoader[bool]
+	limitEventsInMemory            misc.ValueLoader[int]
 	uploader                       debugger.Uploader[*TransformStatusT]
 	log                            logger.Logger
 	transformationCacheMap         cache.Cache[TransformationStatusT]
@@ -85,12 +83,6 @@ type Handle struct {
 	done                           chan struct{}
 }
 
-func WithDisableTransformationStatusUploads(disableTransformationStatusUploads bool) func(h *Handle) {
-	return func(h *Handle) {
-		h.disableTransformationUploads = disableTransformationStatusUploads
-	}
-}
-
 type TransformationDebugger interface {
 	IsUploadEnabled(id string) bool
 	RecordTransformationStatus(transformStatus *TransformStatusT)
@@ -98,18 +90,25 @@ type TransformationDebugger interface {
 	Stop()
 }
 
-func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (TransformationDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig) (TransformationDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("transformation"),
+		disableTransformationUploads: config.GetReloadableBoolVar(
+			false, "TransformationDebugger.disableTransformationStatusUploads",
+		),
+		limitEventsInMemory: config.GetReloadableIntVar(1, 1, "TransformationDebugger.limitEventsInMemory"),
 	}
-	var err error
-	config.RegisterBoolConfigVariable(false, &h.disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
-	config.RegisterIntConfigVariable(1, &h.limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
-	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
-	transformationStatusUploader := &TransformationStatusUploader{}
 
-	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.MemoryCacheType)))
+	var (
+		err                          error
+		url                          = fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
+		transformationStatusUploader = &TransformationStatusUploader{}
+		cacheType                    = cache.CacheType(config.GetInt(
+			"TransformationDebugger.cacheType", int(cache.MemoryCacheType),
+		))
+	)
+
 	h.transformationCacheMap, err = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
 	if err != nil {
 		return nil, err
@@ -118,9 +117,6 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (Transfor
 	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
 	h.uploader.Start()
 
-	for _, opt := range opts {
-		opt(h)
-	}
 	h.start(backendConfig)
 	return h, nil
 }
@@ -168,7 +164,7 @@ func (h *Handle) Stop() {
 // which will be processed by handleEvents.
 func (h *Handle) RecordTransformationStatus(transformStatus *TransformStatusT) {
 	// if disableTransformationUploads is true, return;
-	if !h.started || h.disableTransformationUploads {
+	if !h.started || h.disableTransformationUploads.Load() {
 		return
 	}
 	<-h.initialized
@@ -268,7 +264,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 	}()
 
 	// if disableTransformationUploads is true, return;
-	if h.disableTransformationUploads {
+	if h.disableTransformationUploads.Load() {
 		return false
 	}
 	<-h.initialized
@@ -279,7 +275,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 		} else {
 			err := h.transformationCacheMap.Update(
 				transformation.ID,
-				*(tStatus.Limit(h.limitEventsInMemory+1, transformation)),
+				*(tStatus.Limit(h.limitEventsInMemory.Load()+1, transformation)),
 			)
 			if err != nil {
 				h.log.Errorf("Error while updating transformation cache: %v", err)
@@ -374,8 +370,9 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 	}
 
 	for _, failedEvent := range tStatus.FailedEvents {
-		if len(failedEvent.Metadata.MessageIDs) > 0 {
-			for _, msgID := range failedEvent.Metadata.MessageIDs {
+		messageIDs := failedEvent.Metadata.GetMessagesIDs()
+		for _, msgID := range messageIDs {
+			if msgID != "" {
 				reportedMessageIDs[msgID] = struct{}{}
 				singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
 				eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
@@ -394,24 +391,6 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 					IsError:          true,
 				})
 			}
-		} else if failedEvent.Metadata.MessageID != "" {
-			reportedMessageIDs[failedEvent.Metadata.MessageID] = struct{}{}
-			singularEventWithReceivedAt := tStatus.EventsByMessageID[failedEvent.Metadata.MessageID]
-			eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-			eventAfter := &EventsAfterTransform{
-				Error:      failedEvent.Error,
-				ReceivedAt: time.Now().Format(misc.RFC3339Milli),
-				StatusCode: failedEvent.StatusCode,
-			}
-
-			h.RecordTransformationStatus(&TransformStatusT{
-				TransformationID: tID,
-				SourceID:         tStatus.SourceID,
-				DestinationID:    tStatus.DestID,
-				EventBefore:      eventBefore,
-				EventsAfter:      eventAfter,
-				IsError:          true,
-			})
 		}
 	}
 

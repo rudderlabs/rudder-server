@@ -23,18 +23,18 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *Cache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(5, &e.ttl, true, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
-	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
-	config.RegisterDurationConfigVariable(1, &e.ticker, false, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
-	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
-	config.RegisterFloat64ConfigVariable(0.5, &e.gcDiscardRatio, false, "LiveEvent.cache."+e.origin+".gcDiscardRatio", "LiveEvent.cache.gcDiscardRatio")
-	config.RegisterIntConfigVariable(5, &e.numMemtables, false, 1, "LiveEvent.cache."+e.origin+".NumMemtables", "LiveEvent.cache.NumMemtables")
-	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
-	config.RegisterIntConfigVariable(15, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
+	e.ttl = config.GetReloadableDurationVar(5, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
+	e.limiter = config.GetReloadableIntVar(100, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
+	e.ticker = config.GetDurationVar(1, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
+	e.queryTimeout = config.GetDurationVar(15, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
+	e.gcDiscardRatio = config.GetFloat64Var(0.5, "LiveEvent.cache."+e.origin+".gcDiscardRatio", "LiveEvent.cache.gcDiscardRatio")
+	e.numMemtables = config.GetIntVar(5, 1, "LiveEvent.cache."+e.origin+".NumMemtables", "LiveEvent.cache.NumMemtables")
+	e.numLevelZeroTables = config.GetIntVar(5, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
+	e.numLevelZeroTablesStall = config.GetIntVar(15, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
 	// Using the maximum value threshold: (1 << 20) == 1048576 (1MB)
-	config.RegisterInt64ConfigVariable(1<<20, &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
-	config.RegisterBoolConfigVariable(false, &e.syncWrites, false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
-	config.RegisterBoolConfigVariable(true, &e.cleanupOnStartup, false, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
+	e.valueThreshold = config.GetInt64Var(1<<20, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
+	e.syncWrites = config.GetBoolVar(false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
+	e.cleanupOnStartup = config.GetBoolVar(true, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
 }
 
 /*
@@ -42,14 +42,14 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	limiter                 int
+	limiter                 misc.ValueLoader[int]
 	path                    string
 	origin                  string
 	done                    chan struct{}
 	closed                  chan struct{}
 	ticker                  time.Duration
 	queryTimeout            time.Duration
-	ttl                     time.Duration
+	ttl                     misc.ValueLoader[time.Duration]
 	gcDiscardRatio          float64
 	numMemtables            int
 	numLevelZeroTables      int
@@ -81,7 +81,7 @@ func (e *Cache[E]) Update(key string, value E) error {
 		if err != nil {
 			return err
 		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl)
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl.Load())
 		return txn.SetEntry(entry)
 	})
 }
@@ -91,7 +91,7 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 	var values []E
 	err := e.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = e.limiter
+		opts.PrefetchSize = e.limiter.Load()
 		itr := txn.NewKeyIterator([]byte(key), opts)
 		defer itr.Close()
 		for itr.Rewind(); itr.Valid(); itr.Next() {
@@ -104,7 +104,7 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 			}); err == nil { // ignore unmarshal errors (old version of the data)
 				values = append(values, value)
 			}
-			if len(values) >= e.limiter {
+			if len(values) >= e.limiter.Load() {
 				break
 			}
 		}
@@ -158,7 +158,7 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		WithNumMemtables(e.numMemtables).
 		WithValueThreshold(e.valueThreshold).
 		WithBlockCacheSize(0).
-		WithNumVersionsToKeep(e.limiter).
+		WithNumVersionsToKeep(e.limiter.Load()).
 		WithNumLevelZeroTables(e.numLevelZeroTables).
 		WithNumLevelZeroTablesStall(e.numLevelZeroTablesStall).
 		WithSyncWrites(e.syncWrites)

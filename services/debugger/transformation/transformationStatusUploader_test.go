@@ -1,4 +1,4 @@
-package transformationdebugger_test
+package transformationdebugger
 
 import (
 	"context"
@@ -6,22 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
-
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -188,30 +185,30 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	var (
 		c              *eventDeliveryStatusUploaderContext
-		h              transformationdebugger.TransformationDebugger
-		deliveryStatus transformationdebugger.TransformStatusT
+		h              TransformationDebugger
+		deliveryStatus TransformStatusT
 	)
 
 	BeforeEach(func() {
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
-		deliveryStatus = transformationdebugger.TransformStatusT{
+		deliveryStatus = TransformStatusT{
 			DestinationID:    DestinationIDEnabledB,
 			SourceID:         SourceIDEnabled,
 			IsError:          false,
 			TransformationID: "enabled-id",
-			EventBefore: &transformationdebugger.EventBeforeTransform{
+			EventBefore: &EventBeforeTransform{
 				ReceivedAt: time.Now().String(),
 				EventName:  "event-name",
 				EventType:  "event-type",
 				Payload:    types.SingularEventT{},
 			},
-			EventsAfter: &transformationdebugger.EventsAfterTransform{
+			EventsAfter: &EventsAfterTransform{
 				ReceivedAt: time.Now().String(),
 				IsDropped:  false,
 				Error:      "",
 				StatusCode: 200,
-				EventPayloads: []*transformationdebugger.EventPayloadAfterTransform{
+				EventPayloads: []*EventPayloadAfterTransform{
 					{
 						EventName: "event-name",
 						EventType: "event-type",
@@ -231,7 +228,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			h, err = transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -241,15 +238,16 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
+			h.(*Handle).disableTransformationUploads = misc.SingleValueLoader(true)
+			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
 		})
 
 		It("records events", func() {
 			eventuallyFunc := func() bool {
 				return h.UploadTransformationStatus(
-					&transformationdebugger.TransformationStatusT{
+					&TransformationStatusT{
 						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 						SourceID:    sampleBackendConfig.Sources[1].ID,
@@ -260,8 +258,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			var edsUploader transformationdebugger.TransformationStatusUploader
-			var payload []*transformationdebugger.TransformStatusT
+			var edsUploader TransformationStatusUploader
+			var payload []*TransformStatusT
 			payload = append(payload, &deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
@@ -278,7 +276,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("TransformationDebugger.cacheType", 0)
-			h, err = transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
 		})
 
@@ -288,15 +286,16 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
+			h.(*Handle).disableTransformationUploads = misc.SingleValueLoader(true)
+			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
 		})
 
 		It("records events", func() {
 			eventuallyFunc := func() bool {
 				return h.UploadTransformationStatus(
-					&transformationdebugger.TransformationStatusT{
+					&TransformationStatusT{
 						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 						SourceID:    sampleBackendConfig.Sources[1].ID,
@@ -307,8 +306,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			var edsUploader transformationdebugger.TransformationStatusUploader
-			var payload []*transformationdebugger.TransformStatusT
+			var edsUploader TransformationStatusUploader
+			var payload []*TransformStatusT
 			payload = append(payload, &deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
@@ -334,7 +333,7 @@ func TestLimit(t *testing.T) {
 		limit          = 1
 	)
 	t.Run("should limit the received transformation status", func(t *testing.T) {
-		tStatus := &transformationdebugger.TransformationStatusT{
+		tStatus := &TransformationStatusT{
 			Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 			DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 			SourceID:    sampleBackendConfig.Sources[1].ID,

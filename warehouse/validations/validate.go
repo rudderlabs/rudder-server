@@ -11,13 +11,11 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -57,51 +55,11 @@ type loadTable struct {
 	table       string
 }
 
-type dummyUploader struct {
-	dest *backendconfig.DestinationT
-}
-
 type DestinationValidator interface {
 	Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse
 }
 
 type destinationValidationImpl struct{}
-
-func (*dummyUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
-func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
-func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
-func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
-func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return []warehouseutils.LoadFile{}
-}
-
-func (*dummyUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (m *dummyUploader) GetLoadFileType() string {
-	return warehouseutils.GetLoadFileType(m.dest.DestinationDefinition.Name)
-}
-
-func (m *dummyUploader) UseRudderStorage() bool {
-	return misc.IsConfiguredToUseRudderObjectStorage(m.dest.Config)
-}
 
 func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
@@ -291,7 +249,7 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 func (c *connections) Validate(ctx context.Context) error {
 	defer c.manager.Cleanup(ctx)
 
-	ctx, cancel := context.WithTimeout(ctx, warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
 	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
@@ -509,7 +467,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 
-	fileManager.SetTimeout(objectStorageValidationTimeout)
+	fileManager.SetTimeout(objectStorageTimeout)
 
 	return fileManager, nil
 }
@@ -527,7 +485,7 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 		return nil, fmt.Errorf("getting manager: %w", err)
 	}
 
-	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
+	operations.SetConnectionTimeout(queryTimeout)
 
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
 		dest: dest,
@@ -588,4 +546,37 @@ func getTable(dest *backendconfig.DestinationT) string {
 
 func tableWithUUID() string {
 	return table + "_" + warehouseutils.RandHex()
+}
+
+type dummyUploader struct {
+	dest *backendconfig.DestinationT
+}
+
+func (*dummyUploader) GetSchemaInWarehouse() model.Schema                    { return nil }
+func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error)  { return nil, nil }
+func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
+func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
+func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
+func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema    { return nil }
+func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema       { return nil }
+func (*dummyUploader) CanAppend() bool                                       { return false }
+func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+	return nil
+}
+
+func (*dummyUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
+}
+
+func (m *dummyUploader) GetLoadFileType() string {
+	return warehouseutils.GetLoadFileType(m.dest.DestinationDefinition.Name)
+}
+
+func (m *dummyUploader) UseRudderStorage() bool {
+	return misc.IsConfiguredToUseRudderObjectStorage(m.dest.Config)
 }

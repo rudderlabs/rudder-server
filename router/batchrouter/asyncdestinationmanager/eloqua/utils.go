@@ -146,6 +146,18 @@ func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fie
 	return nil, fmt.Errorf("unable to create body for import definition")
 }
 
+func generateErrorString(item RejectedItem) string {
+	var invalidItems string
+	len := len(item.InvalidFields)
+	for index, invalidField := range item.InvalidFields {
+		invalidItems += invalidField + " : " + item.FieldValues[invalidField]
+		if index != len-1 {
+			invalidItems += ", "
+		}
+	}
+	return item.StatusCode + " : " + item.Message + " " + invalidItems
+}
+
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service EloquaService, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
@@ -174,7 +186,7 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 			}
 			for _, val := range rejectResponse.Items {
 				failedJobIDs = append(failedJobIDs, jobToCSVMap[val.RecordIndex])
-				failedReasons[jobToCSVMap[val.RecordIndex]] = val.Message
+				failedReasons[jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
 			}
 		}
 	}

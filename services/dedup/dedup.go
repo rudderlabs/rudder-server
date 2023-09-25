@@ -31,8 +31,8 @@ func DefaultPath() string {
 
 // New creates a new deduplication service. The service needs to be closed after use.
 func New(path string) Dedup {
-	var dedupWindow time.Duration
-	config.RegisterDurationConfigVariable(3600, &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
+	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+
 	log := logger.NewLogger().Child("dedup")
 	defer func() {
 		// TODO : Remove this after badgerdb v2 is completely removed
@@ -59,7 +59,7 @@ func New(path string) Dedup {
 		path:   path,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
-		window: &dedupWindow,
+		window: dedupWindow,
 		opts:   badgerOpts,
 	}
 	db.start()

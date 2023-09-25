@@ -176,9 +176,9 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		transEvents = append(transEvents, transEvent)
 	}
 
-	userTransformBatchSize := config.GetInt("Processor.userTransformBatchSize", 200)
+	userTransformBatchSize := config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 	if transformationVersionID != "" {
-		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize)
+		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize.Load())
 
 		for _, ev := range response.Events {
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])
