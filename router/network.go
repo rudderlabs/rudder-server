@@ -175,6 +175,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
+		if bodyFormat == "GZIP" {
+			req.Header.Add("Content-Encoding", "gzip")
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
