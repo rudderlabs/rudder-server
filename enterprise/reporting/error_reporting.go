@@ -71,7 +71,7 @@ type ErrorDetailReporter struct {
 	sleepInterval             misc.ValueLoader[time.Duration]
 	mainLoopSleepInterval     misc.ValueLoader[time.Duration]
 	maxConcurrentRequests     misc.ValueLoader[int]
-	maxOpenConnections        misc.ValueLoader[int]
+	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
 	srcWspMutex               sync.RWMutex
@@ -99,7 +99,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
-	maxOpenConnections := config.GetReloadableIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
+	maxOpenConnections := config.GetIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
@@ -278,7 +278,7 @@ func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections.Load())
+	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:          dbHandle,

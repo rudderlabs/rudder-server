@@ -62,7 +62,7 @@ type Handle struct {
 	mainLoopSleepInterval                misc.ValueLoader[time.Duration]
 	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
-	maxOpenConnections                   misc.ValueLoader[int]
+	maxOpenConnections                   int
 	maxConcurrentRequests                misc.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
@@ -80,7 +80,7 @@ func NewFromEnvConfig(log logger.Logger) *Handle {
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
-	maxOpenConnections := config.GetReloadableIntVar(32, 1, "Reporting.maxOpenConnections")
+	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
@@ -161,7 +161,7 @@ func (r *Handle) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(err)
 	}
-	dbHandle.SetMaxOpenConns(r.maxOpenConnections.Load())
+	dbHandle.SetMaxOpenConns(r.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
