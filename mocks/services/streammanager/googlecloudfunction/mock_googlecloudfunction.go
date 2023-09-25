@@ -10,7 +10,6 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	oauth2 "golang.org/x/oauth2"
-	cloudfunctions "google.golang.org/api/cloudfunctions/v1"
 	option "google.golang.org/api/option"
 )
 
@@ -55,19 +54,4 @@ func (mr *MockGoogleCloudFunctionClientMockRecorder) GetToken(arg0, arg1 interfa
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetToken", reflect.TypeOf((*MockGoogleCloudFunctionClient)(nil).GetToken), varargs...)
-}
-
-// InvokeGen1Function mocks base method.
-func (m *MockGoogleCloudFunctionClient) InvokeGen1Function(arg0 string, arg1 *cloudfunctions.CallFunctionRequest) (*cloudfunctions.CallFunctionResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InvokeGen1Function", arg0, arg1)
-	ret0, _ := ret[0].(*cloudfunctions.CallFunctionResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// InvokeGen1Function indicates an expected call of InvokeGen1Function.
-func (mr *MockGoogleCloudFunctionClientMockRecorder) InvokeGen1Function(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InvokeGen1Function", reflect.TypeOf((*MockGoogleCloudFunctionClient)(nil).InvokeGen1Function), arg0, arg1)
 }
