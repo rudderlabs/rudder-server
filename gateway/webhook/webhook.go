@@ -272,12 +272,13 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
+		var payloadWithSourceArr [][]byte
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			// GetSourceConfig from gateway using sourceId
+			// GetSource from gateway using sourceId
 			sourceId := req.authContext.SourceID
-			sourceConfig, err := bt.webhook.gwHandle.GetSourceConfig(sourceId)
+			source, err := bt.webhook.gwHandle.GetSource(sourceId)
 
 			body, err := io.ReadAll(req.request.Body)
 			_ = req.request.Body.Close()
@@ -310,18 +311,19 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
 				continue
 			}
-			Config, err := json.Marshal(sourceConfig)
-			format := "{body: %s, sourceConfig: %s}"
-			eventToSource := fmt.Sprintf(format, body, Config)
+			marshalledSource, err := json.Marshal(source)
+			format := "{\"body\": %s, \"source\": %s}"
+			eventToSource := fmt.Sprintf(format, body, marshalledSource)
 			// Convert the formatted string to a []byte.
 			eventToSourceBytes := []byte(eventToSource)
 
 			// eventToSource = {event: body, sourceConfig: Config}
-			payloadArr = append(payloadArr, eventToSourceBytes)
+			payloadWithSourceArr = append(payloadWithSourceArr, eventToSourceBytes)
+			payloadArr = append(payloadArr, body)
 			webRequests = append(webRequests, req)
 		}
 
-		if len(payloadArr) == 0 {
+		if len(payloadWithSourceArr) == 0 {
 			continue
 		}
 
@@ -330,16 +332,16 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		}
 
 		// stats
-		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
+		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadWithSourceArr))
 
 		transformStart := time.Now()
-		batchResponse := bt.transform(payloadArr, breq.sourceType)
+		batchResponse := bt.transform(payloadWithSourceArr, payloadArr, breq.sourceType, "v1")
 
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
 
 		var reason string
-		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
+		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadWithSourceArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
 			reason = "in out mismatch"
 			pkgLogger.Errorf("%w", batchResponse.batchError)
@@ -364,7 +366,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			for i, webRequest := range webRequests {
 				failedWebhookPayloads[i] = &model.FailedWebhookPayload{
 					RequestContext: webRequest.authContext,
-					Payload:        payloadArr[i],
+					Payload:        payloadWithSourceArr[i],
 					SourceType:     breq.sourceType,
 					Reason:         batchResponse.batchError.Error(),
 				}
@@ -394,12 +396,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				if errMessage != "" {
 					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
-					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
+					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadWithSourceArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadWithSourceArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
 				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
 				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, "non 200 response", resp.StatusCode, 1)
 			}

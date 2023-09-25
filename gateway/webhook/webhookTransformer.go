@@ -45,12 +45,14 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 	return resp
 }
 
-func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
+func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]byte, sourceType string, version string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	transformStart := time.Now()
 
 	payload := misc.MakeJSONArray(events)
-	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
+	sourceTransformURL := strings.Replace(bt.sourceTransformerURL, "{version}", version, -1)
+
+	url := fmt.Sprintf(`%s/%s`, sourceTransformURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
 	bt.stats.transformTimerStat.Since(transformStart)
@@ -68,7 +70,14 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 		err := errors.New(response.GetStatus(response.RequestBodyReadFailed))
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
 	}
-
+	/*
+		Following 404 case can be in that case when v1 endpoint is not there
+		that is new server is hitting old transformer( when there used to be no source sent to tranformer)
+	*/
+	if version == "v1" && resp.StatusCode == 404 {
+		// v1 endpoint not available so falling back to v0 endpoint
+		return bt.transform(payloadArr, events, sourceType, "v0")
+	}
 	if resp.StatusCode != http.StatusOK {
 		pkgLogger.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
 		bt.stats.failedStat.Count(len(events))

@@ -9,7 +9,7 @@ import (
 
 // nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
-	sourceTransformerURL = strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/sources"
+	sourceTransformerURL = strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/{version}/sources"
 	// Number of incoming webhooks that are batched before calling source transformer
 	config.RegisterIntConfigVariable(32, &maxWebhookBatchSize, true, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
