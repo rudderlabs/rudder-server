@@ -154,8 +154,8 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 	}
 
 	sh.schemaInWarehouseMu.RLock()
-	schemaChanged := sh.hasSchemaChanged(localSchema)
 	defer sh.schemaInWarehouseMu.RUnlock()
+	schemaChanged := sh.hasSchemaChanged(localSchema)
 	if schemaChanged {
 		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
 		if err != nil {
