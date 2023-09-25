@@ -42,14 +42,6 @@ func gzipAndEncodeBase64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-func gzipData(data []byte) []byte {
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	zw.Write(data)
-	zw.Close()
-	return buf.Bytes()
-}
-
 var _ = Describe("Network", func() {
 	var c *networkContext
 
