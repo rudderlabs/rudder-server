@@ -288,7 +288,12 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 		trans.logger = loggerOverride
 	}
 
-	trans.tr = &http.Transport{DisableKeepAlives: config.GetBool("Transformer.Client.disableKeepAlives", true)}
+	trans.tr = &http.Transport{
+		DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
+		MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
+		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+		IdleConnTimeout:     30 * time.Second,
+	}
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout

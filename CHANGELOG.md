@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/rudderlabs/rudder-server/compare/v1.14.0...v1.14.1) (2023-09-21)
+
+
+### Bug Fixes
+
+* router transformer client fails with error connect: cannot assign requested address ([#3898](https://github.com/rudderlabs/rudder-server/issues/3898)) ([1cb5d5d](https://github.com/rudderlabs/rudder-server/commit/1cb5d5d725c8c8b84a66129e6d05a02ace9ff2c6))
+
 ## [1.14.0](https://github.com/rudderlabs/rudder-server/compare/v1.13.0...v1.14.0) (2023-09-20)
 
 

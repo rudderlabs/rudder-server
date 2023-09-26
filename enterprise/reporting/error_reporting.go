@@ -68,9 +68,9 @@ type ErrorDetailReporter struct {
 	workspaceID               string
 	instanceID                string
 	region                    string
-	sleepInterval             time.Duration
-	mainLoopSleepInterval     time.Duration
-	maxConcurrentRequests     int
+	sleepInterval             misc.ValueLoader[time.Duration]
+	mainLoopSleepInterval     misc.ValueLoader[time.Duration]
+	maxConcurrentRequests     misc.ValueLoader[int]
 	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
@@ -91,18 +91,15 @@ type errorDetails struct {
 }
 
 func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
-	var sleepInterval, mainLoopSleepInterval time.Duration
-	var maxConcurrentRequests int
-	var maxOpenConnections int
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
-	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
-	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	config.RegisterIntConfigVariable(16, &maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
+	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
+	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
+	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
+	maxOpenConnections := config.GetIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
@@ -359,7 +356,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			edRep.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 			return
 		}
-		requestChan := make(chan struct{}, maxConcurrentRequests)
+		requestChan := make(chan struct{}, edRep.maxConcurrentRequests.Load())
 		loopStart := time.Now()
 		currentMs := time.Now().UTC().Unix() / 60
 
@@ -373,7 +370,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			case <-ctx.Done():
 				edRep.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 				return
-			case <-time.After(edRep.sleepInterval):
+			case <-time.After(edRep.sleepInterval.Load()):
 			}
 			continue
 		}
@@ -423,7 +420,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(edRep.mainLoopSleepInterval):
+		case <-time.After(edRep.mainLoopSleepInterval.Load()):
 		}
 	}
 }
