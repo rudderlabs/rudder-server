@@ -1,0 +1,20 @@
+language: go
+os:
+  - linux
+  - osx
+go:
+  - "go1.10"
+go_import_path: github.com/lensesio/tableprinter
+env:
+  global:
+    - GOCACHE=off
+install:
+  - go get -t ./...
+script:
+  - go test -v -cover ./...
+after_script:
+  # examples
+  - cd ./_examples
+  - go get ./...
+  - go test -v -cover ./...
+  - cd ../

@@ -1,0 +1,126 @@
+repos:
+    # ==========================================================================
+    # Golang Pre-Commit Hooks | https://github.com/tekwizely/pre-commit-golang
+    #
+    # Visit the project home page to learn more about the available Hooks,
+    # including useful arguments you might want to pass into them.
+    #
+    # File-Based Hooks:
+    #   Run against matching staged files individually.
+    #
+    # Module-Based Hooks:
+    #   Run against module root folders containing matching staged files.
+    #
+    # Package-Based Hooks:
+    #   Run against folders containing one or more staged files.
+    #
+    # Repo-Based Hooks:
+    #   Run against the entire repo.
+    #   The hooks only run once (if any matching files are staged),
+    #   and are NOT provided the list of staged files,
+    #
+    # My-Cmd-* Hooks
+    #   Allow you to invoke custom tools in varous contexts.
+    #   Can be useful if your favorite tool(s) are not built-in (yet)
+    #
+    # Hook Suffixes
+    #   Hooks have suffixes in their name that indicate their targets:
+    #
+    #   +-----------+--------------+
+    #   | Suffix    | Target       |
+    #   |-----------+--------------+
+    #   | <none>    | Files        |
+    #   | -mod      | Module       |
+    #   | -pkg      | Package      |
+    #   | -repo     | Repo Root    |
+    #   | -repo-mod | All Modules  |
+    #   | -repo-pkg | All Packages |
+    #   +-----------+--------------+
+    #
+    # ! Multiple Hook Invocations
+    # !   Due to OS command-line-length limits, Pre-Commit can invoke a hook
+    # !   multiple times if a large number of files are staged.
+    # !   For file and repo-based hooks, this isn't an issue, but for module
+    # !   and package-based hooks, there is a potential for the hook to run
+    # !   against the same module or package multiple times, duplicating any
+    # !   errors or warnings.
+    #
+    # Useful Hook Parameters:
+    #   -   id: hook-id
+    #       args: [arg1, arg2, ..., '--'] # Pass options ('--' is optional)
+    #       always_run: true              # Run even if no matching files staged
+    #       alias: hook-alias             # Create an alias
+    #
+    # Passing Options To Hooks:
+    #   If your options contain a reference to an existing file, then you will
+    #   need to use a trailing '--' argument to separate the hook options from
+    #   the modified-file list that Pre-Commit passes into the hook.
+    #   NOTE: For repo-based hooks, '--' is not needed.
+    #
+    # Always Run:
+    #   By default, hooks ONLY run when matching file types are staged.
+    #   When configured to "always_run", a hook is executed as if EVERY matching
+    #   file were staged.
+    #
+    # Aliases:
+    #   Consider adding aliases to longer-named hooks for easier CLI usage.
+    # ==========================================================================
+-   repo: https://github.com/tekwizely/pre-commit-golang
+    rev: master
+    hooks:
+    #
+    # Go Build
+    #
+    -   id: go-build-mod
+    # -   id: go-build-pkg
+    -   id: go-build-repo-mod
+    # -   id: go-build-repo-pkg
+    # 
+    # Go Mod Tidy
+    #
+    -   id: go-mod-tidy
+    -   id: go-mod-tidy-repo
+    #
+    # Go Test
+    #
+    -   id: go-test-mod
+    # -   id: go-test-pkg
+    -   id: go-test-repo-mod
+    # -   id: go-test-repo-pkg
+    # 
+    # Go Vet
+    #
+    # -   id: go-vet
+    -   id: go-vet-mod
+    # -   id: go-vet-pkg
+    -   id: go-vet-repo-mod
+    # -   id: go-vet-repo-pkg
+    # 
+    # Revive
+    #
+    -   id: go-revive
+    -   id: go-revive-mod
+    -   id: go-revive-repo-mod
+    # 
+    # StaticCheck
+    #
+    -   id: go-staticcheck-mod
+    # -   id: go-staticcheck-pkg
+    -   id: go-staticcheck-repo-mod
+    # -   id: go-staticcheck-repo-pkg
+    # 
+    # Formatters
+    #
+    -   id: go-fmt
+        args: [-w]
+    -   id: go-fmt-repo
+        args: [-w]
+    -   id: go-imports      # replaces go-fmt
+        args: [-w]
+    -   id: go-imports-repo # replaces go-fmt-repo
+        args: [-w]
+    # 
+    # Style Checkers
+    #
+    -   id: go-lint
+    #

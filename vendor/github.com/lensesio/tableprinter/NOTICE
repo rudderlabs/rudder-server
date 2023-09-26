@@ -1,0 +1,5 @@
+Third Party libraries and components
+------------------------------------
+
+tablewriter      : MIT                 - https://github.com/kataras/tablewriter
+go-humanize      : MIT                 - https://github.com/dustin/go-humanize
