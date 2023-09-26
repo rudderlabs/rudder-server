@@ -31,9 +31,7 @@ func DefaultPath() string {
 
 // New creates a new deduplication service. The service needs to be closed after use.
 func New(path string) Dedup {
-	var dedupWindow time.Duration
-	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-	config.RegisterDurationConfigVariable(3600, &dedupWindow, true, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 
 	log := logger.NewLogger().Child("dedup")
 	defer func() {
@@ -61,7 +59,7 @@ func New(path string) Dedup {
 		path:   path,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
-		window: &dedupWindow,
+		window: dedupWindow,
 		opts:   badgerOpts,
 	}
 	db.start()

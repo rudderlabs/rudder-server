@@ -86,24 +86,7 @@ func NewTransformer(destinationTimeout, transformTimeout time.Duration) Transfor
 	return handle
 }
 
-var (
-	maxRetry          int
-	disableKeepAlives bool
-	retrySleep        time.Duration
-	pkgLogger         logger.Logger
-)
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func loadConfig() {
-	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
-	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS")
-	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
-}
-
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
-}
+var loggerOverride logger.Logger
 
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
@@ -149,11 +132,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			trans.transformRequestTimerStat.SendTiming(time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
-			if retryCount > maxRetry {
+			if retryCount > config.GetInt("Processor.maxRetry", 30) {
 				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
 			}
 			retryCount++
-			time.Sleep(retrySleep)
+			time.Sleep(config.GetDurationVar(100, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS"))
 			// Refresh the connection
 			continue
 		}
@@ -299,8 +282,18 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 }
 
 func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
-	trans.logger = pkgLogger
-	trans.tr = &http.Transport{DisableKeepAlives: disableKeepAlives}
+	if loggerOverride == nil {
+		trans.logger = logger.NewLogger().Child("router").Child("transformer")
+	} else {
+		trans.logger = loggerOverride
+	}
+
+	trans.tr = &http.Transport{
+		DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
+		MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
+		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+		IdleConnTimeout:     30 * time.Second,
+	}
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout

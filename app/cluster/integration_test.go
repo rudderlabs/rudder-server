@@ -38,7 +38,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
@@ -161,7 +160,6 @@ var (
 func initJobsDB() {
 	config.Reset()
 	logger.Reset()
-	stash.Init()
 	admin.Init()
 	Init()
 }

@@ -53,8 +53,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 	backendConfig.WaitForConfig(ctx)
 
-	var pollInterval time.Duration
-	config.RegisterDurationConfigVariable(300, &pollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
+	pollInterval := config.GetReloadableDurationVar(300, time.Second, "BackendConfig.Regulations.pollInterval")
 
 	useBadgerDB := config.GetBool("BackendConfig.Regulations.useBadgerDB", true)
 	if useBadgerDB {
@@ -151,7 +150,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 			WithLogger(m.Log),
 			WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 			WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
-			WithPollIntervalFn(func() time.Duration { return pollInterval }),
+			WithPollIntervalFn(func() time.Duration { return pollInterval.Load() }),
 		)
 		if err != nil {
 			return nil, err
@@ -190,7 +189,7 @@ func (m *Factory) retryIndefinitely(ctx context.Context, f func() error, wait ti
 	}
 }
 
-func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (io.ReadCloser, error), maxSeedWaitTime time.Duration, identity identity.Identifier, pollInterval time.Duration) (*Syncer, Repository, error) {
+func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (io.ReadCloser, error), maxSeedWaitTime time.Duration, identity identity.Identifier, pollInterval misc.ValueLoader[time.Duration]) (*Syncer, Repository, error) {
 	repo, err := NewBadgerRepository(
 		repoPath,
 		m.Log,
@@ -207,7 +206,7 @@ func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (
 		WithLogger(m.Log),
 		WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 		WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
-		WithPollIntervalFn(func() time.Duration { return pollInterval }),
+		WithPollIntervalFn(func() time.Duration { return pollInterval.Load() }),
 	)
 	if err != nil {
 		return nil, nil, err

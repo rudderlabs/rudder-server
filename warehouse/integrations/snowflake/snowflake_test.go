@@ -180,6 +180,13 @@ func TestIntegration(t *testing.T) {
 		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_WORKSPACE_IDS", workspaceID)
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_TABLES", strings.Join(
+			[]string{
+				"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+			},
+			" ",
+		))
 
 		ctx, cancel := context.WithCancel(context.Background())
 

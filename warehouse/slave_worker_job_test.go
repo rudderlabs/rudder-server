@@ -112,7 +112,7 @@ func (m *mockLoadFileWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (m *mockLoadFileWriter) WriteRow(r []interface{}) error {
+func (m *mockLoadFileWriter) WriteRow([]interface{}) error {
 	return errors.New("not implemented")
 }
 

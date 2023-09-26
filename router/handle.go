@@ -18,7 +18,6 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -152,23 +151,18 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
 
-	orderGroupKeyFn := func(job *jobsdb.JobT) string { return job.LastJobStatus.JobState }
-	if config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition and option after successful rollout of sinle query
-		orderGroupKeyFn = func(job *jobsdb.JobT) string { return "same" }
-	}
 	iterator := jobiterator.New(
-		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize),
+		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize.Load()),
 		rt.getJobsFn(ctx),
-		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance),
-		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries),
-		jobiterator.WithOrderGroupKeyFn(orderGroupKeyFn),
+		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance.Load()),
+		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries.Load()),
 	)
 
 	if !iterator.HasNext() {
 		rt.pipelineDelayStats(partition, nil, nil)
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
 		limiterEnd() // exit the limiter before sleeping
-		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep)
+		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep.Load())
 		return 0, false
 	}
 
@@ -183,12 +177,12 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	flushTime := time.Now()
 	shouldFlush := func() bool {
-		return len(statusList) > 0 && time.Since(flushTime) > rt.reloadableConfig.pickupFlushInterval
+		return len(statusList) > 0 && time.Since(flushTime) > rt.reloadableConfig.pickupFlushInterval.Load()
 	}
 	flush := func() {
 		flushTime = time.Now()
 		// Mark the jobs as executing
-		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
@@ -256,9 +250,9 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
 	// If the discarded ratio is greater than the penalty threshold,
 	// sleep for a while to avoid having a loop running continuously without producing events
-	if limitsReached && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold {
+	if limitsReached && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold.Load() {
 		limiterEnd() // exit the limiter before sleeping
-		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep)
+		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep.Load())
 	}
 
 	return
@@ -389,7 +383,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return rt.errorDB.Store(ctx, routerAbortedJobs)
 			}, rt.sendRetryStoreStats)
 			if err != nil {
@@ -397,7 +391,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			}
 		}
 		// Update the status
-		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destType}, nil)
 				if err != nil {
@@ -447,7 +441,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 
 func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context, jobsdb.GetQueryParams, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
 	return func(ctx context.Context, params jobsdb.GetQueryParams, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
-		jobs, err := misc.QueryWithRetriesAndNotify(parentContext, rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
+		jobs, err := misc.QueryWithRetriesAndNotify(parentContext, rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
 			return rt.jobsDB.GetToProcess(
 				ctx,
 				params,
@@ -464,7 +458,7 @@ func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context,
 func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQueryParams {
 	params := jobsdb.GetQueryParams{
 		CustomValFilters: []string{rt.destType},
-		PayloadSizeLimit: rt.adaptiveLimit(rt.reloadableConfig.payloadLimit),
+		PayloadSizeLimit: rt.adaptiveLimit(rt.reloadableConfig.payloadLimit.Load()),
 		JobsLimit:        pickUpCount,
 	}
 	rt.isolationStrategy.AugmentQueryParams(partition, &params)

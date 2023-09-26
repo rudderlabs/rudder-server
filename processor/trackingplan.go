@@ -88,7 +88,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 		}
 
 		validationStart := time.Now()
-		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize)
+		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
