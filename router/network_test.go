@@ -39,8 +39,8 @@ func (c *networkContext) Finish() {
 func gzipAndEncodeBase64(data []byte) string {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	zw.Write(data)
-	zw.Close()
+	_, _ = zw.Write(data)
+	_ = zw.Close()
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
@@ -58,9 +58,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 			}
 			defer body.Close()
 			buf := new(bytes.Buffer)
-			buf.ReadFrom(body)
+			_, _ = buf.ReadFrom(body)
 			w.WriteHeader(http.StatusOK)
-			w.Write(buf.Bytes())
+			_, _ = w.Write(buf.Bytes())
 		}))
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
