@@ -330,8 +330,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)
 		}
-		defer replayDB.TearDown()
-		a.app.Features().Replay.Setup(ctx, &replayDB, gatewayDB, routerDB, batchRouterDB)
+		replay, err := a.app.Features().Replay.Setup(ctx, config, &replayDB, gatewayDB, routerDB, batchRouterDB)
+		if err != nil {
+			return err
+		}
+		if err := replay.Start(); err != nil {
+			return fmt.Errorf("could not start replay: %w", err)
+		}
+		defer func() { _ = replay.Stop() }()
 	}
 
 	g.Go(func() error {
