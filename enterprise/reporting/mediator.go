@@ -3,87 +3,77 @@ package reporting
 import (
 	"context"
 	"database/sql"
-	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type ReportingMediator struct {
-	log             logger.Logger
-	once            sync.Once
-	enterpriseToken string
-	reporting       types.Reporting
-	errorReporting  types.Reporting
+	log logger.Logger
+
+	g         *errgroup.Group
+	ctx       context.Context
+	delegates []types.Reporting
 }
 
-func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.Reporting {
-	med.log.Debug("Forming reporting instance")
+func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *ReportingMediator {
+	rm := &ReportingMediator{
+		log: log,
+	}
+	rm.g, rm.ctx = errgroup.WithContext(ctx)
+
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-	if !reportingEnabled || med.enterpriseToken == "" {
-		return &NOOP{}
+	if enterpriseToken == "" || !reportingEnabled {
+		return rm
 	}
-	reportingHandle := NewFromEnvConfig(med.log)
-	rruntime.Go(func() {
-		reportingHandle.setup(backendConfig)
+
+	// default reporting implementation
+	defaultReporter := NewDefaultReporter(rm.ctx, rm.log)
+	rm.g.Go(func() error {
+		defaultReporter.backendConfigSubscriber(backendConfig)
+		return nil
 	})
-	return reportingHandle
-}
+	rm.delegates = append(rm.delegates, defaultReporter)
 
-func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.Reporting {
-	med.log.Debug("Forming error reporting instance")
-	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-	errorReportingEnabled := config.GetBool("Reporting.errorReporting.enabled", false)
-
-	if !(reportingEnabled && errorReportingEnabled) || med.enterpriseToken == "" {
-		return &NOOP{}
+	// error reporting implementation
+	if config.GetBool("Reporting.errorReporting.enabled", false) {
+		errorReporter := NewErrorDetailReporter(rm.ctx)
+		rm.g.Go(func() error {
+			errorReporter.backendConfigSubscriber(backendConfig)
+			return nil
+		})
+		rm.delegates = append(rm.delegates, errorReporter)
 	}
-	errorReporter := NewEdReporterFromEnvConfig()
-	rruntime.Go(func() {
-		errorReporter.setup(backendConfig)
-	})
-	return errorReporter
+
+	return rm
 }
 
-func NewReportingMediator(log logger.Logger, enterpriseToken string) *ReportingMediator {
-	return &ReportingMediator{
-		log:             log,
-		enterpriseToken: enterpriseToken,
+func (rm *ReportingMediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+	for _, delegate := range rm.delegates {
+		delegate.Report(metrics, txn)
 	}
 }
 
-func (med *ReportingMediator) Setup(backendConfig backendconfig.BackendConfig) *ReportingMediator {
-	med.once.Do(func() {
-		med.reporting = med.createReportInstance(backendConfig)
-		med.errorReporting = med.createErrorReportInstance(backendConfig)
-	})
-	return med
-}
+func (rm *ReportingMediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
+	var syncers []types.ReportingSyncer
 
-func (med *ReportingMediator) WaitForSetup(ctx context.Context, clientName string) error {
-	var err error
-	err = med.reporting.WaitForSetup(ctx, clientName)
-	if err != nil {
-		// TODO: Should we panic here ?
-		med.log.Errorf("Error while waiting to setup reporting instance: %w", err)
+	for i := range rm.delegates {
+		delegate := rm.delegates[i]
+		syncers = append(syncers, delegate.DatabaseSyncer(c))
 	}
-	err = med.errorReporting.WaitForSetup(ctx, clientName)
-	return err
-}
 
-func (med *ReportingMediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
-	med.reporting.Report(metrics, txn)
-	med.errorReporting.Report(metrics, txn)
-}
-
-func (med *ReportingMediator) AddClient(ctx context.Context, c types.Config) {
-	rruntime.Go(func() {
-		med.reporting.AddClient(ctx, c)
-	})
-	rruntime.Go(func() {
-		med.errorReporting.AddClient(ctx, c)
-	})
+	return func() {
+		for i := range syncers {
+			syncer := syncers[i]
+			rm.g.Go(func() error {
+				syncer()
+				return nil
+			})
+		}
+		rm.g.Wait()
+	}
 }

@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -20,19 +21,19 @@ func TestFeatureSetup(t *testing.T) {
 	f := &Factory{
 		EnterpriseToken: "dummy-token",
 	}
-	instanceA := f.Setup(&backendconfig.NOOP{})
-	instanceB := f.GetReportingInstance()
+	instanceA := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceB := f.instance
 
-	instanceC := f.Setup(&backendconfig.NOOP{})
-	instanceD := f.GetReportingInstance()
+	instanceC := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceD := f.instance
 
 	require.Equal(t, instanceA, instanceB)
 	require.Equal(t, instanceB, instanceC)
 	require.Equal(t, instanceC, instanceD)
 
 	f = &Factory{}
-	instanceE := f.Setup(&backendconfig.NOOP{})
-	instanceF := f.GetReportingInstance()
+	instanceE := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceF := f.instance
 	require.Equal(t, instanceE, instanceF)
 	require.NotEqual(t, instanceE, backendconfig.NOOP{})
 }
@@ -45,6 +46,7 @@ func TestSetupForNoop(t *testing.T) {
 		reportingEnabled      bool
 		errorReportingEnabled bool
 		enterpriseTokenExists bool
+		expectedDelegates     int
 	}
 
 	tests := []noopTc{
@@ -52,16 +54,19 @@ func TestSetupForNoop(t *testing.T) {
 			reportingEnabled:      false,
 			errorReportingEnabled: true,
 			enterpriseTokenExists: true,
+			expectedDelegates:     0,
 		},
 		{
 			reportingEnabled:      true,
 			errorReportingEnabled: false,
 			enterpriseTokenExists: true,
+			expectedDelegates:     1,
 		},
 		{
 			reportingEnabled:      true,
 			errorReportingEnabled: true,
 			enterpriseTokenExists: false,
+			expectedDelegates:     0,
 		},
 	}
 
@@ -77,8 +82,8 @@ func TestSetupForNoop(t *testing.T) {
 					EnterpriseToken: "dummy-token",
 				}
 			}
-			med := NewReportingMediator(logger.NOP, f.EnterpriseToken)
-			require.Equal(t, med.createErrorReportInstance(&backendconfig.NOOP{}), &NOOP{})
+			med := NewReportingMediator(context.Background(), logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
+			require.Len(t, med.delegates, tc.expectedDelegates)
 		})
 
 	}

@@ -3,16 +3,17 @@ package types
 import (
 	"database/sql"
 	"encoding/json"
+	"time"
 )
 
-type Config struct {
-	ClientName string
-	ConnInfo   string
+type SyncerConfig struct {
+	ConnInfo string
+	Label    string
 }
 
 const (
-	CoreReportingClient      = "core"
-	WarehouseReportingClient = "warehouse"
+	CoreReportingLabel      = "core"
+	WarehouseReportingLabel = "warehouse"
 
 	SupportedTransformerApiVersion = 2
 
@@ -42,20 +43,26 @@ var (
 )
 
 type Client struct {
-	Config
+	SyncerConfig
 	DbHandle *sql.DB
 }
 
 type StatusDetail struct {
-	Status         string          `json:"state"`
-	Count          int64           `json:"count"`
-	StatusCode     int             `json:"statusCode"`
-	SampleResponse string          `json:"sampleResponse"`
-	SampleEvent    json.RawMessage `json:"sampleEvent"`
-	EventName      string          `json:"eventName"`
-	EventType      string          `json:"eventType"`
-	ErrorType      string          `json:"errorType"`
-	ViolationCount int64           `json:"violationCount"`
+	Status         string           `json:"state"`
+	Count          int64            `json:"count"`
+	StatusCode     int              `json:"statusCode"`
+	SampleResponse string           `json:"sampleResponse"`
+	SampleEvent    json.RawMessage  `json:"sampleEvent"`
+	EventName      string           `json:"eventName"`
+	EventType      string           `json:"eventType"`
+	ErrorType      string           `json:"errorType"`
+	ViolationCount int64            `json:"violationCount"`
+	FailedMessages []*FailedMessage `json:"failedMessages"`
+}
+
+type FailedMessage struct {
+	MessageID  string    `json:"messageId"`
+	ReceivedAt time.Time `json:"receivedAt"`
 }
 
 type ReportByStatus struct {
