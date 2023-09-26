@@ -34,9 +34,8 @@ type WarehouseClient interface {
 	ValidateObjectStorageDestination(ctx context.Context, in *ValidateObjectStorageRequest, opts ...grpc.CallOption) (*ValidateObjectStorageResponse, error)
 	CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error)
 	RetrieveFailedBatches(ctx context.Context, in *RetrieveFailedBatchesRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchesResponse, error)
-	RetrieveFailedBatch(ctx context.Context, in *RetrieveFailedBatchRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchResponse, error)
-	RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error)
-	RetryFailedBatch(ctx context.Context, in *RetryFailedBatchRequest, opts ...grpc.CallOption) (*RetryFailedBatchResponse, error)
+	RetryAllFailedBatches(ctx context.Context, in *RetryAllFailedBatchesRequest, opts ...grpc.CallOption) (*RetryAllFailedBatchesResponse, error)
+	RetrySpecificFailedBatch(ctx context.Context, in *RetrySpecificFailedBatchRequest, opts ...grpc.CallOption) (*RetrySpecificFailedBatchResponse, error)
 }
 
 type warehouseClient struct {
@@ -137,27 +136,18 @@ func (c *warehouseClient) RetrieveFailedBatches(ctx context.Context, in *Retriev
 	return out, nil
 }
 
-func (c *warehouseClient) RetrieveFailedBatch(ctx context.Context, in *RetrieveFailedBatchRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchResponse, error) {
-	out := new(RetrieveFailedBatchResponse)
-	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetrieveFailedBatch", in, out, opts...)
+func (c *warehouseClient) RetryAllFailedBatches(ctx context.Context, in *RetryAllFailedBatchesRequest, opts ...grpc.CallOption) (*RetryAllFailedBatchesResponse, error) {
+	out := new(RetryAllFailedBatchesResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetryAllFailedBatches", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *warehouseClient) RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error) {
-	out := new(RetryFailedBatchesResponse)
-	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetryFailedBatches", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *warehouseClient) RetryFailedBatch(ctx context.Context, in *RetryFailedBatchRequest, opts ...grpc.CallOption) (*RetryFailedBatchResponse, error) {
-	out := new(RetryFailedBatchResponse)
-	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetryFailedBatch", in, out, opts...)
+func (c *warehouseClient) RetrySpecificFailedBatch(ctx context.Context, in *RetrySpecificFailedBatchRequest, opts ...grpc.CallOption) (*RetrySpecificFailedBatchResponse, error) {
+	out := new(RetrySpecificFailedBatchResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetrySpecificFailedBatch", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,9 +168,8 @@ type WarehouseServer interface {
 	ValidateObjectStorageDestination(context.Context, *ValidateObjectStorageRequest) (*ValidateObjectStorageResponse, error)
 	CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
 	RetrieveFailedBatches(context.Context, *RetrieveFailedBatchesRequest) (*RetrieveFailedBatchesResponse, error)
-	RetrieveFailedBatch(context.Context, *RetrieveFailedBatchRequest) (*RetrieveFailedBatchResponse, error)
-	RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error)
-	RetryFailedBatch(context.Context, *RetryFailedBatchRequest) (*RetryFailedBatchResponse, error)
+	RetryAllFailedBatches(context.Context, *RetryAllFailedBatchesRequest) (*RetryAllFailedBatchesResponse, error)
+	RetrySpecificFailedBatch(context.Context, *RetrySpecificFailedBatchRequest) (*RetrySpecificFailedBatchResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -218,14 +207,11 @@ func (UnimplementedWarehouseServer) CountWHUploadsToRetry(context.Context, *Retr
 func (UnimplementedWarehouseServer) RetrieveFailedBatches(context.Context, *RetrieveFailedBatchesRequest) (*RetrieveFailedBatchesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RetrieveFailedBatches not implemented")
 }
-func (UnimplementedWarehouseServer) RetrieveFailedBatch(context.Context, *RetrieveFailedBatchRequest) (*RetrieveFailedBatchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RetrieveFailedBatch not implemented")
+func (UnimplementedWarehouseServer) RetryAllFailedBatches(context.Context, *RetryAllFailedBatchesRequest) (*RetryAllFailedBatchesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RetryAllFailedBatches not implemented")
 }
-func (UnimplementedWarehouseServer) RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RetryFailedBatches not implemented")
-}
-func (UnimplementedWarehouseServer) RetryFailedBatch(context.Context, *RetryFailedBatchRequest) (*RetryFailedBatchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RetryFailedBatch not implemented")
+func (UnimplementedWarehouseServer) RetrySpecificFailedBatch(context.Context, *RetrySpecificFailedBatchRequest) (*RetrySpecificFailedBatchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RetrySpecificFailedBatch not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -420,56 +406,38 @@ func _Warehouse_RetrieveFailedBatches_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Warehouse_RetrieveFailedBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RetrieveFailedBatchRequest)
+func _Warehouse_RetryAllFailedBatches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryAllFailedBatchesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WarehouseServer).RetrieveFailedBatch(ctx, in)
+		return srv.(WarehouseServer).RetryAllFailedBatches(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Warehouse/RetrieveFailedBatch",
+		FullMethod: "/proto.Warehouse/RetryAllFailedBatches",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).RetrieveFailedBatch(ctx, req.(*RetrieveFailedBatchRequest))
+		return srv.(WarehouseServer).RetryAllFailedBatches(ctx, req.(*RetryAllFailedBatchesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Warehouse_RetryFailedBatches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RetryFailedBatchesRequest)
+func _Warehouse_RetrySpecificFailedBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetrySpecificFailedBatchRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WarehouseServer).RetryFailedBatches(ctx, in)
+		return srv.(WarehouseServer).RetrySpecificFailedBatch(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Warehouse/RetryFailedBatches",
+		FullMethod: "/proto.Warehouse/RetrySpecificFailedBatch",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).RetryFailedBatches(ctx, req.(*RetryFailedBatchesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Warehouse_RetryFailedBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RetryFailedBatchRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WarehouseServer).RetryFailedBatch(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/proto.Warehouse/RetryFailedBatch",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).RetryFailedBatch(ctx, req.(*RetryFailedBatchRequest))
+		return srv.(WarehouseServer).RetrySpecificFailedBatch(ctx, req.(*RetrySpecificFailedBatchRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -522,16 +490,12 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Warehouse_RetrieveFailedBatches_Handler,
 		},
 		{
-			MethodName: "RetrieveFailedBatch",
-			Handler:    _Warehouse_RetrieveFailedBatch_Handler,
+			MethodName: "RetryAllFailedBatches",
+			Handler:    _Warehouse_RetryAllFailedBatches_Handler,
 		},
 		{
-			MethodName: "RetryFailedBatches",
-			Handler:    _Warehouse_RetryFailedBatches_Handler,
-		},
-		{
-			MethodName: "RetryFailedBatch",
-			Handler:    _Warehouse_RetryFailedBatch_Handler,
+			MethodName: "RetrySpecificFailedBatch",
+			Handler:    _Warehouse_RetrySpecificFailedBatch_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

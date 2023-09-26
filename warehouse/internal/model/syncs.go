@@ -43,35 +43,19 @@ type RetrieveFailedBatchesRequest struct {
 type RetrieveFailedBatchesResponse struct {
 	ErrorCategory string
 	SourceID      string
-	Count         int64
-	LastHappened  time.Time
 	Status        string
-}
-
-type RetrieveFailedBatchRequest struct {
-	DestinationID string
-	WorkspaceID   string
-	IntervalInHrs int64
-	ErrorCategory string
-	SourceID      string
-	Status        string
-}
-
-type RetrieveFailedBatchResponse struct {
+	TotalEvents   int64
+	UpdatedAt     time.Time
 	Error         string
-	ErrorCategory string
-	SourceID      string
-	Status        string
-	LastHappened  time.Time
 }
 
-type RetryFailedBatchesRequest struct {
+type RetryAllFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	IntervalInHrs int64
 }
 
-type RetryFailedBatchRequest struct {
+type RetrySpecificFailedBatchRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	IntervalInHrs int64

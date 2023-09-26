@@ -1053,98 +1053,114 @@ func (uploads *Uploads) RetrieveFailedBatches(
 	req model.RetrieveFailedBatchesRequest,
 ) ([]model.RetrieveFailedBatchesResponse, error) {
 	stmt := `
+		WITH table_uploads_result AS (
+		  -- Getting entries from table uploads where and total_events got populated
+		  SELECT
+			u.error_category,
+			u.source_id,
+			CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			u.id,
+			tu.total_events,
+			u.updated_at,
+			u.error,
+			u.timings
+		  FROM
+			wh_uploads u
+		  LEFT JOIN wh_table_uploads tu ON u.id = tu.wh_upload_id
+		  WHERE
+			u.destination_id = $1
+			AND u.workspace_id = $2
+			AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
+			AND u.status ~~ ANY($4)
+			AND u.error IS NOT NULL
+			AND u.error != '{}'
+			AND tu.table_name NOT ILIKE $5
+			AND tu.total_events IS NOT NULL
+		),
+		staging_files_result AS (
+		  -- Getting entries from staging files
+		  SELECT
+			u.error_category,
+			u.source_id,
+			CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			u.id,
+			s.total_events,
+			u.updated_at,
+			u.error,
+			u.timings
+		  FROM
+			wh_uploads u
+		  LEFT JOIN wh_staging_files s ON u.id = s.upload_id
+		  WHERE
+			u.destination_id = $1
+			AND u.workspace_id = $2
+			AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
+			AND u.status ~~ ANY($4)
+            AND u.error IS NOT NULL
+			AND u.error != '{}'
+		),
+		combined_result AS (
+		  -- Select everything from table_uploads_result
+		  SELECT
+			tu.error_category,
+			tu.source_id,
+			tu.status,
+			tu.total_events,
+			tu.updated_at,
+			tu.error,
+			tu.timings
+		  FROM
+			table_uploads_result tu
+		  UNION ALL
+			-- Select everything from staging_files_result which is not present in table_uploads_result
+		  SELECT
+			s.error_category,
+			s.source_id,
+			s.status,
+			s.total_events,
+			s.updated_at,
+			s.error,
+			s.timings
+		  FROM
+			staging_files_result s
+		  WHERE
+			NOT EXISTS (
+			  SELECT
+				1
+			  FROM
+				table_uploads_result tu
+			  WHERE
+				tu.id = s.id
+			)
+		)
 		SELECT
 		  error_category,
 		  source_id,
-		  sum(total_events) AS total_events,
-		  max(updated_at) AS updated_at,
-		  status
+		  status,
+		  total_events,
+		  updated_at,
+		  error,
+          timings
 		FROM
 		  (
-			WITH table_uploads_result AS (
-			  -- Getting entries where table uploads got created and total_events got populated
-			  SELECT
-				coalesce(u.error_category, 'default') AS error_category,
-				u.source_id AS source_id,
-				sum(tu.total_events) AS total_events,
-				max(u.updated_at) AS updated_at,
-				CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
-				u.id AS id
-			  FROM
-				wh_uploads u
-				LEFT JOIN wh_table_uploads tu ON u.id = tu.wh_upload_id
-			  WHERE
-				u.destination_id = $1
-				AND u.workspace_id = $2
-				AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
-				AND u.status ~~ ANY($4)
-				AND u.error != '{}'
-				AND tu.table_name NOT ILIKE $5
-				AND tu.total_events IS NOT NULL
-			  GROUP BY
-				u.error_category,
-				u.source_id,
-				u.status,
-				u.id
-			),
-			staging_files_result AS (
-			  -- Getting entries from staging files
-			  SELECT
-				coalesce(u.error_category, 'default') AS error_category,
-				u.source_id,
-				sum(s.total_events) AS total_events,
-				max(u.updated_at) AS updated_at,
-				CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
-				u.id
-			  FROM
-				wh_uploads u
-				LEFT JOIN wh_staging_files s ON u.id = s.upload_id
-			  WHERE
-				u.destination_id = $1
-				AND u.workspace_id = $2
-				AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
-				AND u.status ~~ ANY($4)
-				AND u.error != '{}'
-			  GROUP BY
-				u.error_category,
-				u.source_id,
-				u.status,
-				u.id
-			) -- Select everything from table_uploads_result
 			SELECT
-			  tu.error_category,
-			  tu.source_id,
-			  tu.total_events,
-			  tu.updated_at,
-			  tu.status
-			FROM
-			  table_uploads_result tu
-			UNION ALL
-			  -- Select everything from staging_files_result which is not present in table_uploads_result
-			SELECT
-			  s.error_category,
-			  s.source_id,
-			  s.total_events,
-			  s.updated_at,
-			  s.status
-			FROM
-			  staging_files_result s
-			WHERE
-			  NOT EXISTS (
-				SELECT
-				  1
-				FROM
-				  table_uploads_result tu
-				WHERE
-				  tu.id = s.id
-			  )
-			ORDER BY
-			  updated_at DESC
-		  ) AS failed_batches
-		GROUP BY
-		  error_category,
-		  source_id,
-		  status;
+			  error_category,
+			  source_id,
+			  status,
+			  sum(total_events) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS total_events,
+			  updated_at,
+			  error,
+			  timings,
+			  ROW_NUMBER() OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS row_number
+			from
+			  combined_result
+	      ) q
+        WHERE
+          row_number = 1;
 	`
 	stmtArgs := []interface{}{
 		req.DestinationID, req.WorkspaceID, req.IntervalInHrs,
@@ -1161,18 +1177,35 @@ func (uploads *Uploads) RetrieveFailedBatches(
 	var failedBatches []model.RetrieveFailedBatchesResponse
 	for rows.Next() {
 		var failedBatch model.RetrieveFailedBatchesResponse
+		var timingsRaw []byte
+		var timings model.Timings
+
 		err := rows.Scan(
 			&failedBatch.ErrorCategory,
 			&failedBatch.SourceID,
-			&failedBatch.Count,
-			&failedBatch.LastHappened,
 			&failedBatch.Status,
+			&failedBatch.TotalEvents,
+			&failedBatch.UpdatedAt,
+			&failedBatch.Error,
+			&timingsRaw,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning failed batches: %w", err)
 		}
 
-		failedBatch.LastHappened = failedBatch.LastHappened.UTC()
+		failedBatch.UpdatedAt = failedBatch.UpdatedAt.UTC()
+
+		if len(timingsRaw) > 0 {
+			_ = json.Unmarshal(timingsRaw, &timings)
+
+			errs := gjson.Get(
+				failedBatch.Error,
+				fmt.Sprintf("%s.errors", model.GetLastFailedStatus(timings)),
+			).Array()
+			if len(errs) > 0 {
+				failedBatch.Error = errs[len(errs)-1].String()
+			}
+		}
 
 		failedBatches = append(failedBatches, failedBatch)
 	}
@@ -1180,78 +1213,9 @@ func (uploads *Uploads) RetrieveFailedBatches(
 	return failedBatches, nil
 }
 
-func (uploads *Uploads) RetrieveFailedBatch(
-	ctx context.Context,
-	req model.RetrieveFailedBatchRequest,
-) (*model.RetrieveFailedBatchResponse, error) {
-	stmt := `
-		SELECT
-			error,
-			error_category,
-			timings,
-			source_id,
-			CASE WHEN status LIKE '%failed%' THEN 'failed' ELSE status END AS status,
-			updated_at
-		FROM
-			wh_uploads
-		WHERE
-			destination_id = $1
-			AND workspace_id = $2
-			AND created_at > NOW() - $3 * INTERVAL '1 HOUR'
-			AND status LIKE $4
-			AND error != '{}'
-			AND source_id = $5
-			AND error_category = $6
-		ORDER BY
-			updated_at DESC,
-			id DESC
-		LIMIT 1;
-	`
-	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.IntervalInHrs,
-		"%" + req.Status + "%",
-		req.SourceID, req.ErrorCategory,
-	}
-
-	var batchDetails model.RetrieveFailedBatchResponse
-	var timings model.Timings
-	var timingsRaw []byte
-
-	err := uploads.db.QueryRowContext(ctx, stmt, stmtArgs...).Scan(
-		&batchDetails.Error,
-		&batchDetails.ErrorCategory,
-		&timingsRaw,
-		&batchDetails.SourceID,
-		&batchDetails.Status,
-		&batchDetails.LastHappened,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, model.ErrFailedBatchNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("querying failed batch details: %w", err)
-	}
-
-	batchDetails.LastHappened = batchDetails.LastHappened.UTC()
-
-	if len(timingsRaw) > 0 {
-		_ = json.Unmarshal(timingsRaw, &timings)
-
-		errs := gjson.Get(
-			batchDetails.Error,
-			fmt.Sprintf("%s.errors", model.GetLastFailedStatus(timings)),
-		).Array()
-		if len(errs) > 0 {
-			batchDetails.Error = errs[len(errs)-1].String()
-		}
-	}
-
-	return &batchDetails, nil
-}
-
 func (uploads *Uploads) RetryFailedBatches(
 	ctx context.Context,
-	req model.RetryFailedBatchesRequest,
+	req model.RetryAllFailedBatchesRequest,
 ) (int64, error) {
 	stmt := `
 		UPDATE
@@ -1275,14 +1239,15 @@ func (uploads *Uploads) RetryFailedBatches(
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
-		return 0, fmt.Errorf("retrying failed batches: %w", err)
+		return 0, fmt.Errorf("executing retrying failed batches: %w", err)
 	}
+
 	return r.RowsAffected()
 }
 
-func (uploads *Uploads) RetryFailedBatch(
+func (uploads *Uploads) RetrySpecificFailedBatch(
 	ctx context.Context,
-	req model.RetryFailedBatchRequest,
+	req model.RetrySpecificFailedBatchRequest,
 ) (int64, error) {
 	stmt := `
 		UPDATE
@@ -1308,7 +1273,7 @@ func (uploads *Uploads) RetryFailedBatch(
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
-		return 0, fmt.Errorf("retrying failed batch: %w", err)
+		return 0, fmt.Errorf("executing retrying specific failed batch: %w", err)
 	}
 
 	return r.RowsAffected()

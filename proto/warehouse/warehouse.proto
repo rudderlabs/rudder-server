@@ -18,9 +18,8 @@ service Warehouse {
   rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
   rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
-  rpc RetrieveFailedBatch(RetrieveFailedBatchRequest) returns (RetrieveFailedBatchResponse);
-  rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
-  rpc RetryFailedBatch(RetryFailedBatchRequest) returns (RetryFailedBatchResponse);
+  rpc RetryAllFailedBatches(RetryAllFailedBatchesRequest) returns (RetryAllFailedBatchesResponse);
+  rpc RetrySpecificFailedBatch(RetrySpecificFailedBatchRequest) returns (RetrySpecificFailedBatchResponse);
 }
 
 message Pagination {
@@ -133,41 +132,25 @@ message RetrieveFailedBatchesResponse{
 }
 
 message FailedBatchInfo{
-  string errorCategory = 1;
-  string sourceID = 2;
-  int64 count = 3;
-  google.protobuf.Timestamp lastHappened = 4;
-  string status = 5;
-}
-
-message RetrieveFailedBatchRequest{
-  string workspaceID = 1;
-  string destinationID = 2;
-  string intervalInHours = 3;
-  string errorCategory = 4;
-  string sourceID = 5;
-  string status = 6;
-}
-
-message RetrieveFailedBatchResponse{
   string error = 1;
   string errorCategory = 2;
   string sourceID = 3;
-  google.protobuf.Timestamp lastHappened = 4;
-  string status = 5;
+  int64 failedEventsCount = 4;
+  google.protobuf.Timestamp lastHappened = 5;
+  string status = 6;
 }
 
-message RetryFailedBatchesRequest{
+message RetryAllFailedBatchesRequest{
   string workspaceID = 1;
   string destinationID = 2;
   string intervalInHours = 3;
 }
 
-message RetryFailedBatchesResponse{
-  int64 count = 1;
+message RetryAllFailedBatchesResponse{
+  int64 retriedSyncsCount = 1;
 }
 
-message RetryFailedBatchRequest{
+message RetrySpecificFailedBatchRequest{
   string workspaceID = 1;
   string destinationID = 2;
   string intervalInHours = 3;
@@ -176,6 +159,6 @@ message RetryFailedBatchRequest{
   string status = 6;
 }
 
-message RetryFailedBatchResponse{
-  int64 count = 1;
+message RetrySpecificFailedBatchResponse{
+  int64 retriedSyncsCount = 1;
 }

@@ -1217,9 +1217,10 @@ func TestGRPC(t *testing.T) {
 				timings             model.Timings
 			}{
 				{
-					status:        "internal_processing_failed",
-					error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some error","some error"],"attempt":2}}`),
-					errorCategory: "default",
+					status:              "internal_processing_failed",
+					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
+					errorCategory:       "default",
+					prepareTableUploads: false,
 					timings: model.Timings{
 						{
 							"internal_processing_failed": now,
@@ -1227,9 +1228,10 @@ func TestGRPC(t *testing.T) {
 					},
 				},
 				{
-					status:        "generating_load_files_failed",
-					error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some error","some error"],"attempt":2}}`),
-					errorCategory: "default",
+					status:              "generating_load_files_failed",
+					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+					errorCategory:       "default",
+					prepareTableUploads: false,
 					timings: model.Timings{
 						{
 							"generating_load_files_failed": now,
@@ -1238,7 +1240,7 @@ func TestGRPC(t *testing.T) {
 				},
 				{
 					status:              "exporting_data_failed",
-					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
 					errorCategory:       model.PermissionError,
 					prepareTableUploads: true,
 					timings: model.Timings{
@@ -1249,7 +1251,7 @@ func TestGRPC(t *testing.T) {
 				},
 				{
 					status:              "aborted",
-					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
 					prepareTableUploads: true,
 					errorCategory:       model.ResourceNotFoundError,
 					timings: model.Timings{
@@ -1329,10 +1331,11 @@ func TestGRPC(t *testing.T) {
 
 					failedBatches := lo.Map(res.GetInfos(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
 						return model.RetrieveFailedBatchesResponse{
+							Error:         detail.GetError(),
 							SourceID:      detail.GetSourceID(),
 							Status:        detail.GetStatus(),
-							Count:         detail.GetCount(),
-							LastHappened:  detail.GetLastHappened().AsTime(),
+							TotalEvents:   detail.GetFailedEventsCount(),
+							UpdatedAt:     detail.GetLastHappened().AsTime(),
 							ErrorCategory: detail.GetErrorCategory(),
 						}
 					})
@@ -1340,33 +1343,33 @@ func TestGRPC(t *testing.T) {
 						{
 							ErrorCategory: "default",
 							SourceID:      sourceID,
-							Count:         1200,
-							LastHappened:  now.UTC(),
+							TotalEvents:   1200,
+							UpdatedAt:     now.UTC(),
 							Status:        model.Failed,
 						},
 						{
 							ErrorCategory: model.PermissionError,
 							SourceID:      sourceID,
-							Count:         500,
-							LastHappened:  now.UTC(),
+							TotalEvents:   500,
+							UpdatedAt:     now.UTC(),
 							Status:        model.Failed,
 						},
 						{
 							ErrorCategory: model.ResourceNotFoundError,
 							SourceID:      sourceID,
-							Count:         500,
-							LastHappened:  now.UTC(),
+							TotalEvents:   500,
+							UpdatedAt:     now.UTC(),
 							Status:        model.Aborted,
 						},
 					})
 				})
 			})
 
-			t.Run("RetrieveFailedBatch", func(t *testing.T) {
+			t.Run("RetryAllFailedBatches", func(t *testing.T) {
 				prepare()
 
 				t.Run("no destination + workspace", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{})
+					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{})
 					require.Error(t, err)
 					require.Empty(t, res)
 
@@ -1376,7 +1379,61 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
 				})
 				t.Run("invalid intervalInHrs", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{
+					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
+						WorkspaceID:     workspaceID,
+						DestinationID:   destinationID,
+						IntervalInHours: "-1",
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
+				})
+
+				t.Run("no sources", func(t *testing.T) {
+					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
+						WorkspaceID:     "unknown_workspace_id",
+						DestinationID:   destinationID,
+						IntervalInHours: "1",
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.Unauthenticated, statusError.Code())
+					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
+				})
+				t.Run("success", func(t *testing.T) {
+					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
+						WorkspaceID:     workspaceID,
+						DestinationID:   destinationID,
+						IntervalInHours: strconv.Itoa(int(intervalInHours)),
+					})
+					require.NoError(t, err)
+					require.NotEmpty(t, res)
+					require.EqualValues(t, 4, res.GetRetriedSyncsCount())
+				})
+			})
+
+			t.Run("RetrySpecificFailedBatch", func(t *testing.T) {
+				prepare()
+
+				t.Run("no destination + workspace", func(t *testing.T) {
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
+				})
+				t.Run("invalid intervalInHrs", func(t *testing.T) {
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
 						WorkspaceID:     workspaceID,
 						DestinationID:   destinationID,
 						IntervalInHours: "-1",
@@ -1390,7 +1447,7 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
 				})
 				t.Run("no errorCategory + sourceID + status", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
 						WorkspaceID:     workspaceID,
 						DestinationID:   destinationID,
 						IntervalInHours: "1",
@@ -1404,7 +1461,7 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "errorCategory, sourceId and status cannot be empty", statusError.Message())
 				})
 				t.Run("no sources", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
 						WorkspaceID:     "unknown_workspace_id",
 						DestinationID:   destinationID,
 						IntervalInHours: "1",
@@ -1421,7 +1478,7 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
 				})
 				t.Run("unauthorized", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
 						WorkspaceID:     unusedWorkspaceID,
 						DestinationID:   destinationID,
 						IntervalInHours: "1",
@@ -1438,7 +1495,7 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "unauthorized request", statusError.Message())
 				})
 				t.Run("success", func(t *testing.T) {
-					res, err := grpcClient.RetrieveFailedBatch(ctx, &proto.RetrieveFailedBatchRequest{
+					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
 						WorkspaceID:     workspaceID,
 						DestinationID:   destinationID,
 						IntervalInHours: strconv.Itoa(int(intervalInHours)),
@@ -1448,155 +1505,7 @@ func TestGRPC(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
-					require.Equal(t, "some error", res.GetError())
-					require.Equal(t, model.ResourceNotFoundError, res.GetErrorCategory())
-					require.Equal(t, sourceID, res.GetSourceID())
-					require.Equal(t, model.Aborted, res.GetStatus())
-					require.EqualValues(t, now.UTC(), res.GetLastHappened().AsTime().UTC())
-				})
-			})
-
-			t.Run("RetryFailedBatches", func(t *testing.T) {
-				prepare()
-
-				t.Run("no destination + workspace", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
-				})
-				t.Run("invalid intervalInHrs", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "-1",
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
-				})
-
-				t.Run("no sources", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
-						WorkspaceID:     "unknown_workspace_id",
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.Unauthenticated, statusError.Code())
-					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
-				})
-				t.Run("success", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: strconv.Itoa(int(intervalInHours)),
-					})
-					require.NoError(t, err)
-					require.NotEmpty(t, res)
-					require.EqualValues(t, 4, res.GetCount())
-				})
-			})
-
-			t.Run("RetryFailedBatch", func(t *testing.T) {
-				prepare()
-
-				t.Run("no destination + workspace", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
-				})
-				t.Run("invalid intervalInHrs", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "-1",
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
-				})
-				t.Run("no errorCategory + sourceID + status", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "errorCategory, sourceId and status cannot be empty", statusError.Message())
-				})
-				t.Run("no sources", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{
-						WorkspaceID:     "unknown_workspace_id",
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-						ErrorCategory:   model.PermissionError,
-						SourceID:        sourceID,
-						Status:          model.Failed,
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.Unauthenticated, statusError.Code())
-					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
-				})
-				t.Run("unauthorized", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{
-						WorkspaceID:     unusedWorkspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-						ErrorCategory:   model.PermissionError,
-						SourceID:        sourceID,
-						Status:          model.Failed,
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.Unauthenticated, statusError.Code())
-					require.Equal(t, "unauthorized request", statusError.Message())
-				})
-				t.Run("success", func(t *testing.T) {
-					res, err := grpcClient.RetryFailedBatch(ctx, &proto.RetryFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: strconv.Itoa(int(intervalInHours)),
-						ErrorCategory:   model.ResourceNotFoundError,
-						SourceID:        sourceID,
-						Status:          model.Aborted,
-					})
-					require.NoError(t, err)
-					require.NotEmpty(t, res)
-					require.EqualValues(t, 1, res.GetCount())
+					require.EqualValues(t, 1, res.GetRetriedSyncsCount())
 				})
 			})
 		})

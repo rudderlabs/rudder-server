@@ -814,7 +814,6 @@ func (g *GRPC) RetrieveFailedBatches(
 		return &proto.RetrieveFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
 	}
-
 	if intervalInHrs <= 0 {
 		return &proto.RetrieveFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
@@ -838,142 +837,73 @@ func (g *GRPC) RetrieveFailedBatches(
 
 	infos := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
 		return &proto.FailedBatchInfo{
-			ErrorCategory: item.ErrorCategory,
-			SourceID:      item.SourceID,
-			Count:         item.Count,
-			LastHappened:  timestamppb.New(item.LastHappened),
-			Status:        item.Status,
+			ErrorCategory:     item.ErrorCategory,
+			SourceID:          item.SourceID,
+			FailedEventsCount: item.TotalEvents,
+			LastHappened:      timestamppb.New(item.UpdatedAt),
+			Status:            item.Status,
 		}
 	})
 
 	return &proto.RetrieveFailedBatchesResponse{Infos: infos}, nil
 }
 
-func (g *GRPC) RetrieveFailedBatch(
+func (g *GRPC) RetryAllFailedBatches(
 	ctx context.Context,
-	req *proto.RetrieveFailedBatchRequest,
-) (*proto.RetrieveFailedBatchResponse, error) {
-	g.logger.Infow(
-		"Retrieving failed batch details",
-		lf.WorkspaceID, req.GetWorkspaceID(),
-		lf.DestinationID, req.GetDestinationID(),
-		lf.IntervalInHours, req.GetIntervalInHours(),
-		lf.ErrorCategory, req.GetErrorCategory(),
-		lf.SourceID, req.GetSourceID(),
-		lf.Status, req.GetStatus(),
-	)
-
-	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
-	}
-
-	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
-	if ok != nil {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
-	}
-
-	if intervalInHrs <= 0 {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
-	}
-
-	if req.GetErrorCategory() == "" || req.GetSourceID() == "" || req.GetStatus() == "" {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "errorCategory, sourceId and status cannot be empty")
-	}
-
-	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
-	if len(sourceIDs) == 0 {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.GetWorkspaceID())
-	}
-	if req.GetSourceID() != "" && !slices.Contains(sourceIDs, req.GetSourceID()) {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
-	}
-
-	failedBatch, err := g.uploadRepo.RetrieveFailedBatch(ctx, model.RetrieveFailedBatchRequest{
-		WorkspaceID:   req.GetWorkspaceID(),
-		DestinationID: req.GetDestinationID(),
-		IntervalInHrs: intervalInHrs,
-		ErrorCategory: req.GetErrorCategory(),
-		SourceID:      req.GetSourceID(),
-		Status:        req.GetStatus(),
-	})
-	if err != nil {
-		return &proto.RetrieveFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get failed batch details: %v", err)
-	}
-
-	response := &proto.RetrieveFailedBatchResponse{
-		Error:         failedBatch.Error,
-		ErrorCategory: failedBatch.ErrorCategory,
-		SourceID:      failedBatch.SourceID,
-		Status:        failedBatch.Status,
-		LastHappened:  timestamppb.New(failedBatch.LastHappened),
-	}
-	return response, nil
-}
-
-func (g *GRPC) RetryFailedBatches(
-	ctx context.Context,
-	req *proto.RetryFailedBatchesRequest,
-) (*proto.RetryFailedBatchesResponse, error) {
-	g.logger.Infow("Retrying failed batches",
+	req *proto.RetryAllFailedBatchesRequest,
+) (*proto.RetryAllFailedBatchesResponse, error) {
+	g.logger.Infow("Retrying all failed batches",
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
 		lf.IntervalInHours, req.GetIntervalInHours(),
 	)
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
-		return &proto.RetryFailedBatchesResponse{},
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
 	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
 	if ok != nil {
-		return &proto.RetryFailedBatchesResponse{},
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
 	}
-
 	if intervalInHrs <= 0 {
-		return &proto.RetryFailedBatchesResponse{},
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
 	}
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
 	if len(sourceIDs) == 0 {
-		return &proto.RetryFailedBatchesResponse{},
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.GetWorkspaceID())
 	}
 
-	retryCount, err := g.uploadRepo.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+	retriedCount, err := g.uploadRepo.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 		WorkspaceID:   req.GetWorkspaceID(),
 		DestinationID: req.GetDestinationID(),
 		IntervalInHrs: intervalInHrs,
 	})
 	if err != nil {
-		return &proto.RetryFailedBatchesResponse{},
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to retry failed batches: %v", err)
 	}
-	if retryCount == 0 {
-		return &proto.RetryFailedBatchesResponse{},
+	if retriedCount == 0 {
+		return &proto.RetryAllFailedBatchesResponse{},
 			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no failed batches found to retry")
 	}
 
-	resp := &proto.RetryFailedBatchesResponse{
-		Count: retryCount,
+	resp := &proto.RetryAllFailedBatchesResponse{
+		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
 }
 
-func (g *GRPC) RetryFailedBatch(
+func (g *GRPC) RetrySpecificFailedBatch(
 	ctx context.Context,
-	req *proto.RetryFailedBatchRequest,
-) (*proto.RetryFailedBatchResponse, error) {
-	g.logger.Infow("Retrying failed batches",
+	req *proto.RetrySpecificFailedBatchRequest,
+) (*proto.RetrySpecificFailedBatchResponse, error) {
+	g.logger.Infow("Retrying specific failed batch",
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
 		lf.IntervalInHours, req.GetIntervalInHours(),
@@ -983,37 +913,36 @@ func (g *GRPC) RetryFailedBatch(
 	)
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
 	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
 	if ok != nil {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
 	}
-
 	if intervalInHrs <= 0 {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
 	}
 
 	if req.GetErrorCategory() == "" || req.GetSourceID() == "" || req.GetStatus() == "" {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "errorCategory, sourceId and status cannot be empty")
 	}
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
 	if len(sourceIDs) == 0 {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.GetWorkspaceID())
 	}
 	if req.GetSourceID() != "" && !slices.Contains(sourceIDs, req.GetSourceID()) {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
 	}
 
-	retryCount, err := g.uploadRepo.RetryFailedBatch(ctx, model.RetryFailedBatchRequest{
+	retriedCount, err := g.uploadRepo.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 		WorkspaceID:   req.GetWorkspaceID(),
 		DestinationID: req.GetDestinationID(),
 		IntervalInHrs: intervalInHrs,
@@ -1022,16 +951,16 @@ func (g *GRPC) RetryFailedBatch(
 		Status:        req.GetStatus(),
 	})
 	if err != nil {
-		return &proto.RetryFailedBatchResponse{},
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to retry failed batch: %v", err)
 	}
-	if retryCount == 0 {
-		return &proto.RetryFailedBatchResponse{},
+	if retriedCount == 0 {
+		return &proto.RetrySpecificFailedBatchResponse{},
 			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no failed batch found to retry")
 	}
 
-	resp := &proto.RetryFailedBatchResponse{
-		Count: retryCount,
+	resp := &proto.RetrySpecificFailedBatchResponse{
+		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
 }
