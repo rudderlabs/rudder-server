@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
@@ -31,8 +32,6 @@ import (
 
 const ReportsTable = "reports"
 
-var maxConcurrentRequests int
-
 const (
 	StatReportingMainLoopTime              = "reporting_client_main_loop_time"
 	StatReportingGetReportsTime            = "reporting_client_get_reports_time"
@@ -45,7 +44,7 @@ const (
 	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
 )
 
-type HandleT struct {
+type Handle struct {
 	init                                 chan struct{}
 	onceInit                             sync.Once
 	clients                              map[string]*types.Client
@@ -59,33 +58,36 @@ type HandleT struct {
 	piiReportingSettings                 map[string]bool
 	whActionsOnly                        bool
 	region                               string
-	sleepInterval                        time.Duration
-	mainLoopSleepInterval                time.Duration
+	sleepInterval                        misc.ValueLoader[time.Duration]
+	mainLoopSleepInterval                misc.ValueLoader[time.Duration]
+	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
+	maxConcurrentRequests                misc.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 }
 
-func NewFromEnvConfig(log logger.Logger) *HandleT {
-	var sleepInterval, mainLoopSleepInterval time.Duration
-	var maxOpenConnections int
+func NewFromEnvConfig(log logger.Logger) *Handle {
+	var dbQueryTimeout *config.Reloadable[time.Duration]
+
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
 
-	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
-	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
-	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
+	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
+	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
+	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
+	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
+	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-	return &HandleT{
+	return &Handle{
 		init:                                 make(chan struct{}),
 		log:                                  log,
 		clients:                              make(map[string]*types.Client),
@@ -100,10 +102,12 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
+		maxConcurrentRequests:                maxConcurrentRequests,
+		dbQueryTimeout:                       dbQueryTimeout,
 	}
 }
 
-func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
+func (r *Handle) setup(beConfigHandle backendconfig.BackendConfig) {
 	r.log.Info("[[ Reporting ]] Setting up reporting handler")
 
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
@@ -137,12 +141,12 @@ func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 	})
 }
 
-func (r *HandleT) getWorkspaceID(sourceID string) string {
+func (r *Handle) getWorkspaceID(sourceID string) string {
 	<-r.init
 	return r.workspaceIDForSourceIDMap[sourceID]
 }
 
-func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
+func (r *Handle) AddClient(ctx context.Context, c types.Config) {
 	if c.ClientName == "" {
 		c.ClientName = types.CoreReportingClient
 	}
@@ -176,7 +180,7 @@ func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	r.mainLoop(ctx, c.ClientName)
 }
 
-func (r *HandleT) WaitForSetup(ctx context.Context, clientName string) error {
+func (r *Handle) WaitForSetup(ctx context.Context, clientName string) error {
 	for {
 		if r.GetClient(clientName) != nil {
 			break
@@ -189,7 +193,7 @@ func (r *HandleT) WaitForSetup(ctx context.Context, clientName string) error {
 	return nil
 }
 
-func (r *HandleT) GetClient(clientName string) *types.Client {
+func (r *Handle) GetClient(clientName string) *types.Client {
 	r.clientsMapLock.RLock()
 	defer r.clientsMapLock.RUnlock()
 
@@ -200,7 +204,7 @@ func (r *HandleT) GetClient(clientName string) *types.Client {
 	return nil
 }
 
-func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
+func (r *Handle) getDBHandle(clientName string) (*sql.DB, error) {
 	client := r.GetClient(clientName)
 	if client != nil {
 		return client.DbHandle, nil
@@ -209,7 +213,7 @@ func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
 }
 
-func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64) {
+func (r *Handle) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(clientName)
@@ -218,13 +222,20 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	}
 
 	queryStart := time.Now()
-	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
-	if err != nil && err != sql.ErrNoRows {
+	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
+	defer cancel()
+	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+
+	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
 	}
+	if ctx.Err() != nil {
+		return nil, 0, fmt.Errorf("reporting query timeout")
+	}
+
 	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
-		return nil, 0
+		return nil, 0, nil
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
@@ -270,10 +281,10 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 		metricReports = append(metricReports, &metricReport)
 	}
 
-	return metricReports, queryMin.Int64
+	return metricReports, queryMin.Int64, err
 }
 
-func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
+func (*Handle) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -361,7 +372,7 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 	return values
 }
 
-func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
+func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(clientName)
@@ -374,29 +385,57 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+	reportingLag := stats.Default.NewTaggedStat(
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": clientName},
+	)
+
+	var lastReportedAtTime atomic.Time
+	lastReportedAtTime.Store(time.Now())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
+	go func() {
+		// for monitoring reports pileups
+		defer wg.Done()
+		for {
+			lag := time.Since(lastReportedAtTime.Load())
+			reportingLag.Gauge(lag.Seconds())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Minute):
+			}
+		}
+	}()
+
 	for {
 		if ctx.Err() != nil {
 			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 			return
 		}
-		requestChan := make(chan struct{}, maxConcurrentRequests)
+		requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 		loopStart := time.Now()
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt := r.getReports(currentMs, clientName)
+		reports, reportedAt, err := r.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
+			if err == nil {
+				lastReportedAtTime.Store(loopStart)
+			}
 			select {
 			case <-ctx.Done():
 				r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 				return
-			case <-time.After(r.sleepInterval):
+			case <-time.After(r.sleepInterval.Load()):
 			}
 			continue
 		}
 
+		lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
@@ -422,14 +461,13 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			})
 		}
 
-		err := errGroup.Wait()
+		err = errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
 			dbHandle, err := r.getDBHandle(clientName)
 			if err != nil {
 				panic(err)
 			}
-			_, err = dbHandle.Exec(sqlStatement)
+			_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 			if err != nil {
 				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 			}
@@ -439,12 +477,12 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(r.mainLoopSleepInterval):
+		case <-time.After(r.mainLoopSleepInterval.Load()):
 		}
 	}
 }
 
-func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, clientName string, metric *types.Metric) error {
+func (r *Handle) sendMetric(ctx context.Context, netClient *http.Client, clientName string, metric *types.Metric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
 		panic(err)
@@ -529,12 +567,12 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
+func (r *Handle) IsPIIReportingDisabled(workspaceID string) bool {
 	<-r.init
 	return r.piiReportingSettings[workspaceID]
 }
 
-func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (r *Handle) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
 	}
@@ -616,7 +654,7 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	}
 }
 
-func (r *HandleT) getTags(clientName string) stats.Tags {
+func (r *Handle) getTags(clientName string) stats.Tags {
 	return stats.Tags{
 		"workspaceId": r.workspaceID,
 		"instanceId":  r.instanceID,

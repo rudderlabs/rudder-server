@@ -6,5 +6,5 @@
 {"message":{"data":{"C_EmailAddress":"test9@mail.com","C_FirstName":"Test8"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1019}}
 {"message":{"data":{"C_EmailAddress":"test10@mail.com","C_FirstName":"Test9"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1020}}
 {"message":{"data":{"C_EmailAddress":"test11@mail.com","C_FirstName":"Test10"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1021}}
-{"message":{"data":{"C_EmailAddress":"test12@mail.com","C_FirstName":"Test11"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1022}}
-{"message":{"data":{"C_EmailAddress":"Test12","C_FirstName":"test13@mail.com"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1023}}
+{"message":{"data":{"C_EmailAddress":"Test11","C_FirstName":"Test11"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1022}}
+{"message":{"data":{"C_EmailAddress":"test12@mail.com","C_FirstName":"test13@mail.com"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1023}}

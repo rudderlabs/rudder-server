@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -123,7 +124,7 @@ func (r *router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 		&upload.LoadFileEndID,
 		&upload.Error,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return
 	}
 	if err != nil {
@@ -435,27 +436,27 @@ func (r *router) populateHistoricIdentities(ctx context.Context, warehouse model
 		))
 		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
-			job.setUploadError(err, model.Aborted)
+			_, _ = job.setUploadError(err, model.Aborted)
 			return
 		}
 		defer whManager.Cleanup(ctx)
 
-		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, whManager)
+		err = job.schemaHandle.FetchSchemaFromWarehouse(ctx, whManager)
 		if err != nil {
 			r.logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-			job.setUploadError(err, model.Aborted)
+			_, _ = job.setUploadError(err, model.Aborted)
 			return
 		}
 
-		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
+		_ = job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
 			r.logger.Errorf(`[WH]: Identity table upload errors: %v`, err)
 		}
 		if len(loadErrors) > 0 {
-			job.setUploadError(misc.ConcatErrors(loadErrors), model.Aborted)
+			_, _ = job.setUploadError(misc.ConcatErrors(loadErrors), model.Aborted)
 			return
 		}
-		job.setUploadStatus(UploadStatusOpts{Status: model.ExportedData})
+		_ = job.setUploadStatus(UploadStatusOpts{Status: model.ExportedData})
 	})
 }

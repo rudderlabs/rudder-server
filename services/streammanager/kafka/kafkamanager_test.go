@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
@@ -34,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var sinceDuration = time.Second
@@ -515,7 +514,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		missingMessage:   mockSkippedDueToMessage,
 		prepareBatchTime: mockPrepareBatchTime,
 	}
-	allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, rand.UniqueString(10))
+	allowReqsWithoutUserIDAndAnonymousID = misc.SingleValueLoader(false)
 
 	t.Run("nil", func(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
@@ -576,7 +575,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		now := time.Now()
-		allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(true, rand.UniqueString(10))
+		allowReqsWithoutUserIDAndAnonymousID = misc.SingleValueLoader(true)
 		data := []map[string]interface{}{
 			{"not-interesting": "some value", "topic": "some-topic"},
 			{"message": "msg01", "topic": "some-topic"},

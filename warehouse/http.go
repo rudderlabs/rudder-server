@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
 
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -63,7 +64,7 @@ type Api struct {
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	db            *sqlmw.DB
-	notifier      *pgnotifier.PGNotifier
+	notifier      *notifier.Notifier
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
 	bcManager     *backendConfigManager
@@ -88,7 +89,7 @@ func NewApi(
 	statsFactory stats.Stats,
 	bcConfig backendconfig.BackendConfig,
 	db *sqlmw.DB,
-	notifier *pgnotifier.PGNotifier,
+	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
@@ -178,7 +179,7 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if a.config.runningMode != DegradedMode {
-		if !checkHealth(ctx, a.notifier.GetDBHandle()) {
+		if !a.notifier.CheckHealth(ctx) {
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}

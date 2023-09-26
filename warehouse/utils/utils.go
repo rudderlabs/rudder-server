@@ -184,10 +184,9 @@ var DiscardsSchema = map[string]string{
 }
 
 const (
-	LoadFileTypeCsv       = "csv"
-	LoadFileTypeJson      = "json"
-	LoadFileTypeParquet   = "parquet"
-	TestConnectionTimeout = 15 * time.Second
+	LoadFileTypeCsv     = "csv"
+	LoadFileTypeJson    = "json"
+	LoadFileTypeParquet = "parquet"
 )
 
 func Init() {
@@ -234,7 +233,7 @@ type KeyValue struct {
 
 //go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
-	GetSchemaInWarehouse() model.Schema
+	IsWarehouseSchemaEmpty() bool
 	GetLocalSchema(ctx context.Context) (model.Schema, error)
 	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema

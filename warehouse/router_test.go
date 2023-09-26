@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -33,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -41,7 +42,6 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-	pgnotifier.Init()
 	Init4()
 
 	pool, err := dockertest.NewPool("")
@@ -96,7 +96,10 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
+		ctx := context.Background()
+
+		n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
@@ -113,7 +116,7 @@ func TestRouter(t *testing.T) {
 		)
 		bcm := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		ef := encoding.NewFactory(config.Default)
@@ -126,7 +129,7 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			&notifier,
+			n,
 			tenantManager,
 			cp,
 			bcm,

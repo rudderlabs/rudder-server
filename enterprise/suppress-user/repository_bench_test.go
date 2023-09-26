@@ -86,10 +86,6 @@ func generateSuppressions(startFrom, batchSize int) []model.Suppression {
 	return res
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func randomInt(lt int) int {
 	return rand.Int() % lt // skipcq: GSC-G404
 }

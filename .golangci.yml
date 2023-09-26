@@ -59,6 +59,10 @@ issues:
         - errcheck
         - unparam
 
+    - path: 'cmd/rudder-cli/status/status.go'
+      linters:
+        - bodyclose
+
 linters-settings:
   depguard:
     rules:

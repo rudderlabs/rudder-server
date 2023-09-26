@@ -708,6 +708,12 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
 
+	it := filemanager.IterateFilesWithPrefix(ctx, fileManager.Prefix(), "", 1, fileManager)
+	_ = it.Next()
+	if err = it.Err(); err != nil {
+		return invalidDestinationCredErr{Base: err, Operation: "list"}
+	}
+
 	tempFilePath, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: request.Type,
@@ -757,7 +763,6 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("unable to close file: \n%w", err)
 	}
-
 	return nil
 }
 

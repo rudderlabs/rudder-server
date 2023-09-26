@@ -654,6 +654,66 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 		})
+
+		It("should accept valid replay request and store to jobsdb", func() {
+			handler := gateway.webReplayHandler()
+
+			validBody := []byte(fmt.Sprintf(`{"batch":[%s]}`, string(createValidBody("custom-property", "custom-value"))))
+
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any()).Times(1).Do(func(
+				ctx context.Context,
+				f func(tx jobsdb.StoreSafeTx) error,
+			) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.
+				EXPECT().StoreEachBatchRetryInTx(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						tx jobsdb.StoreSafeTx,
+						jobBatches [][]*jobsdb.JobT,
+					) (map[uuid.UUID]string, error) {
+						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
+						return jobsToEmptyErrors(ctx, tx, jobBatches)
+					}).
+				Times(1)
+
+			expectHandlerResponse(
+				handler,
+				authorizedReplayRequest(
+					ReplaySourceID,
+					bytes.NewBuffer(validBody)),
+				http.StatusOK,
+				"OK",
+				"replay",
+			)
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_requests",
+						map[string]string{
+							"source":      "_source",
+							"sourceID":    ReplaySourceID,
+							"workspaceId": WorkspaceID,
+							"writeKey":    ReplayWriteKey,
+							"reqType":     "replay",
+							"sourceType":  "eventStream",
+							"sdkVersion":  sdkStatTag,
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
+		})
 	})
 
 	Context("Bots", func() {
@@ -948,7 +1008,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests without valid rudder event in request body", func() {
 			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
-			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID }).Should(BeTrue())
+			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }).Should(BeTrue())
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
@@ -1075,7 +1135,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with request bodies larger than configured limit", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				data := make([]byte, gateway.conf.maxReqSize)
+				data := make([]byte, gateway.conf.maxReqSize.Load())
 				for i := range data {
 					data[i] = 'a'
 				}
@@ -1367,6 +1427,15 @@ func authorizedRequest(username string, body io.Reader) *http.Request {
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:password-should-be-ignored", username)))
 
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", basicAuth))
+	// set anonymousId header to ensure everything goes into same batch
+	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
+	req.RemoteAddr = TestRemoteAddressWithPort
+	return req
+}
+
+func authorizedReplayRequest(sourceID string, body io.Reader) *http.Request {
+	req := unauthorizedRequest(body)
+	req.Header.Set("X-Rudder-Source-Id", sourceID)
 	// set anonymousId header to ensure everything goes into same batch
 	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
 	req.RemoteAddr = TestRemoteAddressWithPort

@@ -10,7 +10,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -35,7 +38,6 @@ import (
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -458,7 +460,6 @@ var sampleBackendConfig = backendconfig.ConfigT{
 func initProcessor() {
 	config.Reset()
 	logger.Reset()
-	stash.Init()
 	admin.Init()
 	misc.Init()
 	format.MaxLength = 100000
@@ -683,7 +684,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		proc.archivalDB = c.mockArchivalDB
-		proc.config.archivalEnabled = true
+		proc.config.archivalEnabled = misc.SingleValueLoader(true)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -1136,9 +1137,9 @@ var _ = Describe("Processor", Ordered, func() {
 				gomock.Any(),
 				jobsdb.GetQueryParams{
 					CustomValFilters: gatewayCustomVal,
-					JobsLimit:        processor.config.maxEventsToProcess,
-					EventsLimit:      processor.config.maxEventsToProcess,
-					PayloadSizeLimit: processor.payloadLimit,
+					JobsLimit:        processor.config.maxEventsToProcess.Load(),
+					EventsLimit:      processor.config.maxEventsToProcess.Load(),
+					PayloadSizeLimit: processor.payloadLimit.Load(),
 				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
@@ -1279,9 +1280,9 @@ var _ = Describe("Processor", Ordered, func() {
 				gomock.Any(),
 				jobsdb.GetQueryParams{
 					CustomValFilters: gatewayCustomVal,
-					JobsLimit:        processor.config.maxEventsToProcess,
-					EventsLimit:      processor.config.maxEventsToProcess,
-					PayloadSizeLimit: processor.payloadLimit,
+					JobsLimit:        processor.config.maxEventsToProcess.Load(),
+					EventsLimit:      processor.config.maxEventsToProcess.Load(),
+					PayloadSizeLimit: processor.payloadLimit.Load(),
 				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -1328,7 +1329,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(nil)
+			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(nil) // one for newly stored jobs and one for dropped jobs
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -1486,9 +1487,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        processor.config.maxEventsToProcess,
-				EventsLimit:      processor.config.maxEventsToProcess,
-				PayloadSizeLimit: processor.payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -1774,9 +1775,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        processor.config.maxEventsToProcess,
-				EventsLimit:      processor.config.maxEventsToProcess,
-				PayloadSizeLimit: processor.payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1801,11 +1802,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockArchivalDB.EXPECT().
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
-
-			// will be used to save failed events to failed keys table
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
-			}).Times(1)
 
 			// One Store call is expected for all events
 			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
@@ -1916,9 +1912,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        processor.config.maxEventsToProcess,
-				EventsLimit:      processor.config.maxEventsToProcess,
-				PayloadSizeLimit: processor.payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -1944,10 +1940,6 @@ var _ = Describe("Processor", Ordered, func() {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
-
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
-			}).Return(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
@@ -2007,9 +1999,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        processor.config.maxEventsToProcess,
-				EventsLimit:      processor.config.maxEventsToProcess,
-				PayloadSizeLimit: processor.payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -2129,7 +2121,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
-			processor.config.readLoopSleep = time.Millisecond
+			processor.config.readLoopSleep = misc.SingleValueLoader(time.Millisecond)
 
 			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
 			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
@@ -3865,3 +3857,66 @@ var _ = Describe("TestConfigFilter", func() {
 		})
 	})
 })
+
+func TestStoreMessageMerge(t *testing.T) {
+	sm1 := &storeMessage{
+		statusList:    []*jobsdb.JobStatusT{{JobID: 1}},
+		destJobs:      []*jobsdb.JobT{{JobID: 1}},
+		batchDestJobs: []*jobsdb.JobT{{JobID: 1}},
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"1": {{JobID: 1}},
+		},
+		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}},
+		routerDestIDs:  []string{"1"},
+		reportMetrics:  []*types.PUReportedMetric{{}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 1},
+		dedupKeys:      map[string]struct{}{"1": {}},
+		totalEvents:    1,
+	}
+
+	sm2 := &storeMessage{
+		statusList:    []*jobsdb.JobStatusT{{JobID: 2}},
+		destJobs:      []*jobsdb.JobT{{JobID: 2}},
+		batchDestJobs: []*jobsdb.JobT{{JobID: 2}},
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"2": {{JobID: 2}},
+		},
+		procErrorJobs:  []*jobsdb.JobT{{JobID: 2}},
+		routerDestIDs:  []string{"2"},
+		reportMetrics:  []*types.PUReportedMetric{{}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 2},
+		dedupKeys:      map[string]struct{}{"2": {}},
+		totalEvents:    1,
+	}
+
+	merged := storeMessage{
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
+		sourceDupStats:        map[dupStatKey]int{},
+		dedupKeys:             map[string]struct{}{},
+	}
+
+	merged.merge(sm1)
+	require.Len(t, merged.statusList, 1, "status list should have 1 element")
+	require.Len(t, merged.destJobs, 1, "dest jobs should have 1 element")
+	require.Len(t, merged.batchDestJobs, 1, "batch dest jobs should have 1 element")
+	require.Len(t, merged.procErrorJobsByDestID, 1, "proc error jobs by dest id should have 1 element")
+	require.Len(t, merged.procErrorJobs, 1, "proc error jobs should have 1 element")
+	require.Len(t, merged.routerDestIDs, 1, "router dest ids should have 1 element")
+	require.Len(t, merged.reportMetrics, 1, "report metrics should have 1 element")
+	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
+	require.Len(t, merged.dedupKeys, 1, "dedup keys should have 1 element")
+	require.Equal(t, merged.totalEvents, 1, "total events should be 1")
+
+	merged.merge(sm2)
+	require.Len(t, merged.statusList, 2, "status list should have 2 elements")
+	require.Len(t, merged.destJobs, 2, "dest jobs should have 2 elements")
+	require.Len(t, merged.batchDestJobs, 2, "batch dest jobs should have 2 elements")
+	require.Len(t, merged.procErrorJobsByDestID, 2, "proc error jobs by dest id should have 2 elements")
+	require.Len(t, merged.procErrorJobs, 2, "proc error jobs should have 2 elements")
+	require.Len(t, merged.routerDestIDs, 2, "router dest ids should have 2 elements")
+	require.Len(t, merged.reportMetrics, 2, "report metrics should have 2 elements")
+	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
+	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
+	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
+	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+}

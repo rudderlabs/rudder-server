@@ -11,12 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -27,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -46,7 +48,7 @@ var (
 	dbHandle                   *sql.DB
 	wrappedDBHandle            *sqlquerywrapper.DB
 	dbHandleTimeout            time.Duration
-	notifier                   pgnotifier.PGNotifier
+	notifierInstance           *notifier.Notifier
 	tenantManager              *multitenant.Manager
 	controlPlaneClient         *controlplane.Client
 	uploadFreqInS              int64
@@ -178,7 +180,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					pkgLogger,
 					stats.Default,
 					wrappedDBHandle,
-					&notifier,
+					notifierInstance,
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
@@ -377,10 +379,11 @@ func Start(ctx context.Context, app app.App) error {
 
 		return g.Wait()
 	}
+
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
-	if err != nil {
-		return fmt.Errorf("cannot setup pgnotifier: %w", err)
+	notifierInstance = notifier.New(config.Default, pkgLogger, stats.Default, workspaceIdentifier)
+	if err := notifierInstance.Setup(ctx, psqlInfo); err != nil {
+		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
@@ -422,7 +425,7 @@ func Start(ctx context.Context, app app.App) error {
 			cm := newConstraintsManager(config.Default)
 			ef := encoding.NewFactory(config.Default)
 
-			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, ef)
+			slave := newSlave(config.Default, pkgLogger, stats.Default, notifierInstance, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}
@@ -441,7 +444,7 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifier.ClearJobs(gCtx)
+			return notifierInstance.ClearJobs(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -465,7 +468,7 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		})
 
-		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
+		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, notifierInstance)
 		jobs.WithConfig(asyncWh, config.Default)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -476,10 +479,14 @@ func Start(ctx context.Context, app app.App) error {
 	g.Go(func() error {
 		api := NewApi(
 			mode, config.Default, pkgLogger, stats.Default,
-			backendconfig.DefaultBackendConfig, wrappedDBHandle, &notifier, tenantManager,
+			backendconfig.DefaultBackendConfig, wrappedDBHandle, notifierInstance, tenantManager,
 			bcManager, asyncWh,
 		)
 		return api.Start(gCtx)
+	})
+	g.Go(func() error {
+		<-gCtx.Done()
+		return notifierInstance.Shutdown()
 	})
 
 	return g.Wait()

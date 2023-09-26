@@ -337,7 +337,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 		for _, wConfig := range config {
 			for _, source := range wConfig.Sources {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == customManager.destType {
+					if destination.DestinationDefinition.Name == customManager.destType && destination.Enabled {
 						err := customManager.onNewDestination(destination)
 						if err != nil {
 							pkgLogger.Errorf(

@@ -97,10 +97,10 @@ type Handle struct {
 		httpTimeout                                                                       time.Duration
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
 		maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
+		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   misc.ValueLoader[time.Duration]
 
-		maxReqSize                           int
-		enableRateLimit                      bool
+		maxReqSize                           misc.ValueLoader[int]
+		enableRateLimit                      misc.ValueLoader[bool]
 		enableSuppressUserFeature            bool
 		enableEventSchemasFeature            bool
 		diagnosisTickerTime                  time.Duration
@@ -108,8 +108,8 @@ type Handle struct {
 		ReadHeaderTimeout                    time.Duration
 		WriteTimeout                         time.Duration
 		IdleTimeout                          time.Duration
-		allowReqsWithoutUserIDAndAnonymousID bool
-		gwAllowPartialWriteWithErrors        bool
+		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
+		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
 	}
 }
 
@@ -136,13 +136,13 @@ func (gw *Handle) userWebRequestBatcher(userWebRequestWorker *userWebRequestWork
 		reqBuffer, numWebRequests, bufferTime, isWebRequestQOpen := lo.BufferWithTimeout(
 			userWebRequestWorker.webRequestQ,
 			gw.conf.maxUserWebRequestBatchSize,
-			gw.conf.userWebRequestBatchTimeout,
+			gw.conf.userWebRequestBatchTimeout.Load(),
 		)
 		if numWebRequests > 0 {
 			if numWebRequests == gw.conf.maxUserWebRequestBatchSize {
 				userWebRequestWorker.bufferFullStat.Count(1)
 			}
-			if bufferTime >= gw.conf.userWebRequestBatchTimeout {
+			if bufferTime >= gw.conf.userWebRequestBatchTimeout.Load() {
 				userWebRequestWorker.timeOutStat.Count(1)
 			}
 			breq := batchWebRequestT{batchRequest: reqBuffer}
@@ -283,7 +283,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 
 	gw.requestSizeStat.Observe(float64(len(body)))
-	if req.reqType != "batch" {
+	if req.reqType != "batch" && req.reqType != "replay" {
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
 			err = errors.New(response.NotRudderEvent)
@@ -295,7 +295,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	eventsBatch := gjson.GetBytes(body, "batch").Array()
 	jobData.numEvents = len(eventsBatch)
 
-	if gw.conf.enableRateLimit {
+	if gw.conf.enableRateLimit.Load() {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
 		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
 		if errCheck != nil {
@@ -413,7 +413,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		return
 	}
 
-	if len(body) > gw.conf.maxReqSize && !containsAudienceList {
+	if len(body) > gw.conf.maxReqSize.Load() && !containsAudienceList {
 		err = errors.New(response.RequestBodyTooLarge)
 		return
 	}
@@ -484,7 +484,7 @@ func (gw *Handle) isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType stri
 		return false
 	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
-		return !gw.conf.allowReqsWithoutUserIDAndAnonymousID
+		return !gw.conf.allowReqsWithoutUserIDAndAnonymousID.Load()
 	}
 	return false
 }
