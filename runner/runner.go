@@ -298,7 +298,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	case <-shutdownDone:
 		r.application.Stop()
 		r.logger.Infof(
-			"Graceful terminal after %s, with %d go-routines",
+			"Graceful termination after %s, with %d go-routines",
 			time.Since(ctxDoneTime),
 			runtime.NumGoroutine(),
 		)
