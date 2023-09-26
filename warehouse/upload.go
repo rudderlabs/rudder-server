@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -90,7 +91,7 @@ type UploadJob struct {
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	notifier             *notifier.Notifier
-	schemaHandle         *Schema
+	schemaHandle         *schema.Schema // @TODO local interface
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -100,7 +101,6 @@ type UploadJob struct {
 	warehouse      model.Warehouse
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
-	schemaLock     sync.Mutex
 	alertSender    alerta.AlertSender
 	now            func() time.Time
 
@@ -194,11 +194,11 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logger:               f.logger,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle: NewSchema(
+		schemaHandle: schema.New(
 			f.dbHandle,
 			dto.Warehouse,
 			config.Default,
-			f.logger.Child("warehouse").Child("schema"),
+			f.logger.Child("warehouse"),
 		),
 
 		upload:         dto.Upload,
@@ -309,7 +309,7 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	uploadSchema, err := job.schemaHandle.prepareUploadSchema(job.ctx, job.stagingFiles)
+	uploadSchema, err := job.schemaHandle.ConsolidateStagingFilesUsingLocalSchema(job.ctx, job.stagingFiles)
 	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
@@ -350,33 +350,6 @@ func (job *UploadJob) initTableUploads() error {
 		job.upload.ID,
 		tables,
 	)
-}
-
-func (job *UploadJob) syncRemoteSchema() (bool, error) {
-	if err := job.schemaHandle.fetchSchemaFromLocal(job.ctx); err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-	if err := job.schemaHandle.fetchSchemaFromWarehouse(job.ctx, job.whManager); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
-
-	schemaChanged := job.schemaHandle.hasSchemaChanged()
-	if schemaChanged {
-		job.logger.Infow("schema changed",
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
-			logfield.Namespace, job.warehouse.Namespace,
-		)
-
-		if err := job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse); err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
-
-	return schemaChanged, nil
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
@@ -462,7 +435,7 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 
-	hasSchemaChanged, err := job.syncRemoteSchema()
+	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
 	if err != nil {
 		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
@@ -559,7 +532,7 @@ func (job *UploadJob) run() (err error) {
 
 		case model.CreatedRemoteSchema:
 			newStatus = nextUploadState.failed
-			if len(job.schemaHandle.schemaInWarehouse) == 0 {
+			if job.schemaHandle.IsWarehouseSchemaEmpty() {
 				if err = whManager.CreateSchema(job.ctx); err != nil {
 					break
 				}
@@ -943,10 +916,8 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
 		// columns present in unrecognized schema should be skipped
-		if unrecognizedSchema, ok := job.schemaHandle.unrecognizedSchemaInWarehouse[tName]; ok {
-			if _, ok := unrecognizedSchema[columnName]; ok {
-				continue
-			}
+		if job.schemaHandle.IsColumnInUnrecognizedSchema(tName, columnName) {
+			continue
 		}
 
 		columnsToAdd = append(columnsToAdd, whutils.ColumnInfo{Name: columnName, Type: columnType})
@@ -1048,7 +1019,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable.Load() {
 		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
 	}
 
 	return loadErrors
@@ -1062,7 +1033,7 @@ func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error)
 			return
 		}
 
-		job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+		job.schemaHandle.UpdateWarehouseTableSchema(tName, tableSchemaDiff.UpdatedSchema)
 		alteredSchema = true
 	}
 	return
@@ -1218,7 +1189,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
-	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
+	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
 
 	job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
 	job.counterStat(`warehouse_load_table_column_limit`, tags...).Count(columnCountLimit)
@@ -1305,7 +1276,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 
 	if alteredIdentitySchema || alteredUserSchema {
 		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -1361,7 +1332,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 				errorMap := map[string]error{tableName: err}
 				return job.processLoadTableResponse(errorMap)
 			}
-			job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			job.schemaHandle.UpdateWarehouseTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
 
 			status := model.TableUploadUpdatedSchema
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
@@ -1396,16 +1367,10 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	if alteredSchema {
 		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
 	}
 
 	return job.processLoadTableResponse(errorMap)
-}
-
-func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema model.TableSchema) {
-	job.schemaLock.Lock()
-	job.schemaHandle.schemaInWarehouse[tableName] = updatedSchema
-	job.schemaLock.Unlock()
 }
 
 func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (errors []error, tableUploadErr error) {
@@ -1442,7 +1407,7 @@ func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (error
 }
 
 // getNewTimings appends current status with current time to timings column
-// e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+// e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716}] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings) {
 	timings, err := repo.NewUploads(job.dbHandle).UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
@@ -1486,6 +1451,12 @@ type UploadStatusOpts struct {
 
 func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	job.logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	defer func() {
+		if err != nil {
+			job.logger.Warnw("error setting upload status", logfield.Error, err.Error())
+		}
+	}()
+
 	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumn{
@@ -1504,14 +1475,15 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
+		var txn *sqlquerywrapper.Tx
+		txn, err = job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
 		if err != nil {
-			return err
+			return
 		}
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
-			return err
+			return
 		}
 		if job.config.reportingEnabled {
 			job.app.Features().Reporting.GetReportingInstance().Report(
@@ -1519,9 +1491,11 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 				txn.GetTx(),
 			)
 		}
-		return txn.Commit()
+		err = txn.Commit()
+		return
 	}
-	return job.setUploadColumns(uploadColumnOpts)
+	err = job.setUploadColumns(uploadColumnOpts)
+	return
 }
 
 // Set LoadFileIDs
@@ -1786,7 +1760,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	return state, err
 }
 
-func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)
+func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = job.config.minUploadBackoff
@@ -1837,11 +1811,11 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		job.upload.LoadFileEndID,
 	}
 	rows, err := job.dbHandle.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 		return
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 		return
 	}
@@ -1960,15 +1934,12 @@ func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName s
 	return locations[0].Location, nil
 }
 
-func (job *UploadJob) GetSchemaInWarehouse() (schema model.Schema) {
-	if job.schemaHandle == nil {
-		return
-	}
-	return job.schemaHandle.schemaInWarehouse
+func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
+	return job.schemaHandle.IsWarehouseSchemaEmpty()
 }
 
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	return job.schemaHandle.schemaInWarehouse[tableName]
+	return job.schemaHandle.GetTableSchemaInWarehouse(tableName)
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
@@ -2110,11 +2081,11 @@ func initializeStateMachine() {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.getLocalSchema(ctx)
+	return job.schemaHandle.GetLocalSchema(ctx)
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
-	return job.schemaHandle.updateLocalSchema(ctx, job.upload.ID, schema)
+	return job.schemaHandle.UpdateLocalSchema(ctx, job.upload.ID, schema)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
