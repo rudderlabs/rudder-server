@@ -45,17 +45,20 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 	return resp
 }
 
+func (bt *batchWebhookTransformerT) sendToTransformer(events [][]byte, url string) (*http.Response, error) {
+	transformStart := time.Now()
+	payload := misc.MakeJSONArray(events)
+	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
+	bt.stats.transformTimerStat.Since(transformStart)
+	return resp, err
+}
+
 func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]byte, sourceType string, version string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
-	transformStart := time.Now()
+	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 
-	payload := misc.MakeJSONArray(events)
-	sourceTransformURL := strings.Replace(bt.sourceTransformerURL, "{version}", version, -1)
+	resp, err := bt.sendToTransformer(events, url)
 
-	url := fmt.Sprintf(`%s/%s`, sourceTransformURL, strings.ToLower(sourceType))
-	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
-
-	bt.stats.transformTimerStat.Since(transformStart)
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
@@ -74,9 +77,12 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]by
 		Following 404 case can be in that case when v1 endpoint is not there
 		that is new server is hitting old transformer( when there used to be no source sent to tranformer)
 	*/
-	if version == "v1" && resp.StatusCode == 404 {
+	if resp.StatusCode == 404 {
 		// v1 endpoint not available so falling back to v0 endpoint
-		return bt.transform(payloadArr, events, sourceType, "v0")
+		url := strings.ReplaceAll(bt.sourceTransformerURL, "v1", "v0")
+		resp, err = bt.sendToTransformer(events, url)
+		respBody, err = io.ReadAll(resp.Body)
+		func() { httputil.CloseResponse(resp) }()
 	}
 	if resp.StatusCode != http.StatusOK {
 		bt.webhook.logger.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
