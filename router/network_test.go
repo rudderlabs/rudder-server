@@ -9,10 +9,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"testing"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
@@ -40,6 +42,51 @@ func gzipAndEncodeBase64(data []byte) string {
 	zw.Write(data)
 	zw.Close()
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+func TestSendPostWithGzipData(t *testing.T) {
+	t.Run("should send Gzip data when payload is valid", func(r *testing.T) {
+		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Encoding") != "gzip" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			body, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer body.Close()
+			buf := new(bytes.Buffer)
+			buf.ReadFrom(body)
+			w.WriteHeader(http.StatusOK)
+			w.Write(buf.Bytes())
+		}))
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		eventData := []byte(`[{"event":"Signed Up"}]`)
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.URL = testServer.URL
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"payload": gzipAndEncodeBase64(eventData),
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		assert.Equal(r, resp.StatusCode, http.StatusOK)
+		assert.Equal(r, resp.ResponseBody, eventData)
+	})
+
+	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
+	})
+
+	t.Run("should fail to send Gzip data when payload is isvalid", func(r *testing.T) {
+	})
 }
 
 var _ = Describe("Network", func() {
@@ -128,43 +175,6 @@ var _ = Describe("Network", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusGatewayTimeout))
 			fmt.Println(string(resp.ResponseBody))
 			Expect(string(resp.ResponseBody)).To(Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled"))
-		})
-
-		It("should send gzip data", func() {
-			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("Content-Encoding") != "gzip" {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				body, err := gzip.NewReader(r.Body)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				defer body.Close()
-				buf := new(bytes.Buffer)
-				buf.ReadFrom(body)
-				w.WriteHeader(http.StatusOK)
-				w.Write(buf.Bytes())
-			}))
-			network := &netHandle{}
-			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = http.DefaultClient
-			eventData := []byte(`[{"event":"Signed Up"}]`)
-			var structData integrations.PostParametersT
-			structData.RequestMethod = "POST"
-			structData.Type = "REST"
-			structData.URL = testServer.URL
-			structData.UserID = "anon_id"
-			structData.Body = map[string]interface{}{
-				"GZIP": map[string]interface{}{
-					"payload": gzipAndEncodeBase64(eventData),
-				},
-			}
-
-			resp := network.SendPost(context.Background(), structData)
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			Expect(resp.ResponseBody).To(Equal(eventData))
 		})
 	})
 
