@@ -83,9 +83,43 @@ func TestSendPostWithGzipData(t *testing.T) {
 	})
 
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		eventData := []byte(`[{"event":"Signed Up"}]`)
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"abc": gzipAndEncodeBase64(eventData),
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		assert.Equal(r, resp.StatusCode, http.StatusBadRequest)
+		assert.Equal(r, resp.ResponseBody, []byte("400 Unable to construct gzip payload. Unexpected transformer response"))
 	})
 
-	t.Run("should fail to send Gzip data when payload is isvalid", func(r *testing.T) {
+	t.Run("should fail to send Gzip data when payload is invalid", func(r *testing.T) {
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		eventData := "Signed up"
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"payload": eventData,
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		assert.Equal(r, resp.StatusCode, http.StatusBadRequest)
+		assert.Equal(r, resp.ResponseBody, []byte("400 Unable to decode gzip data. Unexpected transformer response"))
 	})
 }
 
