@@ -11,9 +11,7 @@ import (
 
 type WhAsyncJob struct{}
 
-func (*WhAsyncJob) GetSchemaInWarehouse() model.Schema {
-	return model.Schema{}
-}
+func (*WhAsyncJob) IsWarehouseSchemaEmpty() bool { return true }
 
 func (*WhAsyncJob) GetLocalSchema(context.Context) (model.Schema, error) {
 	return model.Schema{}, nil

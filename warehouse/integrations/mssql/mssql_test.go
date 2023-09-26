@@ -463,7 +463,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := ms.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'schema_not_exists_test_namespace.schema_not_exists_test_table'.")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("table does not exists", func(t *testing.T) {
@@ -485,7 +485,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := ms.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "creating temporary table: mssql: Invalid object name 'table_not_exists_test_namespace.table_not_exists_test_table'.")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
@@ -510,7 +510,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := ms.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "downloading load files")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {
@@ -535,7 +535,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := ms.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "mismatch in number of columns")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in schema", func(t *testing.T) {

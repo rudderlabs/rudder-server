@@ -1,11 +1,11 @@
-package warehouse
+package schema
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
+	"sync"
 
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -17,11 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-)
-
-var (
-	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
-	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
 )
 
 // deprecatedColumnsRegex
@@ -46,18 +41,22 @@ type fetchSchemaRepo interface {
 
 type Schema struct {
 	warehouse                        model.Warehouse
-	localSchema                      model.Schema
-	schemaInWarehouse                model.Schema
-	unrecognizedSchemaInWarehouse    model.Schema
 	schemaRepo                       schemaRepo
 	stagingFileRepo                  stagingFileRepo
 	log                              logger.Logger
 	stagingFilesSchemaPaginationSize int
 	skipDeepEqualSchemas             bool
 	enableIDResolution               bool
+
+	localSchema                     model.Schema
+	localSchemaMu                   sync.RWMutex
+	schemaInWarehouse               model.Schema
+	schemaInWarehouseMu             sync.RWMutex
+	unrecognizedSchemaInWarehouse   model.Schema
+	unrecognizedSchemaInWarehouseMu sync.RWMutex
 }
 
-func NewSchema(
+func New(
 	db *sqlquerywrapper.DB,
 	warehouse model.Warehouse,
 	conf *config.Config,
@@ -67,44 +66,48 @@ func NewSchema(
 		warehouse:                        warehouse,
 		schemaRepo:                       repo.NewWHSchemas(db),
 		stagingFileRepo:                  repo.NewStagingFiles(db),
-		log:                              logger,
+		log:                              logger.Child("schema"),
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
 		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
 }
 
-func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		UploadID:        uploadId,
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-	})
-	if err != nil {
-		return fmt.Errorf("updating local schema: %w", err)
+// ConsolidateStagingFilesUsingLocalSchema consolidates staging files schema with warehouse schema
+func (sh *Schema) ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
+	consolidatedSchema := model.Schema{}
+	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
+	for _, batch := range batches {
+		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(ctx, repo.StagingFileIDs(batch))
+		if err != nil {
+			return nil, fmt.Errorf("getting staging files schema: %v", err)
+		}
+
+		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
 
-	sh.localSchema = updatedSchema
+	sh.localSchemaMu.RLock()
+	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
+	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.localSchema)
+	sh.localSchemaMu.RUnlock()
 
-	return nil
+	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
+	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
+
+	return consolidatedSchema, nil
 }
 
-// fetchSchemaFromLocal fetches schema from local
-func (sh *Schema) fetchSchemaFromLocal(ctx context.Context) error {
-	localSchema, err := sh.getLocalSchema(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching schema from local: %w", err)
-	}
-
-	sh.localSchema = localSchema
-
-	return nil
+func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, uploadID int64) error {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
 }
 
-func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
+func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadID int64, updatedSchema model.Schema) error {
+	return sh.updateLocalSchema(ctx, uploadID, updatedSchema)
+}
+
+func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
@@ -120,8 +123,8 @@ func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	return whSchema.Schema, nil
 }
 
-// fetchSchemaFromWarehouse fetches schema from warehouse
-func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
+// FetchSchemaFromWarehouse fetches schema from warehouse
+func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
 	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
@@ -130,8 +133,134 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	sh.removeDeprecatedColumns(warehouseSchema)
 	sh.removeDeprecatedColumns(unrecognizedWarehouseSchema)
 
+	sh.schemaInWarehouseMu.Lock()
+	defer sh.schemaInWarehouseMu.Unlock()
+	sh.unrecognizedSchemaInWarehouseMu.Lock()
+	defer sh.unrecognizedSchemaInWarehouseMu.Unlock()
+
 	sh.schemaInWarehouse = warehouseSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
+
+	return nil
+}
+
+func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
+	localSchema, err := sh.GetLocalSchema(ctx)
+	if err != nil {
+		return false, fmt.Errorf("fetching schema from local: %w", err)
+	}
+	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
+		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
+	}
+
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	schemaChanged := sh.hasSchemaChanged(localSchema)
+	if schemaChanged {
+		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+		if err != nil {
+			return false, fmt.Errorf("updating local schema: %w", err)
+		}
+	}
+
+	return schemaChanged, nil
+}
+
+// TableSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff {
+	diff := whutils.TableSchemaDiff{
+		ColumnMap:        make(model.TableSchema),
+		UpdatedSchema:    make(model.TableSchema),
+		AlteredColumnMap: make(model.TableSchema),
+	}
+
+	sh.schemaInWarehouseMu.RLock()
+	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
+	sh.schemaInWarehouseMu.RUnlock()
+
+	if !ok {
+		if len(tableSchema) == 0 {
+			return diff
+		}
+		diff.Exists = true
+		diff.TableToBeCreated = true
+		diff.ColumnMap = tableSchema
+		diff.UpdatedSchema = tableSchema
+		return diff
+	}
+
+	for columnName, columnType := range currentTableSchema {
+		diff.UpdatedSchema[columnName] = columnType
+	}
+
+	diff.ColumnMap = make(model.TableSchema)
+	for columnName, columnType := range tableSchema {
+		if _, ok := currentTableSchema[columnName]; !ok {
+			diff.ColumnMap[columnName] = columnType
+			diff.UpdatedSchema[columnName] = columnType
+			diff.Exists = true
+		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
+			diff.AlteredColumnMap[columnName] = columnType
+			diff.UpdatedSchema[columnName] = columnType
+			diff.Exists = true
+		}
+	}
+	return diff
+}
+
+func (sh *Schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return sh.schemaInWarehouse[tableName]
+}
+
+func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
+	sh.schemaInWarehouseMu.Lock()
+	defer sh.schemaInWarehouseMu.Unlock()
+	if sh.schemaInWarehouse == nil {
+		sh.schemaInWarehouse = make(model.Schema)
+	}
+	sh.schemaInWarehouse[tableName] = tableSchema
+}
+
+func (sh *Schema) IsWarehouseSchemaEmpty() bool {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return len(sh.schemaInWarehouse) == 0
+}
+
+func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return len(sh.schemaInWarehouse[tableName])
+}
+
+func (sh *Schema) IsColumnInUnrecognizedSchema(t, c string) bool {
+	sh.unrecognizedSchemaInWarehouseMu.RLock()
+	defer sh.unrecognizedSchemaInWarehouseMu.RUnlock()
+	s, ok := sh.unrecognizedSchemaInWarehouse[t]
+	if ok {
+		_, ok = s[c]
+	}
+	return ok
+}
+
+func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
+		UploadID:        uploadId,
+		SourceID:        sh.warehouse.Source.ID,
+		Namespace:       sh.warehouse.Namespace,
+		DestinationID:   sh.warehouse.Destination.ID,
+		DestinationType: sh.warehouse.Type,
+		Schema:          updatedSchema,
+	})
+	if err != nil {
+		return fmt.Errorf("updating local schema: %w", err)
+	}
+
+	sh.localSchemaMu.Lock()
+	sh.localSchema = updatedSchema
+	sh.localSchemaMu.Unlock()
 
 	return nil
 }
@@ -154,38 +283,6 @@ func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 			}
 		}
 	}
-}
-
-func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
-	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
-	if err != nil {
-		return nil, fmt.Errorf("consolidating staging files schema: %w", err)
-	}
-
-	return consolidatedSchema, nil
-}
-
-// consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
-func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
-	consolidatedSchema := model.Schema{}
-	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
-	for _, batch := range batches {
-		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(
-			ctx,
-			repo.StagingFileIDs(batch),
-		)
-		if err != nil {
-			return model.Schema{}, fmt.Errorf("getting staging files schema: %v", err)
-		}
-
-		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
-	}
-
-	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
-	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.localSchema)
-	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
-	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
-	return consolidatedSchema, nil
 }
 
 // consolidateStagingSchemas merges multiple schemas into one
@@ -319,14 +416,14 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 }
 
 // hasSchemaChanged compares the localSchema with the schemaInWarehouse
-func (sh *Schema) hasSchemaChanged() bool {
+func (sh *Schema) hasSchemaChanged(localSchema model.Schema) bool {
 	if !sh.skipDeepEqualSchemas {
-		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
+		eq := reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
 		return !eq
 	}
 	// Iterating through all tableName in the localSchema
-	for tableName := range sh.localSchema {
-		localColumns := sh.localSchema[tableName]
+	for tableName := range localSchema {
+		localColumns := localSchema[tableName]
 		warehouseColumns, whColumnsExist := sh.schemaInWarehouse[tableName]
 
 		// If warehouse does  not contain the specified table return true.
@@ -345,87 +442,4 @@ func (sh *Schema) hasSchemaChanged() bool {
 		}
 	}
 	return false
-}
-
-// TableSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff {
-	diff := whutils.TableSchemaDiff{
-		ColumnMap:        make(model.TableSchema),
-		UpdatedSchema:    make(model.TableSchema),
-		AlteredColumnMap: make(model.TableSchema),
-	}
-
-	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
-	if !ok {
-		if len(tableSchema) == 0 {
-			return diff
-		}
-		diff.Exists = true
-		diff.TableToBeCreated = true
-		diff.ColumnMap = tableSchema
-		diff.UpdatedSchema = tableSchema
-		return diff
-	}
-
-	for columnName, columnType := range currentTableSchema {
-		diff.UpdatedSchema[columnName] = columnType
-	}
-
-	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range tableSchema {
-		if _, ok := currentTableSchema[columnName]; !ok {
-			diff.ColumnMap[columnName] = columnType
-			diff.UpdatedSchema[columnName] = columnType
-			diff.Exists = true
-		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
-			diff.AlteredColumnMap[columnName] = columnType
-			diff.UpdatedSchema[columnName] = columnType
-			diff.Exists = true
-		}
-	}
-	return diff
-}
-
-// handleSchemaChange checks if the existing column type is compatible with the new column type
-func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
-	var (
-		newColumnVal any
-		err          error
-	)
-
-	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
-		// only stringify if the previous type is non-string/text/json
-		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else {
-			newColumnVal = value
-		}
-	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
-		intVal, ok := value.(int)
-		if !ok {
-			err = errIncompatibleSchemaConversion
-		} else {
-			newColumnVal = float64(intVal)
-		}
-	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
-		floatVal, ok := value.(float64)
-		if !ok {
-			err = errIncompatibleSchemaConversion
-		} else {
-			newColumnVal = int(floatVal)
-		}
-	} else if existingDataType == model.JSONDataType {
-		var interfaceSliceSample []any
-		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = value
-		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, value)
-		}
-	} else {
-		err = errSchemaConversionNotSupported
-	}
-
-	return newColumnVal, err
 }

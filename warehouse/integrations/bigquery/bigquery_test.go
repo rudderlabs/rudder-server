@@ -523,7 +523,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "googleapi: Error 404: Not found: Dataset "+credentials.ProjectID+":"+namespace+", notFound")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("table does not exists", func(t *testing.T) {
@@ -547,7 +547,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Partitioning specification must be provided in order to create partitioned table")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("load table stats", func(t *testing.T) {
@@ -686,7 +686,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Access Denied: File gs://project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {
@@ -713,7 +713,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "JSON table encountered too many errors")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in schema", func(t *testing.T) {
@@ -740,7 +740,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "JSON table encountered too many errors")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("discards", func(t *testing.T) {

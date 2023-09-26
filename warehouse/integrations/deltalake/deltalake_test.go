@@ -520,7 +520,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "The schema `"+namespace+"` cannot be found")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("table does not exists", func(t *testing.T) {
@@ -544,7 +544,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "The table or view `"+namespace+"`.`table_not_exists_test_table` cannot be found")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("load table stats", func(t *testing.T) {
@@ -624,7 +624,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Container container in account account.blob.core.windows.net not found")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {

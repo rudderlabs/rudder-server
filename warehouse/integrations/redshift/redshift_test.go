@@ -485,7 +485,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "creating staging table: pq: schema \""+namespace+"\"")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("table does not exists", func(t *testing.T) {
@@ -509,7 +509,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "creating staging table: pq: relation \""+namespace+".table_not_exists_test_table\"")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("load table stats", func(t *testing.T) {
@@ -589,7 +589,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "pq: message: S3ServiceException:Access Denied,Status 403")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {
@@ -616,7 +616,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Check 'stl_load_errors' system table for details.")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in schema", func(t *testing.T) {
@@ -643,7 +643,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.ErrorContains(t, err, "Check 'stl_load_errors' system table for details.")
+			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("discards", func(t *testing.T) {

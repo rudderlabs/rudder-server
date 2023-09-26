@@ -772,7 +772,7 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
 	err = ch.DB.QueryRowContext(ctx, sqlStatement, schemaName).Scan(&count)
 	// ignore err if no results for query
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
 	exists = count > 0
@@ -894,7 +894,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 }
 
 func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
-	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+	if !ch.Uploader.IsWarehouseSchemaEmpty() {
 		return nil
 	}
 
@@ -979,7 +979,8 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 		return schema, unrecognizedSchema, nil
 	}
 	if err != nil {
-		if clickhouseErr, ok := err.(*clickhouse.Exception); ok && clickhouseErr.Code == 81 {
+		var clickhouseErr *clickhouse.Exception
+		if errors.As(err, &clickhouseErr) && clickhouseErr.Code == 81 {
 			return schema, unrecognizedSchema, nil
 		}
 		return nil, nil, fmt.Errorf("fetching schema: %w", err)
