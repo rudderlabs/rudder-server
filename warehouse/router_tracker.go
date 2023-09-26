@@ -3,6 +3,7 @@ package warehouse
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -128,7 +129,7 @@ func (r *router) Track(
 	}
 
 	err := r.db.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
@@ -167,7 +168,7 @@ func (r *router) Track(
 	}
 
 	err = r.db.QueryRowContext(ctx, query, queryArgs...).Scan(&exists)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("fetching last upload status for source: %s and destination: %s: %w", source.ID, destination.ID, err)
 	}
 

@@ -260,7 +260,7 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 	r := sf.DB.QueryRowContext(ctx, sqlStatement)
 	err = r.Scan(&exists)
 	// ignore err if no results for query
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
 	return

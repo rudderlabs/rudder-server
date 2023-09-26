@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -232,7 +233,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			a.archiveFailedStat.Increment()
 		}
 	}()
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		a.log.Debugf(`[Archiver]: No uploads found for archival. Query: %s`, sqlStatement)
 		return nil
 	}

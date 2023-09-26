@@ -302,7 +302,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
 
-			r.updateCreateJobMarker(w, time.Now())
+			r.updateCreateJobMarker(w, now)
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.EqualError(t, err, "upload frequency exceeded")
