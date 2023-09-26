@@ -8,23 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -87,8 +84,8 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 func TestColumnCountStat(t *testing.T) {
 	var (
 		workspaceID     = "test-workspaceID"
-		destinationID   = "test-desinationID"
-		destinationName = "test-desinationName"
+		destinationID   = "test-destinationID"
+		destinationName = "test-destinationName"
 		sourceID        = "test-sourceID"
 		sourceName      = "test-sourceName"
 		tableName       = "test-table"
@@ -150,16 +147,13 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				statsFactory: store,
-				schemaHandle: &Schema{
-					schemaInWarehouse: model.Schema{
-						tableName: model.TableSchema{
-							"test-column-1": "string",
-							"test-column-2": "string",
-							"test-column-3": "string",
-						},
-					},
-				},
+				schemaHandle: &schema.Schema{}, // TODO use constructor
 			}
+			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
+				"test-column-1": "string",
+				"test-column-2": "string",
+				"test-column-3": "string",
+			})
 
 			tags := j.buildTags()
 			tags["tableName"] = tableName
@@ -170,7 +164,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := store.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

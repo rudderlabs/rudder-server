@@ -138,20 +138,6 @@ func (mr *MockUploaderMockRecorder) GetSampleLoadFileLocation(arg0, arg1 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSampleLoadFileLocation", reflect.TypeOf((*MockUploader)(nil).GetSampleLoadFileLocation), arg0, arg1)
 }
 
-// GetSchemaInWarehouse mocks base method.
-func (m *MockUploader) GetSchemaInWarehouse() model.Schema {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSchemaInWarehouse")
-	ret0, _ := ret[0].(model.Schema)
-	return ret0
-}
-
-// GetSchemaInWarehouse indicates an expected call of GetSchemaInWarehouse.
-func (mr *MockUploaderMockRecorder) GetSchemaInWarehouse() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSchemaInWarehouse", reflect.TypeOf((*MockUploader)(nil).GetSchemaInWarehouse))
-}
-
 // GetSingleLoadFile mocks base method.
 func (m *MockUploader) GetSingleLoadFile(arg0 context.Context, arg1 string) (warehouseutils.LoadFile, error) {
 	m.ctrl.T.Helper()
@@ -193,6 +179,20 @@ func (m *MockUploader) GetTableSchemaInWarehouse(arg0 string) model.TableSchema 
 func (mr *MockUploaderMockRecorder) GetTableSchemaInWarehouse(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInWarehouse", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInWarehouse), arg0)
+}
+
+// IsWarehouseSchemaEmpty mocks base method.
+func (m *MockUploader) IsWarehouseSchemaEmpty() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsWarehouseSchemaEmpty")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsWarehouseSchemaEmpty indicates an expected call of IsWarehouseSchemaEmpty.
+func (mr *MockUploaderMockRecorder) IsWarehouseSchemaEmpty() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsWarehouseSchemaEmpty", reflect.TypeOf((*MockUploader)(nil).IsWarehouseSchemaEmpty))
 }
 
 // ShouldOnDedupUseNewRecord mocks base method.

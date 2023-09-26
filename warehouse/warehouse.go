@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
-
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -18,6 +16,8 @@ import (
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
