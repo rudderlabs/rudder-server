@@ -95,7 +95,7 @@ func (jf *JobsForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					jf.terminalErrFn(err) // we are signaling to shutdown the app
+					jf.terminalErrFn(err) // we are signaling to shut down the app
 					return err
 				}
 				var mu sync.Mutex // protects statuses and toRetry
@@ -123,7 +123,7 @@ func (jf *JobsForwarder) Start() error {
 				for _, messageBatch := range messageBatches {
 					if !bytes.Equal(messageBatch.Message.Sample, []byte("{}")) && // if the sample is not an empty json object (redacted) and
 						(len(messageBatch.Message.Sample) > int(jf.maxSampleSize.Load()) || // sample is too big or
-							!jf.sampler.Sample(messageBatch.Message.Key.String())) { // sample should be skipped
+							!jf.sampler.Sample(messageBatch.Message.Key.String()+messageBatch.Message.Hash)) { // sample should be skipped
 						messageBatch.Message.Sample = nil // by setting to sample to nil we are instructing the schema worker to keep the previous sample
 					}
 				}
