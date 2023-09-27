@@ -58,7 +58,6 @@ func (bt *batchWebhookTransformerT) transform(payloadArr [][]byte, sourceType st
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 
 	resp, err := bt.sendToTransformer(payloadArr, url)
-
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
