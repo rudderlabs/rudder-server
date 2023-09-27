@@ -53,20 +53,11 @@ func (bt *batchWebhookTransformerT) sendToTransformer(events [][]byte, url strin
 	return resp, err
 }
 
-func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]byte, sourceType string, version string) transformerBatchResponseT {
-	bt.stats.sentStat.Count(len(events))
+func (bt *batchWebhookTransformerT) transform(payloadArr [][]byte, sourceType string) transformerBatchResponseT {
+	bt.stats.sentStat.Count(len(payloadArr))
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
-	v1Sources := []string{"shopify"}
-	eventsToSend := events
-	for _, source := range v1Sources {
-		if strings.ToLower(sourceType) == source {
-			url = strings.ReplaceAll(url, "v0", "v1")
-			eventsToSend = payloadArr
-			break
-		}
-	}
 
-	resp, err := bt.sendToTransformer(eventsToSend, url)
+	resp, err := bt.sendToTransformer(payloadArr, url)
 
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
@@ -77,7 +68,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]by
 	func() { httputil.CloseResponse(resp) }()
 
 	if err != nil {
-		bt.stats.failedStat.Count(len(events))
+		bt.stats.failedStat.Count(len(payloadArr))
 		statusCode := response.GetErrorStatusCode(response.RequestBodyReadFailed)
 		err := errors.New(response.GetStatus(response.RequestBodyReadFailed))
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
@@ -85,7 +76,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]by
 
 	if resp.StatusCode != http.StatusOK {
 		bt.webhook.logger.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
-		bt.stats.failedStat.Count(len(events))
+		bt.stats.failedStat.Count(len(payloadArr))
 		err := fmt.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
 		return transformerBatchResponseT{batchError: err}
 	}
@@ -147,14 +138,14 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]by
 		err := errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat))
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
 	}
-	if len(responses) != len(events) {
+	if len(responses) != len(payloadArr) {
 		statusCode := response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat)
 		err := errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat))
 		bt.webhook.logger.Errorf("source rudder-transformer response size does not equal sent events size")
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
 	}
 
-	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
+	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(payloadArr))}
 	for idx, resp := range responses {
 		if resp.Err != "" {
 			batchResponse.responses[idx] = resp

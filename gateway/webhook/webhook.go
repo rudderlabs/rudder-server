@@ -262,7 +262,6 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
-		var payloadWithSourceArr [][]byte
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
@@ -308,8 +307,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			eventToSourceBytes := []byte(eventToSource)
 
 			// eventToSource = {event: body, sourceConfig: Config}
-			payloadWithSourceArr = append(payloadWithSourceArr, eventToSourceBytes)
-			payloadArr = append(payloadArr, body)
+			payloadArr = append(payloadArr, eventToSourceBytes)
 			webRequests = append(webRequests, req)
 		}
 
@@ -325,7 +323,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
 
 		transformStart := time.Now()
-		batchResponse := bt.transform(payloadWithSourceArr, payloadArr, breq.sourceType, "v1")
+		batchResponse := bt.transform(payloadArr, breq.sourceType)
 
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
