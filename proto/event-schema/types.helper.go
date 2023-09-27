@@ -60,8 +60,7 @@ func (sm *EventSchemaMessage) Merge(other *EventSchemaMessage) {
 	if len(other.Sample) < len(sm.Sample) { // keep the smallest sample
 		sm.Sample = other.Sample
 	}
-	sm.Sample = other.Sample
-	if other.ObservedAt.AsTime().After(sm.ObservedAt.AsTime()) { // keep the laters observed time
+	if other.ObservedAt.AsTime().After(sm.ObservedAt.AsTime()) { // keep the latest observed time
 		sm.ObservedAt = other.ObservedAt
 	}
 }

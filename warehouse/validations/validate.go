@@ -552,7 +552,7 @@ type dummyUploader struct {
 	dest *backendconfig.DestinationT
 }
 
-func (*dummyUploader) GetSchemaInWarehouse() model.Schema                    { return nil }
+func (*dummyUploader) IsWarehouseSchemaEmpty() bool                          { return true }
 func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error)  { return nil, nil }
 func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }

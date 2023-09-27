@@ -3308,8 +3308,7 @@ func (jd *Handle) getMaxIDForDs(ds dataSetT) int64 {
 	return 0
 }
 
-func (jd *Handle) GetLastJob() *JobT {
-	ctx := context.TODO()
+func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
 	}
