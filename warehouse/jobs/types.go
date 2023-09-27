@@ -2,11 +2,12 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -25,7 +26,7 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWh struct {
-	dbHandle              *sql.DB
+	db                    *sqlmw.DB
 	enabled               bool
 	notifier              *notifier.Notifier
 	context               context.Context

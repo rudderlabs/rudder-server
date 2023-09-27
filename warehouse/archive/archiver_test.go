@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -154,11 +156,13 @@ func TestArchiver(t *testing.T) {
 
 			tenantManager := multitenant.New(c, backendConfig.DefaultBackendConfig)
 
+			db := sqlmw.New(pgResource.DB)
+
 			archiver := archive.New(
 				config.Default,
 				logger.NOP,
 				mockStats,
-				pgResource.DB,
+				db,
 				filemanager.New,
 				tenantManager,
 			)

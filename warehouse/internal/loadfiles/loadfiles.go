@@ -265,7 +265,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				return fmt.Errorf("receiving notifier channel closed")
 			}
 
-			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from Notifier",
+			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from notifier",
 				"startId", startId,
 				"endID", endId,
 				logfield.DestinationID, destType,
@@ -296,12 +296,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 					}
 					continue
 				}
-
 				if len(jobResponse.Output) == 0 {
 					lf.Logger.Errorf("[WH]: No LoadFiles returned by worker")
 					continue
 				}
-
 				for _, output := range jobResponse.Output {
 					loadFiles = append(loadFiles, model.LoadFile{
 						TableName:             output.TableName,
