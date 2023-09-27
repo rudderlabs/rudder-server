@@ -1,4 +1,4 @@
-package replay
+package replayer
 
 import (
 	"bufio"
@@ -28,20 +28,22 @@ type SourceWorkerT struct {
 	log           logger.Logger
 	channel       chan *jobsdb.JobT
 	workerID      int
-	replayHandler *Handler
+	replayHandler *Replayer
 	tablePrefix   string
 	transformer   transformer.Transformer
 	uploader      filemanager.FileManager
 }
 
-var userTransformBatchSize misc.ValueLoader[int]
-
-func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
+func (worker *SourceWorkerT) workerProcess(ctx context.Context) error {
 	worker.log.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
 		worker.log.Debugf("job received: %s", job.EventPayload)
 
-		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
+		err := worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
+		if err != nil {
+			worker.log.Errorf("failed to replay job with error: %w", err)
+			return err
+		}
 
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -53,14 +55,15 @@ func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 			Parameters:    []byte(`{}`), // check
 			JobParameters: job.Parameters,
 		}
-		err := worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		err = worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
-func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) {
+func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) error {
 	filePathTokens := strings.Split(filePath, "/")
 
 	var err error
@@ -69,36 +72,37 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	if tmpdirPath == "" {
 		tmpdirPath, err = os.UserHomeDir()
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
-	path := fmt.Sprintf(`%v%v%v`, tmpdirPath, dumpDownloadPathDirName, filePathTokens[len(filePathTokens)-1])
+	path := fmt.Sprintf(
+		`%v%v%v`, tmpdirPath, dumpDownloadPathDirName, filePathTokens[len(filePathTokens)-1])
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	file, err := os.Create(path)
 	if err != nil {
-		panic(err) // Cannot open file to write
+		return err // Cannot open file to write
 	}
 
 	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
-		panic(err) // failed to download
+		return err // failed to download
 	}
 	worker.log.Debugf("file downloaded at %s", path)
 	defer func() { _ = file.Close() }()
 
 	rawf, err := os.Open(path)
 	if err != nil {
-		panic(err) // failed to open file
+		return err // failed to open file
 	}
 
 	reader, err := gzip.NewReader(rawf)
 	if err != nil {
-		panic(err) // failed to read gzip file
+		return err // failed to read gzip file
 	}
 
 	sc := bufio.NewScanner(reader)
@@ -114,12 +118,18 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	var transEvents []transformer.TransformerEvent
 	transformationVersionID := config.GetString("TRANSFORMATION_VERSION_ID", "")
-
+	regexMatch := strings.Contains(filePath, "gw_jobs_") || strings.Contains(filePath, "rudder-proc-err-logs")
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		copyLineBytes := make([]byte, len(lineBytes))
 		copy(copyLineBytes, lineBytes)
-
+		if !regexMatch {
+			copyLineBytes, err = transformArchivalToBackup(copyLineBytes, filePath)
+			if err != nil {
+				worker.log.Errorf("failed to transform archival to backup: %s", err)
+				continue
+			}
+		}
 		if transformationVersionID == "" {
 			timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
 			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
@@ -127,7 +137,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+			if !(worker.replayHandler.config.startTime.Before(createdAt) && worker.replayHandler.config.endTime.After(createdAt)) {
 				continue
 			}
 			job := jobsdb.JobT{
@@ -166,6 +176,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		transEvents = append(transEvents, transEvent)
 	}
 
+	userTransformBatchSize := config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 	if transformationVersionID != "" {
 		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize.Load())
 
@@ -185,7 +196,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+			if !(worker.replayHandler.config.startTime.Before(createdAt) && worker.replayHandler.config.endTime.After(createdAt)) {
 				continue
 			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])
@@ -213,13 +224,15 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	err = os.Remove(path)
 	if err != nil {
 		worker.log.Errorf("[%s]: failed to remove file with error: %w", err)
+		return err
 	}
+	return nil
 }
 
 const (
