@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwStats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
@@ -65,6 +66,8 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
+
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 	arctx := &gwtypes.AuthRequestContext{
 		SourceDefName: sourceDefName,
@@ -110,6 +113,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
@@ -154,6 +158,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -195,6 +200,7 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -237,6 +243,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
 
 	gwPayload, _ := json.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
@@ -284,6 +291,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().GetSource(gomock.Any()).Return(&backendconfig.SourceT{}, nil).Times(1)
 
 	gwPayload, _ := json.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
@@ -351,7 +359,6 @@ func TestRecordWebhookErrors(t *testing.T) {
 		}
 		return nil
 	}).Times(3)
-
 	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
 
 	m := statsStore.Get("webhook_num_errors", stats.Tags{

@@ -38,20 +38,21 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
 }
 
-// GetSourceConfig mocks base method.
-func (m *MockGateway) GetSourceConfig(arg0 string) (*backendconfig.SourceT, error) {
+// GetSource mocks base method.
+func (m *MockGateway) GetSource(arg0 string) (*backendconfig.SourceT, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSourceConfig", arg0)
+	ret := m.ctrl.Call(m, "GetSource", arg0)
 	ret0, _ := ret[0].(*backendconfig.SourceT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetSourceConfig indicates an expected call of GetSourceConfig.
-func (mr *MockGatewayMockRecorder) GetSourceConfig(arg0 interface{}) *gomock.Call {
+// GetSource indicates an expected call of GetSourceConfig.
+func (mr *MockGatewayMockRecorder) GetSource(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSourceConfig", reflect.TypeOf((*MockGateway)(nil).GetSourceConfig), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSource", reflect.TypeOf((*MockGateway)(nil).GetSource), arg0)
 }
+
 
 // NewSourceStat mocks base method.
 func (m *MockGateway) NewSourceStat(arg0 *types.AuthRequestContext, arg1 string) *stats.SourceStat {
