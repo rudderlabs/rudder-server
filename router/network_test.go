@@ -76,6 +76,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 				"payload": gzipAndEncodeBase64(eventData),
 			},
 		}
+		structData.Headers = map[string]interface{}{
+			"Content-Encoding": "gzip",
+		}
 
 		resp := network.SendPost(context.Background(), structData)
 		assert.Equal(r, resp.StatusCode, http.StatusOK)
