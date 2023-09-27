@@ -121,6 +121,15 @@ message ValidateObjectStorageResponse{
   string error = 3;
 }
 
+message FailedBatchInfo {
+  string error = 1;
+  string errorCategory = 2;
+  string sourceID = 3;
+  int64 failedEventsCount = 4;
+  google.protobuf.Timestamp lastHappened = 5;
+  string status = 6;
+}
+
 message RetrieveFailedBatchesRequest{
   string workspaceID = 1;
   string destinationID = 2;
@@ -128,16 +137,7 @@ message RetrieveFailedBatchesRequest{
 }
 
 message RetrieveFailedBatchesResponse{
-  repeated FailedBatchInfo infos = 1;
-}
-
-message FailedBatchInfo{
-  string error = 1;
-  string errorCategory = 2;
-  string sourceID = 3;
-  int64 failedEventsCount = 4;
-  google.protobuf.Timestamp lastHappened = 5;
-  string status = 6;
+  repeated FailedBatchInfo failedBatches = 1;
 }
 
 message RetryAllFailedBatchesRequest{

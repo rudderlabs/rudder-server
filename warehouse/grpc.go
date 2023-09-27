@@ -839,7 +839,7 @@ func (g *GRPC) RetrieveFailedBatches(
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get failed batches: %v", err)
 	}
 
-	infos := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
+	failedBatches := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
 		return &proto.FailedBatchInfo{
 			ErrorCategory:     item.ErrorCategory,
 			SourceID:          item.SourceID,
@@ -848,8 +848,7 @@ func (g *GRPC) RetrieveFailedBatches(
 			Status:            item.Status,
 		}
 	})
-
-	return &proto.RetrieveFailedBatchesResponse{Infos: infos}, nil
+	return &proto.RetrieveFailedBatchesResponse{FailedBatches: failedBatches}, nil
 }
 
 func (g *GRPC) RetryAllFailedBatches(
