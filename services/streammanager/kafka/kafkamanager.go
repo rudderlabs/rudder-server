@@ -556,7 +556,16 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 ) {
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
+
 	var messages []client.Message
+	var errorSamples []error
+	addErrorSample := func(msg string, args ...any) {
+		err := fmt.Errorf(msg, args...)
+		if len(errorSamples) < 3 {
+			errorSamples = append(errorSamples, err)
+		}
+		pkgLogger.Error(err.Error())
+	}
 
 	for i, data := range batch {
 		topic, ok := data["topic"].(string)
@@ -567,19 +576,19 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the message attribute", topic)
+			addErrorSample("batch from topic %s is missing the message attribute", topic)
 			continue
 		}
 		userID, ok := data["userId"].(string)
 		if !ok && !allowReqsWithoutUserIDAndAnonymousID.Load() {
 			kafkaStats.missingUserID.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
+			addErrorSample("batch from topic %s is missing the userId attribute", topic)
 			continue
 		}
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
 			kafkaStats.jsonSerializationMsgErr.Increment()
-			pkgLogger.Errorf("unable to marshal message at index %d", i)
+			addErrorSample("unable to marshal message at index %d", i)
 			continue
 		}
 		codecs := p.getCodecs()
@@ -587,19 +596,19 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 			schemaId, _ := data["schemaId"].(string)
 			if schemaId == "" {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf("schemaId is not available for the event at index %d", i)
+				addErrorSample("schemaId is not available for the event at index %d", i)
 				continue
 			}
 			codec, ok := codecs[schemaId]
 			if !ok {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf("unable to find schema with schemaId %q", schemaId)
+				addErrorSample("unable to find schema with schemaId %q", schemaId)
 				continue
 			}
 			marshalledMsg, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), marshalledMsg, *codec)
 			if err != nil {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf(
+				addErrorSample(
 					"unable to serialize the event with schemaId %q at index %d: %s",
 					schemaId, i, err,
 				)
@@ -609,6 +618,9 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
 	}
 	if len(messages) == 0 {
+		if len(errorSamples) > 0 {
+			return nil, fmt.Errorf("unable to process any of the event in the batch: some errors are: %v", errorSamples)
+		}
 		return nil, fmt.Errorf("unable to process any of the event in the batch")
 	}
 	return messages, nil
