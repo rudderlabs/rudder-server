@@ -110,7 +110,7 @@ func TestBackendConfigManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tenantManager = multitenant.New(config.Default, mockBackendConfig)
+	tenantManager := multitenant.New(config.Default, mockBackendConfig)
 
 	t.Run("Subscriptions", func(t *testing.T) {
 		bcm := newBackendConfigManager(c, db, tenantManager, logger.NOP)
@@ -455,6 +455,11 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 
 			_, err = pgResource.DB.Exec(string(sqlStatement))
 			require.NoError(t, err)
+
+			tenantManager := multitenant.New(
+				config.Default,
+				backendconfig.DefaultBackendConfig,
+			)
 
 			bcm := newBackendConfigManager(
 				c, db,

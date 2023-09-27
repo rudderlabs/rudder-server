@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,7 +46,6 @@ import (
 )
 
 func TestGRPC(t *testing.T) {
-	Init4()
 	validations.Init()
 	misc.Init()
 
@@ -143,9 +143,10 @@ func TestGRPC(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
+		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
 		bcManager := newBackendConfigManager(c, db, tenantManager, logger.NOP)
-		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager)
+		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
 		tcpPort, err := kithelper.GetFreePort()
@@ -554,9 +555,7 @@ func TestGRPC(t *testing.T) {
 
 				t.Run("success", func(t *testing.T) {
 					t.Cleanup(func() {
-						clearTriggeredUpload(model.Warehouse{
-							Identifier: "POSTGRES:test_source_id:test_destination_id",
-						})
+						triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
 					})
 
 					res, err := grpcClient.TriggerWHUploads(ctx, &proto.WHUploadsRequest{
@@ -568,9 +567,9 @@ func TestGRPC(t *testing.T) {
 					require.NotNil(t, res)
 					require.EqualValues(t, http.StatusOK, res.GetStatusCode())
 					require.EqualValues(t, triggeredSuccessfully, res.GetMessage())
-					require.True(t, isUploadTriggered(model.Warehouse{
-						Identifier: "POSTGRES:test_source_id:test_destination_id",
-					}))
+
+					_, triggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+					require.True(t, triggered)
 				})
 				t.Run("no warehouses", func(t *testing.T) {})
 				t.Run("no pending count", func(t *testing.T) {
