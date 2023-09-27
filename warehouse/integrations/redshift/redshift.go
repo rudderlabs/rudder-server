@@ -1378,12 +1378,12 @@ func (*Redshift) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err e
 func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := rs.connect(ctx)
+	db, err := rs.connect(ctx)
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {

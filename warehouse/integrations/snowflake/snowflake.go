@@ -263,7 +263,7 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 	r := sf.DB.QueryRowContext(ctx, sqlStatement)
 	err = r.Scan(&exists)
 	// ignore err if no results for query
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
 	return
@@ -695,7 +695,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		return fmt.Errorf("cannot get load file location for %q: %w", identityMergeRulesTable, err)
 	}
 
-	dbHandle, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
+	db, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
 		log.Errorw("Error establishing connection for copying table", lf.Error, err.Error())
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
@@ -727,7 +727,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		log.Infow("Copying identity merge rules for table", lf.Query, sanitisedSQLStmt)
 	}
 
-	if _, err = dbHandle.ExecContext(ctx, sqlStatement); err != nil {
+	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		log.Errorw("Error while copying identity merge rules for table", lf.Error, err.Error())
 		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
@@ -746,7 +746,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		return fmt.Errorf("cannot get load file location for %q: %w", identityMappingsTable, err)
 	}
 
-	dbHandle, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
+	db, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
 		log.Errorw("Error establishing connection for copying table", lf.Error, err.Error())
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
@@ -762,7 +762,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	log = log.With(lf.StagingTableName, stagingTableName)
 	log.Infow("Creating staging table", lf.Query, sqlStatement)
 
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		log.Errorw("Error creating staging table",
 			lf.Query, sqlStatement,
@@ -776,7 +776,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		schemaIdentifier, stagingTableName,
 	)
 	log.Infow("Adding autoincrement column", lf.Query, sqlStatement)
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
 		log.Errorw("Error adding autoincrement column",
 			lf.Query, sqlStatement,
@@ -797,7 +797,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	)
 
 	log.Infow("Copying identity mappings for table", lf.Query, sqlStatement)
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		log.Errorw("Error running COPY for table",
 			lf.Query, sqlStatement,
@@ -829,7 +829,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		identityMappingsTable, stagingTableName, schemaIdentifier,
 	)
 	log.Infow("Merge records for dedup for table", lf.Query, sqlStatement)
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		log.Errorw("Error running MERGE for dedup",
 			lf.Query, sqlStatement,
@@ -1459,12 +1459,12 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
-	dbHandle, err := sf.connect(ctx, optionalCreds{})
+	db, err := sf.connect(ctx, optionalCreds{})
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (sf *Snowflake) LoadTestTable(

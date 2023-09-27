@@ -405,7 +405,7 @@ func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
 	var schema string
 	err := d.DB.QueryRowContext(ctx, query).Scan(&schema)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("schema exists: %w", err)

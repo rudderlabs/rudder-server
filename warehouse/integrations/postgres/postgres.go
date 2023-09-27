@@ -504,12 +504,12 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := pg.connect()
+	db, err := pg.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (pg *Postgres) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {

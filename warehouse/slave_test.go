@@ -10,6 +10,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"golang.org/x/sync/errgroup"
@@ -86,6 +89,11 @@ func TestSlave(t *testing.T) {
 
 	workers := 4
 	workerJobs := 25
+
+	tenantManager := multitenant.New(
+		config.Default,
+		backendconfig.DefaultBackendConfig,
+	)
 
 	slave := newSlave(
 		config.Default,
