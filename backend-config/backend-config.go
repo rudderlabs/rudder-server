@@ -153,8 +153,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 		source.Destinations = destinations
 		modifiedConfig.Sources = append(modifiedConfig.Sources, source)
 	}
-	modifiedConfig.Settings.DataRetention.DisableReportingPII = config.Settings.DataRetention.DisableReportingPII
-	modifiedConfig.Settings.EventAuditEnabled = config.Settings.EventAuditEnabled
+	modifiedConfig.Settings = config.Settings
 	return modifiedConfig
 }
 
