@@ -28,7 +28,7 @@ type indexConstraint struct {
 
 type constraintsManager struct {
 	constraintsMap              map[string][]constraints
-	enableConstraintsViolations bool
+	enableConstraintsViolations misc.ValueLoader[bool]
 }
 
 func newConstraintsManager(conf *config.Config) *constraintsManager {
@@ -64,9 +64,7 @@ func newConstraintsManager(conf *config.Config) *constraintsManager {
 			},
 		},
 	}
-
-	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-	conf.RegisterBoolConfigVariable(true, &cm.enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
+	cm.enableConstraintsViolations = conf.GetReloadableBoolVar(true, "Warehouse.enableConstraintsViolations")
 
 	return cm
 }
@@ -74,7 +72,7 @@ func newConstraintsManager(conf *config.Config) *constraintsManager {
 func (cm *constraintsManager) violatedConstraints(destinationType string, brEvent *BatchRouterEvent, columnName string) (cv *constraintsViolation) {
 	cv = &constraintsViolation{}
 
-	if !cm.enableConstraintsViolations {
+	if !cm.enableConstraintsViolations.Load() {
 		return
 	}
 

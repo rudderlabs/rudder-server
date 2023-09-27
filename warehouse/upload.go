@@ -225,32 +225,11 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.disableGenerateTableLoadCountMetricsWorkspaceIDs = f.conf.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil)
 	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
 	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
-
-	if f.conf.IsSet("Warehouse.tableCountQueryTimeout") {
-		uj.config.tableCountQueryTimeout = f.conf.GetDuration("Warehouse.tableCountQueryTimeout", 30, time.Second)
-	} else {
-		uj.config.tableCountQueryTimeout = f.conf.GetDuration("Warehouse.tableCountQueryTimeoutInS", 30, time.Second)
-	}
-	if f.conf.IsSet("Warehouse.longRunningUploadStatThreshold") {
-		uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDuration("Warehouse.longRunningUploadStatThreshold", 120, time.Minute)
-	} else {
-		uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", 120, time.Minute)
-	}
-	if f.conf.IsSet("Warehouse.minUploadBackoff") {
-		uj.config.minUploadBackoff = f.conf.GetDuration("Warehouse.minUploadBackoff", 60, time.Second)
-	} else {
-		uj.config.minUploadBackoff = f.conf.GetDuration("Warehouse.minUploadBackoffInS", 60, time.Second)
-	}
-	if f.conf.IsSet("Warehouse.maxUploadBackoff") {
-		uj.config.maxUploadBackoff = f.conf.GetDuration("Warehouse.maxUploadBackoff", 1800, time.Second)
-	} else {
-		uj.config.maxUploadBackoff = f.conf.GetDuration("Warehouse.maxUploadBackoffInS", 1800, time.Second)
-	}
-	if f.conf.IsSet("Warehouse.retryTimeWindow") {
-		uj.config.retryTimeWindow = f.conf.GetDuration("Warehouse.retryTimeWindow", 180, time.Minute)
-	} else {
-		uj.config.retryTimeWindow = f.conf.GetDuration("Warehouse.retryTimeWindowInMins", 180, time.Minute)
-	}
+	uj.config.tableCountQueryTimeout = f.conf.GetDurationVar(30, time.Second, "Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS")
+	uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDurationVar(120, time.Minute, "Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin")
+	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
+	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
+	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
