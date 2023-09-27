@@ -889,14 +889,15 @@ var _ = Describe("Using sources handler", func() {
 			_, err = databaseB.ExecContext(context.TODO(), publicationQuery)
 			Expect(err).NotTo(HaveOccurred())
 
-			normalizedHostnameA := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_")
-			normalizedHostnameB := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configB.LocalHostname), "_")
-			subscriptionAName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameA)
-			subscriptionBName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameB)
 			subscriptionQuery := `CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`
 
+			normalizedHostnameA := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_")
+			subscriptionAName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameA)
 			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
+
+			normalizedHostnameB := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configB.LocalHostname), "_")
+			subscriptionBName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameB)
 			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -1030,12 +1031,14 @@ func newJobRunId() string {
 }
 
 func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...string) postgresResource {
-	database := "jobsdb"
 	cmd := []string{"postgres"}
 	if len(params) > 0 {
 		cmd = append(cmd, "-c")
 		cmd = append(cmd, params...)
 	}
+	username := rand.String(10)
+	password := rand.String(10)
+	database := rand.String(10)
 	// pulls an image, creates a container based on it and runs it
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
@@ -1043,9 +1046,9 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 		NetworkID:  networkId,
 		Hostname:   hostname,
 		Env: []string{
-			"POSTGRES_PASSWORD=password",
+			"POSTGRES_PASSWORD=" + password,
 			"POSTGRES_DB=" + database,
-			"POSTGRES_USER=rudder",
+			"POSTGRES_USER=" + username,
 		},
 		Cmd: cmd,
 	})
@@ -1054,11 +1057,11 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	}
 
 	port := resource.GetPort("5432/tcp")
-	externalDSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
-	internalDSN := fmt.Sprintf("postgres://rudder:password@%s:5432/%s?sslmode=disable", hostname, database)
+	externalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@localhost:%[3]s/%[4]s?sslmode=disable", username, password, port, database)
+	internalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@%[3]s:5432/%[4]s?sslmode=disable", username, password, hostname, database)
 	var (
 		db  *sql.DB
-		dsn = fmt.Sprintf("host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable", port)
+		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable", port, username, password, database)
 	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() (err error) {
