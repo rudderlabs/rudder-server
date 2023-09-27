@@ -25,7 +25,7 @@ services:
   #   volumes:
   #     - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
   transformer:
-    image: "rudderstack/develop-rudder-transformer:latest"
+    image: "rudderlabs/develop-rudder-transformer:latest"
     ports:
       - "9090:9090"
   minio:
