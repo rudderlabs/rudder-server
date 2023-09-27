@@ -20,11 +20,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type Admin struct {
-	bcManager *backendConfigManager
-	logger    logger.Logger
-}
-
 type QueryInput struct {
 	DestID       string
 	SourceID     string
@@ -40,11 +35,20 @@ type ConfigurationTestOutput struct {
 	Error string
 }
 
-func RegisterAdmin(bcManager *backendConfigManager, logger logger.Logger) {
-	admin.RegisterAdminHandler("Warehouse", &Admin{
+type Admin struct {
+	bcManager *backendConfigManager
+	logger    logger.Logger
+}
+
+func NewAdmin(bcManager *backendConfigManager, logger logger.Logger) *Admin {
+	return &Admin{
 		bcManager: bcManager,
 		logger:    logger.Child("admin"),
-	})
+	}
+}
+
+func (a *Admin) Register() {
+	admin.RegisterAdminHandler("Warehouse", a)
 }
 
 // TriggerUpload sets uploads to start without delay

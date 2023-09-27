@@ -204,7 +204,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  false,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -222,7 +222,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -240,7 +240,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -265,7 +265,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -288,7 +288,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  false,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -306,7 +306,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
@@ -337,7 +337,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle: db.DB,
+				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
