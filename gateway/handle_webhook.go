@@ -54,6 +54,7 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 	return gw.errDB.Store(ctx, jobs)
 }
 
-func (gw *Handle) GetSource(sourceID string) (backendconfig.SourceT, error) {
-	return gw.sourceIDSourceMap[sourceID], nil
+func (gw *Handle) GetSource(sourceID string) (*backendconfig.SourceT, error) {
+	source := gw.sourceIDSourceMap[sourceID]
+	return &source, nil
 }

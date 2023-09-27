@@ -56,8 +56,17 @@ func (bt *batchWebhookTransformerT) sendToTransformer(events [][]byte, url strin
 func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]byte, sourceType string, version string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
+	v1Sources := []string{"shopify"}
+	eventsToSend := events
+	for _, source := range v1Sources {
+		if strings.ToLower(sourceType) == source {
+			url = strings.ReplaceAll(url, "v0", "v1")
+			eventsToSend = payloadArr
+			break
+		}
+	}
 
-	resp, err := bt.sendToTransformer(events, url)
+	resp, err := bt.sendToTransformer(eventsToSend, url)
 
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
@@ -73,17 +82,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, payloadArr [][]by
 		err := errors.New(response.GetStatus(response.RequestBodyReadFailed))
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
 	}
-	/*
-		Following 404 case can be in that case when v1 endpoint is not there
-		that is new server is hitting old transformer( when there used to be no source sent to tranformer)
-	*/
-	if resp.StatusCode == 404 {
-		// v1 endpoint not available so falling back to v0 endpoint
-		url := strings.ReplaceAll(bt.sourceTransformerURL, "v1", "v0")
-		resp, err = bt.sendToTransformer(events, url)
-		respBody, err = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
-	}
+
 	if resp.StatusCode != http.StatusOK {
 		bt.webhook.logger.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
 		bt.stats.failedStat.Count(len(events))
