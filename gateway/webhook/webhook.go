@@ -302,12 +302,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 			marshalledSource, err := json.Marshal(source)
 			format := "{\"body\": %s, \"source\": %s}"
-			eventToSource := fmt.Sprintf(format, body, marshalledSource)
+			eventToSourceTransform := fmt.Sprintf(format, body, marshalledSource)
 			// Convert the formatted string to a []byte.
-			eventToSourceBytes := []byte(eventToSource)
+			eventToSourceTransformBytes := []byte(eventToSourceTransform)
 
-			// eventToSource = {event: body, sourceConfig: Config}
-			payloadArr = append(payloadArr, eventToSourceBytes)
+			// eventToSourceTransform = {event: body, source: source}
+			payloadArr = append(payloadArr, eventToSourceTransformBytes)
 			webRequests = append(webRequests, req)
 		}
 

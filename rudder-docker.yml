@@ -25,6 +25,7 @@ services:
       - JOBS_DB_DB_NAME=jobsdb
       - JOBS_DB_PASSWORD=password
       - DEST_TRANSFORM_URL=http://d-transformer:9090
+      - SOURCE_TRANSFORM_VERSION=v1
       - CONFIG_BACKEND_URL=https://api.rudderstack.com
       - WORKSPACE_TOKEN=<your_workspace_token> # Must be written without quotes e.g. WORKSPACE_TOKEN=20TokEO34NWitou2t3quO8teS7
       - STATSD_SERVER_URL=metrics-exporter:9125
