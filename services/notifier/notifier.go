@@ -9,8 +9,6 @@ import (
 	"math/rand"
 	"time"
 
-	"go.uber.org/atomic"
-
 	"github.com/lib/pq"
 
 	"golang.org/x/sync/errgroup"
@@ -443,7 +441,7 @@ func (n *Notifier) Subscribe(
 	n.background.group.Go(func() error {
 		defer close(jobsCh)
 
-		pollSleep := atomic.NewDuration(time.Duration(0))
+		pollSleep := time.Duration(0)
 
 		for {
 			job, err := n.claim(ctx, workerId)
@@ -459,13 +457,13 @@ func (n *Notifier) Subscribe(
 					n.logger.Warnf("claiming job: %v", err)
 				}
 
-				pollSleep.Store(nextPollInterval(pollSleep.Load()))
+				pollSleep = nextPollInterval(pollSleep)
 			} else {
 				jobsCh <- &ClaimJob{
 					Job: job,
 				}
 
-				pollSleep.Store(time.Duration(0))
+				pollSleep = time.Duration(0)
 			}
 
 			select {
@@ -473,7 +471,7 @@ func (n *Notifier) Subscribe(
 				return nil
 			case <-n.background.groupCtx.Done():
 				return nil
-			case <-time.After(pollSleep.Load()):
+			case <-time.After(pollSleep):
 			}
 		}
 	})
@@ -544,14 +542,14 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 	var locked bool
 	defer func() {
 		if locked {
-			if err := maintenanceWorkerLock.Unlock(ctx); err != nil && !errors.Is(ctx.Err(), context.Canceled) {
+			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
 				n.logger.Warnf("unlocking maintenance worker lock: %v", err)
 			}
 		}
 	}()
 
 	for {
-		if locked, err = maintenanceWorkerLock.Lock(ctx); err != nil && !errors.Is(ctx.Err(), context.Canceled) {
+		if locked, err = maintenanceWorkerLock.Lock(ctx); err != nil {
 			n.logger.Warnf("acquiring maintenance worker lock: %v", err)
 		} else if locked {
 			break
