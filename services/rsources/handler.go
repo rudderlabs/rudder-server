@@ -316,7 +316,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 	_, err := db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_stats already exists in %s", defaultDbName)
+			log.Debugf("table rsources_failed_keys already exists in %s", defaultDbName)
 		} else {
 			return err
 		}
