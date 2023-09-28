@@ -37,7 +37,8 @@ type TableUploadInfo struct {
 type RetrieveFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
-	IntervalInHrs int64
+	Start         time.Time
+	End           time.Time
 }
 
 type RetrieveFailedBatchesResponse struct {
@@ -45,6 +46,7 @@ type RetrieveFailedBatchesResponse struct {
 	SourceID      string
 	Status        string
 	TotalEvents   int64
+	TotalSyncs    int64
 	UpdatedAt     time.Time
 	Error         string
 }
@@ -52,13 +54,15 @@ type RetrieveFailedBatchesResponse struct {
 type RetryAllFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
-	IntervalInHrs int64
+	Start         time.Time
+	End           time.Time
 }
 
 type RetrySpecificFailedBatchRequest struct {
 	DestinationID string
 	WorkspaceID   string
-	IntervalInHrs int64
+	Start         time.Time
+	End           time.Time
 	ErrorCategory string
 	SourceID      string
 	Status        string

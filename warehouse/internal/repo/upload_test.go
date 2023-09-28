@@ -1736,7 +1736,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	intervalInHours := time.Since(now.Add(-12*time.Hour)) / time.Hour
+	start := now.Add(-24 * time.Hour)
+	end := now.Add(24 * time.Hour)
 
 	prepareData := func(
 		db *sqlmiddleware.DB,
@@ -1868,7 +1869,17 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
+			})
+			require.NoError(t, err)
+			require.Empty(t, failedBatches)
+
+			failedBatches, err = repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				Start:         now.Add(time.Hour),
+				End:           now.Add(time.Hour),
 			})
 			require.NoError(t, err)
 			require.Empty(t, failedBatches)
@@ -1876,7 +1887,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.Zero(t, retries)
@@ -1929,7 +1941,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
@@ -1938,6 +1951,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: "default",
 					SourceID:      sourceID,
 					TotalEvents:   500,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -1946,6 +1960,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: model.PermissionError,
 					SourceID:      sourceID,
 					TotalEvents:   500,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Aborted,
 				},
@@ -1954,7 +1969,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.Equal(t, retries, int64(2))
@@ -2011,7 +2027,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
@@ -2020,6 +2037,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: "default",
 					SourceID:      sourceID,
 					TotalEvents:   600,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -2028,6 +2046,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: model.PermissionError,
 					SourceID:      sourceID,
 					TotalEvents:   600,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -2036,7 +2055,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.Equal(t, retries, int64(2))
@@ -2115,7 +2135,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
@@ -2124,6 +2145,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: "default",
 					SourceID:      sourceID,
 					TotalEvents:   1200,
+					TotalSyncs:    2,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -2132,6 +2154,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: model.PermissionError,
 					SourceID:      sourceID,
 					TotalEvents:   500,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -2140,6 +2163,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: model.ResourceNotFoundError,
 					SourceID:      sourceID,
 					TotalEvents:   500,
+					TotalSyncs:    1,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Aborted,
 				},
@@ -2148,7 +2172,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.Equal(t, retries, int64(4))
@@ -2201,7 +2226,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			failedBatches, err := repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
@@ -2210,6 +2236,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 					ErrorCategory: model.PermissionError,
 					SourceID:      sourceID,
 					TotalEvents:   1100,
+					TotalSyncs:    2,
 					UpdatedAt:     now.UTC(),
 					Status:        model.Failed,
 				},
@@ -2218,7 +2245,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.NoError(t, err)
 			require.Equal(t, retries, int64(2))
@@ -2239,7 +2267,8 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			retries, err := repoUpload.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 				DestinationID: destinationID,
 				WorkspaceID:   workspaceID,
-				IntervalInHrs: int64(intervalInHours),
+				Start:         start,
+				End:           end,
 			})
 			require.ErrorIs(t, err, context.Canceled)
 			require.Zero(t, retries)
@@ -2319,9 +2348,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				retries, err := repoUpload.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 					DestinationID: destinationID,
 					WorkspaceID:   workspaceID,
-					IntervalInHrs: int64(intervalInHours),
-					ErrorCategory: "default",
 					SourceID:      sourceID,
+					Start:         start,
+					End:           end,
+					ErrorCategory: "default",
 					Status:        model.Failed,
 				})
 				require.NoError(t, err)
@@ -2331,9 +2361,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				retries, err := repoUpload.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 					DestinationID: destinationID,
 					WorkspaceID:   workspaceID,
-					IntervalInHrs: int64(intervalInHours),
-					ErrorCategory: model.ResourceNotFoundError,
 					SourceID:      sourceID,
+					Start:         start,
+					End:           end,
+					ErrorCategory: model.ResourceNotFoundError,
 					Status:        model.Aborted,
 				})
 				require.NoError(t, err)
@@ -2343,9 +2374,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				retries, err := repoUpload.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 					DestinationID: destinationID,
 					WorkspaceID:   workspaceID,
-					IntervalInHrs: int64(intervalInHours),
-					ErrorCategory: model.PermissionError,
 					SourceID:      sourceID,
+					Start:         start,
+					End:           end,
+					ErrorCategory: model.PermissionError,
 					Status:        model.Failed,
 				})
 				require.NoError(t, err)
@@ -2354,10 +2386,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			t.Run("errorCategory=invalid, status=invalid", func(t *testing.T) {
 				retries, err := repoUpload.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 					DestinationID: destinationID,
-					WorkspaceID:   workspaceID,
-					IntervalInHrs: int64(intervalInHours),
-					ErrorCategory: "invalid",
 					SourceID:      sourceID,
+					Start:         start,
+					End:           end,
+					ErrorCategory: "invalid",
 					Status:        "invalid",
 				})
 				require.NoError(t, err)

@@ -33,4 +33,6 @@ const (
 	TotalRows                  = "totalRows"
 	SampleDuplicateMessages    = "sampleDuplicateMessages"
 	IntervalInHours            = "intervalInHours"
+	StartTime                  = "startTime"
+	EndTime                    = "endTime"
 )

@@ -15,8 +15,8 @@ service Warehouse {
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
-  rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
+  rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
   rpc RetryAllFailedBatches(RetryAllFailedBatchesRequest) returns (RetryAllFailedBatchesResponse);
   rpc RetrySpecificFailedBatch(RetrySpecificFailedBatchRequest) returns (RetrySpecificFailedBatchResponse);
@@ -126,14 +126,16 @@ message FailedBatchInfo {
   string errorCategory = 2;
   string sourceID = 3;
   int64 failedEventsCount = 4;
-  google.protobuf.Timestamp lastHappened = 5;
-  string status = 6;
+  int64 failedSyncsCount = 5;
+  google.protobuf.Timestamp lastHappened = 6;
+  string status = 7;
 }
 
 message RetrieveFailedBatchesRequest{
   string workspaceID = 1;
   string destinationID = 2;
-  string intervalInHours = 3;
+  string start = 3;
+  string end = 4;
 }
 
 message RetrieveFailedBatchesResponse{
@@ -143,7 +145,8 @@ message RetrieveFailedBatchesResponse{
 message RetryAllFailedBatchesRequest{
   string workspaceID = 1;
   string destinationID = 2;
-  string intervalInHours = 3;
+  string start = 3;
+  string end = 4;
 }
 
 message RetryAllFailedBatchesResponse{
@@ -153,10 +156,11 @@ message RetryAllFailedBatchesResponse{
 message RetrySpecificFailedBatchRequest{
   string workspaceID = 1;
   string destinationID = 2;
-  string intervalInHours = 3;
-  string errorCategory = 4;
-  string sourceID = 5;
-  string status = 6;
+  string start = 3;
+  string end = 4;
+  string errorCategory = 5;
+  string sourceID = 6;
+  string status = 7;
 }
 
 message RetrySpecificFailedBatchResponse{

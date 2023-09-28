@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/atomic"
 	"math/rand"
 	"time"
 
@@ -441,7 +442,7 @@ func (n *Notifier) Subscribe(
 	n.background.group.Go(func() error {
 		defer close(jobsCh)
 
-		pollSleep := time.Duration(0)
+		pollSleep := atomic.NewDuration(time.Duration(0))
 
 		for {
 			job, err := n.claim(ctx, workerId)
@@ -457,13 +458,13 @@ func (n *Notifier) Subscribe(
 					n.logger.Warnf("claiming job: %v", err)
 				}
 
-				pollSleep = nextPollInterval(pollSleep)
+				pollSleep.Store(nextPollInterval(pollSleep.Load()))
 			} else {
 				jobsCh <- &ClaimJob{
 					Job: job,
 				}
 
-				pollSleep = time.Duration(0)
+				pollSleep.Store(time.Duration(0))
 			}
 
 			select {
@@ -471,7 +472,7 @@ func (n *Notifier) Subscribe(
 				return nil
 			case <-n.background.groupCtx.Done():
 				return nil
-			case <-time.After(pollSleep):
+			case <-time.After(pollSleep.Load()):
 			}
 		}
 	})

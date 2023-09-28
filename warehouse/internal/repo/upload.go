@@ -1054,7 +1054,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 ) ([]model.RetrieveFailedBatchesResponse, error) {
 	stmt := `
 		WITH table_uploads_result AS (
-		  -- Getting entries from table uploads where and total_events got populated
+		  -- Getting entries from table uploads where total_events got populated
 		  SELECT
 			u.error_category,
 			u.source_id,
@@ -1066,15 +1066,16 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			u.timings
 		  FROM
 			wh_uploads u
-		  LEFT JOIN wh_table_uploads tu ON u.id = tu.wh_upload_id
+			LEFT JOIN wh_table_uploads tu ON u.id = tu.wh_upload_id
 		  WHERE
 			u.destination_id = $1
 			AND u.workspace_id = $2
-			AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
-			AND u.status ~~ ANY($4)
+			AND u.created_at >= $3
+			AND u.created_at <= $4
+			AND u.status ~~ ANY($5)
 			AND u.error IS NOT NULL
 			AND u.error != '{}'
-			AND tu.table_name NOT ILIKE $5
+			AND tu.table_name NOT ILIKE $6
 			AND tu.total_events IS NOT NULL
 		),
 		staging_files_result AS (
@@ -1090,13 +1091,14 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			u.timings
 		  FROM
 			wh_uploads u
-		  LEFT JOIN wh_staging_files s ON u.id = s.upload_id
+			LEFT JOIN wh_staging_files s ON u.id = s.upload_id
 		  WHERE
 			u.destination_id = $1
 			AND u.workspace_id = $2
-			AND u.created_at > NOW() - $3 * INTERVAL '1 HOUR'
-			AND u.status ~~ ANY($4)
-            AND u.error IS NOT NULL
+			AND u.created_at >= $3
+			AND u.created_at <= $4
+			AND u.status ~~ ANY($5)
+			AND u.error IS NOT NULL
 			AND u.error != '{}'
 		),
 		combined_result AS (
@@ -1105,6 +1107,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			tu.error_category,
 			tu.source_id,
 			tu.status,
+			tu.id,
 			tu.total_events,
 			tu.updated_at,
 			tu.error,
@@ -1117,6 +1120,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			s.error_category,
 			s.source_id,
 			s.status,
+			s.id,
 			s.total_events,
 			s.updated_at,
 			s.error,
@@ -1137,33 +1141,51 @@ func (uploads *Uploads) RetrieveFailedBatches(
 		  error_category,
 		  source_id,
 		  status,
-		  total_events,
+		  COALESCE (total_events, 0) AS total_events,
+		  COALESCE(
+			(
+			  SELECT
+				COUNT (DISTINCT combined_result.id)
+			  FROM
+				combined_result
+			  WHERE
+				combined_result.error_category = q.error_category
+				AND combined_result.source_id = q.source_id
+				AND combined_result.status = q.status
+			),
+			0
+		  ) AS total_syncs,
 		  updated_at,
 		  error,
-          timings
+		  timings
 		FROM
 		  (
 			SELECT
 			  error_category,
 			  source_id,
 			  status,
-			  sum(total_events) OVER (
-				PARTITION BY error_category, source_id, status
+			  SUM(total_events) OVER (
+				PARTITION BY error_category, source_id,
+				status
 			  ) AS total_events,
 			  updated_at,
 			  error,
 			  timings,
 			  ROW_NUMBER() OVER (
-				PARTITION BY error_category, source_id, status
+				PARTITION BY error_category,
+				source_id,
+				status
+				ORDER BY
+				  updated_at DESC
 			  ) AS row_number
-			from
+			FROM
 			  combined_result
-	      ) q
-        WHERE
-          row_number = 1;
+		  ) q
+		WHERE
+		  row_number = 1;
 	`
 	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.IntervalInHrs,
+		req.DestinationID, req.WorkspaceID, req.Start, req.End,
 		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
 		warehouseutils.DiscardsTable,
 	}
@@ -1185,6 +1207,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			&failedBatch.SourceID,
 			&failedBatch.Status,
 			&failedBatch.TotalEvents,
+			&failedBatch.TotalSyncs,
 			&failedBatch.UpdatedAt,
 			&failedBatch.Error,
 			&timingsRaw,
@@ -1222,24 +1245,25 @@ func (uploads *Uploads) RetryFailedBatches(
 			` + uploadsTableName + `
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
-			status = $5,
-			updated_at = $6
+			status = $6,
+			updated_at = $7
 		WHERE
 			destination_id = $1
 			AND workspace_id = $2
-			AND created_at > NOW() - $3 * INTERVAL '1 HOUR'
-			AND status ~~ ANY($4)
+			AND created_at >= $3
+			AND created_at <= $4
+			AND status ~~ ANY($5)
 			AND error != '{}'
 	`
 	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.IntervalInHrs,
+		req.DestinationID, req.WorkspaceID, req.Start, req.End,
 		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
 		model.Waiting, uploads.now(),
 	}
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
-		return 0, fmt.Errorf("executing retrying failed batches: %w", err)
+		return 0, fmt.Errorf("retrying failed batches: %w", err)
 	}
 
 	return r.RowsAffected()
@@ -1254,26 +1278,27 @@ func (uploads *Uploads) RetrySpecificFailedBatch(
 			` + uploadsTableName + `
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
-			status = $7,
-			updated_at = $8
+			status = $8,
+			updated_at = $9
 		WHERE
 			destination_id = $1
 			AND workspace_id = $2
-			AND created_at > NOW() - $3 * INTERVAL '1 HOUR'
-			AND status LIKE $4
+			AND created_at >= $3
+			AND created_at <= $4
+			AND status LIKE $5
 			AND error != '{}'
-			AND source_id = $5
-			AND error_category = $6
+			AND source_id = $6
+			AND error_category = $7
 	`
 	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.IntervalInHrs,
+		req.DestinationID, req.WorkspaceID, req.Start, req.End,
 		"%" + req.Status + "%",
 		req.SourceID, req.ErrorCategory, model.Waiting, uploads.now(),
 	}
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
-		return 0, fmt.Errorf("executing retrying specific failed batch: %w", err)
+		return 0, fmt.Errorf("retrying specific failed batch: %w", err)
 	}
 
 	return r.RowsAffected()

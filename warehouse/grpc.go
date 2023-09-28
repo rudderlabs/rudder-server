@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
+	"time"
 
 	"github.com/samber/lo"
 
@@ -805,7 +805,8 @@ func (g *GRPC) RetrieveFailedBatches(
 		"Retrieving failed batches",
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
-		lf.IntervalInHours, req.GetIntervalInHours(),
+		lf.StartTime, req.GetStart(),
+		lf.EndTime, req.GetEnd(),
 	)
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
@@ -813,14 +814,15 @@ func (g *GRPC) RetrieveFailedBatches(
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
-	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
-	if ok != nil {
+	start, err := time.Parse(time.RFC3339, req.GetStart())
+	if err != nil {
 		return &proto.RetrieveFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
 	}
-	if intervalInHrs <= 0 {
+	end, err := time.Parse(time.RFC3339, req.GetEnd())
+	if err != nil {
 		return &proto.RetrieveFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
 	}
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
@@ -832,7 +834,8 @@ func (g *GRPC) RetrieveFailedBatches(
 	batches, err := g.uploadRepo.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
 		WorkspaceID:   req.GetWorkspaceID(),
 		DestinationID: req.GetDestinationID(),
-		IntervalInHrs: intervalInHrs,
+		Start:         start,
+		End:           end,
 	})
 	if err != nil {
 		return &proto.RetrieveFailedBatchesResponse{},
@@ -841,9 +844,11 @@ func (g *GRPC) RetrieveFailedBatches(
 
 	failedBatches := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
 		return &proto.FailedBatchInfo{
+			Error:             item.Error,
 			ErrorCategory:     item.ErrorCategory,
 			SourceID:          item.SourceID,
 			FailedEventsCount: item.TotalEvents,
+			FailedSyncsCount:  item.TotalSyncs,
 			LastHappened:      timestamppb.New(item.UpdatedAt),
 			Status:            item.Status,
 		}
@@ -858,7 +863,8 @@ func (g *GRPC) RetryAllFailedBatches(
 	g.logger.Infow("Retrying all failed batches",
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
-		lf.IntervalInHours, req.GetIntervalInHours(),
+		lf.StartTime, req.GetStart(),
+		lf.EndTime, req.GetEnd(),
 	)
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
@@ -866,14 +872,15 @@ func (g *GRPC) RetryAllFailedBatches(
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
-	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
-	if ok != nil {
+	start, err := time.Parse(time.RFC3339, req.GetStart())
+	if err != nil {
 		return &proto.RetryAllFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
 	}
-	if intervalInHrs <= 0 {
+	end, err := time.Parse(time.RFC3339, req.GetEnd())
+	if err != nil {
 		return &proto.RetryAllFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
 	}
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
@@ -885,7 +892,8 @@ func (g *GRPC) RetryAllFailedBatches(
 	retriedCount, err := g.uploadRepo.RetryFailedBatches(ctx, model.RetryAllFailedBatchesRequest{
 		WorkspaceID:   req.GetWorkspaceID(),
 		DestinationID: req.GetDestinationID(),
-		IntervalInHrs: intervalInHrs,
+		Start:         start,
+		End:           end,
 	})
 	if err != nil {
 		return &proto.RetryAllFailedBatchesResponse{},
@@ -909,7 +917,8 @@ func (g *GRPC) RetrySpecificFailedBatch(
 	g.logger.Infow("Retrying specific failed batch",
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
-		lf.IntervalInHours, req.GetIntervalInHours(),
+		lf.StartTime, req.GetStart(),
+		lf.EndTime, req.GetEnd(),
 		lf.ErrorCategory, req.GetErrorCategory(),
 		lf.SourceID, req.GetSourceID(),
 		lf.Status, req.GetStatus(),
@@ -920,14 +929,15 @@ func (g *GRPC) RetrySpecificFailedBatch(
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
-	intervalInHrs, ok := strconv.ParseInt(req.GetIntervalInHours(), 10, 64)
-	if ok != nil {
+	start, err := time.Parse(time.RFC3339, req.GetStart())
+	if err != nil {
 		return &proto.RetrySpecificFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be a valid integer")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
 	}
-	if intervalInHrs <= 0 {
+	end, err := time.Parse(time.RFC3339, req.GetEnd())
+	if err != nil {
 		return &proto.RetrySpecificFailedBatchResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "intervalInHrs should be greater than 0")
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
 	}
 
 	if req.GetErrorCategory() == "" || req.GetSourceID() == "" || req.GetStatus() == "" {
@@ -948,7 +958,8 @@ func (g *GRPC) RetrySpecificFailedBatch(
 	retriedCount, err := g.uploadRepo.RetrySpecificFailedBatch(ctx, model.RetrySpecificFailedBatchRequest{
 		WorkspaceID:   req.GetWorkspaceID(),
 		DestinationID: req.GetDestinationID(),
-		IntervalInHrs: intervalInHrs,
+		Start:         start,
+		End:           end,
 		ErrorCategory: req.GetErrorCategory(),
 		SourceID:      req.GetSourceID(),
 		Status:        req.GetStatus(),

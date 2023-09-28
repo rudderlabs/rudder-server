@@ -1112,7 +1112,8 @@ func TestGRPC(t *testing.T) {
 		t.Run("Failed Batch Operations", func(t *testing.T) {
 			now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 
-			intervalInHours := time.Since(now.Add(-12*time.Hour)) / time.Hour
+			start := now.Add(-24 * time.Hour).Format(time.RFC3339)
+			end := now.Add(24 * time.Hour).Format(time.RFC3339)
 
 			prepareData := func(
 				db *sqlmw.DB,
@@ -1290,11 +1291,12 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
 					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
 				})
-				t.Run("invalid intervalInHrs", func(t *testing.T) {
+				t.Run("invalid start/end time", func(t *testing.T) {
 					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "-1",
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         now.Add(-24 * time.Hour).Format(time.RFC850),
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1302,14 +1304,29 @@ func TestGRPC(t *testing.T) {
 					statusError, ok := status.FromError(err)
 					require.True(t, ok)
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
+					require.Equal(t, "start time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+
+					res, err = grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           now.Add(24 * time.Hour).Format(time.RFC850),
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok = status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "end time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
 				})
 
 				t.Run("no sources", func(t *testing.T) {
 					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
-						WorkspaceID:     "unknown_workspace_id",
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
+						WorkspaceID:   "unknown_workspace_id",
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1321,42 +1338,50 @@ func TestGRPC(t *testing.T) {
 				})
 				t.Run("success", func(t *testing.T) {
 					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: strconv.Itoa(int(intervalInHours)),
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
 
-					failedBatches := lo.Map(res.GetInfos(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
+					failedBatches := lo.Map(res.GetFailedBatches(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
 						return model.RetrieveFailedBatchesResponse{
 							Error:         detail.GetError(),
-							SourceID:      detail.GetSourceID(),
-							Status:        detail.GetStatus(),
-							TotalEvents:   detail.GetFailedEventsCount(),
-							UpdatedAt:     detail.GetLastHappened().AsTime(),
 							ErrorCategory: detail.GetErrorCategory(),
+							SourceID:      detail.GetSourceID(),
+							TotalEvents:   detail.GetFailedEventsCount(),
+							TotalSyncs:    detail.GetFailedSyncsCount(),
+							UpdatedAt:     detail.GetLastHappened().AsTime(),
+							Status:        detail.GetStatus(),
 						}
 					})
 					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
+							Error:         "some error 4",
 							ErrorCategory: "default",
 							SourceID:      sourceID,
 							TotalEvents:   1200,
+							TotalSyncs:    2,
 							UpdatedAt:     now.UTC(),
 							Status:        model.Failed,
 						},
 						{
+							Error:         "some error 6",
 							ErrorCategory: model.PermissionError,
 							SourceID:      sourceID,
 							TotalEvents:   500,
+							TotalSyncs:    1,
 							UpdatedAt:     now.UTC(),
 							Status:        model.Failed,
 						},
 						{
+							Error:         "some error 8",
 							ErrorCategory: model.ResourceNotFoundError,
 							SourceID:      sourceID,
 							TotalEvents:   500,
+							TotalSyncs:    1,
 							UpdatedAt:     now.UTC(),
 							Status:        model.Aborted,
 						},
@@ -1377,11 +1402,12 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
 					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
 				})
-				t.Run("invalid intervalInHrs", func(t *testing.T) {
+				t.Run("invalid star/end time", func(t *testing.T) {
 					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "-1",
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         now.Add(-24 * time.Hour).Format(time.RFC850),
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1389,14 +1415,29 @@ func TestGRPC(t *testing.T) {
 					statusError, ok := status.FromError(err)
 					require.True(t, ok)
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
+					require.Equal(t, "start time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+
+					res, err = grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           now.Add(-24 * time.Hour).Format(time.RFC850),
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok = status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "end time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
 				})
 
 				t.Run("no sources", func(t *testing.T) {
 					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
-						WorkspaceID:     "unknown_workspace_id",
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
+						WorkspaceID:   "unknown_workspace_id",
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1408,9 +1449,10 @@ func TestGRPC(t *testing.T) {
 				})
 				t.Run("success", func(t *testing.T) {
 					res, err := grpcClient.RetryAllFailedBatches(ctx, &proto.RetryAllFailedBatchesRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: strconv.Itoa(int(intervalInHours)),
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
@@ -1431,11 +1473,12 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
 					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
 				})
-				t.Run("invalid intervalInHrs", func(t *testing.T) {
+				t.Run("invalid start/end time", func(t *testing.T) {
 					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "-1",
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         now.Add(-24 * time.Hour).Format(time.RFC850),
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1443,13 +1486,28 @@ func TestGRPC(t *testing.T) {
 					statusError, ok := status.FromError(err)
 					require.True(t, ok)
 					require.Equal(t, codes.InvalidArgument, statusError.Code())
-					require.Equal(t, "intervalInHrs should be greater than 0", statusError.Message())
+					require.Equal(t, "start time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+
+					res, err = grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           now.Add(-24 * time.Hour).Format(time.RFC850),
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok = status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "end time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
 				})
 				t.Run("no errorCategory + sourceID + status", func(t *testing.T) {
 					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1461,12 +1519,13 @@ func TestGRPC(t *testing.T) {
 				})
 				t.Run("no sources", func(t *testing.T) {
 					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
-						WorkspaceID:     "unknown_workspace_id",
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-						ErrorCategory:   model.PermissionError,
-						SourceID:        sourceID,
-						Status:          model.Failed,
+						WorkspaceID:   "unknown_workspace_id",
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.PermissionError,
+						SourceID:      sourceID,
+						Status:        model.Failed,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1478,12 +1537,13 @@ func TestGRPC(t *testing.T) {
 				})
 				t.Run("unauthorized", func(t *testing.T) {
 					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
-						WorkspaceID:     unusedWorkspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: "1",
-						ErrorCategory:   model.PermissionError,
-						SourceID:        sourceID,
-						Status:          model.Failed,
+						WorkspaceID:   unusedWorkspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.PermissionError,
+						SourceID:      sourceID,
+						Status:        model.Failed,
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -1495,12 +1555,13 @@ func TestGRPC(t *testing.T) {
 				})
 				t.Run("success", func(t *testing.T) {
 					res, err := grpcClient.RetrySpecificFailedBatch(ctx, &proto.RetrySpecificFailedBatchRequest{
-						WorkspaceID:     workspaceID,
-						DestinationID:   destinationID,
-						IntervalInHours: strconv.Itoa(int(intervalInHours)),
-						ErrorCategory:   model.ResourceNotFoundError,
-						SourceID:        sourceID,
-						Status:          model.Aborted,
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.ResourceNotFoundError,
+						SourceID:      sourceID,
+						Status:        model.Aborted,
 					})
 					require.NoError(t, err)
 					require.NotEmpty(t, res)
