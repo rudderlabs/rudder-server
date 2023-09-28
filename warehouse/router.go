@@ -93,19 +93,19 @@ type router struct {
 	notifier         *notifier.Notifier
 
 	config struct {
-		uploadFreqInS                     int64
-		noOfWorkers                       int
 		maxConcurrentUploadJobs           int
 		allowMultipleSourcesForJobsPickup bool
-		enableJitterForSyncs              bool
-		maxParallelJobCreation            int
 		waitForWorkerSleep                time.Duration
 		uploadAllocatorSleep              time.Duration
-		mainLoopSleep                     time.Duration
-		stagingFilesBatchSize             int
 		uploadStatusTrackFrequency        time.Duration
-		warehouseSyncFreqIgnore           bool
 		shouldPopulateHistoricIdentities  bool
+		uploadFreqInS                     misc.ValueLoader[int64]
+		noOfWorkers                       misc.ValueLoader[int]
+		enableJitterForSyncs              misc.ValueLoader[bool]
+		maxParallelJobCreation            misc.ValueLoader[int]
+		mainLoopSleep                     misc.ValueLoader[time.Duration]
+		stagingFilesBatchSize             misc.ValueLoader[int]
+		warehouseSyncFreqIgnore           misc.ValueLoader[bool]
 	}
 
 	stats struct {
@@ -189,7 +189,13 @@ func newRouter(
 	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
 	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
-	r.setupReloadableVars(whName)
+	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")
+	r.config.noOfWorkers = r.conf.GetReloadableIntVar(8, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	r.config.maxParallelJobCreation = r.conf.GetReloadableIntVar(8, 1, "Warehouse.maxParallelJobCreation")
+	r.config.mainLoopSleep = r.conf.GetReloadableDurationVar(5, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
+	r.config.stagingFilesBatchSize = r.conf.GetReloadableIntVar(960, 1, "Warehouse.stagingFilesBatchSize")
+	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
+	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 
 	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 		"destType": r.destType,
@@ -234,17 +240,6 @@ func newRouter(
 	}))
 
 	return r, nil
-}
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (r *router) setupReloadableVars(whName string) {
-	r.conf.RegisterInt64ConfigVariable(1800, &r.config.uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
-	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
-	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
-	r.conf.RegisterDurationConfigVariable(5, &r.config.mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
-	r.conf.RegisterIntConfigVariable(960, &r.config.stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
@@ -397,7 +392,7 @@ loop:
 			r.logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", r.destType)
 		}
 
-		availableWorkers := r.config.noOfWorkers - r.getActiveWorkerCount()
+		availableWorkers := r.config.noOfWorkers.Load() - r.getActiveWorkerCount()
 		if availableWorkers < 1 {
 			select {
 			case <-ctx.Done():
@@ -537,12 +532,12 @@ func (r *router) mainLoop(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(r.config.mainLoopSleep):
+			case <-time.After(r.config.mainLoopSleep.Load()):
 			}
 			continue
 		}
 
-		jobCreationChan := make(chan struct{}, r.config.maxParallelJobCreation)
+		jobCreationChan := make(chan struct{}, r.config.maxParallelJobCreation.Load())
 
 		r.configSubscriberLock.RLock()
 
@@ -580,7 +575,7 @@ func (r *router) mainLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(r.config.mainLoopSleep):
+		case <-time.After(r.config.mainLoopSleep.Load()):
 		}
 	}
 }
@@ -667,7 +662,7 @@ func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse 
 }
 
 func (r *router) uploadStartAfterTime() time.Time {
-	if r.config.enableJitterForSyncs {
+	if r.config.enableJitterForSyncs.Load() {
 		return timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
 	}
 	return r.now()
@@ -683,7 +678,7 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 		priority = 50
 	}
 
-	batches := service.StageFileBatching(stagingFiles, r.config.stagingFilesBatchSize)
+	batches := service.StageFileBatching(stagingFiles, r.config.stagingFilesBatchSize.Load())
 	for _, batch := range batches {
 		upload := model.Upload{
 			SourceID:        warehouse.Source.ID,
@@ -736,7 +731,7 @@ func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequenc
 func (r *router) uploadFreqInS(syncFrequency string) int64 {
 	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
 	if err != nil {
-		return r.config.uploadFreqInS
+		return r.config.uploadFreqInS.Load()
 	}
 	return freqInMin * 60
 }
