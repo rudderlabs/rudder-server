@@ -17,7 +17,7 @@ type ReportingMediator struct {
 
 	g         *errgroup.Group
 	ctx       context.Context
-	delegates []types.Reporting
+	reporters []types.Reporting
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *ReportingMediator {
@@ -37,7 +37,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 		defaultReporter.backendConfigSubscriber(backendConfig)
 		return nil
 	})
-	rm.delegates = append(rm.delegates, defaultReporter)
+	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation
 	if config.GetBool("Reporting.errorReporting.enabled", false) {
@@ -46,24 +46,24 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 			errorReporter.backendConfigSubscriber(backendConfig)
 			return nil
 		})
-		rm.delegates = append(rm.delegates, errorReporter)
+		rm.reporters = append(rm.reporters, errorReporter)
 	}
 
 	return rm
 }
 
 func (rm *ReportingMediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
-	for _, delegate := range rm.delegates {
-		delegate.Report(metrics, txn)
+	for _, reporter := range rm.reporters {
+		reporter.Report(metrics, txn)
 	}
 }
 
 func (rm *ReportingMediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	var syncers []types.ReportingSyncer
 
-	for i := range rm.delegates {
-		delegate := rm.delegates[i]
-		syncers = append(syncers, delegate.DatabaseSyncer(c))
+	for i := range rm.reporters {
+		reporter := rm.reporters[i]
+		syncers = append(syncers, reporter.DatabaseSyncer(c))
 	}
 
 	return func() {

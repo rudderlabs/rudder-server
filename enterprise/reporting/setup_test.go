@@ -83,7 +83,7 @@ func TestSetupForNoop(t *testing.T) {
 				}
 			}
 			med := NewReportingMediator(context.Background(), logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
-			require.Len(t, med.delegates, tc.expectedDelegates)
+			require.Len(t, med.reporters, tc.expectedDelegates)
 		})
 
 	}

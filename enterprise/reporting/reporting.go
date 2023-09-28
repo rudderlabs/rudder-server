@@ -48,8 +48,8 @@ type DefaultReporter struct {
 	ctx                 context.Context
 	init                chan struct{}
 	onceInit            sync.Once
-	clients             map[string]*types.Client
-	clientsMapLock      sync.RWMutex
+	syncersMu           sync.RWMutex
+	syncers             map[string]*types.SyncSource
 	log                 logger.Logger
 	reportingServiceURL string
 	namespace           string
@@ -95,7 +95,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger) *DefaultReporter
 		ctx:                                  ctx,
 		init:                                 make(chan struct{}),
 		log:                                  log,
-		clients:                              make(map[string]*types.Client),
+		syncers:                              make(map[string]*types.SyncSource),
 		reportingServiceURL:                  reportingServiceURL,
 		namespace:                            config.GetKubeNamespace(),
 		instanceID:                           config.GetString("INSTANCE_ID", "1"),
@@ -164,9 +164,9 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		c.Label = types.CoreReportingLabel
 	}
 
-	r.clientsMapLock.Lock()
-	defer r.clientsMapLock.Unlock()
-	if _, ok := r.clients[c.ConnInfo]; ok {
+	r.syncersMu.Lock()
+	defer r.syncersMu.Unlock()
+	if _, ok := r.syncers[c.ConnInfo]; ok {
 		return func() {} // returning a no-op syncer since another go routine has already started syncing
 	}
 
@@ -185,32 +185,32 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	if err != nil {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
-	r.clients[c.ConnInfo] = &types.Client{SyncerConfig: c, DbHandle: dbHandle}
+	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
 	return func() {
 		r.mainLoop(r.ctx, c)
 	}
 }
 
-func (r *DefaultReporter) GetClient(clientKey string) *types.Client {
-	r.clientsMapLock.RLock()
-	defer r.clientsMapLock.RUnlock()
-	return r.clients[clientKey]
+func (r *DefaultReporter) GetSyncer(syncerKey string) *types.SyncSource {
+	r.syncersMu.RLock()
+	defer r.syncersMu.RUnlock()
+	return r.syncers[syncerKey]
 }
 
-func (r *DefaultReporter) getDBHandle(clientKey string) (*sql.DB, error) {
-	client := r.GetClient(clientKey)
-	if client != nil {
-		return client.DbHandle, nil
+func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
+	syncer := r.GetSyncer(syncerKey)
+	if syncer != nil {
+		return syncer.DbHandle, nil
 	}
 
-	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientKey)
+	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *DefaultReporter) getReports(currentMs int64, clientKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
+func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
-	dbHandle, err := r.getDBHandle(clientKey)
+	dbHandle, err := r.getDBHandle(syncerKey)
 	if err != nil {
 		panic(err)
 	}
@@ -406,7 +406,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 	for {
 		if ctx.Err() != nil {
-			r.log.Infof("stopping mainLoop for client %s : %s", c.Label, ctx.Err())
+			r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
@@ -423,7 +423,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 			select {
 			case <-ctx.Done():
-				r.log.Infof("stopping mainLoop for client %s : %s", c.Label, ctx.Err())
+				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return
 			case <-time.After(r.sleepInterval.Load()):
 			}
@@ -651,10 +651,10 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 	}
 }
 
-func (r *DefaultReporter) getTags(clientName string) stats.Tags {
+func (r *DefaultReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
 		"workspaceId": r.workspaceID,
 		"instanceId":  r.instanceID,
-		"clientName":  clientName,
+		"clientName":  label,
 	}
 }

@@ -42,7 +42,7 @@ var (
 	SUCCEEDED_WITH_VIOLATIONS    = "succeeded_with_violations"
 )
 
-type Client struct {
+type SyncSource struct {
 	SyncerConfig
 	DbHandle *sql.DB
 }

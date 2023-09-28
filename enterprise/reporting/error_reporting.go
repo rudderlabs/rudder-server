@@ -62,7 +62,8 @@ type ErrorDetailReporter struct {
 	onceInit            sync.Once
 	init                chan struct{}
 	reportingServiceURL string
-	clients             map[string]*types.Client
+	syncersMu           sync.RWMutex
+	syncers             map[string]*types.SyncSource
 	log                 logger.Logger
 	namespace           string
 
@@ -73,8 +74,7 @@ type ErrorDetailReporter struct {
 	maxConcurrentRequests misc.ValueLoader[int]
 	maxOpenConnections    int
 
-	httpClient     *http.Client
-	clientsMapLock sync.RWMutex
+	httpClient *http.Client
 
 	backendConfigMu           sync.RWMutex // protects the following
 	workspaceID               string
@@ -123,7 +123,7 @@ func NewErrorDetailReporter(ctx context.Context) *ErrorDetailReporter {
 		init:                      make(chan struct{}),
 		workspaceIDForSourceIDMap: make(map[string]string),
 		destinationIDMap:          make(map[string]destDetail),
-		clients:                   make(map[string]*types.Client),
+		syncers:                   make(map[string]*types.SyncSource),
 		errorDetailExtractor:      extractor,
 		maxOpenConnections:        maxOpenConnections,
 	}
@@ -180,26 +180,26 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 		c.Label = types.CoreReportingLabel
 	}
 
-	edr.clientsMapLock.Lock()
-	defer edr.clientsMapLock.Unlock()
-	if _, ok := edr.clients[c.ConnInfo]; ok {
+	edr.syncersMu.Lock()
+	defer edr.syncersMu.Unlock()
+	if _, ok := edr.syncers[c.ConnInfo]; ok {
 		return func() {} // returning a no-op syncer since another go routine has already started syncing
 	}
 	dbHandle, err := edr.migrate(c)
 	if err != nil {
 		panic(fmt.Errorf("failed during migration: %v", err))
 	}
-	edr.clients[c.ConnInfo] = &types.Client{SyncerConfig: c, DbHandle: dbHandle}
+	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
 	return func() {
 		edr.mainLoop(edr.ctx, c)
 	}
 }
 
-func (edr *ErrorDetailReporter) GetClient(clientKey string) *types.Client {
-	edr.clientsMapLock.RLock()
-	defer edr.clientsMapLock.RUnlock()
-	return edr.clients[clientKey]
+func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
+	edr.syncersMu.RLock()
+	defer edr.syncersMu.RUnlock()
+	return edr.syncers[syncerKey]
 }
 
 func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
@@ -300,18 +300,18 @@ func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) error
 	}
 }
 
-func (edr *ErrorDetailReporter) getDBHandle(clientKey string) (*sql.DB, error) {
-	client := edr.GetClient(clientKey)
-	if client != nil {
-		return client.DbHandle, nil
+func (edr *ErrorDetailReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
+	syncer := edr.GetSyncer(syncerKey)
+	if syncer != nil {
+		return syncer.DbHandle, nil
 	}
-	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientKey)
+	return nil, fmt.Errorf("DBHandle not found for syncer name: %s", syncerKey)
 }
 
-func (edr *ErrorDetailReporter) getTags(clientName string) stats.Tags {
+func (edr *ErrorDetailReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
 		"workspaceID": edr.workspaceID,
-		"clientName":  clientName,
+		"clientName":  label,
 		"instanceId":  edr.instanceID,
 	}
 }
@@ -340,7 +340,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	// Delete in a separate go-routine
 	for {
 		if ctx.Err() != nil {
-			edr.log.Infof("stopping mainLoop for client %s : %s", c.Label, ctx.Err())
+			edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
@@ -355,7 +355,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
-				edr.log.Infof("stopping mainLoop for client %s : %s", c.Label, ctx.Err())
+				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return
 			case <-time.After(edr.sleepInterval.Load()):
 			}
@@ -412,9 +412,9 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	}
 }
 
-func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, clientKey string) ([]*types.EDReportsDB, int64) {
+func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
 	var queryMin sql.NullInt64
-	dbHandle, err := edr.getDBHandle(clientKey)
+	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
 		edr.log.Errorf("Failed while getting DbHandle: %v", err)
 		return []*types.EDReportsDB{}, queryMin.Int64
