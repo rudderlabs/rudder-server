@@ -811,7 +811,7 @@ func (g *GRPC) RetrieveFailedBatches(
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetrieveFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
 	var startTime, endTime time.Time
@@ -828,9 +828,9 @@ func (g *GRPC) RetrieveFailedBatches(
 			return &proto.RetrieveFailedBatchesResponse{},
 				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
 		}
-		if endTime.After(startTime) {
+		if !endTime.After(startTime) {
 			return &proto.RetrieveFailedBatchesResponse{},
-				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time", time.RFC3339)
+				status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time")
 		}
 	}
 
@@ -881,7 +881,7 @@ func (g *GRPC) RetryFailedBatches(
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetryFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
 	}
 
 	var startTime, endTime time.Time
@@ -898,9 +898,9 @@ func (g *GRPC) RetryFailedBatches(
 			return &proto.RetryFailedBatchesResponse{},
 				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
 		}
-		if endTime.After(startTime) {
+		if !endTime.After(startTime) {
 			return &proto.RetryFailedBatchesResponse{},
-				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time", time.RFC3339)
+				status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time")
 		}
 	}
 
