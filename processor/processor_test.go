@@ -216,10 +216,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:                  SourceIDEnabledNoUT,
-			WriteKey:            WriteKeyEnabledNoUT,
-			Enabled:             true,
-			EventSchemasEnabled: true,
+			ID:       SourceIDEnabledNoUT,
+			WriteKey: WriteKeyEnabledNoUT,
+			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Category: "eventStream",
 			},
@@ -453,6 +452,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 	},
+	Settings: backendconfig.Settings{
+		EventAuditEnabled: true,
+	},
 }
 
 func initProcessor() {
@@ -560,6 +562,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
+					WorkspaceId:   sampleWorkspaceID,
 				},
 				{
 					UUID:      uuid.New(),
@@ -579,6 +582,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventCount:    2,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+					WorkspaceId:   sampleWorkspaceID,
 				},
 				{
 					UUID:          uuid.New(),
@@ -590,6 +594,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
+					WorkspaceId:   sampleWorkspaceID,
 				},
 				{
 					UUID:          uuid.New(),
@@ -601,6 +606,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
+					WorkspaceId:   sampleWorkspaceID,
 				},
 				{
 					UUID:      uuid.New(),
@@ -618,8 +624,9 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 						},
 						createMessagePayload,
 					),
-					EventCount: 3,
-					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
+					EventCount:  3,
+					Parameters:  createBatchParametersWithSources(SourceIDEnabledNoUT),
+					WorkspaceId: sampleWorkspaceID,
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
