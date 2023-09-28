@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -205,7 +207,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 
 				r := router{}
-				r.config.warehouseSyncFreqIgnore = true
+				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.triggerStore = &sync.Map{}
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -224,8 +227,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.now = func() time.Time {
 					return now
 				}
-				r.config.uploadFreqInS = 1800
-				r.config.warehouseSyncFreqIgnore = true
+				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
 
@@ -247,8 +250,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.now = func() time.Time {
 					return now
 				}
-				r.config.uploadFreqInS = 1800
-				r.config.warehouseSyncFreqIgnore = true
+				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
 
@@ -275,6 +278,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 			r := router{}
 			r.triggerStore = &sync.Map{}
+			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 			}
@@ -298,7 +302,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.now = func() time.Time {
 				return now
 			}
-			r.config.uploadFreqInS = 1800
+			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
+			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
 
@@ -323,7 +328,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.now = func() time.Time {
 				return now
 			}
-			r.config.uploadFreqInS = 1800
+			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
+			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 			r.triggerStore = &sync.Map{}
 			r.createJobMarkerMap = make(map[string]time.Time)
 
@@ -413,6 +419,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 					r := router{}
 					r.triggerStore = &sync.Map{}
+					r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
 					r.createJobMarkerMap = make(map[string]time.Time)
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -61,7 +63,7 @@ type slaveWorker struct {
 	workerIdx          int
 
 	config struct {
-		maxStagingFileReadBufferCapacityInK int
+		maxStagingFileReadBufferCapacityInK misc.ValueLoader[int]
 	}
 	stats struct {
 		workerIdleTime                 stats.Measurement
@@ -92,8 +94,7 @@ func newSlaveWorker(
 	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
 
-	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-	conf.RegisterIntConfigVariable(10240, &s.config.maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 
 	tags := stats.Tags{
 		"module":   moduleName,
@@ -243,7 +244,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 	// default scanner buffer maxCapacity is 64K
 	// set it to higher value to avoid read stop on read size error
-	maxCapacity := sw.config.maxStagingFileReadBufferCapacityInK * 1024
+	maxCapacity := sw.config.maxStagingFileReadBufferCapacityInK.Load() * 1024
 
 	bufScanner := bufio.NewScanner(jr.stagingFileReader)
 	bufScanner.Buffer(make([]byte, maxCapacity), maxCapacity)

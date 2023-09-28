@@ -87,7 +87,7 @@ func TestSlave(t *testing.T) {
 		subscribeCh: subscriberCh,
 	}
 
-	workers := 4
+	workers := misc.SingleValueLoader(4)
 	workerJobs := 25
 
 	tenantManager := multitenant.New(

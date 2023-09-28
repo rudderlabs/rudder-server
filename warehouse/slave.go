@@ -32,7 +32,7 @@ type slave struct {
 	encodingFactory    *encoding.Factory
 
 	config struct {
-		noOfSlaveWorkerRoutines int
+		noOfSlaveWorkerRoutines misc.ValueLoader[int]
 	}
 }
 
@@ -54,9 +54,7 @@ func newSlave(
 	s.bcManager = bcManager
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
-
-	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-	conf.RegisterIntConfigVariable(4, &s.config.noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	s.config.noOfSlaveWorkerRoutines = conf.GetReloadableIntVar(4, 1, "Warehouse.noOfSlaveWorkerRoutines")
 
 	return s
 }
@@ -64,11 +62,11 @@ func newSlave(
 func (s *slave) setupSlave(ctx context.Context) error {
 	slaveID := misc.FastUUID().String()
 
-	jobNotificationChannel := s.notifier.Subscribe(ctx, slaveID, s.config.noOfSlaveWorkerRoutines)
+	jobNotificationChannel := s.notifier.Subscribe(ctx, slaveID, s.config.noOfSlaveWorkerRoutines.Load())
 
 	g, gCtx := errgroup.WithContext(ctx)
 
-	for workerIdx := 0; workerIdx <= s.config.noOfSlaveWorkerRoutines-1; workerIdx++ {
+	for workerIdx := 0; workerIdx <= s.config.noOfSlaveWorkerRoutines.Load()-1; workerIdx++ {
 		idx := workerIdx
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
