@@ -2,38 +2,54 @@ package warehouseutils
 
 import (
 	"regexp"
+	"strings"
 )
 
-var regexes map[*regexp.Regexp]string
+var (
+	queryTypeIndexes map[int]string
+	queryTypeRegex   *regexp.Regexp
+)
 
 func init() {
-	regexes = map[*regexp.Regexp]string{
-		regexp.MustCompile(`^(?i)\s*(SELECT)\s+`):                                                      "SELECT",
-		regexp.MustCompile(`^(?i)\s*UPDATE.*SET\s+`):                                                   "UPDATE",
-		regexp.MustCompile(`^(?i)\s*DELETE\s+FROM\s+`):                                                 "DELETE FROM",
-		regexp.MustCompile(`^(?i)\s*INSERT\s+INTO\s+`):                                                 "INSERT INTO",
-		regexp.MustCompile(`^(?i)\s*COPY\s+`):                                                          "COPY",
-		regexp.MustCompile(`^(?i)\s*MERGE\s+INTO\s+`):                                                  "MERGE INTO",
-		regexp.MustCompile(`^(?i)\s*CREATE\s+TEMP(?:ORARY)*\s+TABLE\s+`):                               "CREATE TEMP TABLE",
-		regexp.MustCompile(`^(?i)\s*CREATE\s+DATABASE\s+`):                                             "CREATE DATABASE",
-		regexp.MustCompile(`^(?i)\s*CREATE\s+SCHEMA\s+`):                                               "CREATE SCHEMA",
-		regexp.MustCompile(`^(?i)\s*(?:IF\s+NOT\s+EXISTS\s+.*)*CREATE\s+(?:OR\s+REPLACE\s+)*TABLE\s+`): "CREATE TABLE",
-		regexp.MustCompile(`^(?i)\s*CREATE\s+INDEX\s+`):                                                "CREATE INDEX",
-		regexp.MustCompile(`^(?i)\s*ALTER\s+TABLE\s+`):                                                 "ALTER TABLE",
-		regexp.MustCompile(`^(?i)\s*ALTER\s+SESSION\s+`):                                               "ALTER SESSION",
-		regexp.MustCompile(`^(?i)\s*(?:IF\s+.*)*DROP\s+TABLE\s+`):                                      "DROP TABLE",
-		regexp.MustCompile(`^(?i)\s*SHOW\s+TABLES\s+`):                                                 "SHOW TABLES",
-		regexp.MustCompile(`^(?i)\s*SHOW\s+PARTITIONS\s+`):                                             "SHOW PARTITIONS",
-		regexp.MustCompile(`^(?i)\s*DESCRIBE\s+(?:QUERY\s+)*TABLE\s+`):                                 "DESCRIBE TABLE",
-		regexp.MustCompile(`^(?i)\s*SET\s+.*\s+TO\s+`):                                                 "SET x TO",
+	regexes := []string{
+		"(?P<SELECT>SELECT)",
+		"(?P<UPDATE>UPDATE\\s+.*SET)",
+		"(?P<DELETE_FROM>DELETE\\s+FROM)",
+		"(?P<INSERT_INTO>INSERT\\s+INTO)",
+		"(?P<COPY>COPY)",
+		"(?P<MERGE_INTO>MERGE\\s+INTO)",
+		"(?P<CREATE_TEMP_TABLE>CREATE\\s+TEMP(?:ORARY)*\\s+TABLE)",
+		"(?P<CREATE_DATABASE>CREATE\\s+DATABASE)",
+		"(?P<CREATE_SCHEMA>CREATE\\s+SCHEMA)",
+		"(?P<CREATE_TABLE>(?:IF\\s+NOT\\s+EXISTS\\s+.*)*CREATE\\s+(?:OR\\s+REPLACE\\s+)*TABLE)",
+		"(?P<CREATE_INDEX>CREATE\\s+INDEX)",
+		"(?P<ALTER_TABLE>ALTER\\s+TABLE)",
+		"(?P<ALTER_SESSION>ALTER\\s+SESSION)",
+		"(?P<DROP_TABLE>(?:IF\\s+.*)*DROP\\s+TABLE)",
+		"(?P<SHOW_TABLES>SHOW\\s+TABLES)",
+		"(?P<SHOW_PARTITIONS>SHOW\\s+PARTITIONS)",
+		"(?P<DESCRIBE_TABLE>DESCRIBE\\s+(?:QUERY\\s+)*TABLE)",
+		"(?P<SET_TO>SET\\s+.*\\s+TO)",
+	}
+
+	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(` + strings.Join(regexes, "|") + `)\s+`)
+
+	queryTypeIndexes = make(map[int]string)
+	for i, n := range queryTypeRegex.SubexpNames() {
+		if n != "" {
+			queryTypeIndexes[i] = n
+		}
 	}
 }
 
 // GetQueryType returns the type of the query.
 func GetQueryType(query string) (string, bool) {
-	for regex, token := range regexes {
-		if regex.MatchString(query) {
-			return token, true
+	for i, match := range queryTypeRegex.FindStringSubmatch(query) {
+		if match == "" {
+			continue
+		}
+		if queryType, ok := queryTypeIndexes[i]; ok {
+			return queryType, true
 		}
 	}
 	return "UNKNOWN", false

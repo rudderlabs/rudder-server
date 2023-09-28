@@ -7,8 +7,8 @@ import (
 /*
 The expected benchmark shows the best possible scenario vs the worst possible one (unexpected).
 
-BenchmarkGetQueryType/expected-20         	 1991562		603.1 ns/op
-BenchmarkGetQueryType/unexpected-20       	  267222		4730 ns/op (< 0.005ms)
+BenchmarkGetQueryType/expected-20         	 2443971		498.8 ns/op
+BenchmarkGetQueryType/unexpected-20       	  308714		4088 ns/op (<= 0.004ms)
 */
 func BenchmarkGetQueryType(b *testing.B) {
 	b.Run("expected", func(b *testing.B) {
