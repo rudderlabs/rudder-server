@@ -53,11 +53,14 @@ func (bt *batchWebhookTransformerT) sendToTransformer(events [][]byte, url strin
 	return resp, err
 }
 
-func (bt *batchWebhookTransformerT) transform(payloadArr [][]byte, sourceType string) transformerBatchResponseT {
+func (bt *batchWebhookTransformerT) transform(payloadArrWithSource [][]byte, payloadArr [][]byte, sourceType string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(payloadArr))
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
-
-	resp, err := bt.sendToTransformer(payloadArr, url)
+	payloadToSendToTransformer := payloadArrWithSource
+	if strings.Contains(url, "v0") {
+		payloadToSendToTransformer = payloadArr
+	}
+	resp, err := bt.sendToTransformer(payloadToSendToTransformer, url)
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}

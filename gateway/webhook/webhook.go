@@ -263,6 +263,7 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
 		var payloadArr [][]byte
+		var payloadArrWithSource [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			// GetSource from gateway using sourceId
@@ -307,7 +308,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			eventToSourceTransformBytes := []byte(eventToSourceTransform)
 
 			// eventToSourceTransform = {event: body, source: source}
-			payloadArr = append(payloadArr, eventToSourceTransformBytes)
+			payloadArr = append(payloadArr, body)
+			payloadArrWithSource = append(payloadArrWithSource, eventToSourceTransformBytes)
 			webRequests = append(webRequests, req)
 		}
 
@@ -323,7 +325,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
 
 		transformStart := time.Now()
-		batchResponse := bt.transform(payloadArr, breq.sourceType)
+		batchResponse := bt.transform(payloadArrWithSource, payloadArr, breq.sourceType)
 
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
