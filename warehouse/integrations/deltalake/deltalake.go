@@ -952,7 +952,7 @@ func (d *Deltalake) hasAWSCredentials() bool {
 
 // partitionQuery returns a query to fetch partitions for a table
 func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
-	if !d.config.enablePartitionPruning {
+	if !d.config.enablePartitionPruning || d.Uploader.ShouldOnDedupUseNewRecord() {
 		return "", nil
 	}
 
