@@ -39,7 +39,7 @@ func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 		return true, nil
 	}
 
-	if r.config.warehouseSyncFreqIgnore {
+	if r.config.warehouseSyncFreqIgnore.Load() {
 		if r.uploadFrequencyExceeded(warehouse, "") {
 			return true, nil
 		}
