@@ -1184,8 +1184,13 @@ func (uploads *Uploads) RetrieveFailedBatches(
 		WHERE
 		  row_number = 1;
 	`
+	start, end := req.Start, req.End
+	if req.End.IsZero() {
+		end = uploads.now()
+	}
+
 	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.Start, req.End,
+		req.DestinationID, req.WorkspaceID, start, end,
 		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
 		warehouseutils.DiscardsTable,
 	}
@@ -1238,67 +1243,51 @@ func (uploads *Uploads) RetrieveFailedBatches(
 
 func (uploads *Uploads) RetryFailedBatches(
 	ctx context.Context,
-	req model.RetryAllFailedBatchesRequest,
+	req model.RetryFailedBatchesRequest,
 ) (int64, error) {
 	stmt := `
 		UPDATE
 			` + uploadsTableName + `
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
-			status = $6,
-			updated_at = $7
+			status = $5,
+			updated_at = $6
 		WHERE
 			destination_id = $1
 			AND workspace_id = $2
 			AND created_at >= $3
 			AND created_at <= $4
-			AND status ~~ ANY($5)
 			AND error != '{}'
 	`
+	start, end := req.Start, req.End
+	if req.End.IsZero() {
+		end = uploads.now()
+	}
+
 	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.Start, req.End,
-		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
+		req.DestinationID, req.WorkspaceID, start, end,
 		model.Waiting, uploads.now(),
+	}
+
+	if req.ErrorCategory != "" {
+		stmt += fmt.Sprintf(" AND error_category = $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, req.ErrorCategory)
+	}
+	if req.SourceID != "" {
+		stmt += fmt.Sprintf(" AND source_id = $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, req.SourceID)
+	}
+	if req.Status != "" {
+		stmt += fmt.Sprintf(" AND status LIKE $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, "%"+req.Status+"%")
+	} else {
+		stmt += fmt.Sprintf(" AND status ~~ ANY($%d)", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}))
 	}
 
 	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("retrying failed batches: %w", err)
-	}
-
-	return r.RowsAffected()
-}
-
-func (uploads *Uploads) RetrySpecificFailedBatch(
-	ctx context.Context,
-	req model.RetrySpecificFailedBatchRequest,
-) (int64, error) {
-	stmt := `
-		UPDATE
-			` + uploadsTableName + `
-		SET
-			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
-			status = $8,
-			updated_at = $9
-		WHERE
-			destination_id = $1
-			AND workspace_id = $2
-			AND created_at >= $3
-			AND created_at <= $4
-			AND status LIKE $5
-			AND error != '{}'
-			AND source_id = $6
-			AND error_category = $7
-	`
-	stmtArgs := []interface{}{
-		req.DestinationID, req.WorkspaceID, req.Start, req.End,
-		"%" + req.Status + "%",
-		req.SourceID, req.ErrorCategory, model.Waiting, uploads.now(),
-	}
-
-	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
-	if err != nil {
-		return 0, fmt.Errorf("retrying specific failed batch: %w", err)
 	}
 
 	return r.RowsAffected()

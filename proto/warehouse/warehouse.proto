@@ -18,8 +18,7 @@ service Warehouse {
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
   rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
-  rpc RetryAllFailedBatches(RetryAllFailedBatchesRequest) returns (RetryAllFailedBatchesResponse);
-  rpc RetrySpecificFailedBatch(RetrySpecificFailedBatchRequest) returns (RetrySpecificFailedBatchResponse);
+  rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
 }
 
 message Pagination {
@@ -142,18 +141,7 @@ message RetrieveFailedBatchesResponse{
   repeated FailedBatchInfo failedBatches = 1;
 }
 
-message RetryAllFailedBatchesRequest{
-  string workspaceID = 1;
-  string destinationID = 2;
-  string start = 3;
-  string end = 4;
-}
-
-message RetryAllFailedBatchesResponse{
-  int64 retriedSyncsCount = 1;
-}
-
-message RetrySpecificFailedBatchRequest{
+message RetryFailedBatchesRequest{
   string workspaceID = 1;
   string destinationID = 2;
   string start = 3;
@@ -163,6 +151,6 @@ message RetrySpecificFailedBatchRequest{
   string status = 7;
 }
 
-message RetrySpecificFailedBatchResponse{
+message RetryFailedBatchesResponse{
   int64 retriedSyncsCount = 1;
 }

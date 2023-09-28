@@ -51,14 +51,7 @@ type RetrieveFailedBatchesResponse struct {
 	Error         string
 }
 
-type RetryAllFailedBatchesRequest struct {
-	DestinationID string
-	WorkspaceID   string
-	Start         time.Time
-	End           time.Time
-}
-
-type RetrySpecificFailedBatchRequest struct {
+type RetryFailedBatchesRequest struct {
 	DestinationID string
 	WorkspaceID   string
 	Start         time.Time
