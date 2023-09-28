@@ -143,13 +143,6 @@ var (
 	emptyJobsList    []*jobsdb.JobT
 )
 
-// setEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
-func setEnableEventSchemasFeature(proc *Handle, b bool) bool {
-	prev := proc.config.enableEventSchemasFeature
-	proc.config.enableEventSchemasFeature = b
-	return prev
-}
-
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
 func setDisableDedupFeature(proc *Handle, b bool) bool {
 	prev := proc.config.enableDedup
@@ -1404,7 +1397,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
-		setEnableEventSchemasFeature(proc, false)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
