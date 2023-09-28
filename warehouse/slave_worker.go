@@ -11,17 +11,23 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+var (
+	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
 )
 
 type uploadProcessingResult struct {
@@ -100,33 +106,36 @@ func newSlaveWorker(
 	return s
 }
 
-func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnotifier.Claim, slaveID string) {
+func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
 	for {
 		select {
 		case <-ctx.Done():
-			sw.log.Infof("[WH]: Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
+			sw.log.Infof("Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
 			return
-		case claimedJob := <-notificationChan:
+		case claimedJob, ok := <-notificationChan:
+			if !ok {
+				return
+			}
 			sw.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			sw.log.Debugf("[WH]: Successfully claimed job:%d by slave worker-%d-%s & job type %s",
-				claimedJob.ID,
+			sw.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
+				claimedJob.Job.ID,
 				sw.workerIdx,
 				slaveID,
-				claimedJob.JobType,
+				claimedJob.Job.Type,
 			)
 
-			switch claimedJob.JobType {
-			case jobs.AsyncJobType:
+			switch claimedJob.Job.Type {
+			case notifier.JobTypeAsync:
 				sw.processClaimedAsyncJob(ctx, claimedJob)
 			default:
 				sw.processClaimedUploadJob(ctx, claimedJob)
 			}
 
-			sw.log.Infof("[WH]: Successfully processed job:%d by slave worker-%d-%s",
-				claimedJob.ID,
+			sw.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
+				claimedJob.Job.ID,
 				sw.workerIdx,
 				slaveID,
 			)
@@ -136,13 +145,13 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnoti
 	}
 }
 
-func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim) {
+func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	sw.stats.workerClaimProcessingTime.RecordDuration()()
 
-	handleErr := func(err error, claim pgnotifier.Claim) {
+	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
 		sw.stats.workerClaimProcessingFailed.Increment()
 
-		sw.notifier.UpdateClaimedEvent(&claim, &pgnotifier.ClaimResponse{
+		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -153,14 +162,14 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob p
 		err     error
 	)
 
-	if err = json.Unmarshal(claimedJob.Payload, &job); err != nil {
+	if err = json.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
 
-	sw.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
+	sw.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
 
-	job.BatchID = claimedJob.BatchID
+	job.BatchID = claimedJob.Job.BatchID
 	job.Output, err = sw.processStagingFile(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
@@ -174,7 +183,7 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob p
 
 	sw.stats.workerClaimProcessingSucceeded.Increment()
 
-	sw.notifier.UpdateClaimedEvent(&claimedJob, &pgnotifier.ClaimResponse{
+	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobJSON,
 	})
 }
@@ -192,7 +201,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory, sw.encodingFactory)
 
-	sw.log.Debugf("[WH]: Starting processing staging file: %v at %s for %s",
+	sw.log.Debugf("Starting processing staging file: %v at %s for %s",
 		job.StagingFileID,
 		job.StagingFileLocation,
 		jr.identifier,
@@ -259,7 +268,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 		)
 
 		if err := json.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
-			jr.logger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			jr.logger.Errorf("Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
 		}
 
@@ -359,7 +368,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable])
 					if err != nil {
-						jr.logger.Errorf("[WH]: Failed to write to discards: %v", err)
+						jr.logger.Errorf("Failed to write to discards: %v", err)
 					}
 
 					jr.tableEventCountMap[discardsTable]++
@@ -391,7 +400,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 		jr.tableEventCountMap[tableName]++
 	}
 
-	jr.logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	jr.logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
@@ -410,11 +419,11 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 	return uploadsResults, err
 }
 
-func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob pgnotifier.Claim) {
-	handleErr := func(err error, claim pgnotifier.Claim) {
-		sw.log.Errorf("[WH]: Error processing claim: %v", err)
+func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
+		sw.log.Errorf("Error processing claim: %v", err)
 
-		sw.notifier.UpdateClaimedEvent(&claimedJob, &pgnotifier.ClaimResponse{
+		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -424,7 +433,7 @@ func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob pg
 		err error
 	)
 
-	if err := json.Unmarshal(claimedJob.Payload, &job); err != nil {
+	if err := json.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
@@ -441,7 +450,7 @@ func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob pg
 		return
 	}
 
-	sw.notifier.UpdateClaimedEvent(&claimedJob, &pgnotifier.ClaimResponse{
+	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobResultJSON,
 	})
 }
@@ -487,7 +496,7 @@ func (sw *slaveWorker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPa
 			StartTime: metadata.StartTime,
 		})
 	default:
-		err = errors.New("invalid AsyncJobType")
+		err = errors.New("invalid asyncJob type")
 	}
 	if err != nil {
 		return result, err
@@ -514,4 +523,48 @@ func (sw *slaveWorker) destinationFromSlaveConnectionMap(destinationId, sourceId
 	}
 
 	return conn, nil
+}
+
+// handleSchemaChange checks if the existing column type is compatible with the new column type
+func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
+
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
+		// only stringify if the previous type is non-string/text/json
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else {
+			newColumnVal = value
+		}
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		intVal, ok := value.(int)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = float64(intVal)
+		}
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+		floatVal, ok := value.(float64)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = int(floatVal)
+		}
+	} else if existingDataType == model.JSONDataType {
+		var interfaceSliceSample []any
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
+		} else {
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
+		}
+	} else {
+		err = errSchemaConversionNotSupported
+	}
+
+	return newColumnVal, err
 }

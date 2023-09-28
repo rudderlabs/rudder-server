@@ -8,6 +8,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"golang.org/x/sync/errgroup"
@@ -20,27 +25,26 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type mockSlaveNotifier struct {
-	subscribeCh    chan *pgnotifier.ClaimResponse
-	publishCh      chan pgnotifier.Claim
+	subscribeCh    chan *notifier.ClaimJobResponse
+	publishCh      chan *notifier.ClaimJob
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan pgnotifier.Claim {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifier.ClaimJob {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *pgnotifier.Claim, response *pgnotifier.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifier.ClaimJob, response *notifier.ClaimJobResponse) {
 	m.subscribeCh <- response
 }
 
-func (m *mockSlaveNotifier) RunMaintenanceWorker(context.Context) error {
+func (m *mockSlaveNotifier) RunMaintenance(context.Context) error {
 	return m.maintenanceErr
 }
 
@@ -73,12 +77,12 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan pgnotifier.Claim)
-	subscriberCh := make(chan *pgnotifier.ClaimResponse)
+	publishCh := make(chan *notifier.ClaimJob)
+	subscriberCh := make(chan *notifier.ClaimJobResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
-	notifier := &mockSlaveNotifier{
+	slaveNotifier := &mockSlaveNotifier{
 		publishCh:   publishCh,
 		subscribeCh: subscriberCh,
 	}
@@ -86,11 +90,16 @@ func TestSlave(t *testing.T) {
 	workers := 4
 	workerJobs := 25
 
+	tenantManager := multitenant.New(
+		config.Default,
+		backendconfig.DefaultBackendConfig,
+	)
+
 	slave := newSlave(
 		config.Default,
 		logger.NOP,
 		stats.Default,
-		notifier,
+		slaveNotifier,
 		newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 		newConstraintsManager(config.Default),
 		encoding.NewFactory(config.Default),
@@ -128,13 +137,15 @@ func TestSlave(t *testing.T) {
 	payloadJson, err := json.Marshal(p)
 	require.NoError(t, err)
 
-	claim := pgnotifier.Claim{
-		ID:        1,
-		BatchID:   uuid.New().String(),
-		Payload:   payloadJson,
-		Status:    "waiting",
-		Workspace: "test_workspace",
-		JobType:   "upload",
+	claim := &notifier.ClaimJob{
+		Job: &notifier.Job{
+			ID:                  1,
+			BatchID:             uuid.New().String(),
+			Payload:             payloadJson,
+			Status:              model.Waiting,
+			WorkspaceIdentifier: "test_workspace",
+			Type:                notifier.JobTypeUpload,
+		},
 	}
 
 	g, _ := errgroup.WithContext(ctx)
@@ -153,7 +164,7 @@ func TestSlave(t *testing.T) {
 			var uploadPayload payload
 			err := json.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
-			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
+			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
 			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
 			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)

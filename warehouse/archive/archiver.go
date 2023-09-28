@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
+
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -48,7 +51,7 @@ type uploadRecord struct {
 }
 
 type Archiver struct {
-	db            *sql.DB
+	db            *sqlmw.DB
 	stats         stats.Stats
 	log           logger.Logger
 	conf          *config.Config
@@ -69,7 +72,7 @@ func New(
 	conf *config.Config,
 	log logger.Logger,
 	stat stats.Stats,
-	db *sql.DB,
+	db *sqlmw.DB,
 	fileManager filemanager.Factory,
 	tenantManager *multitenant.Manager,
 ) *Archiver {
@@ -82,10 +85,10 @@ func New(
 		tenantManager: tenantManager,
 	}
 
-	a.config.archiveUploadRelatedRecords = config.GetReloadableBoolVar(true, "Warehouse.archiveUploadRelatedRecords")
-	a.config.uploadsArchivalTimeInDays = config.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
-	a.config.backupRowsBatchSize = config.GetReloadableIntVar(100, 1, "Warehouse.Archiver.backupRowsBatchSize")
-	a.config.archiverTickerTime = config.GetReloadableDurationVar(360, time.Minute, "Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin") // default 6 hours
+	a.config.archiveUploadRelatedRecords = a.conf.GetReloadableBoolVar(true, "Warehouse.archiveUploadRelatedRecords")
+	a.config.uploadsArchivalTimeInDays = a.conf.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
+	a.config.backupRowsBatchSize = a.conf.GetReloadableIntVar(100, 1, "Warehouse.Archiver.backupRowsBatchSize")
+	a.config.archiverTickerTime = a.conf.GetReloadableDurationVar(360, time.Minute, "Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin") // default 6 hours
 
 	a.archiveFailedStat = a.stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType)
 
@@ -148,7 +151,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		tablearchiver.OffsetAction,
 	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
-		DbHandle:      a.db,
+		DbHandle:      a.db.DB,
 		Pagination:    a.config.backupRowsBatchSize.Load(),
 		QueryTemplate: tmpl,
 		OutputPath:    path,
@@ -230,7 +233,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			a.archiveFailedStat.Increment()
 		}
 	}()
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		a.log.Debugf(`[Archiver]: No uploads found for archival. Query: %s`, sqlStatement)
 		return nil
 	}
@@ -361,7 +364,11 @@ func (a *Archiver) Do(ctx context.Context) error {
 	return nil
 }
 
-func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uploadRecord) ([]int64, error) {
+func (a *Archiver) getStagingFilesData(
+	ctx context.Context,
+	txn *sqlmw.Tx,
+	u *uploadRecord,
+) ([]int64, error) {
 	stmt := fmt.Sprintf(`
 		SELECT
 		  id
@@ -403,7 +410,10 @@ func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uplo
 }
 
 func (a *Archiver) deleteLoadFileRecords(
-	ctx context.Context, txn *sql.Tx, stagingFileIDs []int64, hasUsedRudderStorage bool,
+	ctx context.Context,
+	txn *sqlmw.Tx,
+	stagingFileIDs []int64,
+	hasUsedRudderStorage bool,
 ) error {
 	stmt := fmt.Sprintf(`
 		DELETE FROM %s

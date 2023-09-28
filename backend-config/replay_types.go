@@ -25,7 +25,6 @@ func (config *ConfigT) ApplyReplaySources() {
 			newSource.ID = id
 			newSource.OriginalID = s.ID
 			newSource.WriteKey = id
-			newSource.EventSchemasEnabled = false
 			newSource.Config = lo.OmitByKeys(newSource.Config, []string{"eventUpload"}) // no event uploads for replay sources for now
 			newSource.Destinations = nil                                                // destinations are added later
 			return &newSource
@@ -37,6 +36,7 @@ func (config *ConfigT) ApplyReplaySources() {
 			}
 			newDestination := *d
 			newDestination.ID = id
+			newDestination.IsProcessorEnabled = true // processor is always enabled for replay destinations
 			return &newDestination
 		}), []*DestinationT{nil})
 

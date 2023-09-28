@@ -945,7 +945,7 @@ func (jd *Handle) loadConfig() {
 	jd.conf.backup.backupCheckSleepDuration = jd.config.GetReloadableDurationVar(
 		5, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...,
 	)
-	jd.conf.backup.PathPrefix = jd.config.GetString(
+	jd.conf.backup.PathPrefix = jd.config.GetStringVar(
 		jd.tablePrefix, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix),
 	)
 
@@ -1843,86 +1843,11 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	}
 }
 
-type moreTokenLegacy struct {
-	retryAfterJobID       *int64
-	waitingAfterJobID     *int64
-	unprocessedAfterJobID *int64
-}
-
 type moreToken struct {
 	afterJobID *int64
 }
 
-// getToProcessLegacy returns jobs that are in failed, waiting and unprocessed states using three separate queries
-//
-// Deprecated: shall be removed after successful rollout
-func (jd *Handle) getToProcessLegacy(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
-
-	mtoken := &moreTokenLegacy{}
-	if more != nil {
-		var ok bool
-		if mtoken, ok = more.(*moreTokenLegacy); !ok {
-			return nil, fmt.Errorf("invalid token: %+v", more)
-		}
-	}
-	updateParams := func(params *GetQueryParams, jobs JobsResult, nextAfterJobID *int64) {
-		params.JobsLimit -= len(jobs.Jobs)
-		if params.EventsLimit > 0 {
-			params.EventsLimit -= jobs.EventsCount
-		}
-		if params.PayloadSizeLimit > 0 {
-			params.PayloadSizeLimit -= jobs.PayloadSize
-		}
-		params.afterJobID = nextAfterJobID
-	}
-	var list []*JobT
-	params.afterJobID = mtoken.retryAfterJobID
-	toRetry, err := jd.GetFailed(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	if len(toRetry.Jobs) > 0 {
-		retryAfterJobID := toRetry.Jobs[len(toRetry.Jobs)-1].JobID
-		mtoken.retryAfterJobID = &retryAfterJobID
-	}
-
-	list = append(list, toRetry.Jobs...)
-	if toRetry.LimitsReached {
-		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
-	}
-	updateParams(&params, toRetry, mtoken.waitingAfterJobID)
-
-	waiting, err := jd.GetWaiting(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	if len(waiting.Jobs) > 0 {
-		waitingAfterJobID := waiting.Jobs[len(waiting.Jobs)-1].JobID
-		mtoken.waitingAfterJobID = &waitingAfterJobID
-	}
-	list = append(list, waiting.Jobs...)
-	if waiting.LimitsReached {
-		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
-	}
-	updateParams(&params, waiting, mtoken.unprocessedAfterJobID)
-
-	unprocessed, err := jd.GetUnprocessed(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	if len(unprocessed.Jobs) > 0 {
-		unprocessedAfterJobID := unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID
-		mtoken.unprocessedAfterJobID = &unprocessedAfterJobID
-	}
-	list = append(list, unprocessed.Jobs...)
-	return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: unprocessed.LimitsReached}, More: mtoken}, nil
-}
-
 func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
-
-	if !jd.config.GetBool("JobsDB.useSingleGetJobsQuery", true) { // TODO: remove condition after successful rollout of sinle query
-		return jd.getToProcessLegacy(ctx, params, more)
-	}
 
 	if params.JobsLimit == 0 {
 		return &MoreJobsResult{More: more}, nil
@@ -3381,8 +3306,7 @@ func (jd *Handle) getMaxIDForDs(ds dataSetT) int64 {
 	return 0
 }
 
-func (jd *Handle) GetLastJob() *JobT {
-	ctx := context.TODO()
+func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
 	}

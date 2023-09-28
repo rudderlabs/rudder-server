@@ -10,7 +10,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
@@ -24,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -32,6 +34,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+const triggerUploadQPName = "triggerUpload"
 
 type pendingEventsRequest struct {
 	SourceID  string `json:"source_id"`
@@ -63,7 +67,7 @@ type Api struct {
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	db            *sqlmw.DB
-	notifier      *pgnotifier.PGNotifier
+	notifier      *notifier.Notifier
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
 	bcManager     *backendConfigManager
@@ -71,6 +75,7 @@ type Api struct {
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
+	triggerStore  *sync.Map
 
 	config struct {
 		healthTimeout       time.Duration
@@ -88,10 +93,11 @@ func NewApi(
 	statsFactory stats.Stats,
 	bcConfig backendconfig.BackendConfig,
 	db *sqlmw.DB,
-	notifier *pgnotifier.PGNotifier,
+	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
+	triggerStore *sync.Map,
 ) *Api {
 	a := &Api{
 		mode:          mode,
@@ -103,6 +109,7 @@ func NewApi(
 		tenantManager: tenantManager,
 		bcManager:     bcManager,
 		asyncManager:  asyncManager,
+		triggerStore:  triggerStore,
 		stagingRepo:   repo.NewStagingFiles(db),
 		uploadRepo:    repo.NewUploads(db),
 		schemaRepo:    repo.NewWHSchemas(db),
@@ -121,7 +128,7 @@ func (a *Api) Start(ctx context.Context) error {
 	if isStandAlone(a.mode) {
 		srvMux.Get("/health", a.healthHandler)
 	}
-	if a.config.runningMode != DegradedMode {
+	if !isDegraded(a.config.runningMode) {
 		if isMaster(a.mode) {
 			a.addMasterEndpoints(ctx, srvMux)
 
@@ -177,8 +184,8 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), a.config.healthTimeout)
 	defer cancel()
 
-	if a.config.runningMode != DegradedMode {
-		if !checkHealth(ctx, a.notifier.GetDBHandle()) {
+	if !isDegraded(a.config.runningMode) {
+		if !a.notifier.CheckHealth(ctx) {
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
@@ -324,7 +331,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, warehouse := range wh {
-			triggerUpload(warehouse)
+			a.triggerStore.Store(warehouse.Identifier, struct{}{})
 		}
 	}
 
@@ -383,7 +390,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, warehouse := range wh {
-		triggerUpload(warehouse)
+		a.triggerStore.Store(warehouse.Identifier, struct{}{})
 	}
 
 	w.WriteHeader(http.StatusOK)

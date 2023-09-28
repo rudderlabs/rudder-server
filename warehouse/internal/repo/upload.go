@@ -240,18 +240,19 @@ func (uploads *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, 
 }
 
 func (uploads *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
-	row := uploads.db.QueryRowContext(ctx, `
-		SELECT
+	row := uploads.db.QueryRowContext(ctx,
+		`SELECT
 		`+uploadColumns+`
 		FROM
 		`+uploadsTableName+`
 		WHERE
-			id = $1
-	`, id)
+			id = $1`,
+		id,
+	)
 
 	var upload model.Upload
 	err := scanUpload(row.Scan, &upload)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Upload{}, model.ErrUploadNotFound
 	}
 	if err != nil {
@@ -430,7 +431,7 @@ func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (mode
 		WHERE
 			id = $1;
 	`, uploadID).Scan(&rawJSON)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return timings, model.ErrUploadNotFound
 	}
 	if err != nil {
@@ -678,10 +679,10 @@ func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destination
 	var createdAt sql.NullTime
 
 	err := row.Scan(&createdAt)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, fmt.Errorf("last created at: %w", err)
 	}
-	if err == sql.ErrNoRows || !createdAt.Valid {
+	if errors.Is(err, sql.ErrNoRows) || !createdAt.Valid {
 		return time.Time{}, nil
 	}
 
@@ -1038,7 +1039,7 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 		&latestUploadInfo.Status,
 		&latestUploadInfo.Priority,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNoUploadsFound
 	}
 	if err != nil {
