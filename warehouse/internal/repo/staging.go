@@ -333,7 +333,7 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 		&uploadID,
 		&lastStartStagingFileID,
 	)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("querying uploads: %w", err)
 	}
 	// lastStartStagingFileID is used as an optimization to avoid scanning the whole table.
@@ -438,7 +438,7 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 		upload.SourceID,
 		upload.DestinationID,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

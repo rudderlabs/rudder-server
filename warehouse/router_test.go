@@ -6,10 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/samber/lo"
+
+	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -27,13 +32,11 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -41,9 +44,6 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-	pgnotifier.Init()
-	Init4()
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -96,11 +96,15 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
+		ctx := context.Background()
+
+		n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
 
+		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +117,7 @@ func TestRouter(t *testing.T) {
 		)
 		bcm := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		ef := encoding.NewFactory(config.Default)
@@ -126,11 +130,12 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			&notifier,
+			n,
 			tenantManager,
 			cp,
 			bcm,
 			ef,
+			triggerStore,
 		)
 		require.NoError(t, err)
 
@@ -152,7 +157,8 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+		now := time.Now()
+
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
@@ -180,8 +186,10 @@ func TestRouter(t *testing.T) {
 		}
 
 		r := router{}
-		r.now = time.Now
-		r.dbHandle = db
+		r.now = func() time.Time {
+			return now
+		}
+		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -191,6 +199,9 @@ func TestRouter(t *testing.T) {
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
 		r.logger = logger.NOP
+		r.triggerStore = &sync.Map{}
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
+		r.createJobMarkerMap = make(map[string]time.Time)
 
 		t.Run("no staging files", func(t *testing.T) {
 			err = r.createJobs(ctx, warehouse)
@@ -236,7 +247,7 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("merge existing upload", func(t *testing.T) {
-				setLastProcessedMarker(warehouse, now.Add(-time.Hour))
+				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -262,8 +273,8 @@ func TestRouter(t *testing.T) {
 			})
 
 			t.Run("upload triggered", func(t *testing.T) {
-				setLastProcessedMarker(warehouse, now.Add(-time.Hour))
-				triggerUpload(warehouse)
+				r.updateCreateJobMarker(warehouse, now.Add(-time.Hour))
+				r.triggerStore.Store(warehouse.Identifier, struct{}{})
 
 				stagingFiles := append(stagingFiles, createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)...)
 
@@ -333,7 +344,7 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.now = time.Now
-		r.dbHandle = db
+		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -342,7 +353,8 @@ func TestRouter(t *testing.T) {
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
 		r.destType = destinationType
-		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
+		r.triggerStore = &sync.Map{}
 		r.logger = logger.NOP
 
 		priority := 50
@@ -465,7 +477,7 @@ func TestRouter(t *testing.T) {
 		statsStore := memstats.New()
 
 		r := router{}
-		r.dbHandle = db
+		r.db = db
 		r.statsFactory = statsStore
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
@@ -487,6 +499,8 @@ func TestRouter(t *testing.T) {
 		r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 			"destinationType": r.destType,
 		})
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = &sync.Map{}
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -567,7 +581,7 @@ func TestRouter(t *testing.T) {
 		ctrl := gomock.NewController(t)
 
 		r := router{}
-		r.dbHandle = db
+		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -584,7 +598,7 @@ func TestRouter(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
-			dbHandle:     r.dbHandle,
+			db:           r.db,
 		}
 		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 			"destType": r.destType,
@@ -598,6 +612,8 @@ func TestRouter(t *testing.T) {
 		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 			"destType": r.destType,
 		})
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = &sync.Map{}
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -698,7 +714,7 @@ func TestRouter(t *testing.T) {
 		ctrl := gomock.NewController(t)
 
 		r := router{}
-		r.dbHandle = db
+		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -712,19 +728,19 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
 		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
+		r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			app:          mockApp,
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
-			dbHandle:     r.dbHandle,
+			db:           r.db,
 		}
 		r.workerChannelMap = map[string]chan *UploadJob{
 			r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
 		}
-		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 			"destType": r.destType,
 		})
@@ -737,6 +753,8 @@ func TestRouter(t *testing.T) {
 		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 			"destType": r.destType,
 		})
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = &sync.Map{}
 
 		close(r.bcManager.initialConfigFetched)
 
@@ -845,7 +863,7 @@ func TestRouter(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			r := router{}
-			r.dbHandle = db
+			r.db = db
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.statsFactory = memstats.New()
@@ -859,19 +877,19 @@ func TestRouter(t *testing.T) {
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
 			r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-			r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
+			r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
 				app:          mockApp,
 				conf:         config.Default,
 				logger:       logger.NOP,
 				statsFactory: r.statsFactory,
-				dbHandle:     r.dbHandle,
+				db:           r.db,
 			}
 			r.workerChannelMap = map[string]chan *UploadJob{
 				r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
 			}
-			r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+			r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 			r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 				"destType": r.destType,
 			})
@@ -884,6 +902,8 @@ func TestRouter(t *testing.T) {
 			r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 				"destType": r.destType,
 			})
+			r.createJobMarkerMap = make(map[string]time.Time)
+			r.triggerStore = &sync.Map{}
 
 			close(r.bcManager.initialConfigFetched)
 
@@ -932,7 +952,7 @@ func TestRouter(t *testing.T) {
 			statsStore := memstats.New()
 
 			r := router{}
-			r.dbHandle = db
+			r.db = db
 			r.statsFactory = statsStore
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
@@ -953,6 +973,8 @@ func TestRouter(t *testing.T) {
 			r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 				"destinationType": r.destType,
 			})
+			r.createJobMarkerMap = make(map[string]time.Time)
+			r.triggerStore = &sync.Map{}
 
 			closeCh := make(chan struct{})
 
@@ -1039,10 +1061,7 @@ func TestRouter(t *testing.T) {
 				_, err = pgResource.DB.Exec(string(sqlStatement))
 				require.NoError(t, err)
 
-				ctrl := gomock.NewController(t)
-
 				ctx := context.Background()
-				tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 				jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), repo.WithNow(func() time.Time {
 					// nowSQL := "'2022-12-06 22:00:00'"
@@ -1158,7 +1177,7 @@ func TestRouter(t *testing.T) {
 		}).AnyTimes()
 
 		r := router{}
-		r.dbHandle = db
+		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -1167,7 +1186,9 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
 		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
-		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
+		r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
+		r.createJobMarkerMap = make(map[string]time.Time)
+		r.triggerStore = &sync.Map{}
 
 		go func() {
 			r.bcManager.Start(ctx)

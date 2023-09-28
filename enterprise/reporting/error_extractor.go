@@ -18,8 +18,7 @@ const (
 	errorKey    = "error"
 	spaceStr    = " "
 
-	destinationResponseKey = "destinationResponse"
-	errorsKey              = "errors"
+	errorsKey = "errors"
 )
 
 var (
@@ -242,7 +241,7 @@ func IsJSON(s string) bool {
 		isEndingFlowerBrace = s[len(s)-1] == '}'
 		isEndingArrBrace = s[len(s)-1] == ']'
 	}
-	return ((parsedBytesResult.IsObject() && isEndingFlowerBrace) || (parsedBytesResult.IsArray() && isEndingArrBrace))
+	return (parsedBytesResult.IsObject() && isEndingFlowerBrace) || (parsedBytesResult.IsArray() && isEndingArrBrace)
 }
 
 func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {

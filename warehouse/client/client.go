@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"cloud.google.com/go/bigquery"
@@ -24,10 +25,10 @@ type Client struct {
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return result, err
 	}
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return result, nil
 	}
 	defer rows.Close()

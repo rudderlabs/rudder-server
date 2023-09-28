@@ -13,11 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -28,8 +31,6 @@ import (
 )
 
 func TestAsyncJobHandlers(t *testing.T) {
-	pgnotifier.Init()
-
 	const (
 		workspaceID         = "test_workspace_id"
 		sourceID            = "test_source_id"
@@ -58,10 +59,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 	db := sqlmiddleware.New(pgResource.DB)
 
-	notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
-	require.NoError(t, err)
-
 	ctx := context.Background()
+
+	n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+	err = n.Setup(ctx, pgResource.DBDsn)
+	require.NoError(t, err)
 
 	now := time.Now().Truncate(time.Second).UTC()
 
@@ -202,11 +204,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    false,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  false,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
@@ -220,11 +222,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    true,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  true,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -238,11 +240,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    true,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  true,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -263,11 +265,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    true,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  true,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
@@ -286,11 +288,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    false,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  false,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
@@ -304,11 +306,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    true,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  true,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -335,11 +337,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := AsyncJobWh{
-				dbHandle:   db.DB,
-				enabled:    true,
-				logger:     logger.NOP,
-				context:    ctx,
-				pgnotifier: &notifier,
+				db:       db,
+				enabled:  true,
+				logger:   logger.NOP,
+				context:  ctx,
+				notifier: n,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,8 +22,6 @@ import (
 )
 
 func TestRouter_CanCreateUpload(t *testing.T) {
-	Init4()
-
 	const (
 		sourceID        = "source_id"
 		destinationID   = "destination_id"
@@ -189,9 +188,11 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			w := model.Warehouse{
 				Identifier: "test_identifier",
 			}
-			triggerUpload(w)
 
 			r := router{}
+			r.triggerStore = &sync.Map{}
+			r.triggerStore.Store(w.Identifier, struct{}{})
+
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.NoError(t, err)
 			require.True(t, canCreate)
@@ -205,6 +206,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
+				r.triggerStore = &sync.Map{}
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.NoError(t, err)
@@ -215,28 +217,46 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				w := model.Warehouse{
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
-				setLastProcessedMarker(w, time.Now())
+
+				now := time.Now()
 
 				r := router{}
+				r.now = func() time.Time {
+					return now
+				}
+				r.config.uploadFreqInS = 1800
 				r.config.warehouseSyncFreqIgnore = true
+				r.createJobMarkerMap = make(map[string]time.Time)
+				r.triggerStore = &sync.Map{}
+
+				r.updateCreateJobMarker(w, now.Add(-time.Hour))
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
-				require.EqualError(t, err, "ignore sync freq: upload frequency exceeded")
-				require.False(t, canCreate)
+				require.NoError(t, err)
+				require.True(t, canCreate)
 			})
 
 			t.Run("upload frequency not exceeded", func(t *testing.T) {
 				w := model.Warehouse{
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
-				setLastProcessedMarker(w, time.Now().Add(-time.Hour))
+
+				now := time.Now()
 
 				r := router{}
+				r.now = func() time.Time {
+					return now
+				}
+				r.config.uploadFreqInS = 1800
 				r.config.warehouseSyncFreqIgnore = true
+				r.createJobMarkerMap = make(map[string]time.Time)
+				r.triggerStore = &sync.Map{}
+
+				r.updateCreateJobMarker(w, now)
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
-				require.NoError(t, err)
-				require.True(t, canCreate)
+				require.EqualError(t, err, "ignore sync freq: upload frequency exceeded")
+				require.False(t, canCreate)
 			})
 		})
 
@@ -254,6 +274,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			r := router{}
+			r.triggerStore = &sync.Map{}
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 			}
@@ -271,12 +292,21 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 			}
 
+			now := time.Now()
+
 			r := router{}
-			r.now = time.Now
+			r.now = func() time.Time {
+				return now
+			}
+			r.config.uploadFreqInS = 1800
+			r.createJobMarkerMap = make(map[string]time.Time)
+			r.triggerStore = &sync.Map{}
+
+			r.updateCreateJobMarker(w, now)
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
-			require.Nil(t, err)
-			require.True(t, canCreate)
+			require.EqualError(t, err, "upload frequency exceeded")
+			require.False(t, canCreate)
 		})
 
 		t.Run("no sync start at and frequency exceeded", func(t *testing.T) {
@@ -286,14 +316,22 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					Config: map[string]interface{}{},
 				},
 			}
-			setLastProcessedMarker(w, time.Now())
+
+			now := time.Now()
 
 			r := router{}
-			r.now = time.Now
+			r.now = func() time.Time {
+				return now
+			}
+			r.config.uploadFreqInS = 1800
+			r.triggerStore = &sync.Map{}
+			r.createJobMarkerMap = make(map[string]time.Time)
+
+			r.updateCreateJobMarker(w, now.Add(-time.Hour))
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
-			require.EqualError(t, err, "upload frequency exceeded")
-			require.False(t, canCreate)
+			require.NoError(t, err)
+			require.True(t, canCreate)
 		})
 
 		t.Run("last created at", func(t *testing.T) {
@@ -372,13 +410,16 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 							},
 						},
 					}
-					setLastProcessedMarker(w, time.Now())
 
 					r := router{}
+					r.triggerStore = &sync.Map{}
+					r.createJobMarkerMap = make(map[string]time.Time)
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {
 						return tc.now
 					}
+
+					r.updateCreateJobMarker(w, time.Now())
 
 					canCreate, err := r.canCreateUpload(context.Background(), w)
 					if tc.wantErr != nil {

@@ -149,12 +149,14 @@ func TestMainFlow(t *testing.T) {
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		_ = db.QueryRow(eventSql).Scan(&myEvent.count)
+		err := db.QueryRow(eventSql).Scan(&myEvent.count)
+		require.NoError(t, err)
 		require.Equal(t, myEvent.count, "2")
 
 		// Verify User Transformation
 		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-		_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.contextID, "0.0.0.0")
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
@@ -173,26 +175,30 @@ func TestMainFlow(t *testing.T) {
 
 		// Verify User Transformation
 		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
-		_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.contextID, "0.0.0.0")
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+			err = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+			require.NoError(t, err)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
 			eventSql = "select count(*) from dev_integration_test_1.screens"
-			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
+			err = db.QueryRow(eventSql).Scan(&myEvent.count)
+			require.NoError(t, err)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
 		require.Eventually(t, func() bool {
 			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-			_ = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+			err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+			require.NoError(t, err)
 			return myEvent.myUniqueID == "identified_user_idanonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 
@@ -285,13 +291,15 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-versions
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Contains(t, resBody, EventID)
 
 		b := []byte(resBody)
 		var eventSchemas []eventSchemasObject
 
-		err := json.Unmarshal(b, &eventSchemas)
+		err = json.Unmarshal(b, &eventSchemas)
+		require.NoError(t, err)
 		if err != nil {
 			t.Log(err)
 		}
@@ -303,7 +311,8 @@ func TestMainFlow(t *testing.T) {
 		// GET schemas/event-model/{EventID}/key-counts
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -311,7 +320,8 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-model/{EventID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -319,7 +329,8 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-version/{VersionID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -327,7 +338,8 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-version/{VersionID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Contains(t, resBody, "originalTimestamp")
 		require.Contains(t, resBody, "sentAt")
 		require.Contains(t, resBody, "channel")
@@ -338,7 +350,8 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-models/json-schemas
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
 		method := "GET"
-		resBody, _ := getEvent(url, method)
+		resBody, err := getEvent(url, method)
+		require.NoError(t, err)
 		require.Eventually(t, func() bool {
 			// Similarly, pole until the Event Schema Tables are updated
 			resBody, _ = getEvent(url, method)

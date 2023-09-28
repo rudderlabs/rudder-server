@@ -29,7 +29,7 @@ func NewFactory(conf *config.Config) *Factory {
 	m := &Factory{}
 
 	m.config.maxStagingFileReadBufferCapacityInK = conf.GetIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	m.config.parquetParallelWriters = config.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")
+	m.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")
 
 	return m
 }
