@@ -607,7 +607,7 @@ func (d *Deltalake) loadTable(
 		tableSchemaInUpload, tableSchemaAfterUpload,
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("copy into staging table: %w", err)
+		return nil, "", fmt.Errorf("copying into staging table: %w", err)
 	}
 
 	log.Infow("moving data from staging table to main table")
@@ -703,7 +703,7 @@ func (d *Deltalake) copyIntoLoadTable(
 	}
 
 	if _, err := d.DB.ExecContext(ctx, copyStmt); err != nil {
-		return fmt.Errorf("executing copy command: %w", err)
+		return fmt.Errorf("executing copy query: %w", err)
 	}
 	return nil
 }
@@ -751,7 +751,7 @@ func (d *Deltalake) insertIntoLoadTable(
 		&rowsInserted,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("running INSERT command: %w", err)
+		return nil, fmt.Errorf("executing insert query: %w", err)
 	}
 
 	return &types.LoadTableStats{
@@ -842,7 +842,6 @@ func tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSche
 			diff.ColumnMap[columnName] = columnType
 		}
 	}
-
 	return diff
 }
 

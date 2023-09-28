@@ -520,13 +520,12 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Load Table", func(t *testing.T) {
 		const (
-			sourceID        = "test_source_id"
-			destinationID   = "test_destination_id"
-			workspaceID     = "test_workspace_id"
-			destinationType = whutils.SNOWFLAKE
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
 		)
 
-		namespace := testhelper.RandSchema(destinationType)
+		namespace := testhelper.RandSchema(destType)
 
 		ctx := context.Background()
 
@@ -558,35 +557,6 @@ func TestIntegration(t *testing.T) {
 			)
 		})
 
-		warehouseModel := func(namespace string) model.Warehouse {
-			return model.Warehouse{
-				Source: backendconfig.SourceT{
-					ID: sourceID,
-				},
-				Destination: backendconfig.DestinationT{
-					ID: destinationID,
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: destinationType,
-					},
-					Config: map[string]any{
-						"account":            credentials.Account,
-						"database":           credentials.Database,
-						"warehouse":          credentials.Warehouse,
-						"user":               credentials.User,
-						"password":           credentials.Password,
-						"cloudProvider":      "AWS",
-						"bucketName":         credentials.BucketName,
-						"storageIntegration": "",
-						"accessKeyID":        credentials.AccessKeyID,
-						"accessKey":          credentials.AccessKey,
-						"namespace":          namespace,
-					},
-				},
-				WorkspaceID: workspaceID,
-				Namespace:   namespace,
-			}
-		}
-
 		schemaInUpload := model.TableSchema{
 			"TEST_BOOL":     "boolean",
 			"TEST_DATETIME": "datetime",
@@ -611,6 +581,33 @@ func TestIntegration(t *testing.T) {
 			"EXTRA_TEST_STRING":   "string",
 		}
 
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"account":            credentials.Account,
+					"database":           credentials.Database,
+					"warehouse":          credentials.Warehouse,
+					"user":               credentials.User,
+					"password":           credentials.Password,
+					"cloudProvider":      "AWS",
+					"bucketName":         credentials.BucketName,
+					"storageIntegration": "",
+					"accessKeyID":        credentials.AccessKeyID,
+					"accessKey":          credentials.AccessKey,
+					"namespace":          namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
 		fm, err := filemanager.New(&filemanager.Settings{
 			Provider: whutils.S3,
 			Config: map[string]any{
@@ -622,48 +619,13 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		uploader := func(
-			t testing.TB,
-			loadFiles []whutils.LoadFile,
-			tableName string,
-			schemaInUpload model.TableSchema,
-			schemaInWarehouse model.TableSchema,
-			loadFileType string,
-			canAppend bool,
-			dedupUseNewRecord bool,
-		) whutils.Uploader {
-			ctrl := gomock.NewController(t)
-			t.Cleanup(ctrl.Finish)
-
-			mockUploader := mockuploader.NewMockUploader(ctrl)
-			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-			mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
-			mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(dedupUseNewRecord).AnyTimes()
-			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-				func(ctx context.Context, options whutils.GetLoadFilesOptions) []whutils.LoadFile {
-					return slices.Clone(loadFiles)
-				},
-			).AnyTimes()
-			mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
-			mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
-
-			return mockUploader
-		}
-
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "schema_not_exists_test_table")
 
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -680,12 +642,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -699,49 +656,150 @@ func TestIntegration(t *testing.T) {
 			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
-		t.Run("load table stats", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "load_table_stats_test_table")
+		t.Run("merge", func(t *testing.T) {
+			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "merge_test_table")
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			t.Run("without dedup", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
-			warehouse := warehouseModel(namespace)
+				c := config.New()
+				c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", []string{workspaceID})
+				c.Set("Warehouse.snowflake.debugDuplicateIntervalInDays", 1000)
+				c.Set("Warehouse.snowflake.debugDuplicateTables", []string{whutils.ToProviderCase(
+					whutils.SNOWFLAKE,
+					tableName,
+				)})
 
-			c := config.New()
-			c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", []string{workspaceID})
-			c.Set("Warehouse.snowflake.debugDuplicateIntervalInDays", 1000)
-			c.Set("Warehouse.snowflake.debugDuplicateTables", []string{whutils.ToProviderCase(
-				whutils.SNOWFLAKE,
-				tableName,
-			)})
+				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				require.NoError(t, err)
+				err = sf.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
 
-			sf, err := snowflake.New(c, logger.NOP, stats.Default)
-			require.NoError(t, err)
-			err = sf.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
+				err = sf.CreateSchema(ctx)
+				require.NoError(t, err)
 
-			err = sf.CreateSchema(ctx)
-			require.NoError(t, err)
+				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
 
-			err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
+				loadTableStat, err := sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(14))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			loadTableStat, err := sf.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				loadTableStat, err = sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-			loadTableStat, err = sf.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(0))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+				records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, testhelper.SampleTestRecords())
+			})
+			t.Run("with dedup use new record", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, true)
+
+				sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+				require.NoError(t, err)
+				err = sf.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = sf.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := testhelper.RetrieveRecordsFromWarehouse(t, db,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+					`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, testhelper.DedupTestRecords())
+			})
+		})
+		t.Run("append", func(t *testing.T) {
+			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "append_test_table")
+
+			run := func() {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false)
+
+				c := config.New()
+				c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
+
+				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				require.NoError(t, err)
+				err = sf.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = sf.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				t.Run("loading once should copy everything", func(t *testing.T) {
+					loadTableStat, err := sf.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				})
+				t.Run("loading twice should not copy anything", func(t *testing.T) {
+					loadTableStat, err := sf.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(0))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				})
+			}
+
+			run()
+			run()
+
+			records := testhelper.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -754,12 +812,13 @@ func TestIntegration(t *testing.T) {
 				FROM
 				  %q.%q
 				ORDER BY
-				  id`,
+				  id;
+				`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.SampleTestRecords())
+			require.Equal(t, records, testhelper.AppendTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "load_file_not_exists_test_table")
@@ -767,12 +826,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{
 				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
 			}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -795,12 +849,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -831,7 +880,8 @@ func TestIntegration(t *testing.T) {
 				FROM
 				  %q.%q
 				ORDER BY
-				  id`,
+				  id;
+				`,
 					namespace,
 					tableName,
 				),
@@ -844,12 +894,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -876,12 +921,7 @@ func TestIntegration(t *testing.T) {
 			})
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, discardsSchema,
-				discardsSchema, whutils.LoadFileTypeCsv, false, false,
-			)
-
-			warehouse := warehouseModel(namespace)
+			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, whutils.LoadFileTypeCsv, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -901,193 +941,22 @@ func TestIntegration(t *testing.T) {
 
 			records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
 				fmt.Sprintf(`
-				SELECT
-				  COLUMN_NAME,
-				  COLUMN_VALUE,
-				  RECEIVED_AT,
-				  ROW_ID,
-				  TABLE_NAME,
-				  UUID_TS
-				FROM
-				  %q.%q
-				ORDER BY ROW_ID ASC;`,
+					SELECT
+					  COLUMN_NAME,
+					  COLUMN_VALUE,
+					  RECEIVED_AT,
+					  ROW_ID,
+					  TABLE_NAME,
+					  UUID_TS
+					FROM
+					  %q.%q
+					ORDER BY ROW_ID ASC;
+					`,
 					namespace,
 					tableName,
 				),
 			)
 			require.Equal(t, records, testhelper.DiscardTestRecords())
-		})
-		t.Run("dedup", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "dedup_test_table")
-
-			run := func(
-				fileName string,
-				insertedRows int64,
-				updatedRows int64,
-			) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, fileName, tableName)
-
-				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := uploader(
-					t, loadFiles, tableName, schemaInUpload,
-					schemaInWarehouse, whutils.LoadFileTypeCsv, false, true,
-				)
-
-				warehouse := warehouseModel(namespace)
-
-				sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
-				require.NoError(t, err)
-				err = sf.Setup(ctx, warehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = sf.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := sf.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, insertedRows)
-				require.Equal(t, loadTableStat.RowsUpdated, updatedRows)
-			}
-
-			run("../testdata/load.csv.gz", 14, 0)
-			run("../testdata/dedup.csv.gz", 0, 14)
-
-			records := testhelper.RetrieveRecordsFromWarehouse(t, db,
-				fmt.Sprintf(`
-				SELECT
-				  id,
-				  received_at,
-				  test_bool,
-				  test_datetime,
-				  test_float,
-				  test_int,
-				  test_string
-				FROM
-				  %q.%q
-				ORDER BY
-				  id`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, testhelper.DedupTestRecords())
-		})
-		t.Run("append", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "append_test_table")
-
-			run := func() {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := uploader(
-					t, loadFiles, tableName, schemaInUpload,
-					schemaInWarehouse, whutils.LoadFileTypeCsv, true, false,
-				)
-
-				warehouse := warehouseModel(namespace)
-
-				c := config.New()
-				c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
-
-				sf, err := snowflake.New(c, logger.NOP, stats.Default)
-				require.NoError(t, err)
-				err = sf.Setup(ctx, warehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = sf.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := sf.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-			}
-
-			run()
-			run()
-
-			records := testhelper.RetrieveRecordsFromWarehouse(t, db,
-				fmt.Sprintf(`
-				SELECT
-				  id,
-				  received_at,
-				  test_bool,
-				  test_datetime,
-				  test_float,
-				  test_int,
-				  test_string
-				FROM
-				  %q.%q
-				ORDER BY
-				  id`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, testhelper.AppendTestRecords())
-		})
-		t.Run("loading twice should not copy anything", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "loading_twice_test_table")
-
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := uploader(
-				t, loadFiles, tableName, schemaInUpload,
-				schemaInWarehouse, whutils.LoadFileTypeCsv, true, false,
-			)
-
-			warehouse := warehouseModel(namespace)
-
-			c := config.New()
-			c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
-
-			sf, err := snowflake.New(c, logger.NOP, stats.Default)
-			require.NoError(t, err)
-			err = sf.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = sf.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := sf.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			loadTableStat, err = sf.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(0))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			records := testhelper.RetrieveRecordsFromWarehouse(t, db,
-				fmt.Sprintf(`
-				SELECT
-				  id,
-				  received_at,
-				  test_bool,
-				  test_datetime,
-				  test_float,
-				  test_int,
-				  test_string
-				FROM
-				  %q.%q
-				ORDER BY
-				  id`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 	})
 }
@@ -1146,6 +1015,36 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 			require.Equal(t, sf.ShouldAppend(), tc.expected)
 		})
 	}
+}
+
+func newMockUploader(
+	t testing.TB,
+	loadFiles []whutils.LoadFile,
+	tableName string,
+	schemaInUpload model.TableSchema,
+	schemaInWarehouse model.TableSchema,
+	loadFileType string,
+	canAppend bool,
+	dedupUseNewRecord bool,
+) whutils.Uploader {
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockUploader := mockuploader.NewMockUploader(ctrl)
+	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+	mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
+	mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(dedupUseNewRecord).AnyTimes()
+	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, options whutils.GetLoadFilesOptions) []whutils.LoadFile {
+			return slices.Clone(loadFiles)
+		},
+	).AnyTimes()
+	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
+	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+	mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
+
+	return mockUploader
 }
 
 func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {

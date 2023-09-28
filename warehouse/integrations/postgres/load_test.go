@@ -234,6 +234,20 @@ func TestLoadUsersTable(t *testing.T) {
 				usersSchamaInUpload = tc.usersSchemaInUpload
 			}
 
+			ctrl := gomock.NewController(t)
+			t.Cleanup(ctrl.Finish)
+
+			schema := map[string]model.TableSchema{
+				warehouseutils.UsersTable:      usersSchamaInUpload,
+				warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
+			}
+			f := func(tableName string) model.TableSchema {
+				return schema[tableName]
+			}
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
+
 			pg.DB = db
 			pg.Namespace = namespace
 			pg.Warehouse = warehouse
@@ -247,10 +261,7 @@ func TestLoadUsersTable(t *testing.T) {
 					warehouseutils.IdentifiesTable: tc.mockIdentifiesError,
 				},
 			}
-			pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
-				warehouseutils.UsersTable:      usersSchamaInUpload,
-				warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
-			})
+			pg.Uploader = mockUploader
 
 			errorsMap := pg.LoadUserTables(ctx)
 			require.NotEmpty(t, errorsMap)
@@ -266,13 +277,4 @@ func TestLoadUsersTable(t *testing.T) {
 			}
 		})
 	}
-}
-
-func newMockUploader(t testing.TB, schema model.Schema) *mockuploader.MockUploader {
-	ctrl := gomock.NewController(t)
-	f := func(tableName string) model.TableSchema { return schema[tableName] }
-	u := mockuploader.NewMockUploader(ctrl)
-	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
-	u.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
-	return u
 }
