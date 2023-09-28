@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/rudderlabs/rudder-server/compare/v1.14.1...v1.14.2) (2023-09-25)
+
+
+### Bug Fixes
+
+* googlecloudfunction destination implementation and refactor code ([#3907](https://github.com/rudderlabs/rudder-server/issues/3907)) ([0676b0a](https://github.com/rudderlabs/rudder-server/commit/0676b0a70e26d70e1fcb4aeb7fc34c3a258b23ef))
+
 ## [1.14.1](https://github.com/rudderlabs/rudder-server/compare/v1.14.0...v1.14.1) (2023-09-21)
 
 
