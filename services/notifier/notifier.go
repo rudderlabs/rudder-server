@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.uber.org/atomic"
 	"math/rand"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/lib/pq"
 
