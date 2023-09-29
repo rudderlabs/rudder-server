@@ -316,7 +316,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 	_, err := db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_stats already exists in %s", defaultDbName)
+			log.Debugf("table rsources_failed_keys already exists in %s", defaultDbName)
 		} else {
 			return err
 		}
@@ -356,8 +356,7 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
-	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
-	if err != nil {
+	if _, err := sh.localDB.ExecContext(ctx, publicationQuery); err != nil {
 		pqError, ok := err.(*pq.Error)
 		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
 			return fmt.Errorf("failed to create publication on local database: %w", err)
@@ -365,8 +364,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	alterPublicationQuery := `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys`
-	_, err = sh.localDB.ExecContext(ctx, alterPublicationQuery)
-	if err != nil {
+	if _, err := sh.localDB.ExecContext(ctx, alterPublicationQuery); err != nil {
 		pqError, ok := err.(*pq.Error)
 		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
 			return fmt.Errorf("failed to alter publication on local database to add failed_keys table: %w", err)
@@ -381,8 +379,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		subscriptionConn = sh.config.LocalConn
 	}
 	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn) // skipcq: GO-R4002
-	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery)
-	if err != nil {
+	if _, err := sh.sharedDB.ExecContext(ctx, subscriptionQuery); err != nil {
 		pqError, ok := err.(*pq.Error)
 		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
@@ -390,8 +387,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	refreshSubscriptionQuery := fmt.Sprintf(`ALTER SUBSCRIPTION %s REFRESH PUBLICATION`, subscriptionName)
-	_, err = sh.sharedDB.ExecContext(ctx, refreshSubscriptionQuery)
-	if err != nil {
+	if _, err := sh.sharedDB.ExecContext(ctx, refreshSubscriptionQuery); err != nil {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
 	}
 

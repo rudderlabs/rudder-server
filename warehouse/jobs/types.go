@@ -2,12 +2,14 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
 // StartJobReqPayload For processing requests payload in handlers.go
@@ -24,9 +26,9 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWh struct {
-	dbHandle              *sql.DB
+	db                    *sqlmw.DB
 	enabled               bool
-	pgnotifier            *pgnotifier.PGNotifier
+	notifier              *notifier.Notifier
 	context               context.Context
 	logger                logger.Logger
 	maxBatchSizeToProcess int
@@ -61,10 +63,9 @@ const (
 	WhJobSucceeded string = "succeeded"
 	WhJobAborted   string = "aborted"
 	WhJobFailed    string = "failed"
-	AsyncJobType   string = "async_job"
 )
 
-type PGNotifierOutput struct {
+type NotifierResponse struct {
 	Id string `json:"id"`
 }
 

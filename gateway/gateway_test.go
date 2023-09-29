@@ -654,6 +654,66 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 		})
+
+		It("should accept valid replay request and store to jobsdb", func() {
+			handler := gateway.webReplayHandler()
+
+			validBody := []byte(fmt.Sprintf(`{"batch":[%s]}`, string(createValidBody("custom-property", "custom-value"))))
+
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any()).Times(1).Do(func(
+				ctx context.Context,
+				f func(tx jobsdb.StoreSafeTx) error,
+			) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.
+				EXPECT().StoreEachBatchRetryInTx(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						tx jobsdb.StoreSafeTx,
+						jobBatches [][]*jobsdb.JobT,
+					) (map[uuid.UUID]string, error) {
+						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
+						return jobsToEmptyErrors(ctx, tx, jobBatches)
+					}).
+				Times(1)
+
+			expectHandlerResponse(
+				handler,
+				authorizedReplayRequest(
+					ReplaySourceID,
+					bytes.NewBuffer(validBody)),
+				http.StatusOK,
+				"OK",
+				"replay",
+			)
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_requests",
+						map[string]string{
+							"source":      "_source",
+							"sourceID":    ReplaySourceID,
+							"workspaceId": WorkspaceID,
+							"writeKey":    ReplayWriteKey,
+							"reqType":     "replay",
+							"sourceType":  "eventStream",
+							"sdkVersion":  sdkStatTag,
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
+		})
 	})
 
 	Context("Bots", func() {
@@ -1367,6 +1427,15 @@ func authorizedRequest(username string, body io.Reader) *http.Request {
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:password-should-be-ignored", username)))
 
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", basicAuth))
+	// set anonymousId header to ensure everything goes into same batch
+	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
+	req.RemoteAddr = TestRemoteAddressWithPort
+	return req
+}
+
+func authorizedReplayRequest(sourceID string, body io.Reader) *http.Request {
+	req := unauthorizedRequest(body)
+	req.Header.Set("X-Rudder-Source-Id", sourceID)
 	// set anonymousId header to ensure everything goes into same batch
 	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
 	req.RemoteAddr = TestRemoteAddressWithPort
