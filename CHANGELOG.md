@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.4](https://github.com/rudderlabs/rudder-server/compare/v1.14.3...v1.14.4) (2023-09-29)
+
+
+### Bug Fixes
+
+* use dedup on new records for deltalake ([#3927](https://github.com/rudderlabs/rudder-server/issues/3927)) ([5656ab3](https://github.com/rudderlabs/rudder-server/commit/5656ab3f68dd58e332b68d45f21d1965594ef479))
+
 ## [1.14.3](https://github.com/rudderlabs/rudder-server/compare/v1.14.2...v1.14.3) (2023-09-28)
 
 
