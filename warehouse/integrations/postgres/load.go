@@ -196,7 +196,7 @@ func (pg *Postgres) loadDataIntoStagingTable(
 	for {
 		record, err := csvReader.Read()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return fmt.Errorf("reading file: %w", err)

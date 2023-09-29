@@ -690,7 +690,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			var record []string
 			record, err = csvReader.Read()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					ch.logger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				}

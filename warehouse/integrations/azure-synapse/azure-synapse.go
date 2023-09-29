@@ -383,7 +383,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	for {
 		record, err := csvReader.Read()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return fmt.Errorf("reading record from: %w", err)
@@ -727,7 +727,7 @@ func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
     EXEC('CREATE SCHEMA [%s]');`, as.Namespace, as.Namespace)
 	as.logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.ExecContext(ctx, sqlStatement)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return nil
 	}
 	return

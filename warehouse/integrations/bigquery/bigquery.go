@@ -3,6 +3,7 @@ package bigquery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -892,10 +893,10 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 	for {
 		var values []bigquery.Value
 		err := it.Next(&values)
-		if err == iterator.Done {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
 			bq.logger.Errorf("BQ: Error in processing fetched staging tables from information schema in dataset %v : %v", bq.namespace, err)
 			return false
 		}
@@ -1051,10 +1052,10 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		var values []bigquery.Value
 
 		err := it.Next(&values)
-		if err == iterator.Done {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
 			return nil, nil, fmt.Errorf("iterating schema: %w", err)
 		}
 
@@ -1200,10 +1201,10 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 				var values []bigquery.Value
 
 				err := it.Next(&values)
-				if err == iterator.Done {
-					break
-				}
 				if err != nil {
+					if errors.Is(err, iterator.Done) {
+						break
+					}
 					return err
 				}
 				var anonId, userId string

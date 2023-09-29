@@ -412,7 +412,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 		var record []string
 		record, err = csvReader.Read()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return fmt.Errorf("reading file: %w", err)
@@ -738,7 +738,7 @@ func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
     EXEC('CREATE SCHEMA [%s]');`, ms.Namespace, ms.Namespace)
 	ms.logger.Infof("MSSQL: Creating schema name in mssql for MSSQL:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.DB.ExecContext(ctx, sqlStatement)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return nil
 	}
 	return
