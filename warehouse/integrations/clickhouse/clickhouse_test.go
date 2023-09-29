@@ -573,13 +573,8 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			}
 
 			t.Log("Loading data into table")
-			err = ch.LoadTable(ctx, table)
+			_, err = ch.LoadTable(ctx, table)
 			require.NoError(t, err)
-
-			t.Log("Checking table count")
-			count, err := ch.GetTotalCountInTable(ctx, table)
-			require.NoError(t, err)
-			require.EqualValues(t, 2, count)
 
 			t.Log("Drop table")
 			err = ch.DropTable(ctx, table)

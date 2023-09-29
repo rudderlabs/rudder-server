@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -31,7 +33,7 @@ type Manager interface {
 	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error)
-	LoadTable(ctx context.Context, tableName string) error
+	LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error)
 	LoadUserTables(ctx context.Context) map[string]error
 	LoadIdentityMergeRulesTable(ctx context.Context) error
 	LoadIdentityMappingsTable(ctx context.Context) error
@@ -39,7 +41,6 @@ type Manager interface {
 	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error
-	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error)
 	LoadTestTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
