@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/app"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
@@ -34,7 +33,6 @@ import (
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -70,7 +68,7 @@ type uploadState struct {
 type tableNameT string
 
 type UploadJobFactory struct {
-	app                  app.App
+	reporting            types.Reporting
 	db                   *sqlquerywrapper.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
@@ -82,9 +80,9 @@ type UploadJobFactory struct {
 }
 
 type UploadJob struct {
-	app                  app.App
 	ctx                  context.Context
-	db                   *sqlmiddleware.DB
+	db                   *sqlquerywrapper.DB
+	reporting            types.Reporting
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
@@ -182,7 +180,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 
 	uj := &UploadJob{
 		ctx:                  ujCtx,
-		app:                  f.app,
+		reporting:            f.reporting,
 		db:                   f.db,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
@@ -1463,7 +1461,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			return
 		}
 		if job.config.reportingEnabled {
-			job.app.Features().Reporting.GetReportingInstance().Report(
+			job.reporting.Report(
 				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
 				txn.GetTx(),
 			)
@@ -1494,7 +1492,7 @@ func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
 
 type UploadColumnsOpts struct {
 	Fields []UploadColumn
-	Txn    *sqlmiddleware.Tx
+	Txn    *sqlquerywrapper.Tx
 }
 
 // SetUploadColumns sets any column values passed as args in UploadColumn format for WarehouseUploadsTable
@@ -1709,7 +1707,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		job.app.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn.GetTx())
+		job.reporting.Report(reportingMetrics, txn.GetTx())
 	}
 	err = txn.Commit()
 

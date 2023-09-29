@@ -61,7 +61,7 @@ func TestApp(t *testing.T) {
 	require.NoError(t, err)
 
 	report := &reporting.Factory{}
-	report.Setup(&bcConfig.NOOP{})
+	report.Setup(context.Background(), &bcConfig.NOOP{})
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()

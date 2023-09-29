@@ -493,12 +493,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Info("Backend config received")
-		// waiting for reporting client setup
-		if proc.reporting != nil && proc.reportingEnabled {
-			if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
-				return err
-			}
-		}
 
 		// waiting for init group
 		proc.logger.Info("Waiting for async init group")

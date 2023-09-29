@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -54,12 +53,6 @@ func (rt *Handle) Setup(
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
-
-	// waiting for reporting client setup
-	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
-	if err != nil {
-		return
-	}
 
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
@@ -114,6 +107,7 @@ func (rt *Handle) Setup(
 	rt.backendConfigInitialized = make(chan bool)
 
 	isolationMode := isolationMode(destType, config)
+	var err error
 	if rt.isolationStrategy, err = isolation.GetStrategy(isolationMode, rt.destType, func(destinationID string) bool {
 		rt.destinationsMapMu.RLock()
 		defer rt.destinationsMapMu.RUnlock()

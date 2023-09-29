@@ -2119,7 +2119,6 @@ var _ = Describe("Processor", Ordered, func() {
 				transformationdebugger.NewNoOpService(),
 			)
 			defer processor.Shutdown()
-			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
 			processor.config.readLoopSleep = misc.SingleValueLoader(time.Millisecond)
 
