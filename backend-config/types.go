@@ -69,7 +69,6 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
-	EventSchemasEnabled        bool
 }
 
 func (s *SourceT) IsReplaySource() bool {
@@ -124,7 +123,8 @@ func (c *ConfigT) DestinationsMap() map[string]*DestinationT {
 }
 
 type Settings struct {
-	DataRetention DataRetention `json:"dataRetention"`
+	DataRetention     DataRetention `json:"dataRetention"`
+	EventAuditEnabled bool          `json:"eventAuditEnabled"`
 }
 
 type DataRetention struct {

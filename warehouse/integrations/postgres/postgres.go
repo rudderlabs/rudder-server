@@ -490,22 +490,6 @@ func (*Postgres) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err e
 	return
 }
 
-func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
-	var (
-		total        int64
-		err          error
-		sqlStatement string
-	)
-	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM "%[1]s"."%[2]s";
-	`,
-		pg.Namespace,
-		tableName,
-	)
-	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	return total, err
-}
-
 func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
@@ -520,12 +504,12 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := pg.connect()
+	db, err := pg.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (pg *Postgres) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {

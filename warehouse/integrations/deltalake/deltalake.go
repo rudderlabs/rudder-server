@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"golang.org/x/exp/slices"
@@ -403,7 +405,7 @@ func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
 	var schema string
 	err := d.DB.QueryRowContext(ctx, query).Scan(&schema)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("schema exists: %w", err)
@@ -546,29 +548,31 @@ func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.Al
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
+func (d *Deltalake) LoadTable(
+	ctx context.Context,
+	tableName string,
+) (*types.LoadTableStats, error) {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
-	_, err := d.loadTable(ctx, tableName, uploadTableSchema, warehouseTableSchema, false)
-	if err != nil {
-		return fmt.Errorf("loading table: %w", err)
-	}
-
-	return nil
+	loadTableStat, _, err := d.loadTable(
+		ctx,
+		tableName,
+		uploadTableSchema,
+		warehouseTableSchema,
+		false,
+	)
+	return loadTableStat, err
 }
 
-func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
-	var (
-		sortedColumnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-		stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-
-		err  error
-		auth string
-		row  *sqlmiddleware.Row
-	)
-
-	d.logger.Infow("started loading",
+func (d *Deltalake) loadTable(
+	ctx context.Context,
+	tableName string,
+	tableSchemaInUpload model.TableSchema,
+	tableSchemaAfterUpload model.TableSchema,
+	skipTempTableDelete bool,
+) (*types.LoadTableStats, string, error) {
+	log := d.logger.With(
 		logfield.SourceID, d.Warehouse.Source.ID,
 		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -576,36 +580,84 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 		logfield.Namespace, d.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, d.config.loadTableStrategy,
+	)
+	log.Infow("started loading")
+
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
 	)
 
-	if err = d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
-		return "", fmt.Errorf("creating staging table: %w", err)
+	log.Debugw("creating staging table")
+	if err := d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
+		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
 
 	if !skipTempTableDelete {
-		defer d.dropStagingTables(ctx, []string{stagingTableName})
+		defer func() {
+			d.dropStagingTables(ctx, []string{stagingTableName})
+		}()
 	}
 
-	if auth, err = d.authQuery(); err != nil {
-		return "", fmt.Errorf("getting auth query: %w", err)
+	log.Infow("copying data into staging table")
+	err := d.copyIntoLoadTable(
+		ctx, tableName, stagingTableName,
+		tableSchemaInUpload, tableSchemaAfterUpload,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("copying into staging table: %w", err)
+	}
+
+	var loadTableStat *types.LoadTableStats
+	if d.ShouldAppend() {
+		log.Infow("inserting data from staging table to main table")
+		loadTableStat, err = d.insertIntoLoadTable(
+			ctx, tableName, stagingTableName,
+			tableSchemaAfterUpload,
+		)
+	} else {
+		log.Infow("merging data from staging table to main table")
+		loadTableStat, err = d.mergeIntoLoadTable(
+			ctx, tableName, stagingTableName,
+			tableSchemaInUpload,
+		)
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("moving data from main table to staging table: %w", err)
+	}
+
+	log.Infow("completed loading")
+
+	return loadTableStat, stagingTableName, nil
+}
+
+func (d *Deltalake) copyIntoLoadTable(
+	ctx context.Context,
+	tableName string,
+	stagingTableName string,
+	tableSchemaInUpload model.TableSchema,
+	tableSchemaAfterUpload model.TableSchema,
+) error {
+	auth, err := d.authQuery()
+	if err != nil {
+		return fmt.Errorf("getting auth query: %w", err)
 	}
 
 	objectsLocation, err := d.Uploader.GetSampleLoadFileLocation(ctx, tableName)
 	if err != nil {
-		return "", fmt.Errorf("getting sample load file location: %w", err)
+		return fmt.Errorf("getting sample load file location: %w", err)
 	}
 
-	var (
-		loadFolder        = d.getLoadFolder(objectsLocation)
-		tableSchemaDiff   = tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
-		sortedColumnNames = d.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
+	loadFolder := d.getLoadFolder(objectsLocation)
+	tableSchemaDiff := tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+	sortedColumnNames := d.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 
-		query          string
-		partitionQuery string
-	)
-
+	var copyStmt string
 	if d.Uploader.GetLoadFileType() == warehouseutils.LoadFileTypeParquet {
-		query = fmt.Sprintf(`
+		copyStmt = fmt.Sprintf(`
 			COPY INTO %s
 			FROM
 			  (
@@ -620,10 +672,11 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 			%s;`,
 			fmt.Sprintf(`%s.%s`, d.Namespace, stagingTableName),
 			sortedColumnNames,
-			loadFolder, auth,
+			loadFolder,
+			auth,
 		)
 	} else {
-		query = fmt.Sprintf(`
+		copyStmt = fmt.Sprintf(`
 			COPY INTO %s
 			FROM
 			  (
@@ -650,12 +703,19 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		)
 	}
 
-	if _, err = d.DB.ExecContext(ctx, query); err != nil {
-		return "", fmt.Errorf("running COPY command: %w", err)
+	if _, err := d.DB.ExecContext(ctx, copyStmt); err != nil {
+		return fmt.Errorf("executing copy query: %w", err)
 	}
+	return nil
+}
 
-	if d.ShouldAppend() {
-		query = fmt.Sprintf(`
+func (d *Deltalake) insertIntoLoadTable(
+	ctx context.Context,
+	tableName string,
+	stagingTableName string,
+	tableSchemaAfterUpload model.TableSchema,
+) (*types.LoadTableStats, error) {
+	insertStmt := fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
 			  %[4]s
@@ -679,20 +739,45 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 				  _rudder_staging_row_number = 1
 			  );
 		`,
-			d.Namespace,
-			tableName,
-			stagingTableName,
-			columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
-			primaryKey(tableName),
-		)
-	} else {
-		if partitionQuery, err = d.partitionQuery(ctx, tableName); err != nil {
-			return "", fmt.Errorf("getting partition query: %w", err)
-		}
+		d.Namespace,
+		tableName,
+		stagingTableName,
+		columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
+		primaryKey(tableName),
+	)
 
-		pk := primaryKey(tableName)
+	var rowsAffected, rowsInserted int64
+	err := d.DB.QueryRowContext(ctx, insertStmt).Scan(
+		&rowsAffected,
+		&rowsInserted,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("executing insert query: %w", err)
+	}
 
-		query = fmt.Sprintf(`
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted,
+	}, nil
+}
+
+func (d *Deltalake) mergeIntoLoadTable(
+	ctx context.Context,
+	tableName string,
+	stagingTableName string,
+	tableSchemaInUpload model.TableSchema,
+) (*types.LoadTableStats, error) {
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
+		tableSchemaInUpload,
+	)
+
+	partitionQuery, err := d.partitionQuery(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("getting partition query: %w", err)
+	}
+
+	pk := primaryKey(tableName)
+
+	mergeStmt := fmt.Sprintf(`
 			MERGE INTO %[1]s.%[2]s AS MAIN USING (
 			  SELECT
 				*
@@ -721,59 +806,31 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 			VALUES
 			  (%[7]s);
 		`,
-			d.Namespace,
-			tableName,
-			stagingTableName,
-			pk,
-			columnsWithValues(sortedColumnKeys),
-			columnNames(sortedColumnKeys),
-			stagingColumnNames(sortedColumnKeys),
-			partitionQuery,
-		)
-	}
-
-	row = d.DB.QueryRowContext(ctx, query)
-
-	var (
-		affected int64
-		updated  int64
-		deleted  int64
-		inserted int64
+		d.Namespace,
+		tableName,
+		stagingTableName,
+		pk,
+		columnsWithValues(sortedColumnKeys),
+		columnNames(sortedColumnKeys),
+		stagingColumnNames(sortedColumnKeys),
+		partitionQuery,
 	)
 
-	if d.ShouldAppend() {
-		err = row.Scan(&affected, &inserted)
-	} else {
-		err = row.Scan(&affected, &updated, &deleted, &inserted)
-	}
-
+	var rowsAffected, rowsUpdated, rowsDeleted, rowsInserted int64
+	err = d.DB.QueryRowContext(ctx, mergeStmt).Scan(
+		&rowsAffected,
+		&rowsUpdated,
+		&rowsDeleted,
+		&rowsInserted,
+	)
 	if err != nil {
-		return "", fmt.Errorf("scanning deduplication: %w", err)
-	}
-	if row.Err() != nil {
-		return "", fmt.Errorf("running deduplication: %w", row.Err())
+		return nil, fmt.Errorf("executing merge command: %w", err)
 	}
 
-	d.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-		"sourceID":       d.Warehouse.Source.ID,
-		"sourceType":     d.Warehouse.Source.SourceDefinition.Name,
-		"sourceCategory": d.Warehouse.Source.SourceDefinition.Category,
-		"destID":         d.Warehouse.Destination.ID,
-		"destType":       d.Warehouse.Destination.DestinationDefinition.Name,
-		"workspaceId":    d.Warehouse.WorkspaceID,
-		"tableName":      tableName,
-	}).Count(int(updated))
-
-	d.logger.Infow("completed loading",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-		logfield.TableName, tableName,
-	)
-	return stagingTableName, nil
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted,
+		RowsUpdated:  rowsUpdated,
+	}, nil
 }
 
 func tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema) warehouseutils.TableSchemaDiff {
@@ -786,7 +843,6 @@ func tableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSche
 			diff.ColumnMap[columnName] = columnType
 		}
 	}
-
 	return diff
 }
 
@@ -896,7 +952,10 @@ func (d *Deltalake) hasAWSCredentials() bool {
 
 // partitionQuery returns a query to fetch partitions for a table
 func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
-	if !d.config.enablePartitionPruning {
+	if !d.config.enablePartitionPruning || d.Uploader.ShouldOnDedupUseNewRecord() {
+		return "", nil
+	}
+	if d.Uploader.ShouldOnDedupUseNewRecord() {
 		return "", nil
 	}
 
@@ -958,7 +1017,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		logfield.Namespace, d.Namespace,
 	)
 
-	identifyStagingTable, err := d.loadTable(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
+	_, identifyStagingTable, err := d.loadTable(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading table %s: %w", warehouseutils.IdentifiesTable, err),
@@ -1107,7 +1166,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		inserted int64
 	)
 
-	if d.config.loadTableStrategy == appendMode {
+	if d.ShouldAppend() {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
@@ -1215,27 +1274,6 @@ func (d *Deltalake) TestConnection(ctx context.Context, _ model.Warehouse) error
 // DownloadIdentityRules downloadchecking if schema exists identity rules
 func (*Deltalake) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
 	return nil
-}
-
-// GetTotalCountInTable returns the total count in the table
-func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
-	query := fmt.Sprintf(`
-		SELECT COUNT(*) FROM %[1]s.%[2]s;
-	`,
-		d.Namespace,
-		tableName,
-	)
-
-	var total int64
-	err := d.DB.QueryRowContext(ctx, query).Scan(&total)
-	if err != nil {
-		if strings.Contains(err.Error(), schemaNotFound) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("total count in table: %w", err)
-	}
-
-	return total, nil
 }
 
 // Connect returns Client

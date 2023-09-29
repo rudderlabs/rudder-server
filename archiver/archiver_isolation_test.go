@@ -98,11 +98,10 @@ func dummyConfig(
 					ID:       "someSourceDefinitionID",
 					Category: "someCategory",
 				},
-				WriteKey:            trand.String(10),
-				Transient:           false,
-				EventSchemasEnabled: false,
-				Enabled:             true,
-				WorkspaceID:         workspaceID,
+				WriteKey:    trand.String(10),
+				Transient:   false,
+				Enabled:     true,
+				WorkspaceID: workspaceID,
 			})
 		}
 		configMap[workspaceID] = wConfig

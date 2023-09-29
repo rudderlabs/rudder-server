@@ -272,5 +272,6 @@ var SampleBackendConfig = backendconfig.ConfigT{
 		DataRetention: backendconfig.DataRetention{
 			DisableReportingPII: true,
 		},
+		EventAuditEnabled: false,
 	},
 }

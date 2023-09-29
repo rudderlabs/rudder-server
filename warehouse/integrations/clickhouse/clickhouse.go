@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -688,7 +690,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			var record []string
 			record, err = csvReader.Read()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					ch.logger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				}
@@ -1033,9 +1035,25 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 	return
 }
 
-func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
-	err := ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
-	return err
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+	preLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("pre load table count: %w", err)
+	}
+
+	err = ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
+	if err != nil {
+		return nil, fmt.Errorf("loading table: %w", err)
+	}
+
+	postLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("post load table count: %w", err)
+	}
+
+	return &types.LoadTableStats{
+		RowsInserted: postLoadTableCount - preLoadTableCount,
+	}, nil
 }
 
 func (ch *Clickhouse) Cleanup(context.Context) {
@@ -1060,7 +1078,7 @@ func (*Clickhouse) IsEmpty(context.Context, model.Warehouse) (empty bool, err er
 	return
 }
 
-func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (int64, error) {
 	var (
 		total        int64
 		err          error
