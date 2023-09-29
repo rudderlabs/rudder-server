@@ -4,9 +4,9 @@ package router
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -131,17 +131,29 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				if !ok {
 					return &utils.SendPostResponse{
 						StatusCode:   400,
-						ResponseBody: []byte("400 Unable to construct gzip payload. Unexpected transformer response"),
+						ResponseBody: []byte("400 Unable to parse json list. Unexpected transformer response"),
 					}
 				}
-				zippedData, err := base64.StdEncoding.DecodeString(strValue)
+				var buf bytes.Buffer
+				zw := gzip.NewWriter(&buf)
+				defer zw.Close()
+
+				_, err := zw.Write([]byte(strValue))
 				if err != nil {
 					return &utils.SendPostResponse{
 						StatusCode:   400,
-						ResponseBody: []byte("400 Unable to decode gzip data. Unexpected transformer response"),
+						ResponseBody: []byte("400 Unable to compress data. Unexpected response"),
 					}
 				}
-				payload = bytes.NewBuffer(zippedData)
+				err = zw.Flush()
+				if err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to flush compressed data. Unexpected response"),
+					}
+				}
+
+				payload = &buf
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
 			}
@@ -175,6 +187,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
+		if bodyFormat == "GZIP" {
+			req.Header.Add("Content-Encoding", "gzip")
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +13,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
@@ -34,14 +33,6 @@ func (c *networkContext) Setup() {
 
 func (c *networkContext) Finish() {
 	c.mockCtrl.Finish()
-}
-
-func gzipAndEncodeBase64(data []byte) string {
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	_, _ = zw.Write(data)
-	_ = zw.Close()
-	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
 func TestSendPostWithGzipData(t *testing.T) {
@@ -65,54 +56,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
-		eventData := []byte(`[{"event":"Signed Up"}]`)
+		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.URL = testServer.URL
-		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
-				"payload": gzipAndEncodeBase64(eventData),
-			},
-		}
-		structData.Headers = map[string]interface{}{
-			"Content-Encoding": "gzip",
-		}
-
-		resp := network.SendPost(context.Background(), structData)
-		assert.Equal(r, resp.StatusCode, http.StatusOK)
-		assert.Equal(r, resp.ResponseBody, eventData)
-	})
-
-	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
-		network := &netHandle{}
-		network.logger = logger.NewLogger().Child("network")
-		network.httpClient = http.DefaultClient
-		eventData := []byte(`[{"event":"Signed Up"}]`)
-		var structData integrations.PostParametersT
-		structData.RequestMethod = "POST"
-		structData.Type = "REST"
-		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
-				"abc": gzipAndEncodeBase64(eventData),
-			},
-		}
-
-		resp := network.SendPost(context.Background(), structData)
-		assert.Equal(r, resp.StatusCode, http.StatusBadRequest)
-		assert.Equal(r, resp.ResponseBody, []byte("400 Unable to construct gzip payload. Unexpected transformer response"))
-	})
-
-	t.Run("should fail to send Gzip data when payload is invalid", func(r *testing.T) {
-		network := &netHandle{}
-		network.logger = logger.NewLogger().Child("network")
-		network.httpClient = http.DefaultClient
-		eventData := "Signed up"
-		var structData integrations.PostParametersT
-		structData.RequestMethod = "POST"
-		structData.Type = "REST"
 		structData.UserID = "anon_id"
 		structData.Body = map[string]interface{}{
 			"GZIP": map[string]interface{}{
@@ -121,8 +69,28 @@ func TestSendPostWithGzipData(t *testing.T) {
 		}
 
 		resp := network.SendPost(context.Background(), structData)
-		assert.Equal(r, resp.StatusCode, http.StatusBadRequest)
-		assert.Equal(r, resp.ResponseBody, []byte("400 Unable to decode gzip data. Unexpected transformer response"))
+		require.Equal(r, resp.StatusCode, http.StatusOK)
+		require.Equal(r, string(resp.ResponseBody), eventData)
+	})
+
+	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		eventData := `[{"event":"Signed Up"}]`
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"abc": eventData,
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
+		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
 	})
 }
 
