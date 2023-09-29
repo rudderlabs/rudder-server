@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -185,7 +186,7 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 
 	err = row.Scan(&namespace)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {

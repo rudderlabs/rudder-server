@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/samber/lo"
 
@@ -57,6 +58,7 @@ type GRPC struct {
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
 	uploadRepo         *repo.Uploads
+	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
 
 	config struct {
@@ -78,6 +80,7 @@ func NewGRPCServer(
 	db *sqlmw.DB,
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
+	triggerStore *sync.Map,
 ) (*GRPC, error) {
 	g := &GRPC{
 		logger:             logger.Child("grpc"),
@@ -86,6 +89,7 @@ func NewGRPCServer(
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db),
+		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 	}
 
@@ -385,7 +389,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}
 
 	for _, warehouse := range wh {
-		triggerUpload(warehouse)
+		g.triggerStore.Store(warehouse.Identifier, struct{}{})
 	}
 
 	// TODO: Remove http status code and use grpc status code. Since it requires compatibility on the cp router side, leaving it as it is for now.

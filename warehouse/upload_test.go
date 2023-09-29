@@ -82,8 +82,6 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 }
 
 func TestColumnCountStat(t *testing.T) {
-	Init4()
-
 	var (
 		workspaceID     = "test-workspaceID"
 		destinationID   = "test-destinationID"
@@ -187,8 +185,6 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 	t.Parallel()
 
-	Init4()
-
 	var (
 		testNamespace       = "test_namespace"
 		testTable           = "test_table"
@@ -253,7 +249,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						conf:         config.Default,
 						logger:       logger.NOP,
 						statsFactory: stats.Default,
-						dbHandle:     sqlmiddleware.New(pgResource.DB),
+						db:           sqlmiddleware.New(pgResource.DB),
 					}
 
 					job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -329,7 +325,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 				conf:         config.Default,
 				logger:       logger.NOP,
 				statsFactory: stats.Default,
-				dbHandle:     sqlmiddleware.New(pgResource.DB),
+				db:           sqlmiddleware.New(pgResource.DB),
 			}
 
 			job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
