@@ -230,7 +230,8 @@ func (brt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Updat
 
 func getDrainedAndOtherStatuses(statuses []*jobsdb.JobStatusT) (
 	drainedStatuses []*jobsdb.JobStatusT,
-	otherStatuses []*jobsdb.JobStatusT) {
+	otherStatuses []*jobsdb.JobStatusT,
+) {
 	drainedStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
 	otherStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
 
