@@ -1,68 +1,56 @@
 package warehouseutils
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
 
 var (
-	// queryTypeIndex works for both regexes as long as the groups order is not changed
-	queryTypeIndex int
-	queryTypeRegex *regexp.Regexp
-
-	unknownQueryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>\w+)\s+`)
+	queryTypeIndexes map[int]string
+	queryTypeRegex   *regexp.Regexp
 )
 
 func init() {
-	tokens := []string{
-		"SELECT", "UPDATE", "DELETE FROM", "INSERT INTO", "COPY",
-		"CREATE TEMP TABLE", "CREATE TEMPORARY TABLE",
-		"CREATE DATABASE", "CREATE SCHEMA", "CREATE TABLE", "CREATE INDEX",
-		"ALTER TABLE", "ALTER SESSION",
-		"DROP TABLE",
+	regexes := []string{
+		"(?P<SELECT>SELECT)",
+		"(?P<UPDATE>UPDATE\\s+.*SET)",
+		"(?P<DELETE_FROM>DELETE\\s+FROM)",
+		"(?P<INSERT_INTO>INSERT\\s+INTO)",
+		"(?P<COPY>COPY)",
+		"(?P<MERGE_INTO>MERGE\\s+INTO)",
+		"(?P<CREATE_TEMP_TABLE>CREATE\\s+TEMP(?:ORARY)*\\s+TABLE)",
+		"(?P<CREATE_DATABASE>CREATE\\s+DATABASE)",
+		"(?P<CREATE_SCHEMA>CREATE\\s+SCHEMA)",
+		"(?P<CREATE_TABLE>(?:IF\\s+NOT\\s+EXISTS\\s+.*)*CREATE\\s+(?:OR\\s+REPLACE\\s+)*TABLE)",
+		"(?P<CREATE_INDEX>CREATE\\s+INDEX)",
+		"(?P<ALTER_TABLE>ALTER\\s+TABLE)",
+		"(?P<ALTER_SESSION>ALTER\\s+SESSION)",
+		"(?P<DROP_TABLE>(?:IF\\s+.*)*DROP\\s+TABLE)",
+		"(?P<SHOW_TABLES>SHOW\\s+TABLES)",
+		"(?P<SHOW_PARTITIONS>SHOW\\s+PARTITIONS)",
+		"(?P<DESCRIBE_TABLE>DESCRIBE\\s+(?:QUERY\\s+)*TABLE)",
+		"(?P<SET_TO>SET\\s+.*\\s+TO)",
 	}
-	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>` + strings.Join(tokens, "|") + `)\s+`)
 
-	var found bool
-	for i, name := range queryTypeRegex.SubexpNames() {
-		if name == "type" {
-			found = true
-			queryTypeIndex = i
-			break
+	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(` + strings.Join(regexes, "|") + `)\s+`)
+
+	queryTypeIndexes = make(map[int]string)
+	for i, n := range queryTypeRegex.SubexpNames() {
+		if n != "" {
+			queryTypeIndexes[i] = n
 		}
-	}
-	if !found {
-		panic(fmt.Errorf("warehouseutils: query type index not found"))
 	}
 }
 
 // GetQueryType returns the type of the query.
 func GetQueryType(query string) (string, bool) {
-	var (
-		expected  bool
-		queryType = ""
-		submatch  = queryTypeRegex.FindStringSubmatch(query)
-	)
-
-	if len(submatch) > queryTypeIndex {
-		expected = true
-		queryType = strings.ToUpper(submatch[queryTypeIndex])
-		if queryType == "CREATE TEMPORARY TABLE" {
-			queryType = "CREATE TEMP TABLE"
+	for i, match := range queryTypeRegex.FindStringSubmatch(query) {
+		if match == "" {
+			continue
+		}
+		if queryType, ok := queryTypeIndexes[i]; ok {
+			return queryType, true
 		}
 	}
-
-	if queryType == "" { // get the first word
-		submatch = unknownQueryTypeRegex.FindStringSubmatch(query)
-		if len(submatch) > queryTypeIndex {
-			queryType = strings.ToUpper(submatch[queryTypeIndex])
-		}
-	}
-
-	if queryType == "" {
-		queryType = "UNKNOWN"
-	}
-
-	return queryType, expected
+	return "UNKNOWN", false
 }
