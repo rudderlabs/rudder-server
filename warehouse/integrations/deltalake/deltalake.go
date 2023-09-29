@@ -899,6 +899,9 @@ func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (strin
 	if !d.config.enablePartitionPruning {
 		return "", nil
 	}
+	if d.Uploader.ShouldOnDedupUseNewRecord() {
+		return "", nil
+	}
 
 	query := fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
 	rows, err := d.DB.QueryContext(ctx, query)
