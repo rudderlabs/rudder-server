@@ -520,13 +520,14 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 		return conf["database"].(string)
 	}
 
+	configuredNamespace := defaultNamespace
 	if conf["namespace"] != nil {
-		namespace := conf["namespace"].(string)
-		if len(strings.TrimSpace(namespace)) > 0 {
-			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+		confNamespace := strings.TrimSpace(conf["namespace"].(string))
+		if len(confNamespace) > 0 {
+			configuredNamespace = confNamespace
 		}
 	}
-	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, configuredNamespace))
 }
 
 func getTable(dest *backendconfig.DestinationT) string {

@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	namespace = "rudderstack_setup_test"
-	table     = "setup_test_staging"
+	defaultNamespace = "rudderstack_setup_test"
+	table            = "setup_test_staging"
 )
 
 var (
