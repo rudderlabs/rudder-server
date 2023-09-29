@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -13,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse"
 )
 
 func (brt *Handle) collectMetrics(ctx context.Context) {
@@ -133,14 +134,14 @@ func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output Uplo
 		jobState = jobsdb.Failed.State
 		errorCode = "500"
 		if isWarehouse {
-			jobState = warehouse.GeneratingStagingFileFailedState
+			jobState = router.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponse{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		errorCode = "200"
 		if isWarehouse {
-			jobState = warehouse.GeneratedStagingFileState
+			jobState = router.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}

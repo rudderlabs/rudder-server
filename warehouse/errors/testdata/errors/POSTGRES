@@ -1,0 +1,9 @@
+{"fetching_remote_schema_failed":{"attempt":2,"errors":["dial tcp: lookup *** on ***: no such host"]}}
+{"fetching_remote_schema_failed":{"attempt":4,"errors":["dial tcp ***: connect: connection refused"]}}
+{"fetching_remote_schema_failed":{"attempt":5,"errors":["pq: database *** does not exist"]}}
+{"exporting_data_failed":{"attempt":1,"errors":["failed to add columns for table *** in namespace *** of destination POSTGRES:*** with error: pq: tables can have at most 1600 columns"]}}
+{"exporting_data_failed":{"attempt":1,"errors":["pq: the database system is starting up"]}}
+{"exporting_data_failed":{"attempt":1,"errors":["pq: the database system is shutting down"]}}
+{"fetching_remote_schema_failed":{"attempt":10,"errors":["pq: password authentication failed for user ***"]}}
+{"exporting_data_failed":{"attempt":1,"errors":["pq: relation *** does not exist"]}}
+{"exporting_data_failed":{"attempt":1,"errors":["pq: cannot set transaction read-write mode during recovery"]}}

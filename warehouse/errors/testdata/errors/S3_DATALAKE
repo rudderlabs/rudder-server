@@ -1,0 +1,2 @@
+{"creating_remote_schema_failed":{"attempt":6,"errors":["AccessDeniedException: Insufficient Lake Formation permission(s): Required Create Database on Catalog"]}}
+{"fetching_remote_schema_failed":{"errors":["AccessDeniedException: User: *** is not authorized to perform: *** on resource: *** because no identity-based policy allows the *** action"],"attempt":5}}

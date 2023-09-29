@@ -1,0 +1,14 @@
+{"internal_processing_failed":{"attempt":1,"errors":["SF: snowflake alter session error : (390201 (08004): The requested warehouse does not exist or not authorized.)"]}}
+{"internal_processing_failed":{"attempt":9,"errors":["SF: snowflake alter session error : (390420 (08004): IP *** is not allowed to access Snowflake. Contact your local security administrator or please create a case with Snowflake Support or reach us on our support line"]}}
+{"internal_processing_failed":{"attempt":5,"errors":["SF: snowflake alter session error : (390201 (08004): The requested database does not exist or not authorized.)"]}}
+{"internal_processing_failed":{"attempt":3,"errors":["SF: snowflake alter session error : (260008 (08004): failed to connect to db. verify account name is correct.)"]}}
+{"exporting_data_failed":{"attempt":5,"errors":["failed to add columns for table *** in namespace *** of destination *** with error: 003001 (42501): SQL access control error:\nInsufficient privileges to operate on table"]}}
+{"internal_processing_failed":{"attempt":6,"errors":["SF: snowflake alter session error : (390100 (08004): Incorrect username or password was specified.)"]}}
+{"internal_processing_failed":{"attempt":4,"errors":["SF: snowflake alter session error : (390102 (08004): User temporarily locked. Contact your local system administrator or please create a case with Snowflake Support or reach us on our support line"]}}
+{"creating_remote_schema_failed":{"attempt":5,"errors":["003041 (42710): SQL compilation error:Schema *** already exists, but current role has no privileges on it. If this is unexpected and you cannot resolve this problem, contact your system administrator. ACCOUNTADMIN role may be required to manage the privileges on the object."]}}
+{"fetching_remote_schema_failed":{"attempt":5,"errors":["090073 (22000): Warehouse *** cannot be resumed because resource monitor *** has exceeded its quota."]}}
+{"internal_processing_failed":{"attempt":8,"errors":["SF: snowflake alter session error : (390913 (08004): Your free trial has ended and all of your virtual warehouses have been suspended. Add billing information in the Snowflake web UI to continue using the full set of Snowflake features.)"]}}
+{"exporting_data_failed":{"attempt":2,"errors":["001757 (42601): SQL compilation error:\nTable *** does not exist]}}
+{"exporting_data_failed":{"attempt":1,"errors":["091003 (22000): Failure using stage area. Cause: [The AWS Access Key Id you provided is not valid.]"]}}
+{"exporting_data_failed":{"attempt":4,"errors":["003127 (42601): SQL compilation error:Location *** is not allowed by integration ***. Please use DESC INTEGRATION to check out allowed and blocked locations."]}}
+{"exporting_data_failed":{"attempt":4,"errors":["load table: copy into table: 090084 (22000): Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit."]}}
