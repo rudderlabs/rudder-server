@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -109,6 +110,22 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
+	if isOAuthEnabled && isAuthStatusInactiveErrorCategory(jobResp) {
+		dest := &backendconfig.DestinationT{
+			ID:     destination.DestinationID,
+			Config: destination.Config,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Name:   destination.Name,
+				Config: destination.DestDefConfig,
+			},
+		}
+		stCode, response := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
+		jobStatus.Status = model.JobStatusAborted
+		if stCode != http.StatusOK {
+			jobStatus.Error = fmt.Errorf(response)
+		}
+		return jobStatus
+	}
 	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
@@ -163,6 +180,15 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 func isTokenExpired(jobResponses []JobRespSchema) bool {
 	for _, jobResponse := range jobResponses {
 		if jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN {
+			return true
+		}
+	}
+	return false
+}
+
+func isAuthStatusInactiveErrorCategory(jobResponses []JobRespSchema) bool {
+	for _, jobResponse := range jobResponses {
+		if jobResponse.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
 			return true
 		}
 	}

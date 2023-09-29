@@ -580,6 +580,112 @@ func TestOAuth(t *testing.T) {
 			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] invalid credentials")},
 			expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
 		},
+
+		{
+			name: "when AUTH_STATUS_INACTIVE error happens & authStatus/toggle success, fail the job with Failed status",
+			job: model.Job{
+				ID:            15,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798475",
+						Attributes: map[string]string{
+							"phone": "7463633841",
+							"email": "dreymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      400,
+					jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				},
+			},
+
+			cpResponses: []cpResponseParams{
+				// fetch token http request
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// authStatus inactive http request
+				{
+					code: 200,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("error: code: 400, body: [{failed User does not have sufficient permissions AUTH_STATUS_INACTIVE}]")},
+			expectedPayload:      `[{"jobId":"15","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dreymore@gmail.com","phone":"7463633841","userId":"203984798475"}]}]`,
+		},
+		{
+			name: "when AUTH_STATUS_INACTIVE error happens but authStatus/toggle failed, fail the job with Failed status",
+			job: model.Job{
+				ID:            16,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798476",
+						Attributes: map[string]string{
+							"phone": "8463633841",
+							"email": "greymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      400,
+					jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				},
+			},
+
+			cpResponses: []cpResponseParams{
+				// fetch token http request
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// authStatus inactive http request
+				{
+					code:     400,
+					response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Could not update authStatus to inactive for destination: AuthStatus toggle skipped as already request in-progress: (1234, 1001)")},
+			expectedPayload:      `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -647,6 +753,37 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
 		// iterating over request parameters
 		for _, reqParam := range []string{"workspaceId", "accountId"} {
+			param := chi.URLParam(req, reqParam)
+			if param == "" {
+				// This case wouldn't occur I guess
+				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		cpResp := cpRespProducer.GetNext()
+		// sleep is being used to mimic the waiting in actual transformer response
+		if cpResp.timeout > 0 {
+			time.Sleep(cpResp.timeout)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(cpResp.code)
+		// Lint error fix
+		_, err := w.Write([]byte(cpResp.response))
+		if err != nil {
+			fmt.Printf("I'm here!!!! Some shitty response!!")
+			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	srvMux.HandleFunc("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPut {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// iterating over request parameters
+		for _, reqParam := range []string{"workspaceId", "destinationId"} {
 			param := chi.URLParam(req, reqParam)
 			if param == "" {
 				// This case wouldn't occur I guess
