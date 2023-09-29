@@ -599,6 +599,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		}
 
 		timeElapsed := time.Since(firstAttemptedAt)
+		errorCode := ""
 		switch jobState {
 		case jobsdb.Failed.State:
 			if !notifyWarehouseErr && timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
@@ -606,6 +607,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
 				jobState = jobsdb.Aborted.State
+				errorCode = router_utils.DRAIN_ERROR_CODE
 			}
 			if notifyWarehouseErr && isWarehouse {
 				// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -615,6 +617,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
 					jobState = jobsdb.Aborted.State
+					errorCode = router_utils.DRAIN_ERROR_CODE
 				}
 				brt.warehouseServiceFailedTimeMu.RUnlock()
 			}
@@ -630,7 +633,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			JobState:      jobState,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
-			ErrorCode:     "",
+			ErrorCode:     errorCode,
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
 			JobParameters: job.Parameters,

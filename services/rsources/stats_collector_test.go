@@ -11,6 +11,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -35,6 +36,99 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
+	})
+
+	When("only some failed records are to be stored", func() {
+		Context("all statuses are stored - some succeed, some abort", func() {
+			var (
+				successStatuses []*jobsdb.JobStatusT
+				abortStatuses   []*jobsdb.JobStatusT
+				jobsList        []*jobsdb.JobT
+				params          jobParams
+			)
+			BeforeEach(func() {
+				params = jobParams{
+					JobRunID:      "jobRunId",
+					TaskRunID:     "taskRunId",
+					SourceID:      "sourceId",
+					DestinationID: "destinationId",
+				}
+
+				for i := 0; i < 10; i++ {
+					jobsList = append(jobsList, generateJobs(1, jobParams{
+						JobRunID:      "jobRunId",
+						TaskRunID:     "taskRunId",
+						SourceID:      "sourceId",
+						DestinationID: "destinationId",
+						RecordID:      "recordId-" + fmt.Sprint(i),
+					})...)
+					jobsList[i].JobID = int64(i)
+				}
+				for i := 0; i < 4; i++ {
+					successStatuses = append(successStatuses, newSucceededStatus(jobsList[i].JobID))
+				}
+				for i := 4; i < len(jobsList); i++ {
+					abortStatuses = append(abortStatuses, newAbortedStatus(jobsList[i].JobID))
+				}
+			})
+
+			Context("only some failed records are worth storing", func() {
+				var (
+					failedRecordJobIDsOfInterest = []int64{4, 5, 6}
+					statusesOfInterest           []*jobsdb.JobStatusT
+					otherStatuses                []*jobsdb.JobStatusT
+				)
+				BeforeEach(func() {
+					allStatuses := append(successStatuses, abortStatuses...)
+					statusesOfInterest = lo.Filter(allStatuses, func(js *jobsdb.JobStatusT, _ int) bool {
+						return lo.Contains(failedRecordJobIDsOfInterest, js.JobID)
+					})
+					otherStatuses = lo.Filter(allStatuses, func(js *jobsdb.JobStatusT, _ int) bool {
+						return !lo.Contains(failedRecordJobIDsOfInterest, js.JobID)
+					})
+				})
+				It("should be able to only collect failed records of interest", func() {
+					statsCollector.BeginProcessing(jobsList)
+					statsCollector.JobStatusesUpdated(statusesOfInterest)
+					statsCollector.SkipFailedRecords()
+					statsCollector.JobStatusesUpdated(otherStatuses)
+
+					// check that only failed records of interest are stored
+					// but stats for all jobs are collected
+					js.EXPECT().
+						IncrementStats(
+							gomock.Any(),
+							gomock.Any(),
+							params.JobRunID,
+							JobTargetKey{
+								TaskRunID:     params.TaskRunID,
+								SourceID:      params.SourceID,
+								DestinationID: params.DestinationID,
+							},
+							Stats{
+								In:     0,
+								Out:    uint(len(successStatuses)),
+								Failed: uint(len(abortStatuses)),
+							},
+						).Times(1)
+					js.EXPECT().
+						AddFailedRecords(
+							gomock.Any(),
+							gomock.Any(),
+							params.JobRunID,
+							JobTargetKey{
+								TaskRunID:     params.TaskRunID,
+								SourceID:      params.SourceID,
+								DestinationID: params.DestinationID,
+							},
+							[]json.RawMessage{[]byte(`"recordId-4"`), []byte(`"recordId-5"`), []byte(`"recordId-6"`)},
+						).
+						Times(1)
+					err := statsCollector.Publish(context.Background(), nil)
+					Expect(err).To(BeNil())
+				})
+			})
+		})
 	})
 
 	When("there are rudder-sources jobs", func() {

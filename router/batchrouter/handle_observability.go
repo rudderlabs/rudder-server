@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -214,14 +215,34 @@ func (brt *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (brt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+	drainedStatuses, otherStatuses := getDrainedAndOtherStatuses(jobStatuses)
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	rsourcesStats.JobStatusesUpdated(drainedStatuses)
+	rsourcesStats.SkipFailedRecords()
+	rsourcesStats.JobStatusesUpdated(otherStatuses)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)
 	}
 	return nil
+}
+
+func getDrainedAndOtherStatuses(statuses []*jobsdb.JobStatusT) (
+	drainedStatuses []*jobsdb.JobStatusT,
+	otherStatuses []*jobsdb.JobStatusT) {
+	drainedStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
+	otherStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
+
+	for _, status := range statuses {
+		if status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
+			status.JobState == jobsdb.Aborted.State {
+			drainedStatuses = append(drainedStatuses, status)
+		} else {
+			otherStatuses = append(otherStatuses, status)
+		}
+	}
+	return
 }
 
 func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {

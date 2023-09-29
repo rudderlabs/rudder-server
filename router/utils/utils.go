@@ -17,7 +17,7 @@ import (
 var EmptyPayload = []byte(`{}`)
 
 const (
-	DRAIN_ERROR_CODE int = 410
+	DRAIN_ERROR_CODE = "410"
 	// transformation(router or batch)
 	ERROR_AT_TF = "transformation"
 	// event delivery

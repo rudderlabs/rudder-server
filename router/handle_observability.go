@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
@@ -84,15 +85,44 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 	}
 }
 
-func (rt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+func (rt *Handle) updateRudderSourcesStats(
+	ctx context.Context,
+	tx jobsdb.UpdateSafeTx,
+	workerJobStatuses []workerJobStatus,
+) error {
+	jobs, drainedStatuses, otherStatuses := getDrainedAndOtherJobsStatuses(workerJobStatuses)
+
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	rsourcesStats.JobStatusesUpdated(drainedStatuses)
+	rsourcesStats.SkipFailedRecords()
+	rsourcesStats.JobStatusesUpdated(otherStatuses)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
 	return err
+}
+
+func getDrainedAndOtherJobsStatuses(workerJobStatuses []workerJobStatus) (
+	jobs []*jobsdb.JobT,
+	drainedStatuses []*jobsdb.JobStatusT,
+	otherStatuses []*jobsdb.JobStatusT,
+) {
+	jobs = make([]*jobsdb.JobT, 0, len(workerJobStatuses))
+	drainedStatuses = make([]*jobsdb.JobStatusT, 0, len(workerJobStatuses))
+	otherStatuses = make([]*jobsdb.JobStatusT, 0, len(workerJobStatuses))
+
+	for _, wj := range workerJobStatuses {
+		jobs = append(jobs, wj.job)
+		if wj.status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
+			wj.status.JobState == jobsdb.Aborted.State {
+			drainedStatuses = append(drainedStatuses, wj.status)
+		} else {
+			otherStatuses = append(otherStatuses, wj.status)
+		}
+	}
+	return
 }
 
 func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {

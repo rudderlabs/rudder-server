@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strconv"
 	"testing"
 	"time"
 
@@ -676,7 +675,7 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, strconv.Itoa(routerUtils.DRAIN_ERROR_CODE), fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
+					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, routerUtils.DRAIN_ERROR_CODE, fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
 					routerAborted = true
 				})
 
@@ -2035,4 +2034,108 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			assert.Equal(testT, tc.expectedAlertFlagValue, output)
 		})
 	}
+}
+
+func TestGetDrainedAndOtherJobsStatuses(t *testing.T) {
+	t.Run("empty input", func(t *testing.T) {
+		j, ds, os := getDrainedAndOtherJobsStatuses([]workerJobStatus{})
+		require.Equal(t, []*jobsdb.JobT{}, j)
+		require.Equal(t, []*jobsdb.JobStatusT{}, ds)
+		require.Equal(t, []*jobsdb.JobStatusT{}, os)
+	})
+	t.Run("one aborted but non-drained workerJobStatus", func(t *testing.T) {
+		job := &jobsdb.JobT{JobID: 1}
+		abortedStatus := &jobsdb.JobStatusT{
+			JobID:     1,
+			JobState:  jobsdb.Aborted.State,
+			ErrorCode: "400",
+		}
+		j, ds, os := getDrainedAndOtherJobsStatuses([]workerJobStatus{
+			{job: job, status: abortedStatus},
+		})
+		require.Equal(t, []*jobsdb.JobT{job}, j)
+		require.Equal(t, []*jobsdb.JobStatusT{}, ds)
+		require.Equal(t, []*jobsdb.JobStatusT{abortedStatus}, os)
+	})
+	t.Run("one aborted workerJobStatus that was drained", func(t *testing.T) {
+		job := &jobsdb.JobT{JobID: 1}
+		abortedStatus := &jobsdb.JobStatusT{
+			JobID:     1,
+			JobState:  jobsdb.Aborted.State,
+			ErrorCode: "410",
+		}
+		j, ds, os := getDrainedAndOtherJobsStatuses([]workerJobStatus{
+			{job: job, status: abortedStatus},
+		})
+		require.Equal(t, []*jobsdb.JobT{job}, j)
+		require.Equal(t, []*jobsdb.JobStatusT{abortedStatus}, ds)
+		require.Equal(t, []*jobsdb.JobStatusT{}, os)
+	})
+	t.Run(
+		"one aborted workerJobStatus that was drained and one aborted workerJobStatus that was not drained",
+		func(t *testing.T) {
+			jobs := []*jobsdb.JobT{{JobID: 1}, {JobID: 2}}
+			statuses := []*jobsdb.JobStatusT{
+				{
+					JobID:     1,
+					JobState:  jobsdb.Aborted.State,
+					ErrorCode: "410",
+				},
+				{
+					JobID:     2,
+					JobState:  jobsdb.Aborted.State,
+					ErrorCode: "400",
+				},
+			}
+			j, ds, os := getDrainedAndOtherJobsStatuses([]workerJobStatus{
+				{
+					job:    jobs[0],
+					status: statuses[0],
+				},
+				{
+					job:    jobs[1],
+					status: statuses[1],
+				},
+			})
+			require.Equal(t, jobs, j)
+			require.Equal(t, []*jobsdb.JobStatusT{statuses[0]}, ds)
+			require.Equal(t, []*jobsdb.JobStatusT{statuses[1]}, os)
+		})
+	t.Run("one drained, one succeeded, one non-drain abort", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}}
+		statuses := []*jobsdb.JobStatusT{
+			{
+				JobID:     1,
+				JobState:  jobsdb.Aborted.State,
+				ErrorCode: "410",
+			},
+			{
+				JobID:     2,
+				JobState:  jobsdb.Aborted.State,
+				ErrorCode: "400",
+			},
+			{
+				JobID:     3,
+				JobState:  jobsdb.Succeeded.State,
+				ErrorCode: "200",
+			},
+		}
+		j, ds, os := getDrainedAndOtherJobsStatuses([]workerJobStatus{
+			{
+				job:    jobs[0],
+				status: statuses[0],
+			},
+			{
+				job:    jobs[1],
+				status: statuses[1],
+			},
+			{
+				job:    jobs[2],
+				status: statuses[2],
+			},
+		})
+		require.Equal(t, jobs, j)
+		require.Equal(t, []*jobsdb.JobStatusT{statuses[0]}, ds)
+		require.Equal(t, []*jobsdb.JobStatusT{statuses[1], statuses[2]}, os)
+	})
 }

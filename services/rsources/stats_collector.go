@@ -39,6 +39,14 @@ type StatsCollector interface {
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
 	JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT)
+
+	// SkipFailedRecords skips the collection of failed records
+	//
+	// Any further calls to `JobsStoredWithErrors`, `BeginProcessing` and `JobStatusesUpdated`
+	// will not collect failed records
+	//
+	// Make sure required failed records are collected before calling this method
+	SkipFailedRecords()
 }
 
 // FailedJobsStatsCollector collects stats for failed jobs
@@ -157,9 +165,11 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 					stats.Out++
 				case jobsdb.Aborted.State:
 					stats.Failed++
-					recordId := r.jobIdsToRecordIdIndex[jobStatus.JobID]
-					if len(recordId) > 0 {
-						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], recordId)
+					if !r.skipFailedRecords {
+						recordId := r.jobIdsToRecordIdIndex[jobStatus.JobID]
+						if len(recordId) > 0 {
+							r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], recordId)
+						}
 					}
 				}
 			}
@@ -262,4 +272,8 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 			}
 		}
 	}
+}
+
+func (r *statsCollector) SkipFailedRecords() {
+	r.skipFailedRecords = true
 }

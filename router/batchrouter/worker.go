@@ -82,7 +82,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     "",
+					ErrorCode:     router_utils.DRAIN_ERROR_CODE,
 					ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 					Parameters:    []byte(`{}`), // check
 					JobParameters: job.Parameters,

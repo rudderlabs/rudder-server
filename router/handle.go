@@ -278,7 +278,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
-	var completedJobsList []*jobsdb.JobT
+	var rSourcesJobsList []workerJobStatus
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, workerJobStatus := range *workerJobStatuses {
@@ -323,12 +323,12 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		case jobsdb.Succeeded.State, jobsdb.Filtered.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
-			completedJobsList = append(completedJobsList, workerJobStatus.job)
+			rSourcesJobsList = append(rSourcesJobsList, workerJobStatus)
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			routerAbortedJobs = append(routerAbortedJobs, workerJobStatus.job)
-			completedJobsList = append(completedJobsList, workerJobStatus.job)
+			rSourcesJobsList = append(rSourcesJobsList, workerJobStatus)
 		}
 
 		// REPORTING - ROUTER - END
@@ -399,7 +399,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				}
 
 				// rsources stats
-				err = rt.updateRudderSourcesStats(ctx, tx, completedJobsList, statusList)
+				err = rt.updateRudderSourcesStats(ctx, tx, rSourcesJobsList)
 				if err != nil {
 					return err
 				}

@@ -105,7 +105,7 @@ func (w *worker) workLoop() {
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     strconv.Itoa(routerutils.DRAIN_ERROR_CODE),
+					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
 					Parameters:    routerutils.EmptyPayload,
 					JobParameters: job.Parameters,
 					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
