@@ -256,7 +256,7 @@ func (as *AzureSynapse) loadTable(
 	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
 	// - Refer to Microsoft's documentation on temporary tables at
 	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		SELECT
 		  TOP 0 * INTO %[1]s.%[2]s
@@ -298,7 +298,7 @@ func (as *AzureSynapse) loadTable(
 		return !slices.Contains(sortedColumnKeys, item)
 	})
 
-	log.Infow("creating prepared stmt for loading data")
+	log.Debugw("creating prepared stmt for loading data")
 	copyInStmt := mssql.CopyIn(as.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
 		append(sortedColumnKeys, extraColumns...)...,
 	)
@@ -340,7 +340,7 @@ func (as *AzureSynapse) loadTable(
 		return nil, "", fmt.Errorf("insert into load table: %w", err)
 	}
 
-	log.Infow("committing transaction")
+	log.Debugw("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
 	}

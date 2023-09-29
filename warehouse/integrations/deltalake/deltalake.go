@@ -590,7 +590,7 @@ func (d *Deltalake) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	if err := d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
@@ -610,14 +610,15 @@ func (d *Deltalake) loadTable(
 		return nil, "", fmt.Errorf("copying into staging table: %w", err)
 	}
 
-	log.Infow("moving data from staging table to main table")
 	var loadTableStat *types.LoadTableStats
 	if d.ShouldAppend() {
+		log.Infow("inserting data from staging table to main table")
 		loadTableStat, err = d.insertIntoLoadTable(
 			ctx, tableName, stagingTableName,
 			tableSchemaAfterUpload,
 		)
 	} else {
+		log.Infow("merging data from staging table to main table")
 		loadTableStat, err = d.mergeIntoLoadTable(
 			ctx, tableName, stagingTableName,
 			tableSchemaInUpload,

@@ -82,7 +82,7 @@ func (pg *Postgres) loadTable(
 	)
 	log.Infow("started loading")
 
-	log.Infow("setting search path")
+	log.Debugw("setting search path")
 	searchPathStmt := fmt.Sprintf(`SET search_path TO %q;`,
 		pg.Namespace,
 	)
@@ -104,7 +104,7 @@ func (pg *Postgres) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
 		ON COMMIT PRESERVE ROWS;
@@ -121,7 +121,7 @@ func (pg *Postgres) loadTable(
 		tableSchemaInUpload,
 	)
 
-	log.Infow("creating prepared stmt for loading data")
+	log.Debugw("creating prepared stmt for loading data")
 	copyInStmt := pq.CopyIn(stagingTableName, sortedColumnKeys...)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {

@@ -385,10 +385,10 @@ func (sf *Snowflake) loadTable(
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	if sf.ShouldAppend() {
-		log.Infow("loading data into staging table")
+		log.Infow("copying data into main table")
 		loadTableStats, err := sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("loading data into staging table: %w", err)
+			return nil, nil, fmt.Errorf("copying data into main table: %w", err)
 		}
 
 		log.Infow("completed loading")
@@ -400,7 +400,7 @@ func (sf *Snowflake) loadTable(
 		return loadTableStats, resp, nil
 	}
 
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
 		schemaIdentifier,
 		stagingTableName,

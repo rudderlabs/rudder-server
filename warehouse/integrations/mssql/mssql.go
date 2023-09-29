@@ -293,7 +293,7 @@ func (ms *MSSQL) loadTable(
 	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
 	// - Refer to Microsoft's documentation on temporary tables at
 	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`
 		SELECT
 		  TOP 0 * INTO %[1]s.%[2]s
@@ -327,7 +327,7 @@ func (ms *MSSQL) loadTable(
 		tableSchemaInUpload,
 	)
 
-	log.Infow("creating prepared stmt for loading data")
+	log.Debugw("creating prepared stmt for loading data")
 	copyInStmt := mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
 		sortedColumnKeys...,
 	)
@@ -369,7 +369,7 @@ func (ms *MSSQL) loadTable(
 		return nil, "", fmt.Errorf("insert into: %w", err)
 	}
 
-	log.Infow("committing transaction")
+	log.Debugw("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
 	}

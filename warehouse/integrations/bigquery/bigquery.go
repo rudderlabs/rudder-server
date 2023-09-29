@@ -452,7 +452,7 @@ func (bq *BigQuery) loadTableByAppend(
 		return nil, nil, fmt.Errorf("moving data into main table: %w", err)
 	}
 
-	log.Infow("waiting for append job to complete", "jobID", job.ID())
+	log.Debugw("waiting for append job to complete", "jobID", job.ID())
 	status, err := job.Wait(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
@@ -461,7 +461,7 @@ func (bq *BigQuery) loadTableByAppend(
 		return nil, nil, fmt.Errorf("status for append job: %w", err)
 	}
 
-	log.Infow("job statistics")
+	log.Debugw("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
 		return nil, nil, fmt.Errorf("append job statistics: %w", err)
@@ -518,7 +518,7 @@ func (bq *BigQuery) loadTableByMerge(
 		tableName,
 	))
 
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	err := bq.db.Dataset(bq.namespace).Table(stagingTableName).Create(ctx, &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
@@ -533,7 +533,7 @@ func (bq *BigQuery) loadTableByMerge(
 		return nil, nil, fmt.Errorf("loading into staging table: %w", err)
 	}
 
-	log.Infow("waiting for load job to complete", "jobID", job.ID())
+	log.Debugw("waiting for load job to complete", "jobID", job.ID())
 	status, err := job.Wait(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("waiting for job: %w", err)
@@ -618,7 +618,7 @@ func (bq *BigQuery) loadTableByMerge(
 		return nil, nil, fmt.Errorf("moving data to main table: %w", err)
 	}
 
-	log.Infow("waiting for merge job to complete", "jobID", job.ID())
+	log.Debugw("waiting for merge job to complete", "jobID", job.ID())
 	status, err = job.Wait(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("waiting for merge job: %w", err)
@@ -627,7 +627,7 @@ func (bq *BigQuery) loadTableByMerge(
 		return nil, nil, fmt.Errorf("status for merge job: %w", err)
 	}
 
-	log.Infow("job statistics")
+	log.Debugw("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
 		return nil, nil, fmt.Errorf("merge job statistics: %w", err)

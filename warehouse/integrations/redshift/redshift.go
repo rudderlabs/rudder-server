@@ -465,7 +465,7 @@ func (rs *Redshift) loadTable(
 	if err != nil {
 		return nil, "", fmt.Errorf("generating manifest: %w", err)
 	}
-	log.Infow("generated manifest", "manifestLocation", manifestLocation)
+	log.Debugw("generated manifest", "manifestLocation", manifestLocation)
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -473,7 +473,7 @@ func (rs *Redshift) loadTable(
 		tableNameLimit,
 	)
 
-	log.Infow("creating staging table")
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
 		rs.Namespace,
 		stagingTableName,
@@ -532,7 +532,7 @@ func (rs *Redshift) loadTable(
 		return nil, "", fmt.Errorf("insert into: %w", err)
 	}
 
-	log.Infow("committing transaction")
+	log.Debugw("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
 	}
