@@ -5,7 +5,6 @@
 package mock_types
 
 import (
-	context "context"
 	sql "database/sql"
 	reflect "reflect"
 
@@ -74,16 +73,18 @@ func (m *MockReporting) EXPECT() *MockReportingMockRecorder {
 	return m.recorder
 }
 
-// AddClient mocks base method.
-func (m *MockReporting) AddClient(arg0 context.Context, arg1 types.Config) {
+// DatabaseSyncer mocks base method.
+func (m *MockReporting) DatabaseSyncer(arg0 types.SyncerConfig) types.ReportingSyncer {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddClient", arg0, arg1)
+	ret := m.ctrl.Call(m, "DatabaseSyncer", arg0)
+	ret0, _ := ret[0].(types.ReportingSyncer)
+	return ret0
 }
 
-// AddClient indicates an expected call of AddClient.
-func (mr *MockReportingMockRecorder) AddClient(arg0, arg1 interface{}) *gomock.Call {
+// DatabaseSyncer indicates an expected call of DatabaseSyncer.
+func (mr *MockReportingMockRecorder) DatabaseSyncer(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReporting)(nil).AddClient), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DatabaseSyncer", reflect.TypeOf((*MockReporting)(nil).DatabaseSyncer), arg0)
 }
 
 // Report mocks base method.
@@ -96,18 +97,4 @@ func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) {
 func (mr *MockReportingMockRecorder) Report(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporting)(nil).Report), arg0, arg1)
-}
-
-// WaitForSetup mocks base method.
-func (m *MockReporting) WaitForSetup(arg0 context.Context, arg1 string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForSetup", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// WaitForSetup indicates an expected call of WaitForSetup.
-func (mr *MockReportingMockRecorder) WaitForSetup(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForSetup", reflect.TypeOf((*MockReporting)(nil).WaitForSetup), arg0, arg1)
 }

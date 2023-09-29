@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -33,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -41,11 +41,12 @@ import (
 
 type App struct {
 	app                app.App
+	reporting          types.Reporting
 	conf               *config.Config
 	logger             logger.Logger
 	statsFactory       stats.Stats
 	bcConfig           backendconfig.BackendConfig
-	db                 *sqlmw.DB
+	db                 *sqlquerywrapper.DB
 	notifier           *notifier.Notifier
 	tenantManager      *multitenant.Manager
 	controlPlaneClient *controlplane.Client
@@ -215,11 +216,11 @@ func (a *App) setupDatabase(ctx context.Context) error {
 		return fmt.Errorf("could not ping: %w", err)
 	}
 
-	a.db = sqlmw.New(
+	a.db = sqlquerywrapper.New(
 		database,
-		sqlmw.WithLogger(a.logger.Child("db")),
-		sqlmw.WithQueryTimeout(a.config.dbQueryTimeout),
-		sqlmw.WithStats(a.statsFactory),
+		sqlquerywrapper.WithLogger(a.logger.Child("db")),
+		sqlquerywrapper.WithQueryTimeout(a.config.dbQueryTimeout),
+		sqlquerywrapper.WithStats(a.statsFactory),
 	)
 
 	err = a.migrate()
@@ -321,17 +322,11 @@ func (a *App) Run(ctx context.Context) error {
 		return g.Wait()
 	}
 
-	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
-	// A different DB for warehouse is used when:
-	// 1. MultiTenant (uses RDS)
-	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone(a.config.mode) && isMaster(a.config.mode)) || (misc.GetConnectionString(a.conf) != a.connectionString()) {
+	if !isStandAloneSlave(a.config.mode) {
+		a.reporting = a.app.Features().Reporting.Setup(gCtx, a.bcConfig)
+		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString(), Label: types.WarehouseReportingLabel})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reportingClient := a.app.Features().Reporting.Setup(a.bcConfig)
-			reportingClient.AddClient(gCtx, types.Config{
-				ConnInfo:   a.connectionString(),
-				ClientName: types.WarehouseReportingClient,
-			})
+			syncer()
 			return nil
 		}))
 	}
@@ -458,7 +453,7 @@ func (a *App) onConfigDataEvent(
 
 				router, err := newRouter(
 					ctx,
-					a.app,
+					a.reporting,
 					destination.DestinationDefinition.Name,
 					a.conf,
 					a.logger.Child("router"),

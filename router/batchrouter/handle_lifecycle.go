@@ -145,12 +145,6 @@ func (brt *Handle) Setup(
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
-	// waiting for reporting client setup
-	if brt.reporting != nil && brt.reportingEnabled {
-		// error is ignored as context.TODO() is passed, err is not expected.
-		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
-	}
-
 	brt.crashRecover()
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert

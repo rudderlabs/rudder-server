@@ -23,9 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
@@ -48,15 +46,6 @@ import (
 func TestRouter(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-
-	report := &reporting.Factory{}
-	report.Setup(&backendconfig.NOOP{})
-
-	mockCtrl := gomock.NewController(t)
-	mockApp := mocksApp.NewMockApp(mockCtrl)
-	mockApp.EXPECT().Features().Return(&app.Features{
-		Reporting: report,
-	}).AnyTimes()
 
 	sourceID := "test-source-id"
 	destinationID := "test-destination-id"
@@ -126,7 +115,7 @@ func TestRouter(t *testing.T) {
 
 		r, err := newRouter(
 			ctx,
-			mockApp,
+			&reporting.NOOP{},
 			destinationType,
 			config.Default,
 			logger.NOP,
@@ -599,7 +588,7 @@ func TestRouter(t *testing.T) {
 		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			app:          mockApp,
+			reporting:    &reporting.NOOP{},
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
@@ -736,7 +725,7 @@ func TestRouter(t *testing.T) {
 		r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			app:          mockApp,
+			reporting:    &reporting.NOOP{},
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
@@ -885,7 +874,7 @@ func TestRouter(t *testing.T) {
 			r.bcManager = newBackendConfigManager(r.conf, r.db, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
-				app:          mockApp,
+				reporting:    &reporting.NOOP{},
 				conf:         config.Default,
 				logger:       logger.NOP,
 				statsFactory: r.statsFactory,
