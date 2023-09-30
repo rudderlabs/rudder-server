@@ -39,7 +39,7 @@ const (
 	JobTypeAsync  JobType = "async_job"
 )
 
-type JobStatus string
+type JobStatus = string
 
 const (
 	Waiting   JobStatus = "waiting"

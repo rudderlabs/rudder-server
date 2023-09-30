@@ -1,4 +1,4 @@
-package jobs
+package source
 
 import (
 	"bytes"
@@ -131,12 +131,12 @@ func TestAsyncJobHandlers(t *testing.T) {
 	t.Run("validate payload", func(t *testing.T) {
 		testCases := []struct {
 			name          string
-			payload       StartJobReqPayload
+			payload       insertJobRequest
 			expectedError error
 		}{
 			{
 				name: "invalid source",
-				payload: StartJobReqPayload{
+				payload: insertJobRequest{
 					JobRunID:      "job_run_id",
 					TaskRunID:     "task_run_id",
 					SourceID:      "",
@@ -147,7 +147,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			},
 			{
 				name: "invalid destination",
-				payload: StartJobReqPayload{
+				payload: insertJobRequest{
 					JobRunID:      "job_run_id",
 					TaskRunID:     "task_run_id",
 					SourceID:      "source_id",
@@ -158,7 +158,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			},
 			{
 				name: "invalid task run",
-				payload: StartJobReqPayload{
+				payload: insertJobRequest{
 					JobRunID:      "job_run_id",
 					TaskRunID:     "",
 					SourceID:      "source_id",
@@ -169,7 +169,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			},
 			{
 				name: "invalid job run",
-				payload: StartJobReqPayload{
+				payload: insertJobRequest{
 					JobRunID:      "",
 					TaskRunID:     "task_run_id",
 					SourceID:      "source_id",
@@ -180,7 +180,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			},
 			{
 				name: "valid payload",
-				payload: StartJobReqPayload{
+				payload: insertJobRequest{
 					JobRunID:      "job_run_id",
 					TaskRunID:     "task_run_id",
 					SourceID:      "source_id",
@@ -203,7 +203,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  false,
 				logger:   logger.NOP,
@@ -221,7 +221,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
@@ -239,7 +239,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
@@ -264,7 +264,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
@@ -287,7 +287,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  false,
 				logger:   logger.NOP,
@@ -305,7 +305,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
@@ -336,7 +336,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := AsyncJobWh{
+			jobsManager := Manager{
 				db:       db,
 				enabled:  true,
 				logger:   logger.NOP,
@@ -346,7 +346,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
-			var statusResponse WhStatusResponse
+			var statusResponse JobStatusResponse
 			err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 			require.NoError(t, err)
 			require.Equal(t, statusResponse.Status, "aborted")

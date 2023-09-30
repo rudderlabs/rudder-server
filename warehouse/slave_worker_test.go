@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -574,14 +573,14 @@ func TestSlaveWorker(t *testing.T) {
 				workerIdx,
 			)
 
-			p := jobs.AsyncJobPayload{
-				Id:            "1",
+			p := model.SourceJob{
+				ID:            1,
 				SourceID:      sourceID,
 				DestinationID: destinationID,
 				TableName:     "test_table_name",
 				WorkspaceID:   workspaceID,
-				AsyncJobType:  "deletebyjobrunid",
-				MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
+				JobType:       model.DeleteByJobRunID,
+				Metadata:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 			}
 
 			payloadJson, err := json.Marshal(p)
@@ -656,21 +655,21 @@ func TestSlaveWorker(t *testing.T) {
 				},
 				{
 					name:          "invalid parameters",
-					jobType:       "deletebyjobrunid",
+					jobType:       model.DeleteByJobRunID,
 					expectedError: errors.New("invalid Parameters"),
 				},
 				{
 					name:          "invalid source id",
 					sourceID:      "invalid_source_id",
 					destinationID: destinationID,
-					jobType:       "deletebyjobrunid",
+					jobType:       model.DeleteByJobRunID,
 					expectedError: errors.New("invalid Source Id"),
 				},
 				{
 					name:          "invalid destination id",
 					sourceID:      sourceID,
 					destinationID: "invalid_destination_id",
-					jobType:       "deletebyjobrunid",
+					jobType:       model.DeleteByJobRunID,
 					expectedError: errors.New("invalid Destination Id"),
 				},
 			}
@@ -679,14 +678,14 @@ func TestSlaveWorker(t *testing.T) {
 				tc := tc
 
 				t.Run(tc.name, func(t *testing.T) {
-					p := jobs.AsyncJobPayload{
-						Id:            "1",
+					p := model.SourceJob{
+						ID:            1,
 						SourceID:      tc.sourceID,
 						DestinationID: tc.destinationID,
 						TableName:     "test_table_name",
 						WorkspaceID:   workspaceID,
-						AsyncJobType:  tc.jobType,
-						MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
+						JobType:       tc.jobType,
+						Metadata:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 					}
 
 					payloadJson, err := json.Marshal(p)

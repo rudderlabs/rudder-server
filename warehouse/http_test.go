@@ -21,8 +21,8 @@ import (
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -183,12 +183,12 @@ func TestHTTPApi(t *testing.T) {
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
-	sourcesManager := jobs.New(
+	sourcesManager := source.New(
 		ctx,
 		db,
 		n,
 	)
-	jobs.WithConfig(sourcesManager, config.Default)
+	source.WithConfig(sourcesManager, config.Default)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -200,7 +200,7 @@ func TestHTTPApi(t *testing.T) {
 		return nil
 	})
 	g.Go(func() error {
-		return sourcesManager.Run()
+		return sourcesManager.Run(gCtx)
 	})
 
 	setupCh := make(chan struct{})

@@ -23,7 +23,7 @@ import (
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -48,8 +48,8 @@ type uploadResult struct {
 }
 
 type asyncJobRunResult struct {
-	Result bool   `json:"Result"`
-	ID     string `json:"Id"`
+	Result bool  `json:"Result"`
+	ID     int64 `json:"Id"`
 }
 
 type slaveWorker struct {
@@ -430,7 +430,7 @@ func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *n
 	}
 
 	var (
-		job jobs.AsyncJobPayload
+		job model.SourceJob
 		err error
 	)
 
@@ -456,9 +456,9 @@ func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *n
 	})
 }
 
-func (sw *slaveWorker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
+func (sw *slaveWorker) runAsyncJob(ctx context.Context, asyncjob model.SourceJob) (asyncJobRunResult, error) {
 	result := asyncJobRunResult{
-		ID:     asyncjob.Id,
+		ID:     asyncjob.ID,
 		Result: false,
 	}
 
@@ -477,19 +477,19 @@ func (sw *slaveWorker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPa
 		warehouse.Destination.ID,
 	))
 
-	err = integrationsManager.Setup(ctx, warehouse, &jobs.WhAsyncJob{})
+	err = integrationsManager.Setup(ctx, warehouse, &source.SourceUploader{})
 	if err != nil {
 		return result, err
 	}
 	defer integrationsManager.Cleanup(ctx)
 
 	var metadata warehouseutils.DeleteByMetaData
-	if err = json.Unmarshal(asyncjob.MetaData, &metadata); err != nil {
+	if err = json.Unmarshal(asyncjob.Metadata, &metadata); err != nil {
 		return result, err
 	}
 
-	switch asyncjob.AsyncJobType {
-	case "deletebyjobrunid":
+	switch asyncjob.JobType {
+	case model.DeleteByJobRunID:
 		err = integrationsManager.DeleteBy(ctx, []string{asyncjob.TableName}, warehouseutils.DeleteByParams{
 			SourceId:  asyncjob.SourceID,
 			TaskRunId: metadata.TaskRunId,

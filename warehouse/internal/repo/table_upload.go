@@ -91,7 +91,15 @@ func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames
 	defer func() { _ = stmt.Close() }()
 
 	for _, tableName := range tableNames {
-		_, err = stmt.ExecContext(ctx, uploadID, tableName, model.TableUploadWaiting, "{}", repo.now(), repo.now())
+		_, err = stmt.ExecContext(
+			ctx,
+			uploadID,
+			tableName,
+			model.TableUploadWaiting,
+			"{}",
+			repo.now(),
+			repo.now(),
+		)
 		if err != nil {
 			return fmt.Errorf(`stmt exec: %w`, err)
 		}
@@ -113,7 +121,20 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 		return nil, fmt.Errorf("querying table uploads: %w", err)
 	}
 
-	return repo.parseRows(rows)
+	var tableUploads []model.TableUpload
+	for rows.Next() {
+		var tableUpload model.TableUpload
+		err := scanTableUpload(rows.Scan, &tableUpload)
+		if err != nil {
+			return nil, fmt.Errorf("parsing rows: %w", err)
+		}
+		tableUploads = append(tableUploads, tableUpload)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tableUploads, nil
 }
 
 func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
@@ -124,71 +145,55 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 	LIMIT 1;
 `
 
-	rows, err := repo.db.QueryContext(ctx, query, uploadID, tableName)
+	row := repo.db.QueryRowContext(ctx, query, uploadID, tableName)
+
+	var tableUpload model.TableUpload
+	err := scanTableUpload(row.Scan, &tableUpload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return tableUpload, fmt.Errorf("no table upload found with uploadID: %d, tableName: %s", uploadID, tableName)
+	}
 	if err != nil {
-		return model.TableUpload{}, fmt.Errorf("querying table uploads: %w", err)
+		return tableUpload, fmt.Errorf("parsing rows: %w", err)
 	}
 
-	entries, err := repo.parseRows(rows)
-	if err != nil {
-		return model.TableUpload{}, fmt.Errorf("parsing rows: %w", err)
-	}
-	if len(entries) == 0 {
-		return model.TableUpload{}, fmt.Errorf("no table upload found with uploadID: %d, tableName: %s", uploadID, tableName)
-	}
-
-	return entries[0], err
+	return tableUpload, err
 }
 
-func (*TableUploads) parseRows(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
-	var tableUploads []model.TableUpload
-
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var (
-			tableUpload     model.TableUpload
-			locationRaw     sql.NullString
-			lastExecTimeRaw sql.NullTime
-			totalEvents     sql.NullInt64
-		)
-		err := rows.Scan(
-			&tableUpload.ID,
-			&tableUpload.UploadID,
-			&tableUpload.TableName,
-			&tableUpload.Status,
-			&tableUpload.Error,
-			&lastExecTimeRaw,
-			&totalEvents,
-			&tableUpload.CreatedAt,
-			&tableUpload.UpdatedAt,
-			&locationRaw,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scanning row: %w", err)
-		}
-
-		tableUpload.CreatedAt = tableUpload.CreatedAt.UTC()
-		tableUpload.UpdatedAt = tableUpload.UpdatedAt.UTC()
-
-		if lastExecTimeRaw.Valid {
-			tableUpload.LastExecTime = lastExecTimeRaw.Time.UTC()
-		}
-		if locationRaw.Valid {
-			tableUpload.Location = locationRaw.String
-		}
-		if totalEvents.Valid {
-			tableUpload.TotalEvents = totalEvents.Int64
-		}
-
-		tableUploads = append(tableUploads, tableUpload)
+func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
+	var (
+		locationRaw     sql.NullString
+		lastExecTimeRaw sql.NullTime
+		totalEvents     sql.NullInt64
+	)
+	err := scan(
+		&tableUpload.ID,
+		&tableUpload.UploadID,
+		&tableUpload.TableName,
+		&tableUpload.Status,
+		&tableUpload.Error,
+		&lastExecTimeRaw,
+		&totalEvents,
+		&tableUpload.CreatedAt,
+		&tableUpload.UpdatedAt,
+		&locationRaw,
+	)
+	if err != nil {
+		return fmt.Errorf("scanning row: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating rows: %w", err)
-	}
+	tableUpload.CreatedAt = tableUpload.CreatedAt.UTC()
+	tableUpload.UpdatedAt = tableUpload.UpdatedAt.UTC()
 
-	return tableUploads, nil
+	if lastExecTimeRaw.Valid {
+		tableUpload.LastExecTime = lastExecTimeRaw.Time.UTC()
+	}
+	if locationRaw.Valid {
+		tableUpload.Location = locationRaw.String
+	}
+	if totalEvents.Valid {
+		tableUpload.TotalEvents = totalEvents.Int64
+	}
+	return nil
 }
 
 func (repo *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Context, uploadId int64, tableName string, stagingFileIDs []int64) error {
@@ -400,4 +405,55 @@ func (repo *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]mode
 		}
 	})
 	return tableUploadInfos, nil
+}
+
+func (repo *TableUploads) GetByJobRunTaskRun(
+	ctx context.Context,
+	sourceID,
+	destinationID,
+	jobRunID,
+	taskRunID string,
+) ([]model.TableUpload, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			`+tableUploadColumns+`
+		FROM
+			`+tableUploadTableName+`
+		WHERE
+			wh_upload_id IN (
+				SELECT
+					id
+				FROM
+					`+uploadsTableName+`
+				WHERE
+					source_id=$1 AND
+					destination_id=$2 AND
+					metadata->>'source_job_run_id'=$3 AND
+					metadata->>'source_task_run_id'=$4
+			);
+	`,
+		sourceID,
+		destinationID,
+		jobRunID,
+		taskRunID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting table uploads: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tableUploads []model.TableUpload
+	for rows.Next() {
+		var tableUpload model.TableUpload
+		err := scanTableUpload(rows.Scan, &tableUpload)
+		if err != nil {
+			return nil, err
+		}
+		tableUploads = append(tableUploads, tableUpload)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tableUploads, nil
 }

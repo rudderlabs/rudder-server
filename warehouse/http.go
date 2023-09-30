@@ -30,8 +30,8 @@ import (
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -71,7 +71,7 @@ type Api struct {
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
 	bcManager     *backendConfigManager
-	asyncManager  *jobs.AsyncJobWh
+	asyncManager  *source.Manager
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
@@ -96,7 +96,7 @@ func NewApi(
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *backendConfigManager,
-	asyncManager *jobs.AsyncJobWh,
+	asyncManager *source.Manager,
 	triggerStore *sync.Map,
 ) *Api {
 	a := &Api{
