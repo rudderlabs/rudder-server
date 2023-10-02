@@ -11,10 +11,14 @@ import (
 )
 
 func validateStepFunc(_ context.Context, destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
-	return json.Marshal(StepsToValidate(destination))
+	res, err := StepsToValidate(destination)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(res)
 }
 
-func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
+func StepsToValidate(dest *backendconfig.DestinationT) (*model.StepsResponse, error) {
 	steps := []*model.Step{{
 		ID:   1,
 		Name: model.VerifyingObjectStorage,
@@ -30,7 +34,10 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	switch dest.DestinationDefinition.Name {
 	case whutils.GCSDatalake, whutils.AzureDatalake:
 	case whutils.S3Datalake:
-		wh := createDummyWarehouse(dest)
+		wh, err := createDummyWarehouse(dest)
+		if err != nil {
+			return nil, err
+		}
 		if canUseGlue := schemarepository.UseGlue(&wh); !canUseGlue {
 			break
 		}
@@ -75,5 +82,5 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 			},
 		)
 	}
-	return &model.StepsResponse{Steps: steps}
+	return &model.StepsResponse{Steps: steps}, nil
 }

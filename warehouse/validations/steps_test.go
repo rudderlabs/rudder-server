@@ -45,7 +45,9 @@ func TestValidationSteps(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3Datalake,
 				},
-				Config: map[string]interface{}{},
+				Config: map[string]any{
+					"namespace": "test_namespace",
+				},
 			},
 			steps: []string{model.VerifyingObjectStorage, model.VerifyingNamespace},
 		},
@@ -56,8 +58,9 @@ func TestValidationSteps(t *testing.T) {
 					Name: warehouseutils.S3Datalake,
 				},
 				Config: map[string]interface{}{
-					"region":  "us-east-1",
-					"useGlue": true,
+					"region":    "us-east-1",
+					"useGlue":   true,
+					"namespace": "test_namespace",
 				},
 			},
 			steps: []string{
@@ -93,7 +96,8 @@ func TestValidationSteps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			steps := validations.StepsToValidate(&tc.dest)
+			steps, err := validations.StepsToValidate(&tc.dest)
+			require.NoError(t, err)
 			require.Len(t, steps.Steps, len(tc.steps))
 
 			for i, step := range steps.Steps {

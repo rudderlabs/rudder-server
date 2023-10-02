@@ -110,9 +110,9 @@ func TestValidate(t *testing.T) {
 				Path: "validate",
 				Step: "3",
 				Destination: &backendconfig.DestinationT{
+					Config: map[string]any{"namespace": "test"},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name:   "invalid",
-						Config: map[string]any{"namespace": "test"},
+						Name: "invalid",
 					},
 				},
 			})
@@ -162,6 +162,7 @@ func TestValidate(t *testing.T) {
 				Path: "validate",
 				Step: "3",
 				Destination: &backendconfig.DestinationT{
+					Config: map[string]any{"namespace": "foobar"},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: "invalid",
 					},

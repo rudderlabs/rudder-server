@@ -1,13 +1,16 @@
 package validations
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -28,6 +31,7 @@ type Validator interface {
 
 type namespaceValidator struct {
 	destination *backendconfig.DestinationT
+	buffer      io.Writer
 }
 
 type objectStorage struct {
@@ -83,7 +87,6 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		destType        = dest.DestinationDefinition.Name
 		stepsToValidate []*model.Step
 		validator       Validator
-		err             error
 	)
 
 	pkgLogger.Infow("validate destination configuration",
@@ -93,6 +96,13 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		logfield.WorkspaceID, dest.WorkspaceID,
 		logfield.DestinationValidationsStep, stepToValidate,
 	)
+
+	stepsToValidateResponse, err := StepsToValidate(dest)
+	if err != nil {
+		return &model.DestinationValidationResponse{
+			Error: err.Error(),
+		}
+	}
 
 	// check if req has specified a step in query params
 	if stepToValidate != "" {
@@ -105,7 +115,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 
 		// get validation step
 		var vs *model.Step
-		for _, s := range StepsToValidate(dest).Steps {
+		for _, s := range stepsToValidateResponse.Steps {
 			if s.ID == stepI {
 				vs = s
 				break
@@ -120,7 +130,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 
 		stepsToValidate = append(stepsToValidate, vs)
 	} else {
-		stepsToValidate = append(stepsToValidate, StepsToValidate(dest).Steps...)
+		stepsToValidate = append(stepsToValidate, stepsToValidateResponse.Steps...)
 	}
 
 	// Iterate over all selected steps and validate
@@ -243,7 +253,21 @@ func (v *namespaceValidator) Validate(_ context.Context) error {
 		return fmt.Errorf("namespace is empty")
 	}
 
-	// TODO template validation
+	t, err := template.New("").Parse(namespace)
+	if err != nil {
+		return fmt.Errorf("cannot parse namespace template: %w", err)
+	}
+
+	buf := io.Discard
+	if v.buffer != nil {
+		buf = v.buffer
+	}
+	err = t.Execute(buf, map[string]any{
+		"source_name": defaultNamespace,
+	})
+	if err != nil {
+		return fmt.Errorf("namespace template error: %w", err)
+	}
 
 	return nil
 }
@@ -276,7 +300,12 @@ func (c *connections) Validate(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
+	warehouse, err := createDummyWarehouse(c.destination)
+	if err != nil {
+		return err
+	}
+
+	return c.manager.TestConnection(ctx, warehouse)
 }
 
 func (cs *createSchema) Validate(ctx context.Context) error {
@@ -498,12 +527,14 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 
 func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
 	var (
-		destType  = dest.DestinationDefinition.Name
-		warehouse = createDummyWarehouse(dest)
-
+		destType   = dest.DestinationDefinition.Name
 		operations manager.WarehouseOperations
-		err        error
 	)
+
+	warehouse, err := createDummyWarehouse(dest)
+	if err != nil {
+		return nil, err
+	}
 
 	if operations, err = manager.NewWarehouseOperations(destType, config.Default, pkgLogger, stats.Default); err != nil {
 		return nil, fmt.Errorf("getting manager: %w", err)
@@ -520,38 +551,44 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 	return operations, nil
 }
 
-func createDummyWarehouse(dest *backendconfig.DestinationT) model.Warehouse {
-	var (
-		destType  = dest.DestinationDefinition.Name
-		namespace = configuredNamespaceInDestination(dest)
-	)
+func createDummyWarehouse(dest *backendconfig.DestinationT) (model.Warehouse, error) {
+	namespace, err := configuredNamespaceInDestination(dest)
+	if err != nil {
+		return model.Warehouse{}, err
+	}
 
 	return model.Warehouse{
 		WorkspaceID: dest.WorkspaceID,
 		Destination: *dest,
 		Namespace:   namespace,
-		Type:        destType,
-	}
+		Type:        dest.DestinationDefinition.Name,
+	}, nil
 }
 
-func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
+func configuredNamespaceInDestination(dest *backendconfig.DestinationT) (string, error) {
 	var (
 		destType = dest.DestinationDefinition.Name
 		conf     = dest.Config
 	)
 
 	if destType == warehouseutils.CLICKHOUSE {
-		return conf["database"].(string)
+		return conf["database"].(string), nil
 	}
 
-	configuredNamespace := defaultNamespace
-	if conf["namespace"] != nil {
-		confNamespace := strings.TrimSpace(conf["namespace"].(string))
-		if len(confNamespace) > 0 {
-			configuredNamespace = confNamespace
-		}
+	namespaceBuffer := &bytes.Buffer{}
+	nv := &namespaceValidator{
+		buffer:      namespaceBuffer,
+		destination: dest,
 	}
-	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, configuredNamespace))
+	if err := nv.Validate(context.Background()); err != nil {
+		return "", err
+	}
+
+	configuredNamespace := warehouseutils.ToProviderCase(
+		destType,
+		warehouseutils.ToSafeNamespace(destType, namespaceBuffer.String()),
+	)
+	return configuredNamespace, nil
 }
 
 func getTable(dest *backendconfig.DestinationT) string {

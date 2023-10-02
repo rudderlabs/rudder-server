@@ -1,6 +1,7 @@
 package validations
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -147,13 +148,17 @@ func TestValidator(t *testing.T) {
 		}{
 			{
 				name: "invalid credentials",
-				config: map[string]interface{}{
-					"database": "invalid_database",
+				config: map[string]any{
+					"namespace": "test_namespace",
+					"database":  "invalid_database",
 				},
 				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
 			},
 			{
 				name: "valid credentials",
+				config: map[string]any{
+					"namespace": "test_namespace",
+				},
 			},
 		}
 
@@ -559,4 +564,44 @@ func TestNamespaceValidator(t *testing.T) {
 		}
 		require.ErrorContains(t, v.Validate(context.Background()), "namespace is empty")
 	})
+	t.Run("cannot parse template", func(t *testing.T) {
+		v := namespaceValidator{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "prefix_{{.source_name",
+				},
+			},
+		}
+		require.ErrorContains(t, v.Validate(context.Background()), "cannot parse namespace template")
+	})
+	t.Run("template error", func(t *testing.T) {
+		v := namespaceValidator{
+			buffer: &badWriter{},
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "prefix_{{.source_name}}",
+				},
+			},
+		}
+		require.ErrorContains(t, v.Validate(context.Background()), "namespace template error")
+	})
+	t.Run("ok", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		v := namespaceValidator{
+			buffer: buf,
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "my_cool_prefix_{{.source_name}}",
+				},
+			},
+		}
+		require.NoError(t, v.Validate(context.Background()))
+		require.Equal(t, "my_cool_prefix_"+defaultNamespace, buf.String())
+	})
+}
+
+type badWriter struct{}
+
+func (w *badWriter) Write(_ []byte) (int, error) {
+	return 0, fmt.Errorf("bad error")
 }
