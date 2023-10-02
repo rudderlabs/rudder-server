@@ -1,9 +1,20 @@
 package testhelper
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"testing"
+	"time"
+
+	"cloud.google.com/go/bigquery"
+
+	"github.com/samber/lo"
+	"github.com/spf13/cast"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/iterator"
 )
 
 type TestCredentials struct {
@@ -33,4 +44,36 @@ func GetBQTestCredentials() (*TestCredentials, error) {
 func IsBQTestCredentialsAvailable() bool {
 	_, err := GetBQTestCredentials()
 	return err == nil
+}
+
+// RetrieveRecordsFromWarehouse retrieves records from the warehouse based on the given query.
+// It returns a slice of slices, where each inner slice represents a record's values.
+func RetrieveRecordsFromWarehouse(
+	t testing.TB,
+	db *bigquery.Client,
+	query string,
+) [][]string {
+	t.Helper()
+
+	it, err := db.Query(query).Read(context.Background())
+	require.NoError(t, err)
+
+	var records [][]string
+	for {
+		var row []bigquery.Value
+		if errors.Is(it.Next(&row), iterator.Done) {
+			break
+		}
+		require.NoError(t, err)
+
+		records = append(records, lo.Map(row, func(item bigquery.Value, index int) string {
+			switch item := item.(type) {
+			case time.Time:
+				return item.Format(time.RFC3339)
+			default:
+				return cast.ToString(item)
+			}
+		}))
+	}
+	return records
 }

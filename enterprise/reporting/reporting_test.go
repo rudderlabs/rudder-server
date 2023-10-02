@@ -204,7 +204,7 @@ var _ = Describe("Reporting", func() {
 			},
 		}
 
-		reportHandle := NewFromEnvConfig(logger.NOP)
+		reportHandle := NewDefaultReporter(context.Background(), logger.NOP)
 
 		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 		Expect(aggregatedMetrics).To(Equal(expectedResponse))
@@ -248,11 +248,11 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		return configCh
 	})
 
-	reporting := NewFromEnvConfig(logger.NOP)
+	reporting := NewDefaultReporter(context.Background(), logger.NOP)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		reporting.setup(config)
+		reporting.backendConfigSubscriber(config)
 		wg.Done()
 	}()
 
@@ -584,7 +584,7 @@ func TestAggregationLogic(t *testing.T) {
 			},
 		},
 	}
-	ed := NewEdReporterFromEnvConfig()
+	ed := NewErrorDetailReporter(context.Background())
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{

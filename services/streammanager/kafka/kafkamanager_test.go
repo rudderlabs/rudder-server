@@ -536,7 +536,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		}}
 		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
 		require.Equal(t, []client.Message(nil), batch)
-		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
+		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch: "+
+			"some errors are: [batch from topic some-topic is missing the message attribute]"), err)
 	})
 
 	t.Run("with message and user id", func(t *testing.T) {
@@ -873,7 +874,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
+			"some errors are: [schemaId is not available for the event at index 0]", err)
 	})
 
 	t.Run("wrong codec", func(t *testing.T) {
@@ -903,7 +905,10 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
+			"some errors are: [unable to serialize the event with schemaId \"schemaId001\" at index 0: unable convert "+
+			"the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myRecord\": "+
+			"cannot decode textual map: cannot determine codec: \"data\"]", err)
 	})
 
 	t.Run("unavailable schemaId", func(t *testing.T) {
@@ -933,7 +938,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
+			"some errors are: [unable to find schema with schemaId \"schemaId002\"]", err)
 	})
 }
 

@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"database/sql"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -49,6 +48,5 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 }
 
 type reporter interface {
-	WaitForSetup(ctx context.Context, clientName string) error
 	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
 }

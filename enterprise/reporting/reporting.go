@@ -44,18 +44,17 @@ const (
 	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
 )
 
-type Handle struct {
-	init                                 chan struct{}
-	onceInit                             sync.Once
-	clients                              map[string]*types.Client
-	clientsMapLock                       sync.RWMutex
-	log                                  logger.Logger
-	reportingServiceURL                  string
-	namespace                            string
-	workspaceID                          string
+type DefaultReporter struct {
+	ctx                 context.Context
+	init                chan struct{}
+	onceInit            sync.Once
+	syncersMu           sync.RWMutex
+	syncers             map[string]*types.SyncSource
+	log                 logger.Logger
+	reportingServiceURL string
+	namespace           string
+
 	instanceID                           string
-	workspaceIDForSourceIDMap            map[string]string
-	piiReportingSettings                 map[string]bool
 	whActionsOnly                        bool
 	region                               string
 	sleepInterval                        misc.ValueLoader[time.Duration]
@@ -65,12 +64,17 @@ type Handle struct {
 	maxOpenConnections                   int
 	maxConcurrentRequests                misc.ValueLoader[int]
 
+	backendConfigMu           sync.RWMutex // protects the following
+	workspaceID               string
+	workspaceIDForSourceIDMap map[string]string
+	piiReportingSettings      map[string]bool
+
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 }
 
-func NewFromEnvConfig(log logger.Logger) *Handle {
+func NewDefaultReporter(ctx context.Context, log logger.Logger) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
@@ -87,10 +91,11 @@ func NewFromEnvConfig(log logger.Logger) *Handle {
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-	return &Handle{
+	return &DefaultReporter{
+		ctx:                                  ctx,
 		init:                                 make(chan struct{}),
 		log:                                  log,
-		clients:                              make(map[string]*types.Client),
+		syncers:                              make(map[string]*types.SyncSource),
 		reportingServiceURL:                  reportingServiceURL,
 		namespace:                            config.GetKubeNamespace(),
 		instanceID:                           config.GetString("INSTANCE_ID", "1"),
@@ -107,10 +112,16 @@ func NewFromEnvConfig(log logger.Logger) *Handle {
 	}
 }
 
-func (r *Handle) setup(beConfigHandle backendconfig.BackendConfig) {
+func (r *DefaultReporter) backendConfigSubscriber(beConfigHandle backendconfig.BackendConfig) {
 	r.log.Info("[[ Reporting ]] Setting up reporting handler")
+	defer r.onceInit.Do(func() {
+		close(r.init)
+	})
 
-	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	if r.ctx.Err() != nil {
+		return
+	}
+	ch := beConfigHandle.Subscribe(r.ctx, backendconfig.TopicBackendConfig)
 
 	for c := range ch {
 		conf := c.Data.(map[string]backendconfig.ConfigT)
@@ -128,34 +139,36 @@ func (r *Handle) setup(beConfigHandle backendconfig.BackendConfig) {
 		if len(conf) > 1 {
 			newWorkspaceID = ""
 		}
+
+		r.backendConfigMu.Lock()
 		r.workspaceID = newWorkspaceID
 		r.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
 		r.piiReportingSettings = newPIIReportingSettings
+		r.backendConfigMu.Unlock()
+
 		r.onceInit.Do(func() {
 			close(r.init)
 		})
 	}
-
-	r.onceInit.Do(func() {
-		close(r.init)
-	})
 }
 
-func (r *Handle) getWorkspaceID(sourceID string) string {
+func (r *DefaultReporter) getWorkspaceID(sourceID string) string {
 	<-r.init
+	r.backendConfigMu.RLock()
+	defer r.backendConfigMu.RUnlock()
 	return r.workspaceIDForSourceIDMap[sourceID]
 }
 
-func (r *Handle) AddClient(ctx context.Context, c types.Config) {
-	if c.ClientName == "" {
-		c.ClientName = types.CoreReportingClient
+func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
+	if c.Label == "" {
+		c.Label = types.CoreReportingLabel
 	}
 
-	r.clientsMapLock.RLock()
-	if _, ok := r.clients[c.ClientName]; ok {
-		return
+	r.syncersMu.Lock()
+	defer r.syncersMu.Unlock()
+	if _, ok := r.syncers[c.ConnInfo]; ok {
+		return func() {} // returning a no-op syncer since another go routine has already started syncing
 	}
-	r.clientsMapLock.RUnlock()
 
 	dbHandle, err := sql.Open("postgres", c.ConnInfo)
 	if err != nil {
@@ -172,51 +185,32 @@ func (r *Handle) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
+	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
-	r.clientsMapLock.Lock()
-	r.clients[c.ClientName] = &types.Client{Config: c, DbHandle: dbHandle}
-	r.clientsMapLock.Unlock()
-
-	r.mainLoop(ctx, c.ClientName)
+	return func() {
+		r.mainLoop(r.ctx, c)
+	}
 }
 
-func (r *Handle) WaitForSetup(ctx context.Context, clientName string) error {
-	for {
-		if r.GetClient(clientName) != nil {
-			break
-		}
-		if err := misc.SleepCtx(ctx, time.Second); err != nil {
-			return fmt.Errorf("wait for setup: %w", ctx.Err())
-		}
+func (r *DefaultReporter) GetSyncer(syncerKey string) *types.SyncSource {
+	r.syncersMu.RLock()
+	defer r.syncersMu.RUnlock()
+	return r.syncers[syncerKey]
+}
+
+func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
+	syncer := r.GetSyncer(syncerKey)
+	if syncer != nil {
+		return syncer.DbHandle, nil
 	}
 
-	return nil
+	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *Handle) GetClient(clientName string) *types.Client {
-	r.clientsMapLock.RLock()
-	defer r.clientsMapLock.RUnlock()
-
-	if c, ok := r.clients[clientName]; ok {
-		return c
-	}
-
-	return nil
-}
-
-func (r *Handle) getDBHandle(clientName string) (*sql.DB, error) {
-	client := r.GetClient(clientName)
-	if client != nil {
-		return client.DbHandle, nil
-	}
-
-	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
-}
-
-func (r *Handle) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
+func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
-	dbHandle, err := r.getDBHandle(clientName)
+	dbHandle, err := r.getDBHandle(syncerKey)
 	if err != nil {
 		panic(err)
 	}
@@ -284,7 +278,7 @@ func (r *Handle) getReports(currentMs int64, clientName string) (reports []*type
 	return metricReports, queryMin.Int64, err
 }
 
-func (*Handle) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
+func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -372,10 +366,11 @@ func (*Handle) getAggregatedReports(reports []*types.ReportByStatus) []*types.Me
 	return values
 }
 
-func (r *Handle) mainLoop(ctx context.Context, clientName string) {
+func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
+	<-r.init
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	tags := r.getTags(clientName)
+	tags := r.getTags(c.Label)
 	mainLoopTimer := stats.Default.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := stats.Default.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
 	getReportsCount := stats.Default.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
@@ -386,7 +381,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 	reportingLag := stats.Default.NewTaggedStat(
-		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": clientName},
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
 	)
 
 	var lastReportedAtTime atomic.Time
@@ -411,7 +406,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 
 	for {
 		if ctx.Err() != nil {
-			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+			r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
@@ -419,7 +414,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt, err := r.getReports(currentMs, clientName)
+		reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
@@ -428,7 +423,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 			}
 			select {
 			case <-ctx.Done():
-				r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return
 			case <-time.After(r.sleepInterval.Load()):
 			}
@@ -455,7 +450,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 				break
 			}
 			errGroup.Go(func() error {
-				err := r.sendMetric(errCtx, netClient, clientName, metricToSend)
+				err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
 				<-requestChan
 				return err
 			})
@@ -463,7 +458,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 
 		err = errGroup.Wait()
 		if err == nil {
-			dbHandle, err := r.getDBHandle(clientName)
+			dbHandle, err := r.getDBHandle(c.ConnInfo)
 			if err != nil {
 				panic(err)
 			}
@@ -482,7 +477,7 @@ func (r *Handle) mainLoop(ctx context.Context, clientName string) {
 	}
 }
 
-func (r *Handle) sendMetric(ctx context.Context, netClient *http.Client, clientName string, metric *types.Metric) error {
+func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
 		panic(err)
@@ -507,7 +502,7 @@ func (r *Handle) sendMetric(ctx context.Context, netClient *http.Client, clientN
 		}
 
 		r.requestLatency.Since(httpRequestStart)
-		httpStatTags := r.getTags(clientName)
+		httpStatTags := r.getTags(label)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
 		stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
 
@@ -567,12 +562,14 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *Handle) IsPIIReportingDisabled(workspaceID string) bool {
+func (r *DefaultReporter) IsPIIReportingDisabled(workspaceID string) bool {
 	<-r.init
+	r.backendConfigMu.RLock()
+	defer r.backendConfigMu.RUnlock()
 	return r.piiReportingSettings[workspaceID]
 }
 
-func (r *Handle) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
 	}
@@ -654,10 +651,10 @@ func (r *Handle) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	}
 }
 
-func (r *Handle) getTags(clientName string) stats.Tags {
+func (r *DefaultReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
 		"workspaceId": r.workspaceID,
 		"instanceId":  r.instanceID,
-		"clientName":  clientName,
+		"clientName":  label,
 	}
 }

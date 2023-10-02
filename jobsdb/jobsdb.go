@@ -947,7 +947,7 @@ func (jd *Handle) loadConfig() {
 	jd.conf.backup.backupCheckSleepDuration = jd.config.GetReloadableDurationVar(
 		5, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...,
 	)
-	jd.conf.backup.PathPrefix = jd.config.GetString(
+	jd.conf.backup.PathPrefix = jd.config.GetStringVar(
 		jd.tablePrefix, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix),
 	)
 

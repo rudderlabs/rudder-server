@@ -106,10 +106,10 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
-	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-
+	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
+	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default)})
 	g.Go(misc.WithBugsnag(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString(config.Default)})
+		syncer()
 		return nil
 	}))
 
@@ -126,7 +126,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	defer destinationHandle.Stop()
 
-	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -234,7 +233,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		errDBForWrite,
 		schemaDB,
 		archivalDB,
-		reportingI,
+		reporting,
 		transientSources,
 		fileUploaderProvider,
 		rsourcesService,
@@ -248,7 +247,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	rtFactory := &router.Factory{
 		Logger:           logger.NewLogger().Child("router"),
-		Reporting:        reportingI,
+		Reporting:        reporting,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         routerDB,
 		ProcErrorDB:      errDBForWrite,
@@ -259,7 +258,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		AdaptiveLimit:    adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        reportingI,
+		Reporting:        reporting,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDBForWrite,

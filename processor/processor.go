@@ -139,7 +139,7 @@ type Handle struct {
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
-		eventSchemaV2AllSources   bool
+		eventAuditEnabled         map[string]bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -518,12 +518,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Info("Backend config received")
-		// waiting for reporting client setup
-		if proc.reporting != nil && proc.reportingEnabled {
-			if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
-				return err
-			}
-		}
 
 		// waiting for init group
 		proc.logger.Info("Waiting for async init group")
@@ -614,7 +608,6 @@ func (proc *Handle) loadConfig() {
 	// EventSchemas feature. false by default
 	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
-	proc.config.eventSchemaV2AllSources = config.GetBoolVar(false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -748,6 +741,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
 			destinationIDtoTypeMap = make(map[string]string)
+			eventAuditEnabled      = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -763,6 +757,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
+			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
@@ -770,6 +765,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
+		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -1421,6 +1417,12 @@ type dupStatKey struct {
 	equalSize bool
 }
 
+func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.eventAuditEnabled[workspaceID]
+}
+
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1529,8 +1531,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			sourceIsTransient := proc.transientSources.Apply(source.ID)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
-				// source has schemas enabled or if we override schemas for all sources
-				(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
+				proc.eventAuditEnabled(batchEvent.WorkspaceId) &&
 				// TODO: could use source.SourceDefinition.Category instead?
 				commonMetadataFromSingularEvent.SourceJobRunID == "" &&
 				!sourceIsTransient {
