@@ -1195,14 +1195,8 @@ func (proc *Handle) updateMetricMaps(
 func (proc *Handle) getNonSuccessfulMetrics(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
 
-	var filtered, failed []transformer.TransformerResponse
-	for _, event := range response.FailedEvents {
-		if event.StatusCode == types.FilterEventCode {
-			filtered = append(filtered, event)
-		} else {
-			failed = append(failed, event)
-		}
-	}
+	grouped := lo.GroupBy(response.FailedEvents, func(event transformer.TransformerResponse) bool { return event.StatusCode == types.FilterEventCode })
+	filtered, failed := grouped[true], grouped[false]
 
 	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(filtered, jobsdb.Filtered.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
 	m.failedJobs, m.failedMetrics, m.failedCountMap = proc.getTransformationMetrics(failed, jobsdb.Aborted.State, commonMetaData, eventsByMessageID, stage, transformationEnabled, trackingPlanEnabled)
