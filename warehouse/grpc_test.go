@@ -831,7 +831,17 @@ func TestGRPC(t *testing.T) {
 						require.NoError(t, err)
 						require.NotEmpty(t, res)
 						require.Empty(t, res.GetError())
-						require.Equal(t, res.GetData(), `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":""},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+						require.JSONEq(t, res.GetData(), `{
+							"steps":[
+								{"id":1,"name":"Verifying Object Storage","success":false,"error":""},
+								{"id":2,"name":"Verifying Namespace","success":false,"error":""},
+								{"id":3,"name":"Verifying Connections","success":false,"error":""},
+								{"id":4,"name":"Verifying Create Schema","success":false,"error":""},
+								{"id":5,"name":"Verifying Create and Alter Table","success":false,"error":""},
+								{"id":6,"name":"Verifying Fetch Schema","success":false,"error":""},
+								{"id":7,"name":"Verifying Load Table","success":false,"error":""}
+							]
+						}`)
 					})
 					t.Run("validate", func(t *testing.T) {
 						res, err := grpcClient.Validate(ctx, &proto.WHValidationRequest{
@@ -841,7 +851,19 @@ func TestGRPC(t *testing.T) {
 						require.NoError(t, err)
 						require.NotEmpty(t, res)
 						require.Empty(t, res.GetError())
-						require.Equal(t, res.GetData(), `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
+						require.JSONEq(t, res.GetData(), `{
+							"success":true,
+							"error":"",
+							"steps":[
+								{"id":1,"name":"Verifying Object Storage","success":true,"error":""},
+								{"id":2,"name":"Verifying Namespace","success":true,"error":""},
+								{"id":3,"name":"Verifying Connections","success":true,"error":""},
+								{"id":4,"name":"Verifying Create Schema","success":true,"error":""},
+								{"id":5,"name":"Verifying Create and Alter Table","success":true,"error":""},
+								{"id":6,"name":"Verifying Fetch Schema","success":true,"error":""},
+								{"id":7,"name":"Verifying Load Table","success":true,"error":""}
+							]
+						}`)
 					})
 				})
 				t.Run("tunneling", func(t *testing.T) {

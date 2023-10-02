@@ -3,6 +3,7 @@ package model
 import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 const (
+	VerifyingNamespace           = "Verifying Namespace"
 	VerifyingObjectStorage       = "Verifying Object Storage"
 	VerifyingConnections         = "Verifying Connections"
 	VerifyingCreateSchema        = "Verifying Create Schema"

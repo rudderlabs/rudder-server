@@ -11,34 +11,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-
 	"cloud.google.com/go/storage"
-
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/stretchr/testify/require"
+	_ "github.com/trinodb/trino-go-client/trino"
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
-	"github.com/minio/minio-go/v7/pkg/credentials"
-
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/stretchr/testify/require"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	_ "github.com/trinodb/trino-go-client/trino"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -280,6 +270,7 @@ func TestIntegration(t *testing.T) {
 		dest := backendconfig.DestinationT{
 			ID: s3DestinationID,
 			Config: map[string]interface{}{
+				"namespace":        "rudderstack_setup_test",
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
 				"accessKeyID":      s3AccessKeyID,
@@ -309,6 +300,7 @@ func TestIntegration(t *testing.T) {
 		dest := backendconfig.DestinationT{
 			ID: gcsDestinationID,
 			Config: map[string]interface{}{
+				"namespace":     "rudderstack_setup_test",
 				"bucketName":    gcsBucketName,
 				"prefix":        "",
 				"endPoint":      gcsEndPoint,
@@ -332,6 +324,7 @@ func TestIntegration(t *testing.T) {
 		dest := backendconfig.DestinationT{
 			ID: azDestinationID,
 			Config: map[string]interface{}{
+				"namespace":      "rudderstack_setup_test",
 				"containerName":  azContainerName,
 				"prefix":         "",
 				"accountName":    azAccountName,

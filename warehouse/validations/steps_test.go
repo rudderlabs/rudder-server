@@ -28,7 +28,7 @@ func TestValidationSteps(t *testing.T) {
 					Name: warehouseutils.GCSDatalake,
 				},
 			},
-			steps: []string{model.VerifyingObjectStorage},
+			steps: []string{model.VerifyingObjectStorage, model.VerifyingNamespace},
 		},
 		{
 			name: "Azure",
@@ -37,7 +37,7 @@ func TestValidationSteps(t *testing.T) {
 					Name: warehouseutils.AzureDatalake,
 				},
 			},
-			steps: []string{model.VerifyingObjectStorage},
+			steps: []string{model.VerifyingObjectStorage, model.VerifyingNamespace},
 		},
 		{
 			name: "S3 without Glue",
@@ -47,7 +47,7 @@ func TestValidationSteps(t *testing.T) {
 				},
 				Config: map[string]interface{}{},
 			},
-			steps: []string{model.VerifyingObjectStorage},
+			steps: []string{model.VerifyingObjectStorage, model.VerifyingNamespace},
 		},
 		{
 			name: "S3 with Glue",
@@ -62,6 +62,7 @@ func TestValidationSteps(t *testing.T) {
 			},
 			steps: []string{
 				model.VerifyingObjectStorage,
+				model.VerifyingNamespace,
 				model.VerifyingCreateSchema,
 				model.VerifyingCreateAndAlterTable,
 				model.VerifyingFetchSchema,
@@ -76,6 +77,7 @@ func TestValidationSteps(t *testing.T) {
 			},
 			steps: []string{
 				model.VerifyingObjectStorage,
+				model.VerifyingNamespace,
 				model.VerifyingConnections,
 				model.VerifyingCreateSchema,
 				model.VerifyingCreateAndAlterTable,

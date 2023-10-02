@@ -274,7 +274,7 @@ func TestIntegration(t *testing.T) {
 				"password":         password,
 				"port":             strconv.Itoa(mssqlPort),
 				"sslMode":          "disable",
-				"namespace":        "",
+				"namespace":        namespace,
 				"bucketProvider":   "MINIO",
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,

@@ -1,4 +1,4 @@
-package validations_test
+package validations
 
 import (
 	"context"
@@ -6,18 +6,16 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type testResource struct {
@@ -62,7 +60,7 @@ func TestValidator(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	validations.Init()
+	Init()
 
 	var (
 		provider  = "MINIO"
@@ -83,7 +81,7 @@ func TestValidator(t *testing.T) {
 			tr := setup(t, pool)
 			pgResource, minioResource := tr.pgResource, tr.minioResource
 
-			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.POSTGRES,
 				},
@@ -117,7 +115,7 @@ func TestValidator(t *testing.T) {
 
 			_ = minioResource.Client.MakeBucket(bucket, "us-east-1")
 
-			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3Datalake,
 				},
@@ -184,7 +182,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(ctx, model.VerifyingConnections, &backendconfig.DestinationT{
+				v, err := NewValidator(ctx, model.VerifyingConnections, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -260,7 +258,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(ctx, model.VerifyingCreateSchema, &backendconfig.DestinationT{
+				v, err := NewValidator(ctx, model.VerifyingCreateSchema, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -367,7 +365,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(ctx, model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
+				v, err := NewValidator(ctx, model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -391,7 +389,7 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(ctx, model.VerifyingFetchSchema, &backendconfig.DestinationT{
+		v, err := NewValidator(ctx, model.VerifyingFetchSchema, &backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				Name: warehouseutils.POSTGRES,
 			},
@@ -523,7 +521,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(ctx, model.VerifyingLoadTable, &backendconfig.DestinationT{
+				v, err := NewValidator(ctx, model.VerifyingLoadTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -541,5 +539,24 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 			})
 		}
+	})
+}
+
+func TestNamespaceValidator(t *testing.T) {
+	t.Run("not provided", func(t *testing.T) {
+		v := namespaceValidator{
+			destination: &backendconfig.DestinationT{},
+		}
+		require.ErrorContains(t, v.Validate(context.Background()), "namespace is not provided")
+	})
+	t.Run("empty", func(t *testing.T) {
+		v := namespaceValidator{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "",
+				},
+			},
+		}
+		require.ErrorContains(t, v.Validate(context.Background()), "namespace is empty")
 	})
 }

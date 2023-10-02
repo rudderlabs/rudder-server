@@ -26,6 +26,10 @@ type Validator interface {
 	Validate(ctx context.Context) error
 }
 
+type namespaceValidator struct {
+	destination *backendconfig.DestinationT
+}
+
 type objectStorage struct {
 	destination *backendconfig.DestinationT
 }
@@ -175,6 +179,10 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 	)
 
 	switch step {
+	case model.VerifyingNamespace:
+		return &namespaceValidator{
+			destination: dest,
+		}, nil
 	case model.VerifyingObjectStorage:
 		return &objectStorage{
 			destination: dest,
@@ -222,6 +230,22 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 	}
 
 	return nil, fmt.Errorf("invalid step: %s", step)
+}
+
+func (v *namespaceValidator) Validate(_ context.Context) error {
+	if v.destination.Config["namespace"] == nil {
+		return fmt.Errorf("namespace is not provided")
+	}
+
+	namespace, _ := v.destination.Config["namespace"].(string)
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return fmt.Errorf("namespace is empty")
+	}
+
+	// TODO template validation
+
+	return nil
 }
 
 func (os *objectStorage) Validate(ctx context.Context) error {

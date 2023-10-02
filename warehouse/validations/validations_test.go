@@ -1,8 +1,7 @@
-package validations_test
+package validations
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -12,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestValidate(t *testing.T) {
@@ -20,12 +18,12 @@ func TestValidate(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	validations.Init()
+	Init()
 
 	var (
 		provider  = "MINIO"
 		namespace = "test_namespace"
-		sslmode   = "disable"
+		sslMode   = "disable"
 	)
 
 	ctx := context.Background()
@@ -36,16 +34,16 @@ func TestValidate(t *testing.T) {
 	t.Run("invalid path", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := validations.Validate(ctx, &model.ValidationRequest{
+		_, err := Validate(ctx, &model.ValidationRequest{
 			Path: "invalid",
 		})
-		require.Equal(t, err, errors.New("invalid path: invalid"))
+		require.ErrorContains(t, err, "invalid path: invalid")
 	})
 
 	t.Run("steps", func(t *testing.T) {
 		t.Parallel()
 
-		res, err := validations.Validate(ctx, &model.ValidationRequest{
+		res, err := Validate(ctx, &model.ValidationRequest{
 			Path: "steps",
 			Destination: &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -55,7 +53,17 @@ func TestValidate(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Empty(t, res.Error)
-		require.JSONEq(t, res.Data, `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":""},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+		require.JSONEq(t, res.Data, `{
+			"steps":[
+				{"id":1,"name":"Verifying Object Storage","success":false,"error":""},
+				{"id":2,"name":"Verifying Namespace","success":false,"error":""},
+				{"id":3,"name":"Verifying Connections","success":false,"error":""},
+				{"id":4,"name":"Verifying Create Schema","success":false,"error":""},
+				{"id":5,"name":"Verifying Create and Alter Table","success":false,"error":""},
+				{"id":6,"name":"Verifying Fetch Schema","success":false,"error":""},
+				{"id":7,"name":"Verifying Load Table","success":false,"error":""}
+			]
+		}`)
 	})
 
 	t.Run("validate", func(t *testing.T) {
@@ -64,7 +72,7 @@ func TestValidate(t *testing.T) {
 		t.Run("invalid step", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "invalid",
 				Destination: &backendconfig.DestinationT{
@@ -81,7 +89,7 @@ func TestValidate(t *testing.T) {
 		t.Run("step not found", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "1000",
 				Destination: &backendconfig.DestinationT{
@@ -98,24 +106,31 @@ func TestValidate(t *testing.T) {
 		t.Run("invalid destination", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
-				Step: "2",
+				Step: "3",
 				Destination: &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: "invalid",
+						Name:   "invalid",
+						Config: map[string]any{"namespace": "test"},
 					},
 				},
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
+			require.JSONEq(t, res.Data, `{
+				"success":false,
+				"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager",
+				"steps":[
+					{"id":3,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}
+				]
+			}`)
 		})
 
 		t.Run("step error", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Destination: &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -125,15 +140,27 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"upload file: creating file manager: service provider not supported: ","steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":"upload file: creating file manager: service provider not supported: "},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+			require.JSONEq(t, res.Data, `{
+				"success":false,
+				"error":"upload file: creating file manager: service provider not supported: ",
+				"steps":[
+					{"id":1,"name":"Verifying Object Storage","success":false,"error":"upload file: creating file manager: service provider not supported: "},
+					{"id":2,"name":"Verifying Namespace","success":false,"error":""},
+					{"id":3,"name":"Verifying Connections","success":false,"error":""},
+					{"id":4,"name":"Verifying Create Schema","success":false,"error":""},
+					{"id":5,"name":"Verifying Create and Alter Table","success":false,"error":""},
+					{"id":6,"name":"Verifying Fetch Schema","success":false,"error":""},
+					{"id":7,"name":"Verifying Load Table","success":false,"error":""}
+				]
+			}`)
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
-				Step: "2",
+				Step: "3",
 				Destination: &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: "invalid",
@@ -142,7 +169,13 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
+			require.JSONEq(t, res.Data, `{
+				"success":false,
+				"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager",
+				"steps":[
+					{"id":3,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}
+				]
+			}`)
 		})
 
 		t.Run("empty step", func(t *testing.T) {
@@ -151,7 +184,7 @@ func TestValidate(t *testing.T) {
 			tr := setup(t, pool)
 			pgResource, minioResource := tr.pgResource, tr.minioResource
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
+			res, err := Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "",
 				Destination: &backendconfig.DestinationT{
@@ -164,7 +197,7 @@ func TestValidate(t *testing.T) {
 						"database":        pgResource.Database,
 						"user":            pgResource.User,
 						"password":        pgResource.Password,
-						"sslMode":         sslmode,
+						"sslMode":         sslMode,
 						"namespace":       namespace,
 						"bucketProvider":  provider,
 						"bucketName":      minioResource.BucketName,
@@ -176,7 +209,19 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
+			require.JSONEq(t, res.Data, `{
+				"success":true,
+				"error":"",
+				"steps":[
+					{"id":1,"name":"Verifying Object Storage","success":true,"error":""},
+					{"id":2,"name":"Verifying Namespace","success":true,"error":""},
+					{"id":3,"name":"Verifying Connections","success":true,"error":""},
+					{"id":4,"name":"Verifying Create Schema","success":true,"error":""},
+					{"id":5,"name":"Verifying Create and Alter Table","success":true,"error":""},
+					{"id":6,"name":"Verifying Fetch Schema","success":true,"error":""},
+					{"id":7,"name":"Verifying Load Table","success":true,"error":""}
+				]
+			}`)
 		})
 
 		t.Run("steps in order", func(t *testing.T) {
@@ -198,34 +243,39 @@ func TestValidate(t *testing.T) {
 				{
 					name:     "step 2",
 					step:     "2",
-					response: `{"success":true,"error":"","steps":[{"id":2,"name":"Verifying Connections","success":true,"error":""}]}`,
+					response: `{"success":true,"error":"","steps":[{"id":2,"name":"Verifying Namespace","success":true,"error":""}]}`,
 				},
 				{
 					name:     "step 3",
 					step:     "3",
-					response: `{"success":true,"error":"","steps":[{"id":3,"name":"Verifying Create Schema","success":true,"error":""}]}`,
+					response: `{"success":true,"error":"","steps":[{"id":3,"name":"Verifying Connections","success":true,"error":""}]}`,
 				},
 				{
 					name:     "step 4",
 					step:     "4",
-					response: `{"success":true,"error":"","steps":[{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""}]}`,
+					response: `{"success":true,"error":"","steps":[{"id":4,"name":"Verifying Create Schema","success":true,"error":""}]}`,
 				},
 				{
 					name:     "step 5",
 					step:     "5",
-					response: `{"success":true,"error":"","steps":[{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""}]}`,
+					response: `{"success":true,"error":"","steps":[{"id":5,"name":"Verifying Create and Alter Table","success":true,"error":""}]}`,
 				},
 				{
 					name:     "step 6",
 					step:     "6",
-					response: `{"success":true,"error":"","steps":[{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`,
+					response: `{"success":true,"error":"","steps":[{"id":6,"name":"Verifying Fetch Schema","success":true,"error":""}]}`,
+				},
+				{
+					name:     "step 7",
+					step:     "7",
+					response: `{"success":true,"error":"","steps":[{"id":7,"name":"Verifying Load Table","success":true,"error":""}]}`,
 				},
 			}
 
 			for _, tc := range testCases {
 				tc := tc
 
-				res, err := validations.Validate(ctx, &model.ValidationRequest{
+				res, err := Validate(ctx, &model.ValidationRequest{
 					Path: "validate",
 					Step: tc.step,
 					Destination: &backendconfig.DestinationT{
@@ -238,7 +288,7 @@ func TestValidate(t *testing.T) {
 							"database":        pgResource.Database,
 							"user":            pgResource.User,
 							"password":        pgResource.Password,
-							"sslMode":         sslmode,
+							"sslMode":         sslMode,
 							"namespace":       namespace,
 							"bucketProvider":  provider,
 							"bucketName":      minioResource.BucketName,
