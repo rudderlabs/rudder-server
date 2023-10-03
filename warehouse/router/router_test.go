@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	bcm2 "github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -108,7 +108,7 @@ func TestRouter(t *testing.T) {
 		cp := controlplane.NewClient(s.URL, &identity.Namespace{},
 			controlplane.WithHTTPClient(s.Client()),
 		)
-		bcm := bcm2.New(config.Default, db, tenantManager, logger.NOP)
+		backendConfigManager := bcm.New(config.Default, db, tenantManager, logger.NOP)
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -126,7 +126,7 @@ func TestRouter(t *testing.T) {
 			n,
 			tenantManager,
 			cp,
-			bcm,
+			backendConfigManager,
 			ef,
 			triggerStore,
 		)
@@ -724,7 +724,7 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
 		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-		r.bcManager = bcm2.New(r.conf, r.db, r.tenantManager, r.logger)
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			reporting:    &reporting.NOOP{},
@@ -873,7 +873,7 @@ func TestRouter(t *testing.T) {
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
 			r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-			r.bcManager = bcm2.New(r.conf, r.db, r.tenantManager, r.logger)
+			r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
 				reporting:    &reporting.NOOP{},
@@ -1183,7 +1183,7 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
 		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
-		r.bcManager = bcm2.New(r.conf, r.db, r.tenantManager, r.logger)
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger)
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
 

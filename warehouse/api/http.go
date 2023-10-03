@@ -65,8 +65,6 @@ type triggerUploadRequest struct {
 	DestinationID string `json:"destination_id"`
 }
 
-// TODO: Introduce a common constructor API for HTTP and GRPC.
-// TODO: Expose 2 methods for startHTTP and startGRPC.
 type Api struct {
 	mode          string
 	logger        logger.Logger

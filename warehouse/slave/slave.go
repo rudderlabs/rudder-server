@@ -30,7 +30,7 @@ type Slave struct {
 	stats              stats.Stats
 	notifier           slaveNotifier
 	bcManager          *bcm.BackendConfigManager
-	constraintsManager *constraints.ConstraintsManager
+	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 
 	config struct {
@@ -44,7 +44,7 @@ func New(
 	stats stats.Stats,
 	notifier slaveNotifier,
 	bcManager *bcm.BackendConfigManager,
-	constraintsManager *constraints.ConstraintsManager,
+	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 ) *Slave {
 	s := &Slave{}

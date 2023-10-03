@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
+	werrors "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -122,7 +122,7 @@ type UploadJob struct {
 		longRunningUploadStatThresholdInMin time.Duration
 	}
 
-	errorHandler    errors2.ErrorHandler
+	errorHandler    werrors.ErrorHandler
 	encodingFactory *encoding.Factory
 
 	stats struct {
@@ -209,7 +209,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler:    errors2.ErrorHandler{Manager: whManager},
+		errorHandler:    werrors.ErrorHandler{Manager: whManager},
 		encodingFactory: f.encodingFactory,
 	}
 

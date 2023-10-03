@@ -62,7 +62,7 @@ type worker struct {
 	statsFactory       stats.Stats
 	notifier           slaveNotifier
 	bcManager          *bcm.BackendConfigManager
-	constraintsManager *constraints.ConstraintsManager
+	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
 
@@ -77,14 +77,13 @@ type worker struct {
 	}
 }
 
-// TODO: Constant for warehouse
 func newWorker(
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	notifier slaveNotifier,
 	bcManager *bcm.BackendConfigManager,
-	constraintsManager *constraints.ConstraintsManager,
+	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 	workerIdx int,
 ) *worker {

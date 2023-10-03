@@ -451,7 +451,7 @@ func (jr *jobRun) cleanup() {
 	}
 }
 
-func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.ConstraintsViolation, discardWriter encoding.LoadFileWriter) error {
+func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter) error {
 	rowID, hasID := columnData[jr.job.columnName("id")]
 	receivedAt, hasReceivedAt := columnData[jr.job.columnName("received_at")]
 

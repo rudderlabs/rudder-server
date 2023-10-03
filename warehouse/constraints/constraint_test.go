@@ -19,12 +19,12 @@ func TestConstraintsManager(t *testing.T) {
 		destinationType string
 		brEvent         *types.BatchRouterEvent
 		columnName      string
-		expected        *ConstraintsViolation
+		expected        *Violation
 	}{
 		{
 			name:            "Unsupported destination type",
 			destinationType: warehouseutils.RS,
-			expected:        &ConstraintsViolation{},
+			expected:        &Violation{},
 		},
 		{
 			name:            "Violates index constraint",
@@ -43,7 +43,7 @@ func TestConstraintsManager(t *testing.T) {
 				},
 			},
 			columnName: "merge_property_1_value",
-			expected: &ConstraintsViolation{
+			expected: &Violation{
 				IsViolated:         true,
 				ViolatedIdentifier: "rudder-discards-",
 			},
@@ -65,7 +65,7 @@ func TestConstraintsManager(t *testing.T) {
 				},
 			},
 			columnName: "merge_property_1_value",
-			expected:   &ConstraintsViolation{},
+			expected:   &Violation{},
 		},
 	}
 

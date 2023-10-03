@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
+	werrors "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -57,7 +57,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
-			er := &errors2.ErrorHandler{Manager: m}
+			er := &werrors.ErrorHandler{Manager: m}
 
 			f, err := os.Open(file)
 			require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
-			er := &errors2.ErrorHandler{Manager: m}
+			er := &werrors.ErrorHandler{Manager: m}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.UnknownError))
@@ -90,7 +90,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil manager: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &errors2.ErrorHandler{Manager: nil}
+			er := &werrors.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.Noop))
@@ -99,7 +99,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil error: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &errors2.ErrorHandler{Manager: nil}
+			er := &werrors.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.Noop))

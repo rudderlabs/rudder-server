@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	admin2 "github.com/rudderlabs/rudder-server/warehouse/admin"
-	api2 "github.com/rudderlabs/rudder-server/warehouse/api"
+	"github.com/rudderlabs/rudder-server/warehouse/admin"
+	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
-	slave2 "github.com/rudderlabs/rudder-server/warehouse/slave"
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
@@ -59,13 +59,13 @@ type App struct {
 	tenantManager      *multitenant.Manager
 	controlPlaneClient *controlplane.Client
 	bcManager          *bcm.BackendConfigManager
-	api                *api2.Api
-	grpcServer         *api2.GRPC
-	constraintsManager *constraints.ConstraintsManager
+	api                *api.Api
+	grpcServer         *api.GRPC
+	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	sourcesManager     *jobs.AsyncJobWh
-	admin              *admin2.Admin
+	admin              *admin.Admin
 	triggerStore       *sync.Map
 
 	appName string
@@ -170,7 +170,7 @@ func (a *App) Setup(ctx context.Context) error {
 	)
 	jobs.WithConfig(a.sourcesManager, a.conf)
 
-	a.grpcServer, err = api2.NewGRPCServer(
+	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
 		a.logger,
 		a.db,
@@ -182,7 +182,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("cannot create grpc server: %w", err)
 	}
 
-	a.api = api2.NewApi(
+	a.api = api.NewApi(
 		a.config.mode,
 		a.conf,
 		a.logger,
@@ -195,7 +195,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.sourcesManager,
 		a.triggerStore,
 	)
-	a.admin = admin2.New(
+	a.admin = admin.New(
 		a.bcManager,
 		a.logger,
 	)
@@ -360,7 +360,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.logger.Info("Starting warehouse slave...")
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			slave := slave2.New(
+			s := slave.New(
 				a.conf,
 				a.logger,
 				a.statsFactory,
@@ -369,7 +369,7 @@ func (a *App) Run(ctx context.Context) error {
 				a.constraintsManager,
 				a.encodingFactory,
 			)
-			return slave.SetupSlave(gCtx)
+			return s.SetupSlave(gCtx)
 		}))
 	}
 	if mode.IsMaster(a.config.mode) {

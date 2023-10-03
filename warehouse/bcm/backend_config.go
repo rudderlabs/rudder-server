@@ -336,7 +336,6 @@ func deepCopy(src, dest interface{}) error {
 }
 
 // TODO: use statsFactory
-// TODO: introduce warehouse constant
 func (s *BackendConfigManager) persistSSLFileErrorStat(
 	workspaceID, destType, destName,
 	destID, sourceName, sourceID,

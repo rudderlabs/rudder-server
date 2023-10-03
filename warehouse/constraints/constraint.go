@@ -12,10 +12,10 @@ import (
 )
 
 type constraints interface {
-	violates(brEvent *types.BatchRouterEvent, columnName string) (cv *ConstraintsViolation)
+	violates(brEvent *types.BatchRouterEvent, columnName string) (cv *Violation)
 }
 
-type ConstraintsViolation struct {
+type Violation struct {
 	IsViolated         bool
 	ViolatedIdentifier string
 }
@@ -27,13 +27,13 @@ type indexConstraint struct {
 	limit        int
 }
 
-type ConstraintsManager struct {
+type Manager struct {
 	constraintsMap              map[string][]constraints
 	enableConstraintsViolations misc.ValueLoader[bool]
 }
 
-func New(conf *config.Config) *ConstraintsManager {
-	cm := &ConstraintsManager{}
+func New(conf *config.Config) *Manager {
+	cm := &Manager{}
 
 	cm.constraintsMap = map[string][]constraints{
 		warehouseutils.BQ: {
@@ -70,8 +70,8 @@ func New(conf *config.Config) *ConstraintsManager {
 	return cm
 }
 
-func (cm *ConstraintsManager) ViolatedConstraints(destinationType string, brEvent *types.BatchRouterEvent, columnName string) (cv *ConstraintsViolation) {
-	cv = &ConstraintsViolation{}
+func (cm *Manager) ViolatedConstraints(destinationType string, brEvent *types.BatchRouterEvent, columnName string) (cv *Violation) {
+	cv = &Violation{}
 
 	if !cm.enableConstraintsViolations.Load() {
 		return
@@ -91,9 +91,9 @@ func (cm *ConstraintsManager) ViolatedConstraints(destinationType string, brEven
 	return
 }
 
-func (ic *indexConstraint) violates(brEvent *types.BatchRouterEvent, columnName string) *ConstraintsViolation {
+func (ic *indexConstraint) violates(brEvent *types.BatchRouterEvent, columnName string) *Violation {
 	if brEvent.Metadata.Table != ic.tableName || columnName != ic.columnName {
-		return &ConstraintsViolation{}
+		return &Violation{}
 	}
 
 	concatenatedLength := 0
@@ -113,7 +113,7 @@ func (ic *indexConstraint) violates(brEvent *types.BatchRouterEvent, columnName 
 		}
 		concatenatedLength += len(columnVal)
 	}
-	return &ConstraintsViolation{
+	return &Violation{
 		IsViolated:         concatenatedLength > ic.limit,
 		ViolatedIdentifier: strcase.ToKebab(warehouseutils.DiscardsTable) + "-" + misc.FastUUID().String(),
 	}

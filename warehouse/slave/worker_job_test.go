@@ -375,7 +375,7 @@ func TestSlaveJob(t *testing.T) {
 					"id":          "test_id",
 					"received_at": now,
 				},
-				&constraints.ConstraintsViolation{},
+				&constraints.Violation{},
 				discardWriter,
 			)
 			require.NoError(t, err)
@@ -383,7 +383,7 @@ func TestSlaveJob(t *testing.T) {
 
 		err = jr.handleDiscardTypes("test_table", "loaded_at", "test_constrains",
 			map[string]interface{}{},
-			&constraints.ConstraintsViolation{
+			&constraints.Violation{
 				IsViolated:         true,
 				ViolatedIdentifier: "test_violated_identifier",
 			},
