@@ -19,13 +19,10 @@ import (
 
 type insertJobRequest struct {
 	SourceID      string `json:"source_id"`
-	Type          string `json:"type"`
-	Channel       string `json:"channel"`
 	DestinationID string `json:"destination_id"`
 	StartTime     string `json:"start_time"`
 	JobRunID      string `json:"job_run_id"`
 	TaskRunID     string `json:"task_run_id"`
-	AsyncJobType  string `json:"async_job_type"`
 	WorkspaceID   string `json:"workspace_id"`
 }
 

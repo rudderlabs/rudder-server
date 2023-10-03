@@ -186,6 +186,8 @@ func (b *Barrier) StateChanged(key string, jobID int64, state string) error {
 	switch state {
 	case jobsdb.Succeeded.State:
 		command = &jobSucceededCmd{jsCmd}
+	case jobsdb.Filtered.State:
+		command = &jobFilteredCmd{jsCmd}
 	case jobsdb.Failed.State:
 		command = &jobFailedCommand{jsCmd}
 	case jobsdb.Aborted.State:
@@ -352,6 +354,26 @@ type jobSucceededCmd struct {
 
 // removes the barrier for this key, if it exists
 func (c *jobSucceededCmd) execute(b *Barrier) {
+	if barrier, ok := b.barriers[c.key]; ok {
+		barrier.Leave(c.jobID)
+		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
+			return
+		}
+		barrier.failedJobID = nil
+		barrier.drainLimiter = nil
+		if barrier.Inactive() {
+			delete(b.barriers, c.key)
+		}
+	}
+}
+
+// jobFilteredCmd is a command that is executed when a job is filtered.
+type jobFilteredCmd struct {
+	*cmd
+}
+
+// removes the barrier for this key, if it exists
+func (c *jobFilteredCmd) execute(b *Barrier) {
 	if barrier, ok := b.barriers[c.key]; ok {
 		barrier.Leave(c.jobID)
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
