@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.5](https://github.com/rudderlabs/rudder-server/compare/v1.14.4...v1.14.5) (2023-10-03)
+
+
+### Miscellaneous
+
+* fix backup prefix ([#3933](https://github.com/rudderlabs/rudder-server/issues/3933)) ([206e20e](https://github.com/rudderlabs/rudder-server/commit/206e20ee679c51dee7fca87445ee55b3ea04b424))
+
 ## [1.14.4](https://github.com/rudderlabs/rudder-server/compare/v1.14.3...v1.14.4) (2023-09-29)
 
 
