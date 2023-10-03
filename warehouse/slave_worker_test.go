@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/golang/mock/gomock"
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -77,18 +78,20 @@ func TestSlaveWorker(t *testing.T) {
 		ef := encoding.NewFactory(config.Default)
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
+
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -119,13 +122,15 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				JobType:   "upload",
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUpload,
+				},
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -141,7 +146,7 @@ func TestSlaveWorker(t *testing.T) {
 			var uploadPayload payload
 			err = json.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
-			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
+			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
 			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
 			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
@@ -175,18 +180,20 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("clickhouse bool", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
+
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -217,13 +224,15 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				JobType:   "upload",
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUpload,
+				},
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -297,21 +306,23 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("schema limit exceeded", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
 			c := config.New()
 			c.Set("Warehouse.s3_datalake.columnCountLimit", 10)
 
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+
 			slaveWorker := newSlaveWorker(
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -342,20 +353,22 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				JobType:   "upload",
+			claimJob := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUpload,
+				},
 			}
 
 			claimedJobDone := make(chan struct{})
 			go func() {
 				defer close(claimedJobDone)
 
-				slaveWorker.processClaimedUploadJob(ctx, claim)
+				slaveWorker.processClaimedUploadJob(ctx, claimJob)
 			}()
 
 			response := <-subscribeCh
@@ -365,18 +378,20 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("discards", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
+
+			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -419,13 +434,15 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				JobType:   "upload",
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUpload,
+				},
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -536,10 +553,10 @@ func TestSlaveWorker(t *testing.T) {
 		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -550,7 +567,7 @@ func TestSlaveWorker(t *testing.T) {
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				bcm,
 				newConstraintsManager(config.Default),
 				ef,
@@ -570,13 +587,15 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				JobType:   "async_job",
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeAsync,
+				},
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -600,10 +619,10 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("invalid configurations", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
 			defer close(subscribeCh)
 
-			notifier := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -614,7 +633,7 @@ func TestSlaveWorker(t *testing.T) {
 				c,
 				logger.NOP,
 				stats.Default,
-				notifier,
+				slaveNotifier,
 				bcm,
 				newConstraintsManager(config.Default),
 				ef,
@@ -633,7 +652,7 @@ func TestSlaveWorker(t *testing.T) {
 					sourceID:      sourceID,
 					destinationID: destinationID,
 					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid AsyncJobType"),
+					expectedError: errors.New("invalid asyncJob type"),
 				},
 				{
 					name:          "invalid parameters",
@@ -673,14 +692,16 @@ func TestSlaveWorker(t *testing.T) {
 					payloadJson, err := json.Marshal(p)
 					require.NoError(t, err)
 
-					claim := pgnotifier.Claim{
-						ID:        1,
-						BatchID:   uuid.New().String(),
-						Payload:   payloadJson,
-						Status:    "waiting",
-						Workspace: "test_workspace",
-						Attempt:   0,
-						JobType:   "async_job",
+					claim := &notifier.ClaimJob{
+						Job: &notifier.Job{
+							ID:                  1,
+							BatchID:             uuid.New().String(),
+							Payload:             payloadJson,
+							Status:              model.Waiting,
+							WorkspaceIdentifier: "test_workspace",
+							Attempt:             0,
+							Type:                notifier.JobTypeAsync,
+						},
 					}
 
 					claimedJobDone := make(chan struct{})
@@ -698,4 +719,263 @@ func TestSlaveWorker(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestHandleSchemaChange(t *testing.T) {
+	inputs := []struct {
+		name             string
+		existingDatatype string
+		currentDataType  string
+		value            any
+
+		newColumnVal any
+		convError    error
+	}{
+		{
+			name:             "should send int values if existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     1,
+		},
+		{
+			name:             "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     1.0,
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is boolean",
+			existingDatatype: "string",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is int",
+			existingDatatype: "string",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is float",
+			existingDatatype: "string",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is datetime",
+			existingDatatype: "string",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     "2022-05-05T00:00:00.000Z",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is string",
+			existingDatatype: "string",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			newColumnVal:     `{"json":true}`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is boolean",
+			existingDatatype: "json",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send json string values if existing datatype is jso, new datatype is int",
+			existingDatatype: "json",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is float",
+			existingDatatype: "json",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is json",
+			existingDatatype: "json",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is string",
+			existingDatatype: "json",
+			currentDataType:  "string",
+			value:            "string value",
+			newColumnVal:     `"string value"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is array",
+			existingDatatype: "json",
+			currentDataType:  "array",
+			value:            []any{false, 1, "string value"},
+			newColumnVal:     []any{false, 1, "string value"},
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is int",
+			existingDatatype: "boolean",
+			currentDataType:  "int",
+			value:            1,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is float",
+			existingDatatype: "boolean",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is string",
+			existingDatatype: "boolean",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is datetime",
+			existingDatatype: "boolean",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is json",
+			existingDatatype: "boolean",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is boolean",
+			existingDatatype: "int",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is string",
+			existingDatatype: "int",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is datetime",
+			existingDatatype: "int",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is json",
+			existingDatatype: "int",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1,
+			convError:        errIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is boolean",
+			existingDatatype: "float",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1.0,
+			convError:        errIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is string",
+			existingDatatype: "float",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is datetime",
+			existingDatatype: "float",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is json",
+			existingDatatype: "float",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is boolean",
+			existingDatatype: "datetime",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is string",
+			existingDatatype: "datetime",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is int",
+			existingDatatype: "datetime",
+			currentDataType:  "int",
+			value:            1,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is float",
+			existingDatatype: "datetime",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is json",
+			existingDatatype: "datetime",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+	}
+	for _, ip := range inputs {
+		tc := ip
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			newColumnVal, convError := handleSchemaChange(
+				tc.existingDatatype,
+				tc.currentDataType,
+				tc.value,
+			)
+			require.Equal(t, newColumnVal, tc.newColumnVal)
+			require.ErrorIs(t, convError, tc.convError)
+		})
+	}
 }

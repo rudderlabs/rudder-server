@@ -48,7 +48,7 @@ func getStagingFiles() []*model.StagingFile {
 
 func TestCreateLoadFiles(t *testing.T) {
 	t.Parallel()
-	notifer := &mockNotifier{
+	notifier := &mockNotifier{
 		t:      t,
 		tables: []string{"track", "indentify"},
 	}
@@ -58,7 +58,7 @@ func TestCreateLoadFiles(t *testing.T) {
 
 	lf := loadfiles.LoadFileGenerator{
 		Logger:    logger.NOP,
-		Notifier:  notifer,
+		Notifier:  notifier,
 		StageRepo: stageRepo,
 		LoadRepo:  loadRepo,
 
@@ -95,7 +95,7 @@ func TestCreateLoadFiles(t *testing.T) {
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(20), endID)
 
-	require.Len(t, loadRepo.store, len(stagingFiles)*len(notifer.tables))
+	require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
 	require.Len(t, stageRepo.store, len(stagingFiles))
 
 	for _, stagingFile := range stagingFiles {
@@ -114,7 +114,7 @@ func TestCreateLoadFiles(t *testing.T) {
 
 			tableNames = append(tableNames, loadFile.TableName)
 		}
-		require.ElementsMatch(t, notifer.tables, tableNames)
+		require.ElementsMatch(t, notifier.tables, tableNames)
 		require.Equal(t, warehouseutils.StagingFileSucceededState, stageRepo.store[stagingFile.ID].Status)
 	}
 
@@ -130,7 +130,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		require.Equal(t, int64(21), startID)
 		require.Equal(t, int64(22), endID)
 
-		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifer.tables))
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
 	})
 
 	t.Run("force recreate", func(t *testing.T) {
@@ -143,7 +143,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		require.Equal(t, int64(23), startID)
 		require.Equal(t, int64(42), endID)
 
-		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifer.tables))
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
 		require.Len(t, stageRepo.store, len(stagingFiles))
 	})
 }

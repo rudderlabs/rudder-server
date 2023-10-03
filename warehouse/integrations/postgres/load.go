@@ -3,12 +3,15 @@ package postgres
 import (
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -18,22 +21,17 @@ import (
 	"github.com/lib/pq"
 	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-type loadTableResponse struct {
-	StagingTableName string
-}
 
 type loadUsersTableResponse struct {
 	identifiesError error
 	usersError      error
 }
 
-func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
-	pg.logger.Infow("started loading",
+func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+	log := pg.logger.With(
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -41,29 +39,29 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, pg.loadTableStrategy(),
 	)
+	log.Infow("started loading")
 
-	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
-		tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
+	var loadTableStats *types.LoadTableStats
+	var err error
 
-		_, err := pg.loadTable(ctx, tx, tableName, tableSchemaInUpload)
+	err = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		loadTableStats, _, err = pg.loadTable(
+			ctx,
+			tx,
+			tableName,
+			pg.Uploader.GetTableSchemaInUpload(tableName),
+		)
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("loading table: %w", err)
+		return nil, fmt.Errorf("loading table: %w", err)
 	}
 
-	pg.logger.Infow("completed loading",
-		logfield.SourceID, pg.Warehouse.Source.ID,
-		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.Warehouse.Destination.ID,
-		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-		logfield.Namespace, pg.Namespace,
-		logfield.TableName, tableName,
-	)
+	log.Infow("completed loading")
 
-	return nil
+	return loadTableStats, err
 }
 
 func (pg *Postgres) loadTable(
@@ -71,24 +69,8 @@ func (pg *Postgres) loadTable(
 	txn *sqlmiddleware.Tx,
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
-) (loadTableResponse, error) {
-	query := fmt.Sprintf(`SET search_path TO %q;`, pg.Namespace)
-	if _, err := txn.ExecContext(ctx, query); err != nil {
-		return loadTableResponse{}, fmt.Errorf("setting search path: %w", err)
-	}
-
-	// Creating staging table
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	query = fmt.Sprintf(`
-		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
-		ON COMMIT PRESERVE ROWS;
-`,
-		pg.Namespace,
-		stagingTableName,
-		tableName,
-	)
-	pg.logger.Infow("creating temporary table",
+) (*types.LoadTableStats, string, error) {
+	log := pg.logger.With(
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -96,94 +78,172 @@ func (pg *Postgres) loadTable(
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, query,
+		logfield.LoadTableStrategy, pg.loadTableStrategy(),
 	)
-	if _, err := txn.ExecContext(ctx, query); err != nil {
-		return loadTableResponse{}, fmt.Errorf("creating temporary table: %w", err)
-	}
+	log.Infow("started loading")
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(stagingTableName, sortedColumnKeys...))
-	if err != nil {
-		return loadTableResponse{}, fmt.Errorf("preparing statement for copy in: %w", err)
+	log.Debugw("setting search path")
+	searchPathStmt := fmt.Sprintf(`SET search_path TO %q;`,
+		pg.Namespace,
+	)
+	if _, err := txn.ExecContext(ctx, searchPathStmt); err != nil {
+		return nil, "", fmt.Errorf("setting search path: %w", err)
 	}
 
 	loadFiles, err := pg.LoadFileDownloader.Download(ctx, tableName)
-	defer misc.RemoveFilePaths(loadFiles...)
 	if err != nil {
-		return loadTableResponse{}, fmt.Errorf("downloading load files: %w", err)
+		return nil, "", fmt.Errorf("downloading load files: %w", err)
+	}
+	defer func() {
+		misc.RemoveFilePaths(loadFiles...)
+	}()
+
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
+	)
+
+	log.Debugw("creating staging table")
+	createStagingTableStmt := fmt.Sprintf(`
+		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
+		ON COMMIT PRESERVE ROWS;
+`,
+		pg.Namespace,
+		stagingTableName,
+		tableName,
+	)
+	if _, err := txn.ExecContext(ctx, createStagingTableStmt); err != nil {
+		return nil, "", fmt.Errorf("creating temporary table: %w", err)
 	}
 
-	var csvRowsProcessedCount int64
-	for _, objectFileName := range loadFiles {
-		gzFile, err := os.Open(objectFileName)
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
+		tableSchemaInUpload,
+	)
+
+	log.Debugw("creating prepared stmt for loading data")
+	copyInStmt := pq.CopyIn(stagingTableName, sortedColumnKeys...)
+	stmt, err := txn.PrepareContext(ctx, copyInStmt)
+	if err != nil {
+		return nil, "", fmt.Errorf("preparing statement for copy in: %w", err)
+	}
+
+	log.Infow("loading data into staging table")
+	for _, fileName := range loadFiles {
+		err = pg.loadDataIntoStagingTable(
+			ctx, stmt,
+			fileName, sortedColumnKeys,
+		)
 		if err != nil {
-			return loadTableResponse{}, fmt.Errorf("opening load file: %w", err)
+			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 		}
-
-		gzReader, err := gzip.NewReader(gzFile)
-		if err != nil {
-			_ = gzFile.Close()
-
-			return loadTableResponse{}, fmt.Errorf("reading gzip load file: %w", err)
-		}
-
-		csvReader := csv.NewReader(gzReader)
-
-		for {
-			var (
-				record          []string
-				recordInterface []interface{}
-			)
-
-			record, err := csvReader.Read()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-
-				return loadTableResponse{}, fmt.Errorf("reading csv file: %w", err)
-			}
-
-			if len(sortedColumnKeys) != len(record) {
-				return loadTableResponse{}, fmt.Errorf("missing columns in csv file %s", objectFileName)
-			}
-
-			for _, value := range record {
-				if strings.TrimSpace(value) == "" {
-					recordInterface = append(recordInterface, nil)
-				} else {
-					recordInterface = append(recordInterface, value)
-				}
-			}
-
-			_, err = stmt.ExecContext(ctx, recordInterface...)
-			if err != nil {
-				return loadTableResponse{}, fmt.Errorf("exec statement: %w", err)
-			}
-
-			csvRowsProcessedCount++
-		}
-
-		_ = gzReader.Close()
-		_ = gzFile.Close()
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
-		return loadTableResponse{}, fmt.Errorf("exec statement: %w", err)
+		return nil, "", fmt.Errorf("executing copyIn statement: %w", err)
 	}
 
-	var (
-		primaryKey   = "id"
-		partitionKey = "id"
+	var rowsDeleted int64
+	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+		log.Infow("deleting from load table")
+		rowsDeleted, err = pg.deleteFromLoadTable(
+			ctx, txn, tableName,
+			stagingTableName,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("delete from load table: %w", err)
+		}
+	}
 
-		additionalJoinClause string
+	log.Infow("inserting into load table")
+	rowsInserted, err := pg.insertIntoLoadTable(
+		ctx, txn, tableName,
+		stagingTableName, sortedColumnKeys,
 	)
+	if err != nil {
+		return nil, "", fmt.Errorf("insert into: %w", err)
+	}
+
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted - rowsDeleted,
+		RowsUpdated:  rowsDeleted,
+	}, stagingTableName, nil
+}
+
+func (pg *Postgres) loadDataIntoStagingTable(
+	ctx context.Context,
+	stmt *sql.Stmt,
+	fileName string,
+	sortedColumnKeys []string,
+) error {
+	gzipFile, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("opening load file: %w", err)
+	}
+	defer func() {
+		_ = gzipFile.Close()
+	}()
+
+	gzReader, err := gzip.NewReader(gzipFile)
+	if err != nil {
+		return fmt.Errorf("reading gzip load file: %w", err)
+	}
+	defer func() {
+		_ = gzReader.Close()
+	}()
+
+	csvReader := csv.NewReader(gzReader)
+
+	for {
+		record, err := csvReader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("reading file: %w", err)
+		}
+		if len(sortedColumnKeys) != len(record) {
+			return fmt.Errorf("mismatch in number of columns: actual count: %d, expected count: %d",
+				len(record),
+				len(sortedColumnKeys),
+			)
+		}
+
+		recordInterface := make([]interface{}, 0, len(record))
+		for _, value := range record {
+			if strings.TrimSpace(value) == "" {
+				recordInterface = append(recordInterface, nil)
+			} else {
+				recordInterface = append(recordInterface, value)
+			}
+		}
+
+		_, err = stmt.ExecContext(ctx, recordInterface...)
+		if err != nil {
+			return fmt.Errorf("exec statement: %w", err)
+		}
+	}
+	return nil
+}
+
+func (pg *Postgres) loadTableStrategy() string {
+	if slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+		return "APPEND"
+	}
+	return "MERGE"
+}
+
+func (pg *Postgres) deleteFromLoadTable(
+	ctx context.Context,
+	txn *sqlmiddleware.Tx,
+	tableName string,
+	stagingTableName string,
+) (int64, error) {
+	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-	if column, ok := partitionKeyMap[tableName]; ok {
-		partitionKey = column
-	}
+
+	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(
 			`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
@@ -194,9 +254,7 @@ func (pg *Postgres) loadTable(
 		)
 	}
 
-	// Deduplication
-	// Delete rows from the table which are already present in the staging table
-	query = fmt.Sprintf(`
+	deleteStmt := fmt.Sprintf(`
 		DELETE FROM
 		  %[1]q.%[2]q USING %[3]q AS _source
 		WHERE
@@ -211,44 +269,30 @@ func (pg *Postgres) loadTable(
 		additionalJoinClause,
 	)
 
-	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
-		pg.logger.Infow("deduplication",
-			logfield.SourceID, pg.Warehouse.Source.ID,
-			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, pg.Warehouse.Destination.ID,
-			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-			logfield.Namespace, pg.Namespace,
-			logfield.TableName, tableName,
-			logfield.StagingTableName, stagingTableName,
-			logfield.Query, query,
-		)
+	result, err := txn.ExecContext(ctx, deleteStmt)
+	if err != nil {
+		return 0, fmt.Errorf("deleting from main table for dedup: %w", err)
+	}
+	return result.RowsAffected()
+}
 
-		result, err := txn.ExecContext(ctx, query)
-		if err != nil {
-			return loadTableResponse{}, fmt.Errorf("deleting from original table for dedup: %w", err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return loadTableResponse{}, fmt.Errorf("getting rows affected for dedup: %w", err)
-		}
-
-		pg.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":       pg.Warehouse.Source.ID,
-			"sourceType":     pg.Warehouse.Source.SourceDefinition.Name,
-			"sourceCategory": pg.Warehouse.Source.SourceDefinition.Category,
-			"destID":         pg.Warehouse.Destination.ID,
-			"destType":       pg.Warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId":    pg.Warehouse.WorkspaceID,
-			"tableName":      tableName,
-			"rowsAffected":   fmt.Sprintf("%d", rowsAffected),
-		})
+func (pg *Postgres) insertIntoLoadTable(
+	ctx context.Context,
+	txn *sqlmiddleware.Tx,
+	tableName string,
+	stagingTableName string,
+	sortedColumnKeys []string,
+) (int64, error) {
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
 	}
 
-	// Insert rows from staging table to the original table
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	query = fmt.Sprintf(`
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(
+		sortedColumnKeys,
+	)
+
+	insertStmt := fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (%[3]s)
 		SELECT
 		  %[3]s
@@ -274,25 +318,11 @@ func (pg *Postgres) loadTable(
 		partitionKey,
 	)
 
-	pg.logger.Infow("inserting records",
-		logfield.SourceID, pg.Warehouse.Source.ID,
-		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.Warehouse.Destination.ID,
-		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-		logfield.Namespace, pg.Namespace,
-		logfield.TableName, tableName,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, query,
-	)
-	if _, err := txn.ExecContext(ctx, query); err != nil {
-		return loadTableResponse{}, fmt.Errorf("executing query: %w", err)
+	r, err := txn.ExecContext(ctx, insertStmt)
+	if err != nil {
+		return 0, fmt.Errorf("inserting into main table: %w", err)
 	}
-
-	response := loadTableResponse{
-		StagingTableName: stagingTableName,
-	}
-	return response, nil
+	return r.RowsAffected()
 }
 
 func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
@@ -357,7 +387,7 @@ func (pg *Postgres) loadUsersTable(
 	usersSchemaInUpload,
 	usersSchemaInWarehouse model.TableSchema,
 ) loadUsersTableResponse {
-	identifiesTableResponse, err := pg.loadTable(ctx, tx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload)
+	_, identifyStagingTable, err := pg.loadTable(ctx, tx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload)
 	if err != nil {
 		return loadUsersTableResponse{
 			identifiesError: fmt.Errorf("loading identifies table: %w", err),
@@ -370,7 +400,7 @@ func (pg *Postgres) loadUsersTable(
 
 	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits || slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
 	if canSkipComputingLatestUserTraits {
-		if _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
+		if _, _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
 			return loadUsersTableResponse{
 				usersError: fmt.Errorf("loading users table: %w", err),
 			}
@@ -443,7 +473,7 @@ func (pg *Postgres) loadUsersTable(
 `,
 		pg.Namespace,
 		warehouseutils.UsersTable,
-		identifiesTableResponse.StagingTableName,
+		identifyStagingTable,
 		strings.Join(userColNames, ","),
 		unionStagingTableName,
 	)

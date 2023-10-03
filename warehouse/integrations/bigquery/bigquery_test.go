@@ -10,6 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -388,6 +397,575 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
+
+	t.Run("Load Table", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		namespace := testhelper.RandSchema(destType)
+
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
+		schemaInUpload := model.TableSchema{
+			"test_bool":     "boolean",
+			"test_datetime": "datetime",
+			"test_float":    "float",
+			"test_int":      "int",
+			"test_string":   "string",
+			"id":            "string",
+			"received_at":   "datetime",
+		}
+		schemaInWarehouse := model.TableSchema{
+			"test_bool":           "boolean",
+			"test_datetime":       "datetime",
+			"test_float":          "float",
+			"test_int":            "int",
+			"test_string":         "string",
+			"id":                  "string",
+			"received_at":         "datetime",
+			"extra_test_bool":     "boolean",
+			"extra_test_datetime": "datetime",
+			"extra_test_float":    "float",
+			"extra_test_int":      "int",
+			"extra_test_string":   "string",
+		}
+
+		credentials, err := bqHelper.GetBQTestCredentials()
+		require.NoError(t, err)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: warehouseutils.GCS,
+			Config: map[string]any{
+				"project":     credentials.ProjectID,
+				"location":    credentials.Location,
+				"bucketName":  credentials.BucketName,
+				"credentials": credentials.Credentials,
+			},
+		})
+		require.NoError(t, err)
+
+		t.Run("schema does not exists", func(t *testing.T) {
+			tableName := "schema_not_exists_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("table does not exists", func(t *testing.T) {
+			tableName := "table_not_exists_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("merge", func(t *testing.T) {
+			tableName := "merge_test_table"
+
+			c := config.New()
+			c.Set("Warehouse.bigquery.isDedupEnabled", true)
+
+			t.Run("without dedup", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				bq := whbigquery.New(c, logger.NOP)
+				err := bq.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = bq.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := bq.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(14))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+				loadTableStat, err = bq.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %s
+						ORDER BY
+						  id;
+						`,
+						fmt.Sprintf("`%s`.`%s`", namespace, tableName),
+					),
+				)
+				require.Equal(t, records, testhelper.SampleTestRecords())
+			})
+			t.Run("with dedup", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.json.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				bq := whbigquery.New(c, logger.NOP)
+				err := bq.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = bq.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := bq.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %s
+						ORDER BY
+						  id;
+						`,
+						fmt.Sprintf("`%s`.`%s`", namespace, tableName),
+					),
+				)
+				require.Equal(t, records, testhelper.DedupTestRecords())
+			})
+		})
+		t.Run("append", func(t *testing.T) {
+			tableName := "append_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			loadTableStat, err = bq.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %s.%s
+					WHERE
+					  _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
+					ORDER BY
+					  id;
+					`,
+					namespace,
+					tableName,
+					time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+					time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+				),
+			)
+			require.Equal(t, records, testhelper.AppendTestRecords())
+		})
+		t.Run("load file does not exists", func(t *testing.T) {
+			tableName := "load_file_not_exists_test_table"
+
+			loadFiles := []warehouseutils.LoadFile{{
+				Location: "https://storage.googleapis.com/project/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/2e04b6bd-8007-461e-a338-91224a8b7d3d-load_file_not_exists_test_table/load.json.gz",
+			}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in number of columns", func(t *testing.T) {
+			tableName := "mismatch_columns_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in schema", func(t *testing.T) {
+			tableName := "mismatch_schema_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("discards", func(t *testing.T) {
+			tableName := warehouseutils.DiscardsTable
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(6))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+					SELECT
+					  column_name,
+					  column_value,
+					  received_at,
+					  row_id,
+					  table_name,
+					  uuid_ts
+					FROM
+					  %s
+					ORDER BY row_id ASC;
+				`,
+					fmt.Sprintf("`%s`.`%s`", namespace, tableName),
+				),
+			)
+			require.Equal(t, records, testhelper.DiscardTestRecords())
+		})
+		t.Run("custom partition", func(t *testing.T) {
+			tableName := "partition_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(
+				t, loadFiles, tableName, schemaInUpload,
+				schemaInWarehouse,
+			)
+
+			c := config.New()
+			c.Set("Warehouse.bigquery.customPartitionsEnabled", true)
+			c.Set("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", []string{workspaceID})
+
+			bq := whbigquery.New(c, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := bq.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %s.%s
+					WHERE
+					  _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
+					ORDER BY
+					  id;
+					`,
+					namespace,
+					tableName,
+					time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+					time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+				),
+			)
+			require.Equal(t, records, testhelper.SampleTestRecords())
+		})
+	})
+
+	t.Run("IsEmpty", func(t *testing.T) {
+		namespace := testhelper.RandSchema(warehouseutils.BQ)
+
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
+		ctx := context.Background()
+
+		credentials, err := bqHelper.GetBQTestCredentials()
+		require.NoError(t, err)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.BQ,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		ctrl := gomock.NewController(t)
+		t.Cleanup(ctrl.Finish)
+
+		mockUploader := mockuploader.NewMockUploader(ctrl)
+		mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+
+		insertRecords := func(t testing.TB, tableName string) {
+			t.Helper()
+
+			query := db.Query(`
+				INSERT INTO ` + tableName + ` (
+				  id, received_at, test_bool, test_datetime,
+				  test_float, test_int, test_string
+				)
+				VALUES
+				  (
+					'1', '2020-01-01 00:00:00', true,
+					'2020-01-01 00:00:00', 1.1, 1, 'test'
+				  );`,
+			)
+			job, err := query.Run(ctx)
+			require.NoError(t, err)
+
+			status, err := job.Wait(ctx)
+			require.NoError(t, err)
+			require.Nil(t, status.Err())
+		}
+
+		t.Run("tables doesn't exists", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.True(t, isEmpty)
+		})
+		t.Run("tables empty", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			tables := []string{"pages", "screens"}
+			for _, table := range tables {
+				err = bq.CreateTable(ctx, table, model.TableSchema{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+				})
+				require.NoError(t, err)
+			}
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.True(t, isEmpty)
+		})
+		t.Run("tables not empty", func(t *testing.T) {
+			bq := whbigquery.New(config.Default, logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			insertRecords(t, fmt.Sprintf("`%s`.`%s`", namespace, "pages"))
+			insertRecords(t, fmt.Sprintf("`%s`.`%s`", namespace, "screens"))
+
+			isEmpty, err := bq.IsEmpty(ctx, warehouse)
+			require.NoError(t, err)
+			require.False(t, isEmpty)
+		})
+	})
+}
+
+func newMockUploader(
+	t testing.TB,
+	loadFiles []warehouseutils.LoadFile,
+	tableName string,
+	schemaInUpload model.TableSchema,
+	schemaInWarehouse model.TableSchema,
+) warehouseutils.Uploader {
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockUploader := mockuploader.NewMockUploader(ctrl)
+	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+			return slices.Clone(loadFiles)
+		},
+	).AnyTimes()
+	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+
+	return mockUploader
 }
 
 func loadFilesEventsMap() testhelper.EventsCountMap {
