@@ -152,7 +152,8 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 			stats, ok := r.statsIndex[statKey]
 			if ok {
 				switch jobStatus.JobState {
-				case jobsdb.Succeeded.State:
+				// Filtered state is being considered as a success. If we want to report them separately, we can add a new field in stats
+				case jobsdb.Succeeded.State, jobsdb.Filtered.State:
 					stats.Out++
 				case jobsdb.Aborted.State:
 					stats.Failed++
