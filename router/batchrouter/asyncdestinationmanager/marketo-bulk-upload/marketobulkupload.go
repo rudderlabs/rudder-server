@@ -287,7 +287,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	startTime := time.Now()
 	payloadSizeStat.Observe(float64(len(payload)))
 	b.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
