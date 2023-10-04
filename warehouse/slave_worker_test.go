@@ -9,10 +9,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -26,9 +22,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -481,7 +481,11 @@ func TestSlaveWorker(t *testing.T) {
 
 		_, err = pgResource.DB.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS test_namespace;")
 		require.NoError(t, err)
-		_, err = pgResource.DB.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS test_namespace.test_table_name (id int, user_id int, uuid_ts timestamp, received_at timestamp, original_timestamp timestamp, timestamp timestamp, sent_at timestamp, event text, event_text text, context_sources_job_run_id text, context_sources_task_run_id text, context_source_id text, context_destination_id text);")
+		_, err = pgResource.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS test_namespace.test_table_name (
+			id int, user_id int, uuid_ts timestamp, received_at timestamp, original_timestamp timestamp,
+			timestamp timestamp, sent_at timestamp, event text, event_text text, context_sources_job_run_id text,
+			context_sources_task_run_id text, context_source_id text, context_destination_id text
+		);`)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
@@ -538,19 +542,22 @@ func TestSlaveWorker(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
+		db := sqlquerywrapper.New(
+			pgResource.DB,
+			sqlquerywrapper.WithLogger(logger.NOP),
+		)
+		err = (&migrator.Migrator{
+			Handle:          db.DB,
+			MigrationsTable: "wh_schema_migrations",
+		}).Migrate("warehouse")
+		require.NoError(t, err)
+
 		tenantManager := multitenant.New(config.Default, mockBackendConfig)
-		bcm := newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP)
+		bcm := newBackendConfigManager(config.Default, db, tenantManager, logger.NOP)
 		ef := encoding.NewFactory(config.Default)
 
-		setupCh := make(chan struct{})
-		go func() {
-			defer close(setupCh)
-
-			bcm.Start(ctx)
-		}()
-
+		bcm.Start(ctx)
 		<-bcm.initialConfigFetched
-		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *notifier.ClaimJobResponse)
@@ -600,9 +607,8 @@ func TestSlaveWorker(t *testing.T) {
 
 			claimedJobDone := make(chan struct{})
 			go func() {
-				defer close(claimedJobDone)
-
 				slaveWorker.processClaimedAsyncJob(ctx, claim)
+				close(claimedJobDone)
 			}()
 
 			response := <-subscribeCh
@@ -706,9 +712,8 @@ func TestSlaveWorker(t *testing.T) {
 
 					claimedJobDone := make(chan struct{})
 					go func() {
-						defer close(claimedJobDone)
-
 						slaveWorker.processClaimedAsyncJob(ctx, claim)
+						close(claimedJobDone)
 					}()
 
 					response := <-subscribeCh

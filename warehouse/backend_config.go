@@ -1,11 +1,13 @@
 package warehouse
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 
@@ -209,7 +211,11 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (s *backendConfigManager) namespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+func (s *backendConfigManager) namespace(
+	ctx context.Context,
+	source backendconfig.SourceT,
+	destination backendconfig.DestinationT,
+) string {
 	destType := destination.DestinationDefinition.Name
 	destConfig := destination.Config
 
@@ -220,33 +226,86 @@ func (s *backendConfigManager) namespace(ctx context.Context, source backendconf
 		return "rudder"
 	}
 
-	if destConfig["namespace"] != nil {
-		namespace, _ := destConfig["namespace"].(string)
-		if len(strings.TrimSpace(namespace)) > 0 {
-			return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, namespace))
-		}
-	}
-
-	namespacePrefix := s.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
-	if namespacePrefix != "" {
-		return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
+	logFields := []any{
+		logfield.SourceID, source.ID,
+		logfield.DestinationID, destination.ID,
+		logfield.DestinationType, destType,
+		logfield.WorkspaceID, destination.WorkspaceID,
 	}
 
 	namespace, err := s.schema.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
-		s.logger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-			logfield.Error, err.Error(),
+		s.logger.Errorw("getting namespace", append(logFields, logfield.Error, err.Error())...)
+		panic(fmt.Errorf("cannot get namespace for source %s and destination %s: %v", source.ID, destination.ID, err))
+	}
+	if namespace != "" {
+		return namespace
+	}
+
+	namespace = s.computeNamespace(source, destination, logFields)
+	if namespace != "" {
+		return namespace
+	}
+
+	namespace = source.Name
+	namespacePrefix := s.conf.GetString(
+		fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "",
+	)
+	if namespacePrefix != "" {
+		namespace = namespacePrefix + "_" + namespace
+	}
+
+	return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, namespace))
+}
+
+func (s *backendConfigManager) computeNamespace(
+	source backendconfig.SourceT,
+	destination backendconfig.DestinationT,
+	logFields []any,
+) string {
+	destConfig := destination.Config
+
+	if destConfig["namespace"] == nil {
+		s.logger.Errorw("cannot compute namespace due to missing namespace", logFields...)
+		return ""
+	}
+
+	namespace, _ := destConfig["namespace"].(string)
+	namespace = strings.TrimSpace(namespace)
+	if len(namespace) == 0 {
+		s.logger.Errorw("cannot compute namespace due to empty namespace", logFields...)
+		return ""
+	}
+
+	t, err := template.New("").Parse(namespace)
+	if err != nil {
+		s.logger.Errorw(
+			"cannot compute namespace due to template parsing issues",
+			append(logFields, logfield.Error, err.Error())...,
 		)
 		return ""
 	}
-	if namespace == "" {
-		return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, source.Name))
+
+	buf := bytes.Buffer{}
+	err = t.Execute(&buf, map[string]any{
+		"source_name": source.Name,
+	})
+	if err != nil {
+		s.logger.Errorw(
+			"cannot compute namespace due to template execution issues",
+			append(logFields, logfield.Error, err.Error())...,
+		)
+		return ""
 	}
-	return namespace
+
+	namespace = strings.TrimSpace(buf.String())
+	if len(namespace) == 0 {
+		s.logger.Errorw("cannot compute namespace due to empty namespace after template execution", logFields...)
+		return ""
+	}
+
+	destType := destination.DestinationDefinition.Name
+	return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, namespace))
 }
 
 func (s *backendConfigManager) IsInitialized() bool {

@@ -34,6 +34,17 @@ func TestBackendConfigManager(t *testing.T) {
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
+	db := sqlquerywrapper.New(
+		pgResource.DB,
+		sqlquerywrapper.WithLogger(logger.NOP),
+	)
+
+	err = (&migrator.Migrator{
+		Handle:          db.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse")
+	require.NoError(t, err)
+
 	workspaceID := "test-workspace-id"
 	sourceID := "test-source-id"
 	destinationID := "test-destination-id"
@@ -102,14 +113,6 @@ func TestBackendConfigManager(t *testing.T) {
 	c.Set("CP_INTERNAL_API_USERNAME", "username")
 	c.Set("CP_INTERNAL_API_PASSWORD", "password")
 
-	db := sqlquerywrapper.New(
-		pgResource.DB,
-		sqlquerywrapper.WithLogger(logger.NOP),
-	)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	tenantManager := multitenant.New(config.Default, mockBackendConfig)
 
 	t.Run("Subscriptions", func(t *testing.T) {
@@ -126,11 +129,18 @@ func TestBackendConfigManager(t *testing.T) {
 		require.Equal(t, bcm.WarehousesBySourceID(sourceID), []model.Warehouse{})
 		require.Equal(t, bcm.WarehousesByDestID(destinationID), []model.Warehouse{})
 
+		bcmDone := make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
 		subscriptionsCh := bcm.Subscribe(ctx)
 
 		go func() {
+			defer close(bcmDone)
 			bcm.Start(ctx)
 		}()
+		t.Cleanup(func() {
+			cancel()
+			<-bcmDone
+		})
 
 		expectedWarehouse := model.Warehouse{
 			WorkspaceID: workspaceID,
@@ -250,7 +260,10 @@ func TestBackendConfigManager(t *testing.T) {
 		for _, tc := range testCases {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, bcm.attachSSHTunnellingInfo(ctx, tc.input), tc.expected)
+				require.Equal(t,
+					bcm.attachSSHTunnellingInfo(context.Background(), tc.input),
+					tc.expected,
+				)
 			})
 		}
 	})
@@ -409,7 +422,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name: "destination config without namespace configured and custom dataset prefix configured",
 			source: backendconfig.SourceT{
 				Name: "test-source",
-				ID:   "test-sourceID",
+				ID:   "a-non-cached-sourceID",
 			},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{},
@@ -447,7 +460,13 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			c := config.New()
 
 			if tc.setConfig {
-				c.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destination.DestinationDefinition.Name]), "config_result")
+				c.Set(
+					fmt.Sprintf(
+						"Warehouse.%s.customDatasetPrefix",
+						warehouseutils.WHDestNameMap[tc.destination.DestinationDefinition.Name],
+					),
+					"config_result",
+				)
 			}
 
 			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")

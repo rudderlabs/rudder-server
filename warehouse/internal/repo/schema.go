@@ -166,8 +166,7 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 			destination_id = $2
 		ORDER BY
 			id DESC
-		LIMIT 1;
-	`
+		LIMIT 1;`
 
 	row := repo.db.QueryRowContext(
 		ctx,
@@ -175,17 +174,9 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 		sourceID,
 		destID,
 	)
-	if row.Err() != nil {
-		return "", fmt.Errorf("querying schema: %w", row.Err())
-	}
 
-	var (
-		namespace string
-		err       error
-	)
-
-	err = row.Scan(&namespace)
-
+	var namespace string
+	err := row.Scan(&namespace)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
