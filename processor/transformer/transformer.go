@@ -79,6 +79,13 @@ type Metadata struct {
 	SourceDefinitionType    string   `json:"-"`
 }
 
+func (m Metadata) GetMessagesIDs() []string {
+	if len(m.MessageIDs) > 0 {
+		return m.MessageIDs
+	}
+	return []string{m.MessageID}
+}
+
 type TransformerEvent struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    Metadata                   `json:"metadata"`
@@ -441,7 +448,17 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			requestStartTime := time.Now()
 
 			trace.WithRegion(ctx, "request/post", func() {
-				resp, reqErr = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+				var req *http.Request
+				req, reqErr = http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
+				if reqErr != nil {
+					return
+				}
+
+				req.Header.Set("Content-Type", "application/json; charset=utf-8")
+				// Header to let transformer know that the client understands event filter code
+				req.Header.Set("X-Feature-Filter-Code", "?1")
+
+				resp, reqErr = trans.client.Do(req)
 			})
 			trans.requestTime(tags, time.Since(requestStartTime))
 			if reqErr != nil {

@@ -133,7 +133,7 @@ const (
 var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
-	AWSCredsExpiryInS  int64
+	awsCredsExpiryInS  misc.ValueLoader[int64]
 
 	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
@@ -194,10 +194,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	enableIDResolution = config.GetBoolVar(false, "Warehouse.enableIDResolution")
-	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
+	awsCredsExpiryInS = config.GetReloadableInt64Var(3600, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type DeleteByMetaData struct {
@@ -233,7 +232,7 @@ type KeyValue struct {
 
 //go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
-	GetSchemaInWarehouse() model.Schema
+	IsWarehouseSchemaEmpty() bool
 	GetLocalSchema(ctx context.Context) (model.Schema, error)
 	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
@@ -729,7 +728,8 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 	// Create an STS client from just a session.
 	svc := sts.New(awsSession)
 
-	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	expiryInSec := awsCredsExpiryInS.Load()
+	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &expiryInSec})
 	if err != nil {
 		return "", "", "", err
 	}

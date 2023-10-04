@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -688,7 +690,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			var record []string
 			record, err = csvReader.Read()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					ch.logger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				}
@@ -770,7 +772,7 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
 	err = ch.DB.QueryRowContext(ctx, sqlStatement, schemaName).Scan(&count)
 	// ignore err if no results for query
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
 	exists = count > 0
@@ -892,7 +894,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 }
 
 func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
-	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+	if !ch.Uploader.IsWarehouseSchemaEmpty() {
 		return nil
 	}
 
@@ -977,7 +979,8 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 		return schema, unrecognizedSchema, nil
 	}
 	if err != nil {
-		if clickhouseErr, ok := err.(*clickhouse.Exception); ok && clickhouseErr.Code == 81 {
+		var clickhouseErr *clickhouse.Exception
+		if errors.As(err, &clickhouseErr) && clickhouseErr.Code == 81 {
 			return schema, unrecognizedSchema, nil
 		}
 		return nil, nil, fmt.Errorf("fetching schema: %w", err)
@@ -1032,9 +1035,25 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 	return
 }
 
-func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
-	err := ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
-	return err
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+	preLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("pre load table count: %w", err)
+	}
+
+	err = ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
+	if err != nil {
+		return nil, fmt.Errorf("loading table: %w", err)
+	}
+
+	postLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("post load table count: %w", err)
+	}
+
+	return &types.LoadTableStats{
+		RowsInserted: postLoadTableCount - preLoadTableCount,
+	}, nil
 }
 
 func (ch *Clickhouse) Cleanup(context.Context) {
@@ -1059,7 +1078,7 @@ func (*Clickhouse) IsEmpty(context.Context, model.Warehouse) (empty bool, err er
 	return
 }
 
-func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (int64, error) {
 	var (
 		total        int64
 		err          error

@@ -3,6 +3,8 @@ package warehouse
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -11,14 +13,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type slaveNotifier interface {
-	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan pgnotifier.Claim
-	RunMaintenanceWorker(ctx context.Context) error
-	UpdateClaimedEvent(claim *pgnotifier.Claim, response *pgnotifier.ClaimResponse)
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *notifier.ClaimJob
+	RunMaintenance(ctx context.Context) error
+	UpdateClaim(ctx context.Context, job *notifier.ClaimJob, response *notifier.ClaimJobResponse)
 }
 
 type slave struct {
@@ -31,7 +32,7 @@ type slave struct {
 	encodingFactory    *encoding.Factory
 
 	config struct {
-		noOfSlaveWorkerRoutines int
+		noOfSlaveWorkerRoutines misc.ValueLoader[int]
 	}
 }
 
@@ -53,9 +54,7 @@ func newSlave(
 	s.bcManager = bcManager
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
-
-	// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-	conf.RegisterIntConfigVariable(4, &s.config.noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	s.config.noOfSlaveWorkerRoutines = conf.GetReloadableIntVar(4, 1, "Warehouse.noOfSlaveWorkerRoutines")
 
 	return s
 }
@@ -63,11 +62,11 @@ func newSlave(
 func (s *slave) setupSlave(ctx context.Context) error {
 	slaveID := misc.FastUUID().String()
 
-	jobNotificationChannel := s.notifier.Subscribe(ctx, slaveID, s.config.noOfSlaveWorkerRoutines)
+	jobNotificationChannel := s.notifier.Subscribe(ctx, slaveID, s.config.noOfSlaveWorkerRoutines.Load())
 
 	g, gCtx := errgroup.WithContext(ctx)
 
-	for workerIdx := 0; workerIdx <= s.config.noOfSlaveWorkerRoutines-1; workerIdx++ {
+	for workerIdx := 0; workerIdx <= s.config.noOfSlaveWorkerRoutines.Load()-1; workerIdx++ {
 		idx := workerIdx
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -78,7 +77,7 @@ func (s *slave) setupSlave(ctx context.Context) error {
 	}
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return s.notifier.RunMaintenanceWorker(gCtx)
+		return s.notifier.RunMaintenance(gCtx)
 	}))
 
 	return g.Wait()

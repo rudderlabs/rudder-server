@@ -3,13 +3,19 @@ package bigquery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
+	"github.com/samber/lo"
+
 	"cloud.google.com/go/bigquery"
 	"golang.org/x/exp/slices"
+	bqService "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -45,7 +51,7 @@ type BigQuery struct {
 	}
 }
 
-type StagingLoadTable struct {
+type loadTableResponse struct {
 	partitionDate    string
 	stagingTableName string
 }
@@ -147,7 +153,7 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 	if bq.middleware != nil {
 		return bq.middleware
 	}
-	middleware := middleware.New(
+	return middleware.New(
 		bq.db,
 		middleware.WithLogger(bq.logger),
 		middleware.WithKeyAndValues(
@@ -160,15 +166,12 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 		),
 		middleware.WithSlowQueryThreshold(bq.config.slowQueryThreshold),
 	)
-	return middleware
 }
 
-func getTableSchema(columns model.TableSchema) []*bigquery.FieldSchema {
-	var schema []*bigquery.FieldSchema
-	for columnName, columnType := range columns {
-		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
-	}
-	return schema
+func getTableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
+	return lo.MapToSlice(tableSchema, func(columnName, columnType string) *bigquery.FieldSchema {
+		return &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]}
+	})
 }
 
 func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err error) {
@@ -351,181 +354,301 @@ func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *BigQuery) loadTable(ctx context.Context, tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTable, err error) {
-	bq.logger.Infof("BQ: Starting load for table:%s\n", tableName)
-	var loadFiles []warehouseutils.LoadFile
-	if getLoadFileLocFromTableUploads {
-		loadFile, err := bq.uploader.GetSingleLoadFile(ctx, tableName)
-		if err != nil {
-			return stagingLoadTable, err
-		}
-		loadFiles = append(loadFiles, loadFile)
-	} else {
-		loadFiles = bq.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
+func (bq *BigQuery) loadTable(
+	ctx context.Context,
+	tableName string,
+	skipTempTableDelete bool,
+) (*types.LoadTableStats, *loadTableResponse, error) {
+	log := bq.logger.With(
+		logfield.SourceID, bq.warehouse.Source.ID,
+		logfield.SourceType, bq.warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, bq.warehouse.Destination.ID,
+		logfield.DestinationType, bq.warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, bq.warehouse.WorkspaceID,
+		logfield.Namespace, bq.namespace,
+		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, bq.loadTableStrategy(),
+	)
+	log.Infow("started loading")
+
+	loadFileLocations, err := bq.loadFileLocations(ctx, tableName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting load file locations: %w", err)
 	}
-	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptions{})
-	bq.logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
-	gcsRef := bigquery.NewGCSReference(gcsLocations...)
+
+	gcsRef := bigquery.NewGCSReference(warehouseutils.GetGCSLocations(
+		loadFileLocations,
+		warehouseutils.GCSLocationOptions{},
+	)...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	loadTableByAppend := func() (err error) {
-		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
-		outputTable := partitionedTable(tableName, stagingLoadTable.partitionDate)
-		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
-		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
-		// TODO: Support custom field partition on users & identifies tables
-		if bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
-			outputTable = tableName
-		}
-
-		loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
-
-		job, err := loader.Run(ctx)
-		if err != nil {
-			bq.logger.Errorf("BQ: Error initiating append load job: %v\n", err)
-			return
-		}
-		status, err := job.Wait(ctx)
-		if err != nil {
-			bq.logger.Errorf("BQ: Error running append load job: %v\n", err)
-			return
-		}
-
-		if status.Err() != nil {
-			return status.Err()
-		}
-		return
+	if bq.dedupEnabled() {
+		return bq.loadTableByMerge(ctx, tableName, gcsRef, log, skipTempTableDelete)
 	}
+	return bq.loadTableByAppend(ctx, tableName, gcsRef, log)
+}
 
-	loadTableByMerge := func() (err error) {
-		stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-		stagingLoadTable.stagingTableName = stagingTableName
-		bq.logger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.namespace, bq.projectID)
-		stagingTableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
-		sampleSchema := getTableSchema(stagingTableColMap)
-		metaData := &bigquery.TableMetadata{
-			Schema:           sampleSchema,
-			TimePartitioning: &bigquery.TimePartitioning{},
-		}
-		tableRef := bq.db.Dataset(bq.namespace).Table(stagingTableName)
-		err = tableRef.Create(ctx, metaData)
-		if err != nil {
-			bq.logger.Infof("BQ: Error creating temporary staging table %s", stagingTableName)
-			return
-		}
+func (bq *BigQuery) loadTableStrategy() string {
+	if bq.dedupEnabled() {
+		return "MERGE"
+	}
+	return "APPEND"
+}
 
-		loader := bq.db.Dataset(bq.namespace).Table(stagingTableName).LoaderFrom(gcsRef)
-		job, err := loader.Run(ctx)
-		if err != nil {
-			bq.logger.Errorf("BQ: Error initiating staging table load job: %v\n", err)
-			return
-		}
-		status, err := job.Wait(ctx)
-		if err != nil {
-			bq.logger.Errorf("BQ: Error running staging table load job: %v\n", err)
-			return
-		}
-
-		if status.Err() != nil {
-			return status.Err()
-		}
-
-		if !skipTempTableDelete {
-			defer bq.dropStagingTable(ctx, stagingTableName)
-		}
-
-		primaryKey := "id"
-		if column, ok := primaryKeyMap[tableName]; ok {
-			primaryKey = column
-		}
-
-		partitionKey := "id"
-		if column, ok := partitionKeyMap[tableName]; ok {
-			partitionKey = column
-		}
-
-		tableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
-		var tableColNames []string
-		for colName := range tableColMap {
-			tableColNames = append(tableColNames, fmt.Sprintf("`%s`", colName))
-		}
-
-		var stagingColumnNamesList, columnsWithValuesList []string
-		for _, str := range tableColNames {
-			stagingColumnNamesList = append(stagingColumnNamesList, fmt.Sprintf(`staging.%s`, str))
-			columnsWithValuesList = append(columnsWithValuesList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str))
-		}
-		columnNames := strings.Join(tableColNames, ",")
-		stagingColumnNames := strings.Join(stagingColumnNamesList, ",")
-		columnsWithValues := strings.Join(columnsWithValuesList, ",")
-
-		var primaryKeyList []string
-		for _, str := range strings.Split(primaryKey, ",") {
-			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " ")))
-		}
-		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
-		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.namespace, name) }
-
-		var orderByClause string
-		if _, ok := tableColMap["received_at"]; ok {
-			orderByClause = "ORDER BY received_at DESC"
-		}
-
-		sqlStatement := fmt.Sprintf(`MERGE INTO %[1]s AS original
-										USING (
-											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s %[8]s) AS _rudder_staging_row_number FROM %[2]s
-											) AS q WHERE _rudder_staging_row_number = 1
-										) AS staging
-										ON (%[3]s)
-										WHEN MATCHED THEN
-										UPDATE SET %[6]s
-										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`,
-			bqTable(tableName),
-			bqTable(stagingTableName),
-			primaryJoinClause,
-			columnNames,
-			stagingColumnNames,
-			columnsWithValues,
-			partitionKey,
-			orderByClause,
+func (bq *BigQuery) loadFileLocations(
+	ctx context.Context,
+	tableName string,
+) ([]warehouseutils.LoadFile, error) {
+	switch tableName {
+	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
+		loadfile, err := bq.uploader.GetSingleLoadFile(
+			ctx,
+			tableName,
 		)
-		bq.logger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-
-		q := bq.db.Query(sqlStatement)
-		job, err = bq.getMiddleware().Run(ctx, q)
 		if err != nil {
-			bq.logger.Errorf("BQ: Error initiating merge load job: %v\n", err)
-			return
+			return nil, fmt.Errorf("getting single load file for table %s: %w", tableName, err)
 		}
-		status, err = job.Wait(ctx)
-		if err != nil {
-			bq.logger.Errorf("BQ: Error running merge load job: %v\n", err)
-			return
-		}
+		return []warehouseutils.LoadFile{loadfile}, nil
+	default:
+		metadata := bq.uploader.GetLoadFilesMetadata(
+			ctx,
+			warehouseutils.GetLoadFilesOptions{Table: tableName},
+		)
+		return metadata, nil
+	}
+}
 
-		if status.Err() != nil {
-			return status.Err()
-		}
-		return
+// loadTableByAppend loads data into a table by appending to it
+//
+// In BigQuery, tables created by RudderStack are typically ingestion-time partitioned tables
+// with a pseudo-column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions
+// based on the time when BigQuery ingests the data. To support custom field partitions, it is
+// important to avoid loading data into partitioned tables with names like tableName$20191221.
+// Instead, ensure that data is loaded into the appropriate ingestion-time partition, allowing
+// BigQuery to manage partitioning based on the data's ingestion time.
+//
+// TODO: Support custom field partition on users & identifies tables
+func (bq *BigQuery) loadTableByAppend(
+	ctx context.Context,
+	tableName string,
+	gcsRef *bigquery.GCSReference,
+	log logger.Logger,
+) (*types.LoadTableStats, *loadTableResponse, error) {
+	partitionDate := time.Now().Format("2006-01-02")
+
+	outputTable := partitionedTable(
+		tableName,
+		partitionDate,
+	)
+	if bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+		outputTable = tableName
 	}
 
-	if !bq.dedupEnabled() {
-		err = loadTableByAppend()
-		return
+	log.Infow("loading data into main table")
+	job, err := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef).Run(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("moving data into main table: %w", err)
 	}
 
-	err = loadTableByMerge()
-	return
+	log.Debugw("waiting for append job to complete", "jobID", job.ID())
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
+	}
+	if err := status.Err(); err != nil {
+		return nil, nil, fmt.Errorf("status for append job: %w", err)
+	}
+
+	log.Debugw("job statistics")
+	statistics, err := bq.jobStatistics(ctx, job)
+	if err != nil {
+		return nil, nil, fmt.Errorf("append job statistics: %w", err)
+	}
+
+	log.Infow("completed loading")
+
+	tableStats := &types.LoadTableStats{
+		RowsInserted: statistics.Load.OutputRows,
+	}
+	response := &loadTableResponse{
+		partitionDate: partitionDate,
+	}
+	return tableStats, response, nil
+}
+
+func (bq *BigQuery) jobStatistics(
+	ctx context.Context,
+	job *bigquery.Job,
+) (*bqService.JobStatistics, error) {
+	serv, err := bqService.NewService(
+		ctx,
+		option.WithCredentialsJSON([]byte(warehouseutils.GetConfigValue(credentials, bq.warehouse))),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating service: %w", err)
+	}
+
+	bqJobGetCall := bqService.NewJobsService(serv).Get(
+		job.ProjectID(),
+		job.ID(),
+	)
+	bqJob, err := bqJobGetCall.Context(ctx).Location(job.Location()).Fields("statistics").Do()
+	if err != nil {
+		return nil, fmt.Errorf("getting job: %w", err)
+	}
+	return bqJob.Statistics, nil
+}
+
+func (bq *BigQuery) loadTableByMerge(
+	ctx context.Context,
+	tableName string,
+	gcsRef *bigquery.GCSReference,
+	log logger.Logger,
+	skipTempTableDelete bool,
+) (*types.LoadTableStats, *loadTableResponse, error) {
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
+	)
+
+	sampleSchema := getTableSchema(bq.uploader.GetTableSchemaInWarehouse(
+		tableName,
+	))
+
+	log.Debugw("creating staging table")
+	err := bq.db.Dataset(bq.namespace).Table(stagingTableName).Create(ctx, &bigquery.TableMetadata{
+		Schema:           sampleSchema,
+		TimePartitioning: &bigquery.TimePartitioning{},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating staging table: %w", err)
+	}
+
+	log.Infow("loading data into staging table")
+	job, err := bq.db.Dataset(bq.namespace).Table(stagingTableName).LoaderFrom(gcsRef).Run(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading into staging table: %w", err)
+	}
+
+	log.Debugw("waiting for load job to complete", "jobID", job.ID())
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("waiting for job: %w", err)
+	}
+	if err := status.Err(); err != nil {
+		return nil, nil, fmt.Errorf("status for job: %w", err)
+	}
+
+	if !skipTempTableDelete {
+		defer bq.dropStagingTable(ctx, stagingTableName)
+	}
+
+	tableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
+	tableColNames := lo.MapToSlice(tableColMap, func(colName, _ string) string {
+		return fmt.Sprintf("`%s`", colName)
+	})
+
+	columnNames := strings.Join(tableColNames, ",")
+	stagingColumnNames := strings.Join(lo.Map(tableColNames, func(colName string, _ int) string {
+		return fmt.Sprintf(`staging.%s`, colName)
+	}), ",")
+	columnsWithValues := strings.Join(lo.Map(tableColNames, func(colName string, _ int) string {
+		return fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+	}), ",")
+
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
+	}
+
+	primaryJoinClause := strings.Join(lo.Map(strings.Split(primaryKey, ","), func(str string, _ int) string {
+		return fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " "))
+	}), " AND ")
+
+	bqTable := func(name string) string {
+		return fmt.Sprintf("`%s`.`%s`", bq.namespace, name)
+	}
+
+	var orderByClause string
+	if _, ok := tableColMap["received_at"]; ok {
+		orderByClause = "ORDER BY received_at DESC"
+	}
+
+	mergeIntoStmt := fmt.Sprintf(`
+		MERGE INTO %[1]s AS original USING (
+		  SELECT
+			*
+		  FROM
+			(
+			  SELECT
+				*,
+				row_number() OVER (PARTITION BY %[7]s %[8]s) AS _rudder_staging_row_number
+			  FROM
+				%[2]s
+			) AS q
+		  WHERE
+			_rudder_staging_row_number = 1
+		) AS staging ON (%[3]s) WHEN MATCHED THEN
+		UPDATE
+		SET
+		  %[6]s WHEN NOT MATCHED THEN INSERT (%[4]s)
+		VALUES
+		  (%[5]s);
+`,
+		bqTable(tableName),
+		bqTable(stagingTableName),
+		primaryJoinClause,
+		columnNames,
+		stagingColumnNames,
+		columnsWithValues,
+		partitionKey,
+		orderByClause,
+	)
+
+	log.Infow("merging data from staging table into main table")
+	job, err = bq.getMiddleware().Run(ctx, bq.db.Query(mergeIntoStmt))
+	if err != nil {
+		return nil, nil, fmt.Errorf("moving data to main table: %w", err)
+	}
+
+	log.Debugw("waiting for merge job to complete", "jobID", job.ID())
+	status, err = job.Wait(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("waiting for merge job: %w", err)
+	}
+	if err := status.Err(); err != nil {
+		return nil, nil, fmt.Errorf("status for merge job: %w", err)
+	}
+
+	log.Debugw("job statistics")
+	statistics, err := bq.jobStatistics(ctx, job)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merge job statistics: %w", err)
+	}
+
+	log.Infow("completed loading")
+
+	tableStats := &types.LoadTableStats{
+		RowsInserted: statistics.Query.DmlStats.InsertedRowCount,
+		RowsUpdated:  statistics.Query.DmlStats.UpdatedRowCount,
+	}
+	response := &loadTableResponse{
+		stagingTableName: stagingTableName,
+	}
+	return tableStats, response, nil
 }
 
 func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	bq.logger.Infof("BQ: Starting load for identifies and users tables\n")
-	identifyLoadTable, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable, true, false, true)
+	_, identifyLoadTable, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable, true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -770,10 +893,10 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 	for {
 		var values []bigquery.Value
 		err := it.Next(&values)
-		if err == iterator.Done {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
 			bq.logger.Errorf("BQ: Error in processing fetched staging tables from information schema in dataset %v : %v", bq.namespace, err)
 			return false
 		}
@@ -793,41 +916,41 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 	return delSuccess
 }
 
-func (bq *BigQuery) IsEmpty(ctx context.Context, warehouse model.Warehouse) (empty bool, err error) {
-	empty = true
+func (bq *BigQuery) IsEmpty(
+	ctx context.Context,
+	warehouse model.Warehouse,
+) (bool, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(project, bq.warehouse))
-	bq.logger.Infof("BQ: Connecting to BigQuery in project: %s", bq.projectID)
+
+	var err error
 	bq.db, err = bq.connect(ctx, BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(credentials, bq.warehouse),
 	})
 	if err != nil {
-		return
+		return false, fmt.Errorf("connecting to bigquery: %v", err)
 	}
 	defer func() { _ = bq.db.Close() }()
 
 	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, tableName := range tables {
-		var exists bool
-		exists, err = bq.tableExists(ctx, tableName)
+		exists, err := bq.tableExists(ctx, tableName)
 		if err != nil {
-			return
+			return false, fmt.Errorf("checking if table %s exists: %v", tableName, err)
 		}
 		if !exists {
 			continue
 		}
-		count, err := bq.GetTotalCountInTable(ctx, tableName)
+
+		metadata, err := bq.db.Dataset(bq.namespace).Table(tableName).Metadata(ctx)
 		if err != nil {
-			return empty, err
+			return false, fmt.Errorf("getting metadata for table %s: %v", tableName, err)
 		}
-		if count > 0 {
-			empty = false
-			return empty, nil
-		}
+		return metadata.NumRows == 0, nil
 	}
-	return
+	return true, nil
 }
 
 func (bq *BigQuery) Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
@@ -847,16 +970,13 @@ func (*BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) error {
-	var getLoadFileLocFromTableUploads bool
-	switch tableName {
-	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
-		getLoadFileLocFromTableUploads = true
-	default:
-		getLoadFileLocFromTableUploads = false
-	}
-	_, err := bq.loadTable(ctx, tableName, false, getLoadFileLocFromTableUploads, false)
-	return err
+func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
+	loadTableStat, _, err := bq.loadTable(
+		ctx,
+		tableName,
+		false,
+	)
+	return loadTableStat, err
 }
 
 func (bq *BigQuery) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -932,10 +1052,10 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		var values []bigquery.Value
 
 		err := it.Next(&values)
-		if err == iterator.Done {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
 			return nil, nil, fmt.Errorf("iterating schema: %w", err)
 		}
 
@@ -975,12 +1095,14 @@ func (bq *BigQuery) Cleanup(context.Context) {
 
 func (bq *BigQuery) LoadIdentityMergeRulesTable(ctx context.Context) (err error) {
 	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(ctx, identityMergeRulesTable)
+	_, err = bq.LoadTable(ctx, identityMergeRulesTable)
+	return err
 }
 
 func (bq *BigQuery) LoadIdentityMappingsTable(ctx context.Context) (err error) {
 	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(ctx, identityMappingsTable)
+	_, err = bq.LoadTable(ctx, identityMappingsTable)
+	return err
 }
 
 func (bq *BigQuery) tableExists(ctx context.Context, tableName string) (exists bool, err error) {
@@ -1079,10 +1201,10 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 				var values []bigquery.Value
 
 				err := it.Next(&values)
-				if err == iterator.Done {
-					break
-				}
 				if err != nil {
+					if errors.Is(err, iterator.Done) {
+						break
+					}
 					return err
 				}
 				var anonId, userId string
@@ -1124,43 +1246,6 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		}
 	}
 	return
-}
-
-func (bq *BigQuery) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
-	var (
-		total        int64
-		err          error
-		sqlStatement string
-		ok           bool
-
-		it     *bigquery.RowIterator
-		values []bigquery.Value
-	)
-	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM %[1]s.%[2]s;
-	`,
-		bq.namespace,
-		tableName,
-	)
-
-	query := bq.db.Query(sqlStatement)
-	if it, err = bq.getMiddleware().Read(ctx, query); err != nil {
-		return 0, fmt.Errorf("creating row iterator: %w", err)
-	}
-
-	err = it.Next(&values)
-	if err == iterator.Done {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("iterating through rows: %w", err)
-	}
-
-	if total, ok = values[0].(int64); !ok {
-		return 0, fmt.Errorf("converting value to int64: %w", err)
-	}
-
-	return total, nil
 }
 
 func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {

@@ -44,7 +44,7 @@ type StatsCollector interface {
 // FailedJobsStatsCollector collects stats for failed jobs
 type FailedJobsStatsCollector interface {
 	StatsPublisher
-	JobsFailed(jobs []*jobsdb.JobT)
+	JobsDropped(jobs []*jobsdb.JobT)
 }
 
 // NewStatsCollector creates a new stats collector
@@ -58,9 +58,10 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 	}
 }
 
-// NewFailedJobsCollector creates a new stats collector for publishing failed job stats and records
-func NewFailedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
+// NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
+func NewDroppedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
 	return &statsCollector{
+		skipFailedRecords:     true,
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
@@ -81,6 +82,7 @@ func (sk statKey) String() string {
 var _ StatsCollector = (*statsCollector)(nil)
 
 type statsCollector struct {
+	skipFailedRecords     bool
 	processing            bool
 	jobService            JobService
 	jobIdsToStatKeyIndex  map[int64]statKey
@@ -115,7 +117,7 @@ func (r *statsCollector) JobsStored(jobs []*jobsdb.JobT) {
 	r.buildStats(jobs, nil, true)
 }
 
-func (r *statsCollector) JobsFailed(jobs []*jobsdb.JobT) {
+func (r *statsCollector) JobsDropped(jobs []*jobsdb.JobT) {
 	r.processing = true
 	r.buildStats(jobs, nil, true)
 	jobStatuses := make([]*jobsdb.JobStatusT, 0, len(jobs))
@@ -150,7 +152,8 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 			stats, ok := r.statsIndex[statKey]
 			if ok {
 				switch jobStatus.JobState {
-				case jobsdb.Succeeded.State:
+				// Filtered state is being considered as a success. If we want to report them separately, we can add a new field in stats
+				case jobsdb.Succeeded.State, jobsdb.Filtered.State:
 					stats.Out++
 				case jobsdb.Aborted.State:
 					stats.Failed++
@@ -247,13 +250,16 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 			if incrementIn {
 				stats.In++
 			}
+			r.jobIdsToStatKeyIndex[job.JobID] = sk
+			if r.skipFailedRecords {
+				continue
+			}
 			if recordId != "" && recordId != "null" && recordId != `""` {
 				recordIdJson := json.RawMessage(recordId)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson
 				}
 			}
-			r.jobIdsToStatKeyIndex[job.JobID] = sk
 		}
 	}
 }
