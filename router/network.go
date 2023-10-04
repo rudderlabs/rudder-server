@@ -92,6 +92,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		var payload io.Reader
+		headers := map[string]string{"User-Agent": "RudderLabs"}
 		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
@@ -138,21 +139,21 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				zw := gzip.NewWriter(&buf)
 				defer zw.Close()
 
-				_, err := zw.Write([]byte(strValue))
-				if err != nil {
+				if _, err := zw.Write([]byte(strValue)); err != nil {
 					return &utils.SendPostResponse{
 						StatusCode:   400,
 						ResponseBody: []byte("400 Unable to compress data. Unexpected response"),
 					}
 				}
-				err = zw.Flush()
-				if err != nil {
+
+				if err := zw.Close(); err != nil {
 					return &utils.SendPostResponse{
 						StatusCode:   400,
 						ResponseBody: []byte("400 Unable to flush compressed data. Unexpected response"),
 					}
 				}
 
+				headers["Content-Encoding"] = "gzip"
 				payload = &buf
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
@@ -186,9 +187,8 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			req.Header.Add(key, val.(string))
 		}
 
-		req.Header.Add("User-Agent", "RudderLabs")
-		if bodyFormat == "GZIP" {
-			req.Header.Add("Content-Encoding", "gzip")
+		for key, val := range headers {
+			req.Header.Add(key, val)
 		}
 
 		resp, err := client.Do(req)
