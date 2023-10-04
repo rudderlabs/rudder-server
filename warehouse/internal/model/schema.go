@@ -3,7 +3,7 @@ package model
 import "time"
 
 type (
-	SchemaType  string
+	SchemaType  = string
 	TableSchema map[string]string
 	Schema      map[string]TableSchema
 )
@@ -16,6 +16,7 @@ const (
 	FloatDataType          SchemaType = "float"
 	JSONDataType           SchemaType = "json"
 	TextDataType           SchemaType = "text"
+	DateTimeDataType       SchemaType = "datetime"
 	ArrayOfBooleanDatatype SchemaType = "array(boolean)"
 )
 

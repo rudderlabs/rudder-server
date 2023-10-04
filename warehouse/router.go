@@ -16,8 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -34,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -121,7 +120,7 @@ type router struct {
 
 func newRouter(
 	ctx context.Context,
-	app app.App,
+	reporting types.Reporting,
 	destType string,
 	conf *config.Config,
 	logger logger.Logger,
@@ -163,7 +162,7 @@ func newRouter(
 	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
 	r.uploadJobFactory = UploadJobFactory{
-		app:                  app,
+		reporting:            reporting,
 		conf:                 r.conf,
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,

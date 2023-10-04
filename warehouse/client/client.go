@@ -82,10 +82,10 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	for {
 		var row []bigquery.Value
 		err = it.Next(&row)
-		if err == iterator.Done {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
 			return
 		}
 		var stringRow []string

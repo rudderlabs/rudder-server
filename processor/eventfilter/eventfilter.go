@@ -128,13 +128,11 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event
-		errMessage := "Invalid message type. Type assertion failed"
-		resp := &transformer.TransformerResponse{
+		return false, &transformer.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: 400,
 			Metadata: transformerEvent.Metadata,
-			Error:    errMessage,
+			Error:    "Invalid message type. Type assertion failed",
 		}
-		return false, resp
 	}
 
 	isSupportedMsgType := slices.Contains(supportedMsgTypes, messageType)
@@ -143,12 +141,16 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 			"supportedMsgTypes", supportedMsgTypes, "messageType", messageType,
 		)
 		// We will not allow the event
-		return false, nil
+		return false, &transformer.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: types.FilterEventCode,
+			Metadata: transformerEvent.Metadata,
+			Error:    "Message type not supported",
+		}
 	}
 	// MessageType filtering -- ENDS
 
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- STARTS
-	allow, failedResponse := FilterEventsForHybridMode(ConnectionModeFilterParams{
+	allow := FilterEventsForHybridMode(ConnectionModeFilterParams{
 		Destination: &transformerEvent.Destination,
 		SrcType:     transformerEvent.Metadata.SourceDefinitionType,
 		Event:       &EventParams{MessageType: messageType},
@@ -163,7 +165,11 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 	})
 
 	if !allow {
-		return allow, failedResponse
+		return allow, &transformer.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: types.FilterEventCode,
+			Metadata: transformerEvent.Metadata,
+			Error:    "Filtering event based on hybridModeFilter",
+		}
 	}
 	// hybridModeCloudEventsFilter.srcType.[eventProperty] filtering -- ENDS
 
@@ -195,7 +201,7 @@ Example:
 			...
 		}
 */
-func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterParams) (bool, *transformer.TransformerResponse) {
+func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterParams) bool {
 	destination := connectionModeFilterParams.Destination
 	srcType := strings.TrimSpace(connectionModeFilterParams.SrcType)
 	messageType := connectionModeFilterParams.Event.MessageType
@@ -203,30 +209,30 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 
 	if srcType == "" {
 		pkgLogger.Debug("sourceType is empty string, filtering event based on default behaviour")
-		return evaluatedDefaultBehaviour, nil
+		return evaluatedDefaultBehaviour
 	}
 
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
 		pkgLogger.Debug("connectionMode not present, filtering event based on default behaviour")
-		return evaluatedDefaultBehaviour, nil
+		return evaluatedDefaultBehaviour
 	}
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
 	if !isDestConnModeString || destConnectionMode != hybridMode {
 		pkgLogger.Debugf("Provided connectionMode(%v) is in wrong format or the mode is not %q, filtering event based on default behaviour", destConnModeI, hybridMode)
-		return evaluatedDefaultBehaviour, nil
+		return evaluatedDefaultBehaviour
 	}
 
 	sourceEventPropertiesI := misc.MapLookup(destination.DestinationDefinition.Config, hybridModeEventsFilterKey, srcType)
 	if sourceEventPropertiesI == nil {
 		pkgLogger.Debugf("Destination definition config doesn't contain proper values for %[1]v or %[1]v.%[2]v", hybridModeEventsFilterKey, srcType)
-		return evaluatedDefaultBehaviour, nil
+		return evaluatedDefaultBehaviour
 	}
 	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
 
 	if !isOk || len(eventProperties) == 0 {
 		pkgLogger.Debugf("'%v.%v' is not correctly defined", hybridModeEventsFilterKey, srcType)
-		return evaluatedDefaultBehaviour, nil
+		return evaluatedDefaultBehaviour
 	}
 
 	// Flag indicating to let the event pass through
@@ -251,7 +257,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 			allowEvent = slices.Contains(messageTypes, messageType) && evaluatedDefaultBehaviour
 		}
 	}
-	return allowEvent, nil
+	return allowEvent
 }
 
 type EventPropsTypes interface {

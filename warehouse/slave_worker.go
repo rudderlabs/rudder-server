@@ -308,7 +308,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 			if job.DestinationType == warehouseutils.CLICKHOUSE {
 				switch columnType {
-				case string(model.BooleanDataType):
+				case model.BooleanDataType:
 					newColumnVal := 0
 
 					if k, ok := columnVal.(bool); ok {
@@ -318,7 +318,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 					}
 
 					columnVal = newColumnVal
-				case string(model.ArrayOfBooleanDatatype):
+				case model.ArrayOfBooleanDatatype:
 					if boolValue, ok := columnVal.([]interface{}); ok {
 						newColumnVal := make([]interface{}, len(boolValue))
 
@@ -335,7 +335,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 				}
 			}
 
-			if model.SchemaType(columnType) == model.IntDataType || model.SchemaType(columnType) == model.BigIntDataType {
+			if columnType == model.IntDataType || columnType == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
@@ -350,8 +350,8 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
 				newColumnVal, convError := handleSchemaChange(
-					model.SchemaType(dataTypeInSchema),
-					model.SchemaType(columnType),
+					dataTypeInSchema,
+					columnType,
 					columnVal,
 				)
 

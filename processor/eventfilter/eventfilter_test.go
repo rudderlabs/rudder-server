@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
 func TestFilterEventsForHybridMode(t *testing.T) {
@@ -402,7 +403,7 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				},
 			}
 
-			actualOutput, _ := FilterEventsForHybridMode(
+			actualOutput := FilterEventsForHybridMode(
 				ConnectionModeFilterParams{
 					SrcType:          source.SourceDefinition.Type,
 					Destination:      destination,
@@ -450,6 +451,67 @@ func TestConvertToArrayOfType(t *testing.T) {
 		t.Run(strTestCase.caseName, func(t *testing.T) {
 			actual := ConvertToArrayOfType[string](strTestCase.input)
 			require.EqualValues(t, strTestCase.expected, actual)
+		})
+	}
+}
+
+func TestAllowEventToDestTransformation(t *testing.T) {
+	type testCaseT struct {
+		caseName          string
+		transformerEvent  *transformer.TransformerEvent
+		expected          bool
+		supportedMsgTypes []string
+		expectedResp      *transformer.TransformerResponse
+	}
+
+	testCases := []testCaseT{
+		{
+			caseName:          "if message type is invalid, return false with statusCode 400",
+			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": ""}},
+			expected:          false,
+			supportedMsgTypes: []string{"track"},
+			expectedResp: &transformer.TransformerResponse{
+				Output:     map[string]interface{}{"type": ""},
+				StatusCode: 400,
+				Error:      "Invalid message type. Type assertion failed",
+			},
+		},
+		{
+			caseName:          "if message type is unsupported, return false with statusCode 298",
+			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "identify"}},
+			expected:          false,
+			supportedMsgTypes: []string{"track"},
+			expectedResp: &transformer.TransformerResponse{
+				Output:     map[string]interface{}{"type": "identify"},
+				StatusCode: 298,
+				Error:      "Message type not supported",
+			},
+		},
+		{
+			caseName:          "if event is filtered due to FilterEventsForHybridMode, return statusCode 298",
+			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Metadata: transformer.Metadata{}},
+			expected:          false,
+			supportedMsgTypes: []string{"track"},
+			expectedResp: &transformer.TransformerResponse{
+				Output:     map[string]interface{}{"type": "track"},
+				StatusCode: 298,
+				Error:      "Filtering event based on hybridModeFilter",
+			},
+		},
+		{
+			caseName:          "if event is legit, return true with nil response",
+			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Destination: backendconfig.DestinationT{IsProcessorEnabled: true}},
+			expected:          true,
+			supportedMsgTypes: []string{"track"},
+			expectedResp:      nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.caseName, func(t *testing.T) {
+			allow, resp := AllowEventToDestTransformation(tc.transformerEvent, tc.supportedMsgTypes)
+			require.Equal(t, tc.expected, allow)
+			require.Equal(t, tc.expectedResp, resp)
 		})
 	}
 }
