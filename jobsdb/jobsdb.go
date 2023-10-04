@@ -600,6 +600,7 @@ var (
 	Succeeded = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted   = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
 	Migrated  = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
+	Filtered  = jobStateT{isValid: true, isTerminal: true, State: "filtered"}
 
 	validTerminalStates    []string
 	validNonTerminalStates []string
@@ -615,6 +616,7 @@ var jobStates = []jobStateT{
 	Aborted,
 	Migrated,
 	Importing,
+	Filtered,
 }
 
 // OwnerType for this jobsdb instance
