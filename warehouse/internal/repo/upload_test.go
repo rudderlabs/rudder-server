@@ -1746,6 +1746,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		errorCategory string,
 		generateTableUploads bool,
 		timings model.Timings,
+		now time.Time,
 	) {
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
@@ -1846,10 +1847,6 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				status:              model.ExportedData,
 				prepareTableUploads: true,
 			},
-			{
-				status:              model.ExportedData,
-				prepareTableUploads: true,
-			},
 		}
 
 		db := setupDB(t)
@@ -1857,11 +1854,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, nil, "",
-				entry.prepareTableUploads, model.Timings{},
+				db, entry.status, nil, "",
+				entry.prepareTableUploads, model.Timings{}, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -1902,7 +1898,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "created_remote_schema_failed",
 				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
-				errorCategory: "default",
+				errorCategory: model.UnCategorizedError,
 				timings: model.Timings{
 					{
 						"created_remote_schema_failed": now,
@@ -1929,11 +1925,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				true, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				true, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -1946,22 +1941,24 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:         `some error 6`,
-				ErrorCategory: "default",
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 8`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-2 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-2 * time.Hour).UTC(),
+				Status:          model.Aborted,
 			},
 			{
-				Error:         `some error 8`,
-				ErrorCategory: model.PermissionError,
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Aborted,
+				Error:           `some error 6`,
+				ErrorCategory:   model.UnCategorizedError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 		})
 
@@ -1973,6 +1970,36 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, retries, int64(2))
+
+		failedBatches, err = repoUpload.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+			DestinationID: destinationID,
+			WorkspaceID:   workspaceID,
+			Start:         start,
+			End:           end,
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+			{
+				Error:           `some error 8`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.UTC(),
+				LastHappenedAt:  now.UTC(),
+				Status:          "syncing",
+			},
+			{
+				Error:           `some error 6`,
+				ErrorCategory:   model.UnCategorizedError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.UTC(),
+				LastHappenedAt:  now.UTC(),
+				Status:          "syncing",
+			},
+		})
 	})
 	t.Run("optional end", func(t *testing.T) {
 		entries := []struct {
@@ -1984,7 +2011,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "created_remote_schema_failed",
 				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
-				errorCategory: "default",
+				errorCategory: model.UnCategorizedError,
 				timings: model.Timings{
 					{
 						"created_remote_schema_failed": now,
@@ -2011,11 +2038,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				true, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				true, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -2027,22 +2053,24 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:         `some error 6`,
-				ErrorCategory: "default",
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 8`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-2 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-2 * time.Hour).UTC(),
+				Status:          model.Aborted,
 			},
 			{
-				Error:         `some error 8`,
-				ErrorCategory: model.PermissionError,
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Aborted,
+				Error:           `some error 6`,
+				ErrorCategory:   model.UnCategorizedError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 		})
 
@@ -2065,7 +2093,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "internal_processing_failed",
 				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-				errorCategory:       "default",
+				errorCategory:       model.UnCategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2095,11 +2123,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				entry.prepareTableUploads, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				entry.prepareTableUploads, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -2112,22 +2139,24 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:         `some error 2`,
-				ErrorCategory: "default",
-				SourceID:      sourceID,
-				TotalEvents:   600,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 4`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     600,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-2 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-2 * time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 			{
-				Error:         `some error 4`,
-				ErrorCategory: model.PermissionError,
-				SourceID:      sourceID,
-				TotalEvents:   600,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 2`,
+				ErrorCategory:   model.UnCategorizedError,
+				SourceID:        sourceID,
+				TotalEvents:     600,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 		})
 
@@ -2151,7 +2180,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "internal_processing_failed",
 				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-				errorCategory:       "default",
+				errorCategory:       model.UnCategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2162,7 +2191,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "generating_load_files_failed",
 				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
-				errorCategory:       "default",
+				errorCategory:       model.UnCategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2203,11 +2232,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				entry.prepareTableUploads, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				entry.prepareTableUploads, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -2220,31 +2248,34 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:         `some error 4`,
-				ErrorCategory: "default",
-				SourceID:      sourceID,
-				TotalEvents:   1200,
-				TotalSyncs:    2,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 6`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-3 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-3 * time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 			{
-				Error:         `some error 6`,
-				ErrorCategory: model.PermissionError,
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 8`,
+				ErrorCategory:   model.ResourceNotFoundError,
+				SourceID:        sourceID,
+				TotalEvents:     500,
+				TotalSyncs:      1,
+				FirstHappenedAt: now.Add(-4 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-4 * time.Hour).UTC(),
+				Status:          model.Aborted,
 			},
 			{
-				Error:         `some error 8`,
-				ErrorCategory: model.ResourceNotFoundError,
-				SourceID:      sourceID,
-				TotalEvents:   500,
-				TotalSyncs:    1,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Aborted,
+				Error:           `some error 2`,
+				ErrorCategory:   model.UnCategorizedError,
+				SourceID:        sourceID,
+				TotalEvents:     1200,
+				TotalSyncs:      2,
+				FirstHappenedAt: now.Add(-2 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-1 * time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 		})
 
@@ -2294,11 +2325,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				entry.prepareTableUploads, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				entry.prepareTableUploads, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -2311,13 +2341,14 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:         `some error 6`,
-				ErrorCategory: model.PermissionError,
-				SourceID:      sourceID,
-				TotalEvents:   1100,
-				TotalSyncs:    2,
-				UpdatedAt:     now.UTC(),
-				Status:        model.Failed,
+				Error:           `some error 4`,
+				ErrorCategory:   model.PermissionError,
+				SourceID:        sourceID,
+				TotalEvents:     1100,
+				TotalSyncs:      2,
+				FirstHappenedAt: now.Add(-2 * time.Hour).UTC(),
+				LastHappenedAt:  now.Add(-1 * time.Hour).UTC(),
+				Status:          model.Failed,
 			},
 		})
 
@@ -2363,7 +2394,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "internal_processing_failed",
 				error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some error","some error"],"attempt":2}}`),
-				errorCategory: "default",
+				errorCategory: model.UnCategorizedError,
 				timings: model.Timings{
 					{
 						"internal_processing_failed": now,
@@ -2373,7 +2404,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "generating_load_files_failed",
 				error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some error","some error"],"attempt":2}}`),
-				errorCategory: "default",
+				errorCategory: model.UnCategorizedError,
 				timings: model.Timings{
 					{
 						"generating_load_files_failed": now,
@@ -2413,11 +2444,10 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			return now
 		}))
 
-		for _, entry := range entries {
+		for i, entry := range entries {
 			prepareData(
-				db,
-				entry.status, entry.error, entry.errorCategory,
-				entry.prepareTableUploads, entry.timings,
+				db, entry.status, entry.error, entry.errorCategory,
+				entry.prepareTableUploads, entry.timings, now.Add(-time.Duration(i+1)*time.Hour),
 			)
 		}
 
@@ -2428,7 +2458,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				SourceID:      sourceID,
 				Start:         start,
 				End:           end,
-				ErrorCategory: "default",
+				ErrorCategory: model.UnCategorizedError,
 				Status:        model.Failed,
 			})
 			require.NoError(t, err)

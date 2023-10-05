@@ -1058,7 +1058,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 		  SELECT
 			u.error_category,
 			u.source_id,
-			CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			CASE WHEN u.status = 'waiting' THEN 'syncing' WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
 			u.id,
 			tu.total_events,
 			u.updated_at,
@@ -1083,7 +1083,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 		  SELECT
 			u.error_category,
 			u.source_id,
-			CASE WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			CASE WHEN u.status = 'waiting' THEN 'syncing' WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
 			u.id,
 			s.total_events,
 			u.updated_at,
@@ -1155,7 +1155,8 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			),
 			0
 		  ) AS total_syncs,
-		  updated_at,
+		  last_happened_at,
+		  first_happened_at,
 		  error,
 		  timings
 		FROM
@@ -1165,18 +1166,19 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			  source_id,
 			  status,
 			  SUM(total_events) OVER (
-				PARTITION BY error_category, source_id,
-				status
+				PARTITION BY error_category, source_id, status
 			  ) AS total_events,
-			  updated_at,
+			  MAX(updated_at) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS last_happened_at,
+			  MIN(updated_at) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS first_happened_at,
 			  error,
 			  timings,
 			  ROW_NUMBER() OVER (
-				PARTITION BY error_category,
-				source_id,
-				status
-				ORDER BY
-				  updated_at DESC
+				PARTITION BY error_category, source_id, status
+				ORDER BY updated_at DESC
 			  ) AS row_number
 			FROM
 			  combined_result
@@ -1213,7 +1215,8 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			&failedBatch.Status,
 			&failedBatch.TotalEvents,
 			&failedBatch.TotalSyncs,
-			&failedBatch.UpdatedAt,
+			&failedBatch.LastHappenedAt,
+			&failedBatch.FirstHappenedAt,
 			&failedBatch.Error,
 			&timingsRaw,
 		)
@@ -1221,7 +1224,8 @@ func (uploads *Uploads) RetrieveFailedBatches(
 			return nil, fmt.Errorf("scanning failed batches: %w", err)
 		}
 
-		failedBatch.UpdatedAt = failedBatch.UpdatedAt.UTC()
+		failedBatch.LastHappenedAt = failedBatch.LastHappenedAt.UTC()
+		failedBatch.FirstHappenedAt = failedBatch.FirstHappenedAt.UTC()
 
 		if len(timingsRaw) > 0 {
 			_ = json.Unmarshal(timingsRaw, &timings)

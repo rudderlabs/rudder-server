@@ -42,13 +42,14 @@ type RetrieveFailedBatchesRequest struct {
 }
 
 type RetrieveFailedBatchesResponse struct {
-	ErrorCategory string
-	SourceID      string
-	Status        string
-	TotalEvents   int64
-	TotalSyncs    int64
-	UpdatedAt     time.Time
-	Error         string
+	ErrorCategory   string
+	SourceID        string
+	Status          string
+	TotalEvents     int64
+	TotalSyncs      int64
+	LastHappenedAt  time.Time
+	FirstHappenedAt time.Time
+	Error           string
 }
 
 type RetryFailedBatchesRequest struct {

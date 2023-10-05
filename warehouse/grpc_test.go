@@ -1219,7 +1219,7 @@ func TestGRPC(t *testing.T) {
 				{
 					status:              "internal_processing_failed",
 					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-					errorCategory:       "default",
+					errorCategory:       model.UnCategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
 						{
@@ -1230,7 +1230,7 @@ func TestGRPC(t *testing.T) {
 				{
 					status:              "generating_load_files_failed",
 					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
-					errorCategory:       "default",
+					errorCategory:       model.UnCategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
 						{
@@ -1271,8 +1271,7 @@ func TestGRPC(t *testing.T) {
 
 				for _, entry := range entries {
 					prepareData(
-						db,
-						entry.status, entry.error, entry.errorCategory,
+						db, entry.status, entry.error, entry.errorCategory,
 						entry.prepareTableUploads, entry.timings,
 					)
 				}
@@ -1331,42 +1330,46 @@ func TestGRPC(t *testing.T) {
 
 					failedBatches := lo.Map(res.GetFailedBatches(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
 						return model.RetrieveFailedBatchesResponse{
-							Error:         detail.GetError(),
-							ErrorCategory: detail.GetErrorCategory(),
-							SourceID:      detail.GetSourceID(),
-							TotalEvents:   detail.GetFailedEventsCount(),
-							TotalSyncs:    detail.GetFailedSyncsCount(),
-							UpdatedAt:     detail.GetLastHappened().AsTime(),
-							Status:        detail.GetStatus(),
+							Error:           detail.GetError(),
+							ErrorCategory:   detail.GetErrorCategory(),
+							SourceID:        detail.GetSourceID(),
+							TotalEvents:     detail.GetFailedEventsCount(),
+							TotalSyncs:      detail.GetFailedSyncsCount(),
+							FirstHappenedAt: detail.GetFirstHappened().AsTime(),
+							LastHappenedAt:  detail.GetLastHappened().AsTime(),
+							Status:          detail.GetStatus(),
 						}
 					})
 					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
-							Error:         "some error 4",
-							ErrorCategory: "default",
-							SourceID:      sourceID,
-							TotalEvents:   1200,
-							TotalSyncs:    2,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Failed,
+							Error:           "some error 6",
+							ErrorCategory:   model.PermissionError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
 						},
 						{
-							Error:         "some error 6",
-							ErrorCategory: model.PermissionError,
-							SourceID:      sourceID,
-							TotalEvents:   500,
-							TotalSyncs:    1,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Failed,
+							Error:           "some error 8",
+							ErrorCategory:   model.ResourceNotFoundError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Aborted,
 						},
 						{
-							Error:         "some error 8",
-							ErrorCategory: model.ResourceNotFoundError,
-							SourceID:      sourceID,
-							TotalEvents:   500,
-							TotalSyncs:    1,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Aborted,
+							Error:           "some error 2",
+							ErrorCategory:   model.UnCategorizedError,
+							SourceID:        sourceID,
+							TotalEvents:     1200,
+							TotalSyncs:      2,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
 						},
 					})
 				})
@@ -1397,42 +1400,46 @@ func TestGRPC(t *testing.T) {
 
 					failedBatches := lo.Map(res.GetFailedBatches(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
 						return model.RetrieveFailedBatchesResponse{
-							Error:         detail.GetError(),
-							ErrorCategory: detail.GetErrorCategory(),
-							SourceID:      detail.GetSourceID(),
-							TotalEvents:   detail.GetFailedEventsCount(),
-							TotalSyncs:    detail.GetFailedSyncsCount(),
-							UpdatedAt:     detail.GetLastHappened().AsTime(),
-							Status:        detail.GetStatus(),
+							Error:           detail.GetError(),
+							ErrorCategory:   detail.GetErrorCategory(),
+							SourceID:        detail.GetSourceID(),
+							TotalEvents:     detail.GetFailedEventsCount(),
+							TotalSyncs:      detail.GetFailedSyncsCount(),
+							FirstHappenedAt: detail.GetFirstHappened().AsTime(),
+							LastHappenedAt:  detail.GetLastHappened().AsTime(),
+							Status:          detail.GetStatus(),
 						}
 					})
 					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
-							Error:         "some error 4",
-							ErrorCategory: "default",
-							SourceID:      sourceID,
-							TotalEvents:   1200,
-							TotalSyncs:    2,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Failed,
+							Error:           "some error 6",
+							ErrorCategory:   model.PermissionError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
 						},
 						{
-							Error:         "some error 6",
-							ErrorCategory: model.PermissionError,
-							SourceID:      sourceID,
-							TotalEvents:   500,
-							TotalSyncs:    1,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Failed,
+							Error:           "some error 8",
+							ErrorCategory:   model.ResourceNotFoundError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Aborted,
 						},
 						{
-							Error:         "some error 8",
-							ErrorCategory: model.ResourceNotFoundError,
-							SourceID:      sourceID,
-							TotalEvents:   500,
-							TotalSyncs:    1,
-							UpdatedAt:     now.UTC(),
-							Status:        model.Aborted,
+							Error:           "some error 2",
+							ErrorCategory:   model.UnCategorizedError,
+							SourceID:        sourceID,
+							TotalEvents:     1200,
+							TotalSyncs:      2,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
 						},
 					})
 				})

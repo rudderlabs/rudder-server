@@ -127,7 +127,8 @@ message FailedBatchInfo {
   int64 failedEventsCount = 4;
   int64 failedSyncsCount = 5;
   google.protobuf.Timestamp lastHappened = 6;
-  string status = 7;
+  google.protobuf.Timestamp firstHappened = 7;
+  string status = 8;
 }
 
 message RetrieveFailedBatchesRequest{

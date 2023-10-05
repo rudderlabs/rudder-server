@@ -858,7 +858,8 @@ func (g *GRPC) RetrieveFailedBatches(
 			SourceID:          item.SourceID,
 			FailedEventsCount: item.TotalEvents,
 			FailedSyncsCount:  item.TotalSyncs,
-			LastHappened:      timestamppb.New(item.UpdatedAt),
+			LastHappened:      timestamppb.New(item.LastHappenedAt),
+			FirstHappened:     timestamppb.New(item.FirstHappenedAt),
 			Status:            item.Status,
 		}
 	})
