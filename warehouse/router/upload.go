@@ -12,17 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	werrors "github.com/rudderlabs/rudder-server/warehouse/errors"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -30,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -122,7 +118,7 @@ type UploadJob struct {
 		longRunningUploadStatThresholdInMin time.Duration
 	}
 
-	errorHandler    werrors.ErrorHandler
+	errorHandler    ErrorHandler
 	encodingFactory *encoding.Factory
 
 	stats struct {
@@ -209,7 +205,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler:    werrors.ErrorHandler{Manager: whManager},
+		errorHandler:    ErrorHandler{Mapper: whManager},
 		encodingFactory: f.encodingFactory,
 	}
 
