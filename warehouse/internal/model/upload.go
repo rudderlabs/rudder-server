@@ -25,6 +25,7 @@ const (
 )
 
 const (
+	UnCategorizedError        JobErrorType = "uncategorised"
 	PermissionError           JobErrorType = "permission_error"
 	AlterColumnError          JobErrorType = "alter_column_error"
 	ResourceNotFoundError     JobErrorType = "resource_not_found_error"
@@ -105,7 +106,7 @@ type Matcher interface {
 	MatchString(string) bool
 }
 
-type JobErrorType string
+type JobErrorType = string
 
 type JobError struct {
 	Type   JobErrorType

@@ -69,8 +69,8 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			for _, uploadError := range uploadsErrors {
 				tag := er.MatchErrorMappings(errors.New(uploadError))
 				require.Equal(t, tag.Name, "error_mapping")
-				require.NotContains(t, tag.Value, string(model.UnknownError))
-				require.NotContains(t, tag.Value, string(model.Noop))
+				require.NotContains(t, tag.Value, model.UnknownError)
+				require.NotContains(t, tag.Value, model.Noop)
 			}
 		})
 
@@ -83,7 +83,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			er := &warehouse.ErrorHandler{Manager: m}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
-			require.Equal(t, tag.Value, string(model.UnknownError))
+			require.Equal(t, tag.Value, model.UnknownError)
 		})
 
 		t.Run("Nil manager: "+destType, func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			er := &warehouse.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
-			require.Equal(t, tag.Value, string(model.Noop))
+			require.Equal(t, tag.Value, model.Noop)
 		})
 
 		t.Run("Nil error: "+destType, func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			er := &warehouse.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
-			require.Equal(t, tag.Value, string(model.Noop))
+			require.Equal(t, tag.Value, model.Noop)
 		})
 	}
 }
