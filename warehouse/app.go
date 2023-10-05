@@ -9,41 +9,38 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/admin"
-	"github.com/rudderlabs/rudder-server/warehouse/api"
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
-	"github.com/rudderlabs/rudder-server/warehouse/router"
-	"github.com/rudderlabs/rudder-server/warehouse/slave"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
+	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
+	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -65,7 +62,7 @@ type App struct {
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	sourcesManager     *jobs.AsyncJobWh
-	admin              *admin.Admin
+	admin              *whadmin.Admin
 	triggerStore       *sync.Map
 
 	appName string
@@ -195,8 +192,9 @@ func (a *App) Setup(ctx context.Context) error {
 		a.sourcesManager,
 		a.triggerStore,
 	)
-	a.admin = admin.New(
+	a.admin = whadmin.New(
 		a.bcManager,
+		&router.StartUploadAlways,
 		a.logger,
 	)
 
@@ -302,7 +300,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
-	a.admin.Register()
+	admin.RegisterAdminHandler("Warehouse", a.admin)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
