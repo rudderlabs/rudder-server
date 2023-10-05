@@ -897,6 +897,17 @@ func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
 		}
 	}
 	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
+
+	if status.JobParameters != nil {
+		if jobRunID := gjson.GetBytes(status.JobParameters, "source_job_run_id").Str; jobRunID != "" {
+			return respStatusCode >= 500 &&
+				respStatusCode != types.RouterTimedOutStatusCode &&
+				respStatusCode != types.RouterUnMarshalErrorCode && // 5xx errors
+				time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.sourcesRetryTimeWindow.Load() &&
+				status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForSourcesJob.Load() // retry time window exceeded
+		}
+	}
+
 	return (respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
 		(time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.retryTimeWindow.Load() && status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForJob.Load()) // retry time window exceeded
 }
