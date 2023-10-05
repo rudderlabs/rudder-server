@@ -181,7 +181,14 @@ func TestGRPC(t *testing.T) {
 		grpcClient := proto.NewWarehouseClient(grpcClientConn)
 
 		cleanUpTables := func() {
-			tables := []string{"wh_uploads", "wh_table_uploads", "wh_staging_files", "wh_staging_files"}
+			tables := []string{
+				whutils.WarehouseUploadsTable,
+				whutils.WarehouseTableUploadsTable,
+				whutils.WarehouseStagingFilesTable,
+				whutils.WarehouseLoadFilesTable,
+				whutils.WarehouseSchemasTable,
+				whutils.WarehouseAsyncJobTable,
+			}
 			for _, table := range tables {
 				_, err := db.ExecContext(ctx, "TRUNCATE TABLE "+table+" CASCADE;")
 				require.NoError(t, err)

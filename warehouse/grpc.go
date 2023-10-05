@@ -801,13 +801,13 @@ func (g *GRPC) RetrieveFailedBatches(
 	ctx context.Context,
 	req *proto.RetrieveFailedBatchesRequest,
 ) (*proto.RetrieveFailedBatchesResponse, error) {
-	g.logger.Infow(
-		"Retrieving failed batches",
+	log := g.logger.With(
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
 		lf.StartTime, req.GetStart(),
 		lf.EndTime, req.GetEnd(),
 	)
+	log.Infow("Retrieving failed batches")
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetrieveFailedBatchesResponse{},
@@ -847,8 +847,10 @@ func (g *GRPC) RetrieveFailedBatches(
 		End:           endTime,
 	})
 	if err != nil {
+		log.Warnw("unable to get failed batches", lf.Error, err.Error())
+
 		return &proto.RetrieveFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get failed batches: %v", err)
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to get failed batches")
 	}
 
 	failedBatches := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
@@ -870,7 +872,7 @@ func (g *GRPC) RetryFailedBatches(
 	ctx context.Context,
 	req *proto.RetryFailedBatchesRequest,
 ) (*proto.RetryFailedBatchesResponse, error) {
-	g.logger.Infow("Retrying failed batches",
+	log := g.logger.With(
 		lf.WorkspaceID, req.GetWorkspaceID(),
 		lf.DestinationID, req.GetDestinationID(),
 		lf.StartTime, req.GetStart(),
@@ -879,6 +881,7 @@ func (g *GRPC) RetryFailedBatches(
 		lf.SourceID, req.GetSourceID(),
 		lf.Status, req.GetStatus(),
 	)
+	log.Infow("Retrying failed batches")
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetryFailedBatchesResponse{},
@@ -925,8 +928,10 @@ func (g *GRPC) RetryFailedBatches(
 		Status:        req.GetStatus(),
 	})
 	if err != nil {
+		log.Warnw("unable to retry failed batches", lf.Error, err.Error())
+
 		return &proto.RetryFailedBatchesResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to retry failed batches: %v", err)
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to retry failed batches")
 	}
 
 	resp := &proto.RetryFailedBatchesResponse{

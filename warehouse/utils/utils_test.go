@@ -400,6 +400,9 @@ func TestGetAzureBlobLocationFolder(t *testing.T) {
 }
 
 func TestToSafeNamespace(t *testing.T) {
+	config.Set("Warehouse.bigquery.skipNamespaceSnakeCasing", true)
+	defer config.Reset()
+
 	inputs := []struct {
 		provider      string
 		namespace     string
@@ -453,6 +456,16 @@ func TestToSafeNamespace(t *testing.T) {
 			provider:      "RS",
 			namespace:     "group",
 			safeNamespace: "_group",
+		},
+		{
+			provider:      "RS",
+			namespace:     "k3_namespace",
+			safeNamespace: "k_3_namespace",
+		},
+		{
+			provider:      "BQ",
+			namespace:     "k3_namespace",
+			safeNamespace: "k3_namespace",
 		},
 	}
 	for _, input := range inputs {
