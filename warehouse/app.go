@@ -11,7 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
-	"github.com/rudderlabs/rudder-server/warehouse/admin"
+	"github.com/cenkalti/backoff/v4"
+
 	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
@@ -27,12 +28,11 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cenkalti/backoff/v4"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
@@ -42,6 +42,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -66,7 +67,7 @@ type App struct {
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
 	sourcesManager     *jobs.AsyncJobWh
-	admin              *admin.Admin
+	admin              *whadmin.Admin
 	triggerStore       *sync.Map
 
 	appName string
@@ -191,8 +192,9 @@ func (a *App) Setup(ctx context.Context) error {
 		a.sourcesManager,
 		a.triggerStore,
 	)
-	a.admin = admin.New(
+	a.admin = whadmin.New(
 		a.bcManager,
+		&router.StartUploadAlways,
 		a.logger,
 	)
 
@@ -298,7 +300,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
-	a.admin.Register()
+	admin.RegisterAdminHandler("Warehouse", a.admin)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
