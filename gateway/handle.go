@@ -184,10 +184,10 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 			sourceStats[sourceTag].RequestEventsBot(jobData.botEvents)
 			if err != nil {
 				switch {
-				case err == errRequestDropped:
+				case errors.Is(err, errRequestDropped):
 					req.done <- response.TooManyRequests
 					sourceStats[sourceTag].RequestDropped()
-				case err == errRequestSuppressed:
+				case errors.Is(err, errRequestSuppressed):
 					req.done <- "" // no error
 					sourceStats[sourceTag].RequestSuppressed()
 				default:

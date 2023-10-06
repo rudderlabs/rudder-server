@@ -81,6 +81,7 @@ var statusMap = map[string]status{
 	InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
 	SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
 	InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
+	EmptyBatchPayload:       {message: EmptyBatchPayload, code: http.StatusBadRequest},
 	NoSourceIdInHeader:      {message: NoSourceIdInHeader, code: http.StatusUnauthorized},
 	InvalidSourceID:         {message: InvalidSourceID, code: http.StatusUnauthorized},
 	InvalidReplaySource:     {message: InvalidReplaySource, code: http.StatusUnauthorized},
