@@ -210,8 +210,8 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 					)
 				}
 			} else {
-				req.done <- response.InvalidJSON
-				sourceStats[sourceTag].RequestFailed(response.InvalidJSON)
+				req.done <- response.EmptyBatchPayload
+				sourceStats[sourceTag].RequestFailed(response.EmptyBatchPayload)
 			}
 		}
 

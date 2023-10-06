@@ -26,6 +26,8 @@ const (
 	InvalidWriteKey = "Invalid Write Key"
 	// InvalidJSON - Invalid JSON
 	InvalidJSON = "Invalid JSON"
+	// EmptyBatchPayload - Empty batch payload
+	EmptyBatchPayload = "Empty batch payload"
 	// InvalidWebhookSource - Source does not accept webhook events
 	InvalidWebhookSource = "Source does not accept webhook events"
 	// SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
