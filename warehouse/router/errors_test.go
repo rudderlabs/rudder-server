@@ -1,4 +1,4 @@
-package errors_test
+package router
 
 import (
 	"bufio"
@@ -8,17 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	werrors "github.com/rudderlabs/rudder-server/warehouse/errors"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/stretchr/testify/require"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 func TestErrorHandler_MatchErrorMappings(t *testing.T) {
@@ -57,7 +53,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
-			er := &werrors.ErrorHandler{Manager: m}
+			er := &ErrorHandler{Mapper: m}
 
 			f, err := os.Open(file)
 			require.NoError(t, err)
@@ -81,7 +77,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
-			er := &werrors.ErrorHandler{Manager: m}
+			er := &ErrorHandler{Mapper: m}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, model.UnknownError)
@@ -90,7 +86,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil manager: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &werrors.ErrorHandler{Manager: nil}
+			er := &ErrorHandler{Mapper: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, model.Noop)
@@ -99,7 +95,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil error: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &werrors.ErrorHandler{Manager: nil}
+			er := &ErrorHandler{Mapper: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, model.Noop)

@@ -6,21 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/router"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type QueryInput struct {
@@ -39,24 +31,34 @@ type ConfigurationTestOutput struct {
 }
 
 type Admin struct {
-	bcManager *bcm.BackendConfigManager
-	logger    logger.Logger
+	csf    connectionSourcesFetcher
+	suas   startUploadAlwaysSetter
+	logger logger.Logger
 }
 
-func New(bcManager *bcm.BackendConfigManager, logger logger.Logger) *Admin {
+type connectionSourcesFetcher interface {
+	ConnectionSourcesMap(destID string) (map[string]model.Warehouse, bool)
+}
+
+type startUploadAlwaysSetter interface {
+	Store(bool)
+}
+
+func New(
+	csf connectionSourcesFetcher,
+	suas startUploadAlwaysSetter,
+	logger logger.Logger,
+) *Admin {
 	return &Admin{
-		bcManager: bcManager,
-		logger:    logger.Child("admin"),
+		csf:    csf,
+		suas:   suas,
+		logger: logger.Child("admin"),
 	}
 }
 
-func (a *Admin) Register() {
-	admin.RegisterAdminHandler("Warehouse", a)
-}
-
 // TriggerUpload sets uploads to start without delay
-func (*Admin) TriggerUpload(off bool, reply *string) error {
-	router.StartUploadAlways.Store(!off)
+func (a *Admin) TriggerUpload(off bool, reply *string) error {
+	a.suas.Store(!off)
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
 	} else {
@@ -71,7 +73,7 @@ func (a *Admin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	srcMap, ok := a.bcManager.ConnectionSourcesMap(s.DestID)
+	srcMap, ok := a.csf.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
 	}
@@ -117,7 +119,7 @@ func (a *Admin) ConfigurationTest(s ConfigurationTestInput, reply *Configuration
 	}
 
 	var warehouse model.Warehouse
-	srcMap, ok := a.bcManager.ConnectionSourcesMap(s.DestID)
+	srcMap, ok := a.csf.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
