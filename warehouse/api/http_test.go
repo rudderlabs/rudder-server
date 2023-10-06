@@ -177,7 +177,7 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP)
+	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP, stats.Default)
 
 	triggerStore := &sync.Map{}
 

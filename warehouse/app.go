@@ -140,12 +140,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcConfig.Identity(),
 		controlplane.WithRegion(a.config.region),
 	)
-	a.bcManager = bcm.New(
-		a.conf,
-		a.db,
-		a.tenantManager,
-		a.logger.Child("wh_bc_manager"),
-	)
+	a.bcManager = bcm.New(a.conf, a.db, a.tenantManager, a.logger.Child("wh_bc_manager"), stats.Default)
 	a.constraintsManager = constraints.New(
 		a.conf,
 	)

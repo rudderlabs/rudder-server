@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	stats2 "github.com/rudderlabs/rudder-go-kit/stats"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -147,7 +148,7 @@ func TestGRPC(t *testing.T) {
 
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
-		bcManager := bcm.New(c, db, tenantManager, logger.NOP)
+		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats2.Default)
 		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
