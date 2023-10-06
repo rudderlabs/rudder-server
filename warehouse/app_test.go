@@ -3,12 +3,13 @@ package warehouse
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"net"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/ory/dockertest/v3"
 

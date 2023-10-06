@@ -3,11 +3,12 @@ package bcm
 import (
 	"context"
 	"fmt"
-	stats2 "github.com/rudderlabs/rudder-go-kit/stats"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	stats2 "github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 

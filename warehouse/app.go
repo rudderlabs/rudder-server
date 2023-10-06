@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
+
 	"github.com/cenkalti/backoff/v4"
+
 	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
@@ -43,7 +45,6 @@ import (
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
