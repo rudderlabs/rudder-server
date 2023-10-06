@@ -3557,7 +3557,6 @@ var _ = Describe("Static Function Tests", func() {
 			}
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
-
 		})
 	})
 })

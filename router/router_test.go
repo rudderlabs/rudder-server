@@ -678,7 +678,6 @@ var _ = Describe("router", func() {
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
 			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
-
 		})
 
 		It("aborts events that have reached max retries", func() {

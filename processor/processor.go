@@ -143,8 +143,6 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
-
-		toAbortJobRunIDs misc.ValueLoader[string]
 	}
 
 	adaptiveLimit func(int64) int64
