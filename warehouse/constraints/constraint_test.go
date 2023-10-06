@@ -75,7 +75,7 @@ func TestConstraintsManager(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			cm := New(config.Default)
+			cm := New(config.New())
 			cv := cm.ViolatedConstraints(tc.destinationType, tc.brEvent, tc.columnName)
 			require.Equal(t, tc.expected.IsViolated, cv.IsViolated)
 			require.True(t, strings.HasPrefix(cv.ViolatedIdentifier, tc.expected.ViolatedIdentifier))
