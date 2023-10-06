@@ -103,7 +103,7 @@ func TestSlave(t *testing.T) {
 		logger.NOP,
 		stats.Default,
 		slaveNotifier,
-		bcm.New(config.Default, nil, tenantManager, logger.NOP),
+		bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
 		constraints.New(config.Default),
 		encoding.NewFactory(config.Default),
 	)

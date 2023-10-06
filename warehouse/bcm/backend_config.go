@@ -31,6 +31,7 @@ func New(
 	db *sqlquerywrapper.DB,
 	tenantManager *multitenant.Manager,
 	log logger.Logger,
+	stats stats.Stats,
 ) *BackendConfigManager {
 	if c == nil {
 		c = config.Default
@@ -44,6 +45,7 @@ func New(
 		schema:               repo.NewWHSchemas(db),
 		tenantManager:        tenantManager,
 		logger:               log,
+		stats:                stats,
 		InitialConfigFetched: make(chan struct{}),
 		connectionsMap:       make(map[string]map[string]model.Warehouse),
 	}
@@ -67,6 +69,7 @@ type BackendConfigManager struct {
 	tenantManager              *multitenant.Manager
 	internalControlPlaneClient cpclient.InternalControlPlane
 	logger                     logger.Logger
+	stats                      stats.Stats
 
 	InitialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
@@ -349,5 +352,5 @@ func (s *BackendConfigManager) persistSSLFileErrorStat(
 		"destinationID": destID,
 		"errTag":        errTag,
 	}
-	stats.Default.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
+	s.stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
 }

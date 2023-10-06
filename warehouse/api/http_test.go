@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -177,7 +176,7 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP)
+	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP, stats.Default)
 
 	triggerStore := &sync.Map{}
 

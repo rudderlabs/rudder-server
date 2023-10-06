@@ -20,7 +20,7 @@ type ErrorHandler struct {
 // else returns UnknownError
 func (e *ErrorHandler) MatchErrorMappings(err error) whutils.Tag {
 	if e.Mapper == nil || err == nil {
-		return whutils.Tag{Name: "error_mapping", Value: string(model.Noop)}
+		return whutils.Tag{Name: "error_mapping", Value: model.Noop}
 	}
 
 	var (
@@ -30,12 +30,12 @@ func (e *ErrorHandler) MatchErrorMappings(err error) whutils.Tag {
 
 	for _, em := range e.Mapper.ErrorMappings() {
 		if em.Format.MatchString(errString) {
-			errMappings = append(errMappings, string(em.Type))
+			errMappings = append(errMappings, em.Type)
 		}
 	}
 
 	if len(errMappings) > 0 {
 		return whutils.Tag{Name: "error_mapping", Value: strings.Join(errMappings, ",")}
 	}
-	return whutils.Tag{Name: "error_mapping", Value: string(model.UnknownError)}
+	return whutils.Tag{Name: "error_mapping", Value: model.UnknownError}
 }

@@ -1047,3 +1047,252 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 	}
 	return &latestUploadInfo, nil
 }
+
+func (uploads *Uploads) RetrieveFailedBatches(
+	ctx context.Context,
+	req model.RetrieveFailedBatchesRequest,
+) ([]model.RetrieveFailedBatchesResponse, error) {
+	stmt := `
+		WITH table_uploads_result AS (
+		  -- Getting entries from table uploads where total_events got populated
+		  SELECT
+			u.error_category,
+			u.source_id,
+			CASE WHEN u.status = 'waiting' THEN 'syncing' WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			u.id,
+			tu.total_events,
+			u.updated_at,
+			u.error,
+			u.timings
+		  FROM
+			wh_uploads u
+			LEFT JOIN wh_table_uploads tu ON u.id = tu.wh_upload_id
+		  WHERE
+			u.destination_id = $1
+			AND u.workspace_id = $2
+			AND u.created_at >= $3
+			AND u.created_at <= $4
+			AND u.status ~~ ANY($5)
+			AND u.error IS NOT NULL
+			AND u.error != '{}'
+			AND tu.table_name NOT ILIKE $6
+			AND tu.total_events IS NOT NULL
+		),
+		staging_files_result AS (
+		  -- Getting entries from staging files
+		  SELECT
+			u.error_category,
+			u.source_id,
+			CASE WHEN u.status = 'waiting' THEN 'syncing' WHEN u.status LIKE '%failed%' THEN 'failed' ELSE u.status END AS status,
+			u.id,
+			s.total_events,
+			u.updated_at,
+			u.error,
+			u.timings
+		  FROM
+			wh_uploads u
+			LEFT JOIN wh_staging_files s ON u.id = s.upload_id
+		  WHERE
+			u.destination_id = $1
+			AND u.workspace_id = $2
+			AND u.created_at >= $3
+			AND u.created_at <= $4
+			AND u.status ~~ ANY($5)
+			AND u.error IS NOT NULL
+			AND u.error != '{}'
+		),
+		combined_result AS (
+		  -- Select everything from table_uploads_result
+		  SELECT
+			tu.error_category,
+			tu.source_id,
+			tu.status,
+			tu.id,
+			tu.total_events,
+			tu.updated_at,
+			tu.error,
+			tu.timings
+		  FROM
+			table_uploads_result tu
+		  UNION ALL
+			-- Select everything from staging_files_result which is not present in table_uploads_result
+		  SELECT
+			s.error_category,
+			s.source_id,
+			s.status,
+			s.id,
+			s.total_events,
+			s.updated_at,
+			s.error,
+			s.timings
+		  FROM
+			staging_files_result s
+		  WHERE
+			NOT EXISTS (
+			  SELECT
+				1
+			  FROM
+				table_uploads_result tu
+			  WHERE
+				tu.id = s.id
+			)
+		)
+		SELECT
+		  error_category,
+		  source_id,
+		  status,
+		  COALESCE (total_events, 0) AS total_events,
+		  COALESCE(
+			(
+			  SELECT
+				COUNT (DISTINCT combined_result.id)
+			  FROM
+				combined_result
+			  WHERE
+				combined_result.error_category = q.error_category
+				AND combined_result.source_id = q.source_id
+				AND combined_result.status = q.status
+			),
+			0
+		  ) AS total_syncs,
+		  last_happened_at,
+		  first_happened_at,
+		  error,
+		  timings
+		FROM
+		  (
+			SELECT
+			  error_category,
+			  source_id,
+			  status,
+			  SUM(total_events) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS total_events,
+			  MAX(updated_at) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS last_happened_at,
+			  MIN(updated_at) OVER (
+				PARTITION BY error_category, source_id, status
+			  ) AS first_happened_at,
+			  error,
+			  timings,
+			  ROW_NUMBER() OVER (
+				PARTITION BY error_category, source_id, status
+				ORDER BY updated_at DESC
+			  ) AS row_number
+			FROM
+			  combined_result
+		  ) q
+		WHERE
+		  row_number = 1;
+	`
+	start, end := req.Start, req.End
+	if req.End.IsZero() {
+		end = uploads.now()
+	}
+
+	stmtArgs := []interface{}{
+		req.DestinationID, req.WorkspaceID, start, end,
+		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
+		warehouseutils.DiscardsTable,
+	}
+
+	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("querying failed batches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var failedBatches []model.RetrieveFailedBatchesResponse
+	for rows.Next() {
+		var failedBatch model.RetrieveFailedBatchesResponse
+		var timingsRaw []byte
+		var timings model.Timings
+
+		err := rows.Scan(
+			&failedBatch.ErrorCategory,
+			&failedBatch.SourceID,
+			&failedBatch.Status,
+			&failedBatch.TotalEvents,
+			&failedBatch.TotalSyncs,
+			&failedBatch.LastHappenedAt,
+			&failedBatch.FirstHappenedAt,
+			&failedBatch.Error,
+			&timingsRaw,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning failed batches: %w", err)
+		}
+
+		failedBatch.LastHappenedAt = failedBatch.LastHappenedAt.UTC()
+		failedBatch.FirstHappenedAt = failedBatch.FirstHappenedAt.UTC()
+
+		if len(timingsRaw) > 0 {
+			_ = json.Unmarshal(timingsRaw, &timings)
+
+			errs := gjson.Get(
+				failedBatch.Error,
+				fmt.Sprintf("%s.errors", model.GetLastFailedStatus(timings)),
+			).Array()
+			if len(errs) > 0 {
+				failedBatch.Error = errs[len(errs)-1].String()
+			}
+		}
+
+		failedBatches = append(failedBatches, failedBatch)
+	}
+
+	return failedBatches, nil
+}
+
+func (uploads *Uploads) RetryFailedBatches(
+	ctx context.Context,
+	req model.RetryFailedBatchesRequest,
+) (int64, error) {
+	stmt := `
+		UPDATE
+			` + uploadsTableName + `
+		SET
+			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
+			status = $5,
+			updated_at = $6
+		WHERE
+			destination_id = $1
+			AND workspace_id = $2
+			AND created_at >= $3
+			AND created_at <= $4
+			AND error != '{}'
+	`
+	start, end := req.Start, req.End
+	if req.End.IsZero() {
+		end = uploads.now()
+	}
+
+	stmtArgs := []interface{}{
+		req.DestinationID, req.WorkspaceID, start, end,
+		model.Waiting, uploads.now(),
+	}
+
+	if req.ErrorCategory != "" {
+		stmt += fmt.Sprintf(" AND error_category = $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, req.ErrorCategory)
+	}
+	if req.SourceID != "" {
+		stmt += fmt.Sprintf(" AND source_id = $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, req.SourceID)
+	}
+	if req.Status != "" {
+		stmt += fmt.Sprintf(" AND status LIKE $%d", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, "%"+req.Status+"%")
+	} else {
+		stmt += fmt.Sprintf(" AND status ~~ ANY($%d)", len(stmtArgs)+1)
+		stmtArgs = append(stmtArgs, pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}))
+	}
+
+	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("retrying failed batches: %w", err)
+	}
+
+	return r.RowsAffected()
+}

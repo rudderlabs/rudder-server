@@ -95,7 +95,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -197,7 +197,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -326,7 +326,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -395,7 +395,7 @@ func TestSlaveWorker(t *testing.T) {
 				logger.NOP,
 				stats.Default,
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP),
+				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
 				constraints.New(config.Default),
 				ef,
 				workerIdx,
@@ -542,7 +542,7 @@ func TestSlaveWorker(t *testing.T) {
 		}).AnyTimes()
 
 		tenantManager := multitenant.New(config.Default, mockBackendConfig)
-		bcm := bcm.New(config.Default, nil, tenantManager, logger.NOP)
+		bcm := bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default)
 		ef := encoding.NewFactory(config.Default)
 
 		setupCh := make(chan struct{})

@@ -5,11 +5,23 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/warehouse/api"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -24,23 +36,15 @@ import (
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
-	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-	"github.com/rudderlabs/rudder-server/warehouse/router"
-	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -137,12 +141,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcConfig.Identity(),
 		controlplane.WithRegion(a.config.region),
 	)
-	a.bcManager = bcm.New(
-		a.conf,
-		a.db,
-		a.tenantManager,
-		a.logger.Child("wh_bc_manager"),
-	)
+	a.bcManager = bcm.New(a.conf, a.db, a.tenantManager, a.logger.Child("wh_bc_manager"), stats.Default)
 	a.constraintsManager = constraints.New(
 		a.conf,
 	)
