@@ -72,14 +72,17 @@ func (jp *JobParameters) ParseReceivedAtTime() time.Time {
 }
 
 type AbortConfigs struct {
-	ToAbortDestinationIDs string
-	// source
-	// connection
-	// jobRunID
+	DestinationIDs string
+	JobRunIDs      string
 	// ...
 }
 
-func ToBeDrained(job *jobsdb.JobT, jobParams JobParameters, abortConfig AbortConfigs, destinationsMap map[string]*DestinationWithSources) (bool, string) {
+func ToBeDrained(
+	job *jobsdb.JobT,
+	jobParams JobParameters,
+	abortConfig AbortConfigs,
+	destinationsMap map[string]*DestinationWithSources,
+) (bool, string) {
 	// drain if job is older than the destination's retention time
 	createdAt := job.CreatedAt
 	destID := jobParams.DestinationID
@@ -91,18 +94,19 @@ func ToBeDrained(job *jobsdb.JobT, jobParams JobParameters, abortConfig AbortCon
 		return true, "destination is disabled"
 	}
 
-	toAbortDestinationIDs := abortConfig.ToAbortDestinationIDs
-	if toAbortDestinationIDs != "" {
-		abortIDs := strings.Split(toAbortDestinationIDs, ",")
+	if abortConfig.DestinationIDs != "" {
+		abortIDs := strings.Split(abortConfig.DestinationIDs, ",")
 		if slices.Contains(abortIDs, destID) {
 			return true, "destination configured to abort"
 		}
 	}
 
-	// toAbortSourceIDS
-	// toAbortConnection(sourceID, destID)
-	// toAbortJobRunID/TaskRunID
-	// ...
+	if abortConfig.JobRunIDs != "" {
+		abortIDs := strings.Split(abortConfig.JobRunIDs, ",")
+		if slices.Contains(abortIDs, jobParams.SourceJobRunID) {
+			return true, "jobRunID configured to abort"
+		}
+	}
 
 	return false, ""
 }

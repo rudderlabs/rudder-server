@@ -3490,6 +3490,75 @@ var _ = Describe("Static Function Tests", func() {
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
 		})
+
+		It("filters events if jobRunID is configured to abort", func() {
+			destinationConfig := backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{},
+				},
+			}
+			config.Set("RSources.toAbortJobRunIDs", "abortJobRunID")
+
+			events := []transformer.TransformerEvent{
+				{
+					Metadata: transformer.Metadata{
+						MessageID:      "message-1",
+						SourceJobRunID: "abortJobRunID",
+					},
+					Message: map[string]interface{}{
+						"some-key-1": "some-value-1",
+						"type":       "  IDENTIFY ",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"some-key-2": "some-value-2",
+						"type":       "track",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.Metadata{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"some-key-2": "some-value-2",
+						"type":       123,
+					},
+					Destination: destinationConfig,
+				},
+			}
+
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+					{
+						Output:     events[2].Message,
+						StatusCode: 200,
+						Metadata:   events[2].Metadata,
+					},
+				},
+				FailedEvents: []transformer.TransformerResponse{
+					{
+						Output:     events[0].Message,
+						StatusCode: 400,
+						Metadata:   events[0].Metadata,
+						Error:      "jobRunID configured to abort",
+					},
+				},
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+
+		})
 	})
 })
 

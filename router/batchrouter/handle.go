@@ -83,6 +83,7 @@ type Handle struct {
 	mainLoopFreq                 misc.ValueLoader[time.Duration]
 	disableEgress                bool
 	toAbortDestinationIDs        misc.ValueLoader[string]
+	toAbortJobRunIDs             misc.ValueLoader[string]
 	warehouseServiceMaxRetryTime misc.ValueLoader[time.Duration]
 	transformerURL               string
 	datePrefixOverride           misc.ValueLoader[string]

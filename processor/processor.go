@@ -143,6 +143,8 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
+
+		toAbortJobRunIDs misc.ValueLoader[string]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -2555,10 +2557,26 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 	supportedMessageTypesCache := make(map[string]*cacheValue)
 	supportedMessageEventsCache := make(map[string]*cacheValue)
 
+	toAbortJobRunIDs := config.GetStringVar("", "RSources.toAbortJobRunIDs")
+
 	// filter unsupported message types
-	var resp transformer.TransformerResponse
 	for i := range events {
 		event := &events[i]
+
+		if toAbortJobRunIDs != "" {
+			abortIDs := strings.Split(toAbortJobRunIDs, ",")
+			if slices.Contains(abortIDs, event.Metadata.SourceJobRunID) {
+				failedEvents = append(failedEvents,
+					transformer.TransformerResponse{
+						Output:     event.Message,
+						StatusCode: 400,
+						Metadata:   event.Metadata,
+						Error:      "jobRunID configured to abort",
+					},
+				)
+				continue
+			}
+		}
 
 		if filter {
 			// filter unsupported message types
@@ -2589,21 +2607,41 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 				messageEvent, typOk := event.Message["event"].(string)
 				if !typOk {
 					// add to FailedEvents
-					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: "Invalid message event. Type assertion failed"}
-					failedEvents = append(failedEvents, resp)
+					failedEvents = append(
+						failedEvents,
+						transformer.TransformerResponse{
+							Output:     event.Message,
+							StatusCode: 400,
+							Metadata:   event.Metadata,
+							Error:      "Invalid message event. Type assertion failed",
+						},
+					)
 					continue
 				}
 				if !slices.Contains(supportedEvents.values, messageEvent) {
-					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: types.FilterEventCode, Metadata: event.Metadata, Error: "Event not supported"}
-					failedEvents = append(failedEvents, resp)
+					failedEvents = append(
+						failedEvents,
+						transformer.TransformerResponse{
+							Output:     event.Message,
+							StatusCode: types.FilterEventCode,
+							Metadata:   event.Metadata,
+							Error:      "Event not supported",
+						},
+					)
 					continue
 				}
 			}
 
 		}
 		// allow event
-		resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-		responses = append(responses, resp)
+		responses = append(
+			responses,
+			transformer.TransformerResponse{
+				Output:     event.Message,
+				StatusCode: 200,
+				Metadata:   event.Metadata,
+			},
+		)
 	}
 
 	return transformer.Response{Events: responses, FailedEvents: failedEvents}

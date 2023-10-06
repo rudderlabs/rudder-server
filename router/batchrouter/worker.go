@@ -76,7 +76,15 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		for _, job := range destinationJobs.jobs {
 			var params router_utils.JobParameters
 			_ = json.Unmarshal(job.Parameters, &params)
-			if drain, reason := router_utils.ToBeDrained(job, params, router_utils.AbortConfigs{ToAbortDestinationIDs: brt.toAbortDestinationIDs.Load()}, destinationsMap); drain {
+			if drain, reason := router_utils.ToBeDrained(
+				job,
+				params,
+				router_utils.AbortConfigs{
+					DestinationIDs: brt.toAbortDestinationIDs.Load(),
+					JobRunIDs:      brt.toAbortJobRunIDs.Load(),
+				},
+				destinationsMap,
+			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,

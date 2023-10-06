@@ -62,7 +62,6 @@ type reloadableConfig struct {
 	jobsBatchTimeout                        misc.ValueLoader[time.Duration]
 	failingJobsPenaltyThreshold             misc.ValueLoader[float64]
 	failingJobsPenaltySleep                 misc.ValueLoader[time.Duration]
-	toAbortDestinationIDs                   misc.ValueLoader[string]
 	noOfJobsToBatchInAWorker                misc.ValueLoader[int]
 	jobsDBCommandTimeout                    misc.ValueLoader[time.Duration]
 	jobdDBMaxRetries                        misc.ValueLoader[int]
@@ -80,4 +79,7 @@ type reloadableConfig struct {
 	transformerProxy                        misc.ValueLoader[bool]
 	skipRtAbortAlertForTransformation       misc.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery             misc.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+
+	toAbortDestinationIDs misc.ValueLoader[string]
+	toAbortJobRunIDs      misc.ValueLoader[string]
 }
