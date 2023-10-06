@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 

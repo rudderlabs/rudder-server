@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"os"
 	"sync"
 	"time"
@@ -13,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 

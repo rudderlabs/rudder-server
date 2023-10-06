@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"net"
 	"net/http"
 	"strconv"
@@ -13,10 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/mode"
-
 	"github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
