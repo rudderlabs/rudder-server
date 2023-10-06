@@ -532,7 +532,10 @@ func ToSafeNamespace(provider, name string) string {
 		extractedValues = append(extractedValues, extractedValue)
 	}
 	namespace := strings.Join(extractedValues, "_")
-	namespace = strcase.ToSnake(namespace)
+	skipNamespaceSnakeCasing := config.GetBool(fmt.Sprintf("Warehouse.%s.skipNamespaceSnakeCasing", WHDestNameMap[provider]), false)
+	if !skipNamespaceSnakeCasing {
+		namespace = strcase.ToSnake(namespace)
+	}
 	if namespace != "" && int(namespace[0]) >= 48 && int(namespace[0]) <= 57 {
 		namespace = "_" + namespace
 	}

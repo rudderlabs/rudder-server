@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -457,7 +458,7 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 		lf.SourceID, req.SourceId,
 		lf.DestinationID, req.DestinationId,
 		lf.DestinationType, req.DestinationType,
-		"intervalInHours", req.IntervalInHours,
+		lf.IntervalInHours, req.IntervalInHours,
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -511,7 +512,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 		lf.SourceID, req.SourceId,
 		lf.DestinationID, req.DestinationId,
 		lf.DestinationType, req.DestinationType,
-		"intervalInHours", req.IntervalInHours,
+		lf.IntervalInHours, req.IntervalInHours,
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -796,4 +797,147 @@ func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap m
 		// In case we don't have the key, simply replace it with replaceWith
 		configMap[keyToReplace] = replaceWith
 	}
+}
+
+func (g *GRPC) RetrieveFailedBatches(
+	ctx context.Context,
+	req *proto.RetrieveFailedBatchesRequest,
+) (*proto.RetrieveFailedBatchesResponse, error) {
+	log := g.logger.With(
+		lf.WorkspaceID, req.GetWorkspaceID(),
+		lf.DestinationID, req.GetDestinationID(),
+		lf.StartTime, req.GetStart(),
+		lf.EndTime, req.GetEnd(),
+	)
+	log.Infow("Retrieving failed batches")
+
+	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
+		return &proto.RetrieveFailedBatchesResponse{},
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
+	}
+
+	var startTime, endTime time.Time
+	var err error
+
+	startTime, err = time.Parse(time.RFC3339, req.GetStart())
+	if err != nil {
+		return &proto.RetrieveFailedBatchesResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
+	}
+	if req.GetEnd() != "" {
+		endTime, err = time.Parse(time.RFC3339, req.GetEnd())
+		if err != nil {
+			return &proto.RetrieveFailedBatchesResponse{},
+				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
+		}
+		if !endTime.After(startTime) {
+			return &proto.RetrieveFailedBatchesResponse{},
+				status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time")
+		}
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
+	if len(sourceIDs) == 0 {
+		return &proto.RetrieveFailedBatchesResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.GetWorkspaceID())
+	}
+
+	batches, err := g.uploadRepo.RetrieveFailedBatches(ctx, model.RetrieveFailedBatchesRequest{
+		WorkspaceID:   req.GetWorkspaceID(),
+		DestinationID: req.GetDestinationID(),
+		Start:         startTime,
+		End:           endTime,
+	})
+	if err != nil {
+		log.Warnw("unable to get failed batches", lf.Error, err.Error())
+
+		return &proto.RetrieveFailedBatchesResponse{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to get failed batches")
+	}
+
+	failedBatches := lo.Map(batches, func(item model.RetrieveFailedBatchesResponse, index int) *proto.FailedBatchInfo {
+		return &proto.FailedBatchInfo{
+			Error:             item.Error,
+			ErrorCategory:     item.ErrorCategory,
+			SourceID:          item.SourceID,
+			FailedEventsCount: item.TotalEvents,
+			FailedSyncsCount:  item.TotalSyncs,
+			LastHappened:      timestamppb.New(item.LastHappenedAt),
+			FirstHappened:     timestamppb.New(item.FirstHappenedAt),
+			Status:            item.Status,
+		}
+	})
+	return &proto.RetrieveFailedBatchesResponse{FailedBatches: failedBatches}, nil
+}
+
+func (g *GRPC) RetryFailedBatches(
+	ctx context.Context,
+	req *proto.RetryFailedBatchesRequest,
+) (*proto.RetryFailedBatchesResponse, error) {
+	log := g.logger.With(
+		lf.WorkspaceID, req.GetWorkspaceID(),
+		lf.DestinationID, req.GetDestinationID(),
+		lf.StartTime, req.GetStart(),
+		lf.EndTime, req.GetEnd(),
+		lf.ErrorCategory, req.GetErrorCategory(),
+		lf.SourceID, req.GetSourceID(),
+		lf.Status, req.GetStatus(),
+	)
+	log.Infow("Retrying failed batches")
+
+	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
+		return &proto.RetryFailedBatchesResponse{},
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceId and destinationId cannot be empty")
+	}
+
+	var startTime, endTime time.Time
+	var err error
+
+	startTime, err = time.Parse(time.RFC3339, req.GetStart())
+	if err != nil {
+		return &proto.RetryFailedBatchesResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
+	}
+	if req.GetEnd() != "" {
+		endTime, err = time.Parse(time.RFC3339, req.GetEnd())
+		if err != nil {
+			return &proto.RetryFailedBatchesResponse{},
+				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be in correct %s format", time.RFC3339)
+		}
+		if !endTime.After(startTime) {
+			return &proto.RetryFailedBatchesResponse{},
+				status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "end time should be after start time")
+		}
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.GetWorkspaceID()]
+	if len(sourceIDs) == 0 {
+		return &proto.RetryFailedBatchesResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.GetWorkspaceID())
+	}
+	if req.GetSourceID() != "" && !slices.Contains(sourceIDs, req.GetSourceID()) {
+		return &proto.RetryFailedBatchesResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
+
+	retriedCount, err := g.uploadRepo.RetryFailedBatches(ctx, model.RetryFailedBatchesRequest{
+		WorkspaceID:   req.GetWorkspaceID(),
+		DestinationID: req.GetDestinationID(),
+		Start:         startTime,
+		End:           endTime,
+		ErrorCategory: req.GetErrorCategory(),
+		SourceID:      req.GetSourceID(),
+		Status:        req.GetStatus(),
+	})
+	if err != nil {
+		log.Warnw("unable to retry failed batches", lf.Error, err.Error())
+
+		return &proto.RetryFailedBatchesResponse{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to retry failed batches")
+	}
+
+	resp := &proto.RetryFailedBatchesResponse{
+		RetriedSyncsCount: retriedCount,
+	}
+	return resp, nil
 }

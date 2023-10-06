@@ -18,7 +18,7 @@ type ErrorHandler struct {
 // else returns UnknownError
 func (e *ErrorHandler) MatchErrorMappings(err error) warehouseutils.Tag {
 	if e.Manager == nil || err == nil {
-		return warehouseutils.Tag{Name: "error_mapping", Value: string(model.Noop)}
+		return warehouseutils.Tag{Name: "error_mapping", Value: model.Noop}
 	}
 
 	var (
@@ -28,12 +28,12 @@ func (e *ErrorHandler) MatchErrorMappings(err error) warehouseutils.Tag {
 
 	for _, em := range e.Manager.ErrorMappings() {
 		if em.Format.MatchString(errString) {
-			errMappings = append(errMappings, string(em.Type))
+			errMappings = append(errMappings, em.Type)
 		}
 	}
 
 	if len(errMappings) > 0 {
 		return warehouseutils.Tag{Name: "error_mapping", Value: strings.Join(errMappings, ",")}
 	}
-	return warehouseutils.Tag{Name: "error_mapping", Value: string(model.UnknownError)}
+	return warehouseutils.Tag{Name: "error_mapping", Value: model.UnknownError}
 }

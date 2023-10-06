@@ -15,6 +15,8 @@ const (
 	Namespace                  = "namespace"
 	Schema                     = "schema"
 	Error                      = "error"
+	Status                     = "status"
+	ErrorCategory              = "errorCategory"
 	TableName                  = "tableName"
 	ColumnName                 = "columnName"
 	ColumnType                 = "columnType"
@@ -31,4 +33,7 @@ const (
 	StagingTableName           = "stagingTableName"
 	TotalRows                  = "totalRows"
 	SampleDuplicateMessages    = "sampleDuplicateMessages"
+	IntervalInHours            = "intervalInHours"
+	StartTime                  = "startTime"
+	EndTime                    = "endTime"
 )

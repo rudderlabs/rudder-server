@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.6](https://github.com/rudderlabs/rudder-server/compare/v1.14.5...v1.14.6) (2023-10-04)
+
+
+### Bug Fixes
+
+* skip snakecasing for namespace if skipNamespaceSnakeCasing is set to true ([#3932](https://github.com/rudderlabs/rudder-server/issues/3932)) ([8b3cb32](https://github.com/rudderlabs/rudder-server/commit/8b3cb3282b002908da15b998ab6cc01ed44e6241))
+
 ## [1.14.5](https://github.com/rudderlabs/rudder-server/compare/v1.14.4...v1.14.5) (2023-10-03)
 
 

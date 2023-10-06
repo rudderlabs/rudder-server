@@ -183,6 +183,21 @@ func TestGRPC(t *testing.T) {
 		})
 		grpcClient := proto.NewWarehouseClient(grpcClientConn)
 
+		cleanUpTables := func() {
+			tables := []string{
+				whutils.WarehouseUploadsTable,
+				whutils.WarehouseTableUploadsTable,
+				whutils.WarehouseStagingFilesTable,
+				whutils.WarehouseLoadFilesTable,
+				whutils.WarehouseSchemasTable,
+				whutils.WarehouseAsyncJobTable,
+			}
+			for _, table := range tables {
+				_, err := db.ExecContext(ctx, "TRUNCATE TABLE "+table+" CASCADE;")
+				require.NoError(t, err)
+			}
+		}
+
 		t.Run("GetHealth", func(t *testing.T) {
 			var healthResponse *wrapperspb.BoolValue
 			var err error
@@ -1099,6 +1114,464 @@ func TestGRPC(t *testing.T) {
 						ifNotExistThenSet("config", configValue, jsonMap)
 						require.Equal(t, jsonMap["type"], typeValue)
 						require.Equal(t, jsonMap["config"], "{}")
+					})
+				})
+			})
+		})
+
+		t.Run("Failed Batch Operations", func(t *testing.T) {
+			now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+
+			start := now.Add(-24 * time.Hour).Format(time.RFC3339)
+			end := now.Add(24 * time.Hour).Format(time.RFC3339)
+
+			prepareData := func(
+				db *sqlmw.DB,
+				status string,
+				error json.RawMessage,
+				errorCategory string,
+				generateTableUploads bool,
+				timings model.Timings,
+			) {
+				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+					return now
+				}))
+				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+					return now
+				}))
+				repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+					return now
+				}))
+
+				var stagingFiles []*model.StagingFile
+				for i := 0; i < 10; i++ {
+					stagingFile := &model.StagingFile{
+						WorkspaceID:   workspaceID,
+						Location:      "s3://bucket/path/to/file",
+						SourceID:      sourceID,
+						DestinationID: destinationID,
+						TotalEvents:   60,
+						FirstEventAt:  now,
+						LastEventAt:   now,
+					}
+					stagingFileWithSchema := stagingFile.WithSchema(json.RawMessage(`{"type": "object"}`))
+
+					stagingID, err := repoStaging.Insert(ctx, &stagingFileWithSchema)
+					require.NoError(t, err)
+
+					stagingFile.ID = stagingID
+					stagingFiles = append(stagingFiles, stagingFile)
+				}
+
+				uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					DestinationType: whutils.POSTGRES,
+					Status:          status,
+					UploadSchema:    model.Schema{},
+					WorkspaceID:     workspaceID,
+				}, stagingFiles)
+				require.NoError(t, err)
+
+				if len(error) > 0 {
+					errorJson, err := json.Marshal(error)
+					require.NoError(t, err)
+
+					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
+						errorJson,
+						errorCategory,
+						uploadID,
+					)
+					require.NoError(t, err)
+				}
+				if len(timings) > 0 {
+					timingsJson, err := json.Marshal(timings)
+					require.NoError(t, err)
+
+					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET timings = $1 WHERE id = $2`,
+						timingsJson,
+						uploadID,
+					)
+					require.NoError(t, err)
+				}
+
+				if generateTableUploads {
+					tables := []string{
+						"table_1",
+						"table_2",
+						"table_3",
+						"table_4",
+						"table_5",
+						whutils.DiscardsTable,
+						whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.DiscardsTable),
+					}
+					err = repoTableUpload.Insert(ctx, uploadID, tables)
+					require.NoError(t, err)
+
+					totalEvents := int64(100)
+					for _, table := range tables {
+						err = repoTableUpload.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
+							TotalEvents: &totalEvents,
+							Status:      &status,
+						})
+						require.NoError(t, err)
+					}
+				}
+			}
+
+			entries := []struct {
+				status              string
+				error               json.RawMessage
+				errorCategory       string
+				prepareTableUploads bool
+				timings             model.Timings
+			}{
+				{
+					status:              "internal_processing_failed",
+					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
+					errorCategory:       model.UnCategorizedError,
+					prepareTableUploads: false,
+					timings: model.Timings{
+						{
+							"internal_processing_failed": now,
+						},
+					},
+				},
+				{
+					status:              "generating_load_files_failed",
+					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+					errorCategory:       model.UnCategorizedError,
+					prepareTableUploads: false,
+					timings: model.Timings{
+						{
+							"generating_load_files_failed": now,
+						},
+					},
+				},
+				{
+					status:              "exporting_data_failed",
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+					errorCategory:       model.PermissionError,
+					prepareTableUploads: true,
+					timings: model.Timings{
+						{
+							"exporting_data_failed": now,
+						},
+					},
+				},
+				{
+					status:              "aborted",
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
+					prepareTableUploads: true,
+					errorCategory:       model.ResourceNotFoundError,
+					timings: model.Timings{
+						{
+							"exporting_data_failed": now,
+						},
+					},
+				},
+				{
+					status:              "exported_data",
+					prepareTableUploads: true,
+				},
+			}
+
+			prepare := func() {
+				cleanUpTables()
+
+				for _, entry := range entries {
+					prepareData(
+						db, entry.status, entry.error, entry.errorCategory,
+						entry.prepareTableUploads, entry.timings,
+					)
+				}
+			}
+
+			t.Run("RetrieveFailedBatches", func(t *testing.T) {
+				prepare()
+
+				t.Run("no destination + workspace", func(t *testing.T) {
+					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
+				})
+				t.Run("invalid start/end time", func(t *testing.T) {
+					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         now.Add(-24 * time.Hour).Format(time.RFC850),
+						End:           end,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "start time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+
+					res, err = grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           now.Add(24 * time.Hour).Format(time.RFC850),
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok = status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "end time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+				})
+				t.Run("optional end time", func(t *testing.T) {
+					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+					})
+					require.NoError(t, err)
+					require.NotEmpty(t, res)
+
+					failedBatches := lo.Map(res.GetFailedBatches(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
+						return model.RetrieveFailedBatchesResponse{
+							Error:           detail.GetError(),
+							ErrorCategory:   detail.GetErrorCategory(),
+							SourceID:        detail.GetSourceID(),
+							TotalEvents:     detail.GetFailedEventsCount(),
+							TotalSyncs:      detail.GetFailedSyncsCount(),
+							FirstHappenedAt: detail.GetFirstHappened().AsTime(),
+							LastHappenedAt:  detail.GetLastHappened().AsTime(),
+							Status:          detail.GetStatus(),
+						}
+					})
+					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+						{
+							Error:           "some error 6",
+							ErrorCategory:   model.PermissionError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
+						},
+						{
+							Error:           "some error 8",
+							ErrorCategory:   model.ResourceNotFoundError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Aborted,
+						},
+						{
+							Error:           "some error 2",
+							ErrorCategory:   model.UnCategorizedError,
+							SourceID:        sourceID,
+							TotalEvents:     1200,
+							TotalSyncs:      2,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
+						},
+					})
+				})
+				t.Run("no sources", func(t *testing.T) {
+					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   "unknown_workspace_id",
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.Unauthenticated, statusError.Code())
+					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
+				})
+				t.Run("success", func(t *testing.T) {
+					res, err := grpcClient.RetrieveFailedBatches(ctx, &proto.RetrieveFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+					})
+					require.NoError(t, err)
+					require.NotEmpty(t, res)
+
+					failedBatches := lo.Map(res.GetFailedBatches(), func(detail *proto.FailedBatchInfo, index int) model.RetrieveFailedBatchesResponse {
+						return model.RetrieveFailedBatchesResponse{
+							Error:           detail.GetError(),
+							ErrorCategory:   detail.GetErrorCategory(),
+							SourceID:        detail.GetSourceID(),
+							TotalEvents:     detail.GetFailedEventsCount(),
+							TotalSyncs:      detail.GetFailedSyncsCount(),
+							FirstHappenedAt: detail.GetFirstHappened().AsTime(),
+							LastHappenedAt:  detail.GetLastHappened().AsTime(),
+							Status:          detail.GetStatus(),
+						}
+					})
+					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+						{
+							Error:           "some error 6",
+							ErrorCategory:   model.PermissionError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
+						},
+						{
+							Error:           "some error 8",
+							ErrorCategory:   model.ResourceNotFoundError,
+							SourceID:        sourceID,
+							TotalEvents:     500,
+							TotalSyncs:      1,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Aborted,
+						},
+						{
+							Error:           "some error 2",
+							ErrorCategory:   model.UnCategorizedError,
+							SourceID:        sourceID,
+							TotalEvents:     1200,
+							TotalSyncs:      2,
+							LastHappenedAt:  now.UTC(),
+							FirstHappenedAt: now.UTC(),
+							Status:          model.Failed,
+						},
+					})
+				})
+			})
+
+			t.Run("RetryFailedBatches", func(t *testing.T) {
+				prepare()
+
+				t.Run("no destination + workspace", func(t *testing.T) {
+					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "workspaceId and destinationId cannot be empty", statusError.Message())
+				})
+				t.Run("invalid start/end time", func(t *testing.T) {
+					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         now.Add(-24 * time.Hour).Format(time.RFC850),
+						End:           end,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "start time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+
+					res, err = grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           now.Add(-24 * time.Hour).Format(time.RFC850),
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok = status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.InvalidArgument, statusError.Code())
+					require.Equal(t, "end time should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+				})
+				t.Run("optional end time", func(t *testing.T) {
+					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+						WorkspaceID:   workspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.PermissionError,
+						SourceID:      sourceID,
+						Status:        model.Failed,
+					})
+					require.NoError(t, err)
+					require.NotEmpty(t, res)
+					require.EqualValues(t, 1, res.GetRetriedSyncsCount())
+				})
+				t.Run("no sources", func(t *testing.T) {
+					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+						WorkspaceID:   "unknown_workspace_id",
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.PermissionError,
+						SourceID:      sourceID,
+						Status:        model.Failed,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.Unauthenticated, statusError.Code())
+					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
+				})
+				t.Run("unauthorized", func(t *testing.T) {
+					res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+						WorkspaceID:   unusedWorkspaceID,
+						DestinationID: destinationID,
+						Start:         start,
+						End:           end,
+						ErrorCategory: model.PermissionError,
+						SourceID:      sourceID,
+						Status:        model.Failed,
+					})
+					require.Error(t, err)
+					require.Empty(t, res)
+
+					statusError, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, codes.Unauthenticated, statusError.Code())
+					require.Equal(t, "unauthorized request", statusError.Message())
+				})
+				t.Run("success", func(t *testing.T) {
+					t.Run("with filters", func(t *testing.T) {
+						res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+							WorkspaceID:   workspaceID,
+							DestinationID: destinationID,
+							Start:         start,
+							End:           end,
+							ErrorCategory: model.ResourceNotFoundError,
+							SourceID:      sourceID,
+							Status:        model.Aborted,
+						})
+						require.NoError(t, err)
+						require.NotEmpty(t, res)
+						require.EqualValues(t, 1, res.GetRetriedSyncsCount())
+					})
+					t.Run("without filters", func(t *testing.T) {
+						res, err := grpcClient.RetryFailedBatches(ctx, &proto.RetryFailedBatchesRequest{
+							WorkspaceID:   workspaceID,
+							DestinationID: destinationID,
+							Start:         start,
+							End:           end,
+						})
+						require.NoError(t, err)
+						require.NotEmpty(t, res)
+						require.EqualValues(t, 4, res.GetRetriedSyncsCount())
 					})
 				})
 			})
