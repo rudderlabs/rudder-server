@@ -119,8 +119,17 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 	for {
 		s := time.Now()
-		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
-			bytes.NewBuffer(rawJSON))
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
+		if err != nil {
+			// No point in retrying if we can't even create a request. Panicking as per convention.
+			panic(fmt.Errorf("JS HTTP request creation error: URL: %v Error: %+v", url, err))
+		}
+
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		// Header to let transformer know that the client understands event filter code
+		req.Header.Set("X-Feature-Filter-Code", "?1")
+
+		resp, err = trans.client.Do(req)
 
 		if err == nil {
 			// If no err returned by client.Post, reading body.

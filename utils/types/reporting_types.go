@@ -57,7 +57,7 @@ type StatusDetail struct {
 	EventType      string           `json:"eventType"`
 	ErrorType      string           `json:"errorType"`
 	ViolationCount int64            `json:"violationCount"`
-	FailedMessages []*FailedMessage `json:"failedMessages"`
+	FailedMessages []*FailedMessage `json:"-"`
 }
 
 type FailedMessage struct {

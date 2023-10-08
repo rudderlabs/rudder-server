@@ -3,6 +3,8 @@
 package router
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -90,6 +92,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		var payload io.Reader
+		headers := map[string]string{"User-Agent": "RudderLabs"}
 		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
@@ -124,6 +127,34 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
 				payload = strings.NewReader(formValues.Encode())
+			case "GZIP":
+				strValue, ok := bodyValue["payload"].(string)
+				if !ok {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to parse json list. Unexpected transformer response"),
+					}
+				}
+				var buf bytes.Buffer
+				zw := gzip.NewWriter(&buf)
+				defer zw.Close()
+
+				if _, err := zw.Write([]byte(strValue)); err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to compress data. Unexpected response"),
+					}
+				}
+
+				if err := zw.Close(); err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte("400 Unable to flush compressed data. Unexpected response"),
+					}
+				}
+
+				headers["Content-Encoding"] = "gzip"
+				payload = &buf
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
 			}
@@ -156,7 +187,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			req.Header.Add(key, val.(string))
 		}
 
-		req.Header.Add("User-Agent", "RudderLabs")
+		for key, val := range headers {
+			req.Header.Add(key, val)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {

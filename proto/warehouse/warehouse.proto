@@ -15,8 +15,10 @@ service Warehouse {
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
-  rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
+  rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
+  rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
+  rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
 }
 
 message Pagination {
@@ -109,11 +111,47 @@ message RetryWHUploadsResponse {
 }
 
 message ValidateObjectStorageRequest {
-  string type=1;
-  google.protobuf.Struct config=2;
+  string type = 1;
+  google.protobuf.Struct config = 2;
 }
 
 message ValidateObjectStorageResponse{
-  bool isValid=2;
-  string error=3;
+  bool isValid = 2;
+  string error = 3;
+}
+
+message FailedBatchInfo {
+  string error = 1;
+  string errorCategory = 2;
+  string sourceID = 3;
+  int64 failedEventsCount = 4;
+  int64 failedSyncsCount = 5;
+  google.protobuf.Timestamp lastHappened = 6;
+  google.protobuf.Timestamp firstHappened = 7;
+  string status = 8;
+}
+
+message RetrieveFailedBatchesRequest{
+  string workspaceID = 1;
+  string destinationID = 2;
+  string start = 3;
+  string end = 4;
+}
+
+message RetrieveFailedBatchesResponse{
+  repeated FailedBatchInfo failedBatches = 1;
+}
+
+message RetryFailedBatchesRequest{
+  string workspaceID = 1;
+  string destinationID = 2;
+  string start = 3;
+  string end = 4;
+  string errorCategory = 5;
+  string sourceID = 6;
+  string status = 7;
+}
+
+message RetryFailedBatchesResponse{
+  int64 retriedSyncsCount = 1;
 }

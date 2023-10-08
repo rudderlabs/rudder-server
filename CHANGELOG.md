@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.14.6](https://github.com/rudderlabs/rudder-server/compare/v1.14.5...v1.14.6) (2023-10-04)
+
+
+### Bug Fixes
+
+* skip snakecasing for namespace if skipNamespaceSnakeCasing is set to true ([#3932](https://github.com/rudderlabs/rudder-server/issues/3932)) ([8b3cb32](https://github.com/rudderlabs/rudder-server/commit/8b3cb3282b002908da15b998ab6cc01ed44e6241))
+
+## [1.14.5](https://github.com/rudderlabs/rudder-server/compare/v1.14.4...v1.14.5) (2023-10-03)
+
+
+### Miscellaneous
+
+* fix backup prefix ([#3933](https://github.com/rudderlabs/rudder-server/issues/3933)) ([206e20e](https://github.com/rudderlabs/rudder-server/commit/206e20ee679c51dee7fca87445ee55b3ea04b424))
+
+## [1.14.4](https://github.com/rudderlabs/rudder-server/compare/v1.14.3...v1.14.4) (2023-09-29)
+
+
+### Bug Fixes
+
+* use dedup on new records for deltalake ([#3927](https://github.com/rudderlabs/rudder-server/issues/3927)) ([5656ab3](https://github.com/rudderlabs/rudder-server/commit/5656ab3f68dd58e332b68d45f21d1965594ef479))
+
 ## [1.14.3](https://github.com/rudderlabs/rudder-server/compare/v1.14.2...v1.14.3) (2023-09-28)
 
 
