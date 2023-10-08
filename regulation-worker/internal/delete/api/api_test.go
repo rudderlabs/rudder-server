@@ -771,7 +771,6 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 		// Lint error fix
 		_, err := w.Write([]byte(cpResp.response))
 		if err != nil {
-			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -779,7 +778,7 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 
 	srvMux.HandleFunc("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodPut {
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		// iterating over request parameters
@@ -802,7 +801,6 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 		// Lint error fix
 		_, err := w.Write([]byte(cpResp.response))
 		if err != nil {
-			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -845,7 +843,7 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
 		buf := new(bytes.Buffer)
 		_, bufErr := buf.ReadFrom(req.Body)
 		if bufErr != nil {
-			http.Error(w, bufErr.Error(), http.StatusInternalServerError)
+			http.Error(w, bufErr.Error(), http.StatusBadRequest)
 			return
 		}
 		// useful in validating the payload(sent in request body to transformer)
@@ -861,7 +859,6 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
 		// Lint error fix
 		_, err := w.Write([]byte(delResp.jobResponse))
 		if err != nil {
-			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
