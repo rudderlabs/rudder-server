@@ -6,6 +6,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
@@ -38,43 +42,78 @@ func TestFeatureSetup(t *testing.T) {
 	require.NotEqual(t, instanceE, backendconfig.NOOP{})
 }
 
-func TestSetupForNoop(t *testing.T) {
+func TestSetupForDelegates(t *testing.T) {
 	config.Reset()
 	logger.Reset()
 
-	type noopTc struct {
-		reportingEnabled      bool
-		errorReportingEnabled bool
-		enterpriseTokenExists bool
-		expectedDelegates     int
+	defer config.Reset()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	postgresContainer, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	config.Set("DB.port", postgresContainer.Port)
+	config.Set("DB.user", postgresContainer.User)
+	config.Set("DB.name", postgresContainer.Database)
+	config.Set("DB.password", postgresContainer.Password)
+
+	testCases := []struct {
+		reportingEnabled           bool
+		errorReportingEnabled      bool
+		enterpriseTokenExists      bool
+		errorIndexReportingEnabled bool
+		expectedDelegates          int
+	}{
+		{
+			reportingEnabled:           false,
+			errorReportingEnabled:      true,
+			enterpriseTokenExists:      true,
+			errorIndexReportingEnabled: false,
+			expectedDelegates:          0,
+		},
+		{
+			reportingEnabled:           true,
+			errorReportingEnabled:      false,
+			enterpriseTokenExists:      true,
+			errorIndexReportingEnabled: false,
+			expectedDelegates:          1,
+		},
+		{
+			reportingEnabled:           true,
+			errorReportingEnabled:      true,
+			enterpriseTokenExists:      true,
+			errorIndexReportingEnabled: false,
+			expectedDelegates:          2,
+		},
+		{
+			reportingEnabled:           true,
+			errorReportingEnabled:      true,
+			enterpriseTokenExists:      true,
+			errorIndexReportingEnabled: true,
+			expectedDelegates:          3,
+		},
+		{
+			reportingEnabled:           true,
+			errorReportingEnabled:      true,
+			enterpriseTokenExists:      false,
+			errorIndexReportingEnabled: false,
+			expectedDelegates:          0,
+		},
 	}
 
-	tests := []noopTc{
-		{
-			reportingEnabled:      false,
-			errorReportingEnabled: true,
-			enterpriseTokenExists: true,
-			expectedDelegates:     0,
-		},
-		{
-			reportingEnabled:      true,
-			errorReportingEnabled: false,
-			enterpriseTokenExists: true,
-			expectedDelegates:     1,
-		},
-		{
-			reportingEnabled:      true,
-			errorReportingEnabled: true,
-			enterpriseTokenExists: false,
-			expectedDelegates:     0,
-		},
-	}
-
-	for _, tc := range tests {
-		testCaseName := fmt.Sprintf("should be NOOP for error-reporting, when reportingEnabled=%v, errorReportingEnabled=%v, enterpriseToken exists(%v)", tc.reportingEnabled, tc.errorReportingEnabled, tc.enterpriseTokenExists)
+	for _, tc := range testCases {
+		testCaseName := fmt.Sprintf("should be NOOP for error-reporting, when reportingEnabled=%v, errorReportingEnabled=%v, errorIndexReportingEnabled=%v, enterpriseToken exists(%v)",
+			tc.reportingEnabled,
+			tc.errorReportingEnabled,
+			tc.errorIndexReportingEnabled,
+			tc.enterpriseTokenExists,
+		)
 		t.Run(testCaseName, func(t *testing.T) {
 			t.Setenv("RSERVER_REPORTING_ENABLED", strconv.FormatBool(tc.reportingEnabled))
 			t.Setenv("RSERVER_REPORTING_ERROR_REPORTING_ENABLED", strconv.FormatBool(tc.errorReportingEnabled))
+			t.Setenv("RSERVER_REPORTING_ERROR_INDEX_REPORTING_ENABLED", strconv.FormatBool(tc.errorIndexReportingEnabled))
 
 			f := &Factory{}
 			if tc.enterpriseTokenExists {

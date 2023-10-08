@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type ReportingMediator struct {
+type Mediator struct {
 	log logger.Logger
 
 	g         *errgroup.Group
@@ -20,8 +20,8 @@ type ReportingMediator struct {
 	reporters []types.Reporting
 }
 
-func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *ReportingMediator {
-	rm := &ReportingMediator{
+func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
+	rm := &Mediator{
 		log: log,
 	}
 	rm.g, rm.ctx = errgroup.WithContext(ctx)
@@ -31,34 +31,38 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 		return rm
 	}
 
-	// default reporting implementation
-	defaultReporter := NewDefaultReporter(rm.ctx, rm.log)
+	configSubscriber := newConfigSubscriber(rm.log)
 	rm.g.Go(func() error {
-		defaultReporter.backendConfigSubscriber(backendConfig)
+		configSubscriber.Subscribe(rm.ctx, backendConfig)
 		return nil
 	})
+
+	// default reporting implementation
+	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber)
 	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation
 	if config.GetBool("Reporting.errorReporting.enabled", false) {
-		errorReporter := NewErrorDetailReporter(rm.ctx)
-		rm.g.Go(func() error {
-			errorReporter.backendConfigSubscriber(backendConfig)
-			return nil
-		})
+		errorReporter := NewErrorDetailReporter(rm.ctx, configSubscriber)
 		rm.reporters = append(rm.reporters, errorReporter)
+	}
+
+	// error index reporting implementation
+	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
+		errorIndexReporter := NewErrorIndexReporter(rm.ctx, config.Default, rm.log, configSubscriber)
+		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
 
 	return rm
 }
 
-func (rm *ReportingMediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	for _, reporter := range rm.reporters {
 		reporter.Report(metrics, txn)
 	}
 }
 
-func (rm *ReportingMediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
+func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	var syncers []types.ReportingSyncer
 
 	for i := range rm.reporters {
@@ -74,6 +78,6 @@ func (rm *ReportingMediator) DatabaseSyncer(c types.SyncerConfig) types.Reportin
 				return nil
 			})
 		}
-		rm.g.Wait()
+		_ = rm.g.Wait()
 	}
 }
