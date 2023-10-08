@@ -756,7 +756,7 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 			param := chi.URLParam(req, reqParam)
 			if param == "" {
 				// This case wouldn't occur I guess
-				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusInternalServerError)
+				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusBadRequest)
 				return
 			}
 		}
