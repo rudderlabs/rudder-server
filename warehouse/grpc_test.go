@@ -1226,7 +1226,7 @@ func TestGRPC(t *testing.T) {
 				{
 					status:              "internal_processing_failed",
 					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-					errorCategory:       model.UnCategorizedError,
+					errorCategory:       model.UncategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
 						{
@@ -1237,7 +1237,7 @@ func TestGRPC(t *testing.T) {
 				{
 					status:              "generating_load_files_failed",
 					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
-					errorCategory:       model.UnCategorizedError,
+					errorCategory:       model.UncategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
 						{
@@ -1370,7 +1370,7 @@ func TestGRPC(t *testing.T) {
 						},
 						{
 							Error:           "some error 2",
-							ErrorCategory:   model.UnCategorizedError,
+							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,
 							TotalSyncs:      2,
@@ -1440,7 +1440,7 @@ func TestGRPC(t *testing.T) {
 						},
 						{
 							Error:           "some error 2",
-							ErrorCategory:   model.UnCategorizedError,
+							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,
 							TotalSyncs:      2,
