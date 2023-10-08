@@ -116,20 +116,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 
 	if oauthErrJobFound && isOAuthEnabled {
 		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-			dest := &backendconfig.DestinationT{
-				ID:     destination.DestinationID,
-				Config: destination.Config,
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name:   destination.Name,
-					Config: destination.DestDefConfig,
-				},
-			}
-			stCode, response := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
-			jobStatus.Status = model.JobStatusAborted
-			if stCode != http.StatusOK {
-				jobStatus.Error = fmt.Errorf(response)
-			}
-			return jobStatus
+			return api.inactivateAuthStatus(&destination, job, oAuthDetail)
 		}
 		if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 			err = api.refreshOAuthToken(&destination, job, oAuthDetail)
@@ -219,7 +206,7 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 	}, nil
 }
 
-func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job model.Job, oAuthDetail oauthDetail, actualErrorMessage string) (jobStatus model.JobStatus) {
+func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job model.Job, oAuthDetail oauthDetail) (jobStatus model.JobStatus) {
 	dest := &backendconfig.DestinationT{
 		ID:     destination.DestinationID,
 		Config: destination.Config,
@@ -228,9 +215,9 @@ func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job 
 			Config: destination.DestDefConfig,
 		},
 	}
-	api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
+	_, resp := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
 	jobStatus.Status = model.JobStatusAborted
-	jobStatus.Error = fmt.Errorf(actualErrorMessage)
+	jobStatus.Error = fmt.Errorf(resp)
 	return jobStatus
 }
 
@@ -246,8 +233,8 @@ func (api *APIManager) refreshOAuthToken(destination *model.Destination, job mod
 	if statusCode != http.StatusOK {
 		if refreshResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// authStatus should be made inactive
-			api.inactivateAuthStatus(destination, job, oAuthDetail, refreshResponse.Err)
-			return fmt.Errorf(refreshResponse.Err)
+			errJobStatus := api.inactivateAuthStatus(destination, job, oAuthDetail)
+			return fmt.Errorf(errJobStatus.Error.Error())
 		}
 
 		var refreshRespErr string

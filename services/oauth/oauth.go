@@ -490,7 +490,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 		authStatusInactiveStats.statName = getStatName("failure")
 		authStatusInactiveStats.errorMessage = msg
 		authStatusInactiveStats.SendCountStat()
-		return http.StatusBadRequest, msg
+		return http.StatusBadRequest, "Problem with user permission or access/refresh token have been revoked"
 	}
 
 	authErrHandler.logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
@@ -505,7 +505,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	defer accountMutex.Unlock()
 	delete(authErrHandler.destAuthInfoMap, rudderAccountId)
 
-	return statusCode, fmt.Sprintf(`{response: {"authStatus": "inactive", "activeRequest": %v}`, false)
+	return statusCode, "Problem with user permission or access/refresh token have been revoked"
 }
 
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
