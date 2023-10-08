@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -110,33 +112,36 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
-	if isOAuthEnabled && isAuthStatusInactiveErrorCategory(jobResp) {
-		dest := &backendconfig.DestinationT{
-			ID:     destination.DestinationID,
-			Config: destination.Config,
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name:   destination.Name,
-				Config: destination.DestDefConfig,
-			},
-		}
-		stCode, response := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
-		jobStatus.Status = model.JobStatusAborted
-		if stCode != http.StatusOK {
-			jobStatus.Error = fmt.Errorf(response)
-		}
-		return jobStatus
-	}
-	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
-		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
-		if err != nil {
-			pkgLogger.Error(err)
-			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-		}
-		// retry the request
-		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
-		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
-	}
+	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
 
+	if oauthErrJobFound && isOAuthEnabled {
+		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
+			dest := &backendconfig.DestinationT{
+				ID:     destination.DestinationID,
+				Config: destination.Config,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   destination.Name,
+					Config: destination.DestDefConfig,
+				},
+			}
+			stCode, response := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
+			jobStatus.Status = model.JobStatusAborted
+			if stCode != http.StatusOK {
+				jobStatus.Error = fmt.Errorf(response)
+			}
+			return jobStatus
+		}
+		if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
+			err = api.refreshOAuthToken(&destination, job, oAuthDetail)
+			if err != nil {
+				pkgLogger.Error(err)
+				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+			}
+			// retry the request
+			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
+			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
+		}
+	}
 	return jobStatus
 }
 
@@ -177,22 +182,10 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 	}
 }
 
-func isTokenExpired(jobResponses []JobRespSchema) bool {
-	for _, jobResponse := range jobResponses {
-		if jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN {
-			return true
-		}
-	}
-	return false
-}
-
-func isAuthStatusInactiveErrorCategory(jobResponses []JobRespSchema) bool {
-	for _, jobResponse := range jobResponses {
-		if jobResponse.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-			return true
-		}
-	}
-	return false
+func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
+	return lo.Find(jobResponses, func(item JobRespSchema) bool {
+		return lo.Contains([]string{oauth.AUTH_STATUS_INACTIVE, oauth.REFRESH_TOKEN}, item.AuthErrorCategory)
+	})
 }
 
 func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
@@ -226,21 +219,42 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 	}, nil
 }
 
-func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDetail oauthDetail) error {
+func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job model.Job, oAuthDetail oauthDetail, actualErrorMessage string) (jobStatus model.JobStatus) {
+	dest := &backendconfig.DestinationT{
+		ID:     destination.DestinationID,
+		Config: destination.Config,
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name:   destination.Name,
+			Config: destination.DestDefConfig,
+		},
+	}
+	api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
+	jobStatus.Status = model.JobStatusAborted
+	jobStatus.Error = fmt.Errorf(actualErrorMessage)
+	return jobStatus
+}
+
+func (api *APIManager) refreshOAuthToken(destination *model.Destination, job model.Job, oAuthDetail oauthDetail) error {
 	refTokenParams := &oauth.RefreshTokenParams{
 		Secret:          oAuthDetail.secretToken.Account.Secret,
-		WorkspaceId:     workspaceId,
+		WorkspaceId:     job.WorkspaceID,
 		AccountId:       oAuthDetail.id,
-		DestDefName:     destName,
+		DestDefName:     destination.Name,
 		EventNamePrefix: "refresh_token",
 	}
 	statusCode, refreshResponse := api.OAuth.RefreshToken(refTokenParams)
 	if statusCode != http.StatusOK {
+		if refreshResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+			// authStatus should be made inactive
+			api.inactivateAuthStatus(destination, job, oAuthDetail, refreshResponse.Err)
+			return fmt.Errorf(refreshResponse.Err)
+		}
+
 		var refreshRespErr string
 		if refreshResponse != nil {
 			refreshRespErr = refreshResponse.Err
 		}
-		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destName, workspaceId, oAuthDetail.id, refreshRespErr)
+		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destination.Name, job.WorkspaceID, oAuthDetail.id, refreshRespErr)
 	}
 	return nil
 }
