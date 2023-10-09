@@ -214,36 +214,26 @@ func (brt *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
-func (brt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
-	drainedStatuses, otherStatuses := getDrainedAndOtherStatuses(jobStatuses)
+func (brt *Handle) updateRudderSourcesStats(
+	ctx context.Context,
+	tx jobsdb.UpdateSafeTx,
+	jobs []*jobsdb.JobT,
+	jobStatuses []*jobsdb.JobStatusT,
+) error {
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(drainedStatuses)
-	rsourcesStats.SkipFailedRecords()
-	rsourcesStats.JobStatusesUpdated(otherStatuses)
+	rsourcesStats.CollectStats(jobStatuses)
+	for _, status := range jobStatuses {
+		if status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
+			status.JobState == jobsdb.Aborted.State {
+			rsourcesStats.CollectFailedRecords([]*jobsdb.JobStatusT{status})
+		}
+	}
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)
 	}
 	return nil
-}
-
-func getDrainedAndOtherStatuses(statuses []*jobsdb.JobStatusT) (
-	drainedStatuses []*jobsdb.JobStatusT,
-	otherStatuses []*jobsdb.JobStatusT,
-) {
-	drainedStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
-	otherStatuses = make([]*jobsdb.JobStatusT, 0, len(statuses))
-
-	for _, status := range statuses {
-		if status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
-			status.JobState == jobsdb.Aborted.State {
-			drainedStatuses = append(drainedStatuses, status)
-		} else {
-			otherStatuses = append(otherStatuses, status)
-		}
-	}
-	return
 }
 
 func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {

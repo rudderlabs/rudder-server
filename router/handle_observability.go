@@ -90,39 +90,20 @@ func (rt *Handle) updateRudderSourcesStats(
 	tx jobsdb.UpdateSafeTx,
 	workerJobStatuses []workerJobStatus,
 ) error {
-	jobs, drainedStatuses, otherStatuses := getDrainedAndOtherJobsStatuses(workerJobStatuses)
-
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
-	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(drainedStatuses)
-	rsourcesStats.SkipFailedRecords()
-	rsourcesStats.JobStatusesUpdated(otherStatuses)
+	for _, wj := range workerJobStatuses {
+		rsourcesStats.BeginProcessing([]*jobsdb.JobT{wj.job})
+		rsourcesStats.CollectStats([]*jobsdb.JobStatusT{wj.status})
+		if wj.status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
+			wj.status.JobState == jobsdb.Aborted.State {
+			rsourcesStats.CollectFailedRecords([]*jobsdb.JobStatusT{wj.status})
+		}
+	}
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
 	return err
-}
-
-func getDrainedAndOtherJobsStatuses(workerJobStatuses []workerJobStatus) (
-	jobs []*jobsdb.JobT,
-	drainedStatuses []*jobsdb.JobStatusT,
-	otherStatuses []*jobsdb.JobStatusT,
-) {
-	jobs = make([]*jobsdb.JobT, 0, len(workerJobStatuses))
-	drainedStatuses = make([]*jobsdb.JobStatusT, 0, len(workerJobStatuses))
-	otherStatuses = make([]*jobsdb.JobStatusT, 0, len(workerJobStatuses))
-
-	for _, wj := range workerJobStatuses {
-		jobs = append(jobs, wj.job)
-		if wj.status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
-			wj.status.JobState == jobsdb.Aborted.State {
-			drainedStatuses = append(drainedStatuses, wj.status)
-		} else {
-			otherStatuses = append(otherStatuses, wj.status)
-		}
-	}
-	return
 }
 
 func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {

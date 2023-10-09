@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
 	"github.com/golang/mock/gomock"
@@ -372,62 +371,4 @@ func TestPostToWarehouse(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGetDrainedAndOtherStatuses(t *testing.T) {
-	t.Run("empty jobs and statuses", func(t *testing.T) {
-		ds, os := getDrainedAndOtherStatuses(nil)
-		require.Empty(t, ds)
-		require.Empty(t, os)
-	})
-	t.Run("one aborted but non-drained job status", func(t *testing.T) {
-		ds, os := getDrainedAndOtherStatuses([]*jobsdb.JobStatusT{
-			{
-				JobState: jobsdb.Aborted.State,
-			},
-		})
-		require.Empty(t, ds)
-		require.Len(t, os, 1)
-	})
-	t.Run("one aborted status that was drained", func(t *testing.T) {
-		ds, os := getDrainedAndOtherStatuses([]*jobsdb.JobStatusT{
-			{
-				JobState:  jobsdb.Aborted.State,
-				ErrorCode: routerutils.DRAIN_ERROR_CODE,
-			},
-		})
-		require.Len(t, ds, 1)
-		require.Empty(t, os)
-	})
-	t.Run("one aborted status that was drained and one aborted status that was not drained", func(t *testing.T) {
-		ds, os := getDrainedAndOtherStatuses([]*jobsdb.JobStatusT{
-			{
-				JobState:  jobsdb.Aborted.State,
-				ErrorCode: routerutils.DRAIN_ERROR_CODE,
-			},
-			{
-				JobState: jobsdb.Aborted.State,
-			},
-		})
-		require.Len(t, ds, 1)
-		require.Len(t, os, 1)
-	})
-	t.Run("one success, one non-drain abort, drained abort", func(t *testing.T) {
-		ds, os := getDrainedAndOtherStatuses([]*jobsdb.JobStatusT{
-			{
-				JobState:  jobsdb.Succeeded.State,
-				ErrorCode: "200",
-			},
-			{
-				JobState:  jobsdb.Aborted.State,
-				ErrorCode: routerutils.DRAIN_ERROR_CODE,
-			},
-			{
-				JobState:  jobsdb.Aborted.State,
-				ErrorCode: "400",
-			},
-		})
-		require.Len(t, ds, 1)
-		require.Len(t, os, 2)
-	})
 }
