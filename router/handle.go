@@ -662,8 +662,7 @@ func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.Destinat
 	}
 	errCatStatusCode, errCatResponse := rt.oauth.UpdateAuthStatusToInactive(destination, workspaceID, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
-		// Error while disabling a destination
-		// High-Priority notification to rudderstack needs to be sent
+		// Error while inactivating authStatus
 		inactiveAuthStatusStatTags["success"] = "false"
 	}
 	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
