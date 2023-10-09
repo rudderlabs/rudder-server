@@ -1,2 +1,0 @@
-{"fetching_remote_schema_failed":{"attempt":1,"errors":["code: 516, message: ***: Authentication failed: password is incorrect, or there is no user with such name."]}}
-{"exporting_data_failed":{"attempt":1,"errors":["Error occurred while committing with error: Error while committing transaction as there was error while loading in table with error:code: 241, message: Memory limit (total) exceeded: would use 27.01 GiB (attempt to allocate chunk of 4606752 bytes), maximum: 27.00 GiB: (avg_value_size_hint = 45, avg_chars_size = 44.4, limit = 8192)"]}}
