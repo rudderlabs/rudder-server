@@ -210,7 +210,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}
 	}
 	if r.canStartWarehouse() {
-		r.warehouseApp = warehouse.NewApp(
+		r.warehouseApp = warehouse.New(
 			r.application,
 			config.Default,
 			r.logger,
