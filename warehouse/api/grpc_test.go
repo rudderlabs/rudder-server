@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	stats2 "github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -149,7 +149,7 @@ func TestGRPC(t *testing.T) {
 
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
-		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats2.Default)
+		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats.Default)
 		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 

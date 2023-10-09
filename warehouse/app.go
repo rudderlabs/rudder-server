@@ -142,7 +142,13 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcConfig.Identity(),
 		controlplane.WithRegion(a.config.region),
 	)
-	a.bcManager = bcm.New(a.conf, a.db, a.tenantManager, a.logger.Child("wh_bc_manager"), stats.Default)
+	a.bcManager = bcm.New(
+		a.conf,
+		a.db,
+		a.tenantManager,
+		a.logger.Child("wh_bc_manager"),
+		a.statsFactory,
+	)
 	a.constraintsManager = constraints.New(
 		a.conf,
 	)
@@ -154,7 +160,12 @@ func (a *App) Setup(ctx context.Context) error {
 		config.GetKubeNamespace(),
 		misc.GetMD5Hash(config.GetWorkspaceToken()),
 	)
-	a.notifier = notifier.New(a.conf, a.logger, a.statsFactory, workspaceIdentifier)
+	a.notifier = notifier.New(
+		a.conf,
+		a.logger,
+		a.statsFactory,
+		workspaceIdentifier,
+	)
 	err := a.notifier.Setup(ctx, a.connectionString())
 	if err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)

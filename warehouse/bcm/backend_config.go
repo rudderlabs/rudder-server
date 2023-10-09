@@ -338,7 +338,6 @@ func deepCopy(src, dest interface{}) error {
 	return json.Unmarshal(buf, dest)
 }
 
-// TODO: use statsFactory
 func (s *BackendConfigManager) persistSSLFileErrorStat(
 	workspaceID, destType, destName,
 	destID, sourceName, sourceID,

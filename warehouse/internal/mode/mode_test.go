@@ -1,7 +1,9 @@
-package mode
+package mode_test
 
 import (
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/stretchr/testify/require"
 
@@ -40,7 +42,7 @@ func TestIsStandAlone(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, IsStandAlone(tc.name), tc.isStandAlone)
+			require.Equal(t, mode.IsStandAlone(tc.name), tc.isStandAlone)
 		})
 	}
 }
@@ -77,7 +79,7 @@ func TestIsMaster(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, IsMaster(tc.name), tc.isMaster)
+			require.Equal(t, mode.IsMaster(tc.name), tc.isMaster)
 		})
 	}
 }
@@ -114,7 +116,7 @@ func TestIsSlave(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, IsSlave(tc.name), tc.isSlave)
+			require.Equal(t, mode.IsSlave(tc.name), tc.isSlave)
 		})
 	}
 }
@@ -151,7 +153,31 @@ func TestIsStandAloneSlave(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, IsStandAloneSlave(tc.name), tc.isStandAloneSlave)
+			require.Equal(t, mode.IsStandAloneSlave(tc.name), tc.isStandAloneSlave)
+		})
+	}
+}
+
+func TestIsDegraded(t *testing.T) {
+	testCases := []struct {
+		name        string
+		runningMode string
+		isDegraded  bool
+	}{
+		{
+			name:        "normal",
+			runningMode: "",
+			isDegraded:  false,
+		},
+		{
+			name:        "degraded",
+			runningMode: mode.DegradedMode,
+			isDegraded:  true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, mode.IsDegraded(tc.runningMode), tc.isDegraded)
 		})
 	}
 }
