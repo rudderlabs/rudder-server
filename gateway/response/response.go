@@ -26,6 +26,8 @@ const (
 	InvalidWriteKey = "Invalid Write Key"
 	// InvalidJSON - Invalid JSON
 	InvalidJSON = "Invalid JSON"
+	// EmptyBatchPayload - Empty batch payload
+	EmptyBatchPayload = "Empty batch payload"
 	// InvalidWebhookSource - Source does not accept webhook events
 	InvalidWebhookSource = "Source does not accept webhook events"
 	// SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
@@ -79,6 +81,7 @@ var statusMap = map[string]status{
 	InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
 	SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
 	InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
+	EmptyBatchPayload:       {message: EmptyBatchPayload, code: http.StatusBadRequest},
 	NoSourceIdInHeader:      {message: NoSourceIdInHeader, code: http.StatusUnauthorized},
 	InvalidSourceID:         {message: InvalidSourceID, code: http.StatusUnauthorized},
 	InvalidReplaySource:     {message: InvalidReplaySource, code: http.StatusUnauthorized},

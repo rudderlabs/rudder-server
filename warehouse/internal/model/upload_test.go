@@ -67,3 +67,32 @@ func TestGetLastFailedStatus(t *testing.T) {
 		require.Equal(t, status, input.status)
 	}
 }
+
+func TestGetUserFriendlyJobErrorCategory(t *testing.T) {
+	testCases := []struct {
+		name             string
+		errorType        model.JobErrorType
+		expectedCategory string
+	}{
+		{
+			name:             "Uncategorized error",
+			errorType:        model.UncategorizedError,
+			expectedCategory: "Uncategorized error",
+		},
+		{
+			name:             "Permission error",
+			errorType:        model.PermissionError,
+			expectedCategory: "Permission error",
+		},
+		{
+			name:             "Some other error",
+			errorType:        "some_other_error",
+			expectedCategory: "Uncategorized error",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expectedCategory, model.GetUserFriendlyJobErrorCategory(tc.errorType))
+		})
+	}
+}

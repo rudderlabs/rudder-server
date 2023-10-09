@@ -1517,7 +1517,7 @@ func (job *UploadJob) Aborted(attempts int, startTime time.Time) bool {
 
 func (job *UploadJob) setUploadError(statusError error, state string) (string, error) {
 	var (
-		errorTags                  = job.errorHandler.MatchErrorMappings(statusError)
+		jobErrorType               = job.errorHandler.MatchUploadJobErrorType(statusError)
 		destCredentialsValidations *bool
 	)
 
@@ -1536,7 +1536,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			logfield.Retried, job.upload.Retried,
 			logfield.Attempt, job.upload.Attempts,
 			logfield.LoadFileType, job.upload.LoadFileType,
-			logfield.ErrorMapping, errorTags.Value,
+			logfield.ErrorMapping, jobErrorType,
 			logfield.DestinationCredsValid, destCredentialsValidations,
 		)
 	}()
@@ -1581,6 +1581,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "error", Value: serializedErr},
 		{Column: "updated_at", Value: job.now()},
+		{Column: "error_category", Value: model.GetUserFriendlyJobErrorCategory(jobErrorType)},
 	}
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
@@ -1659,7 +1660,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []whutils.Tag{errorTags}
+		tags := []whutils.Tag{{Name: "error_mapping", Value: jobErrorType}}
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
