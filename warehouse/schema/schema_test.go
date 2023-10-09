@@ -1638,3 +1638,202 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestSchema_SyncRemoteSchema(t *testing.T) {
+	sourceID := "test_source_id"
+	destinationID := "test_destination_id"
+	namespace := "test_namespace"
+	destType := warehouseutils.RS
+	workspaceID := "test-workspace-id"
+	uploadID := int64(1)
+	tableName := "test_table_name"
+
+	schemaKey := fmt.Sprintf("%s_%s_%s", sourceID, destinationID, namespace)
+
+	t.Run("should return error if unable to fetch local schema", func(t *testing.T) {
+		s := &Schema{
+			warehouse: model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destType,
+					},
+				},
+				WorkspaceID: workspaceID,
+				Namespace:   namespace,
+				Type:        destType,
+			},
+			schemaRepo: &mockSchemaRepo{
+				err:       errors.New("test error"),
+				schemaMap: map[string]model.WHSchema{},
+			},
+			log: logger.NOP,
+		}
+
+		ctx := context.Background()
+
+		schemaChanged, err := s.SyncRemoteSchema(ctx, &mockFetchSchemaFromWarehouse{}, uploadID)
+		require.Error(t, err, "got error %v, want error %v", err, "fetching schema from local: test error")
+		require.False(t, schemaChanged)
+	})
+	t.Run("should return error if unable to fetch remote schema", func(t *testing.T) {
+		s := &Schema{
+			warehouse: model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destType,
+					},
+				},
+				WorkspaceID: workspaceID,
+				Namespace:   namespace,
+				Type:        destType,
+			},
+			schemaRepo: &mockSchemaRepo{
+				err:       nil,
+				schemaMap: map[string]model.WHSchema{},
+			},
+			log: logger.NOP,
+		}
+
+		mockFetchSchemaRepo := &mockFetchSchemaFromWarehouse{
+			err: errors.New("test error"),
+		}
+
+		ctx := context.Background()
+
+		schemaChanged, err := s.SyncRemoteSchema(ctx, mockFetchSchemaRepo, uploadID)
+		require.Error(t, err, "got error %v, want error %v", err, "fetching schema from warehouse: test error")
+		require.False(t, schemaChanged)
+	})
+	t.Run("schema changed", func(t *testing.T) {
+		testSchema := model.Schema{
+			tableName: model.TableSchema{
+				"test_int":       "int",
+				"test_str":       "string",
+				"test_bool":      "boolean",
+				"test_float":     "float",
+				"test_timestamp": "timestamp",
+				"test_date":      "date",
+				"test_datetime":  "datetime",
+			},
+		}
+		schemaInWarehouse := model.Schema{
+			tableName: model.TableSchema{
+				"warehouse_test_int":       "int",
+				"warehouse_test_str":       "string",
+				"warehouse_test_bool":      "boolean",
+				"warehouse_test_float":     "float",
+				"warehouse_test_timestamp": "timestamp",
+				"warehouse_test_date":      "date",
+				"warehouse_test_datetime":  "datetime",
+			},
+		}
+
+		mockSchemaRepo := &mockSchemaRepo{
+			err: nil,
+			schemaMap: map[string]model.WHSchema{
+				schemaKey: {
+					Schema: testSchema,
+				},
+			},
+		}
+
+		s := &Schema{
+			warehouse: model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destType,
+					},
+				},
+				WorkspaceID: workspaceID,
+				Namespace:   namespace,
+				Type:        destType,
+			},
+			schemaRepo: mockSchemaRepo,
+			log:        logger.NOP,
+		}
+
+		mockFetchSchemaRepo := &mockFetchSchemaFromWarehouse{
+			err:                           nil,
+			schemaInWarehouse:             schemaInWarehouse,
+			unrecognizedSchemaInWarehouse: schemaInWarehouse,
+		}
+
+		ctx := context.Background()
+
+		schemaChanged, err := s.SyncRemoteSchema(ctx, mockFetchSchemaRepo, uploadID)
+		require.NoError(t, err)
+		require.True(t, schemaChanged)
+		require.Equal(t, schemaInWarehouse, s.localSchema)
+		require.Equal(t, schemaInWarehouse, mockSchemaRepo.schemaMap[schemaKey].Schema)
+		require.Equal(t, schemaInWarehouse, s.schemaInWarehouse)
+		require.Equal(t, schemaInWarehouse, s.unrecognizedSchemaInWarehouse)
+	})
+	t.Run("schema not changed", func(t *testing.T) {
+		testSchema := model.Schema{
+			tableName: model.TableSchema{
+				"test_int":       "int",
+				"test_str":       "string",
+				"test_bool":      "boolean",
+				"test_float":     "float",
+				"test_timestamp": "timestamp",
+				"test_date":      "date",
+				"test_datetime":  "datetime",
+			},
+		}
+
+		mockSchemaRepo := &mockSchemaRepo{
+			err: nil,
+			schemaMap: map[string]model.WHSchema{
+				schemaKey: {
+					Schema: testSchema,
+				},
+			},
+		}
+
+		s := &Schema{
+			warehouse: model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destType,
+					},
+				},
+				WorkspaceID: workspaceID,
+				Namespace:   namespace,
+				Type:        destType,
+			},
+			schemaRepo: mockSchemaRepo,
+			log:        logger.NOP,
+		}
+
+		mockFetchSchemaRepo := &mockFetchSchemaFromWarehouse{
+			err:                           nil,
+			schemaInWarehouse:             testSchema,
+			unrecognizedSchemaInWarehouse: testSchema,
+		}
+
+		ctx := context.Background()
+
+		schemaChanged, err := s.SyncRemoteSchema(ctx, mockFetchSchemaRepo, uploadID)
+		require.NoError(t, err)
+		require.False(t, schemaChanged)
+		require.Equal(t, testSchema, s.localSchema)
+		require.Equal(t, testSchema, s.schemaInWarehouse)
+		require.Equal(t, testSchema, s.unrecognizedSchemaInWarehouse)
+	})
+}
