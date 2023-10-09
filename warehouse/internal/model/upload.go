@@ -24,8 +24,10 @@ const (
 	Failed                    = "failed"
 )
 
+type JobErrorType = string
+
 const (
-	UnCategorizedError        JobErrorType = "uncategorised"
+	UncategorizedError        JobErrorType = "uncategorised"
 	PermissionError           JobErrorType = "permission_error"
 	AlterColumnError          JobErrorType = "alter_column_error"
 	ResourceNotFoundError     JobErrorType = "resource_not_found_error"
@@ -33,9 +35,33 @@ const (
 	ColumnSizeError           JobErrorType = "column_size_error"
 	InsufficientResourceError JobErrorType = "insufficient_resource_error"
 	ConcurrentQueriesError    JobErrorType = "concurrent_queries_error"
-	UnknownError              JobErrorType = "unknown_error"
-	Noop                      JobErrorType = "noop"
 )
+
+var userFriendlyJobErrorCategoryMap = map[JobErrorType]string{
+	UncategorizedError:        "Uncategorized error",
+	PermissionError:           "Permission error",
+	AlterColumnError:          "Alter column error",
+	ResourceNotFoundError:     "Resource not found error",
+	ColumnCountError:          "Column count error",
+	ColumnSizeError:           "Column size error",
+	InsufficientResourceError: "Insufficient resource error",
+	ConcurrentQueriesError:    "Concurrent queries error",
+}
+
+type JobError struct {
+	Type   JobErrorType
+	Format interface {
+		MatchString(string) bool
+	}
+}
+
+// GetUserFriendlyJobErrorCategory returns the user friendly error category for the given error type
+func GetUserFriendlyJobErrorCategory(errorType JobErrorType) string {
+	if errorMessage, ok := userFriendlyJobErrorCategoryMap[errorType]; ok {
+		return errorMessage
+	}
+	return "Uncategorized error"
+}
 
 var (
 	ErrUploadNotFound = errors.New("upload not found")
@@ -100,17 +126,6 @@ type PendingTableUpload struct {
 	TableName     string
 	Status        string
 	Error         string
-}
-
-type Matcher interface {
-	MatchString(string) bool
-}
-
-type JobErrorType = string
-
-type JobError struct {
-	Type   JobErrorType
-	Format Matcher
 }
 
 func GetLastFailedStatus(timingsMap Timings) (status string) {
