@@ -111,37 +111,37 @@ func newWorker(
 	return s
 }
 
-func (sw *worker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
+func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
 	for {
 		select {
 		case <-ctx.Done():
-			sw.log.Infof("Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
+			w.log.Infof("Slave worker-%d-%s is shutting down", w.workerIdx, slaveID)
 			return
 		case claimedJob, ok := <-notificationChan:
 			if !ok {
 				return
 			}
-			sw.stats.workerIdleTime.Since(workerIdleTimeStart)
+			w.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			sw.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
+			w.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
 				claimedJob.Job.ID,
-				sw.workerIdx,
+				w.workerIdx,
 				slaveID,
 				claimedJob.Job.Type,
 			)
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
-				sw.processClaimedAsyncJob(ctx, claimedJob)
+				w.processClaimedAsyncJob(ctx, claimedJob)
 			default:
-				sw.processClaimedUploadJob(ctx, claimedJob)
+				w.processClaimedUploadJob(ctx, claimedJob)
 			}
 
-			sw.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
+			w.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
 				claimedJob.Job.ID,
-				sw.workerIdx,
+				w.workerIdx,
 				slaveID,
 			)
 
@@ -150,13 +150,13 @@ func (sw *worker) start(ctx context.Context, notificationChan <-chan *notifier.C
 	}
 }
 
-func (sw *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
-	sw.stats.workerClaimProcessingTime.RecordDuration()()
+func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+	w.stats.workerClaimProcessingTime.RecordDuration()()
 
 	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
-		sw.stats.workerClaimProcessingFailed.Increment()
+		w.stats.workerClaimProcessingFailed.Increment()
 
-		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
+		w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -172,10 +172,10 @@ func (sw *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notif
 		return
 	}
 
-	sw.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
+	w.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
 
 	job.BatchID = claimedJob.Job.BatchID
-	job.Output, err = sw.processStagingFile(ctx, job)
+	job.Output, err = w.processStagingFile(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -186,9 +186,9 @@ func (sw *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notif
 		return
 	}
 
-	sw.stats.workerClaimProcessingSucceeded.Increment()
+	w.stats.workerClaimProcessingSucceeded.Increment()
 
-	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
+	w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobJSON,
 	})
 }
@@ -201,20 +201,20 @@ func (sw *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notif
 // 3. Uploads these load files to Object storage
 // 4. Save entries for the generated load files in wh_load_files table
 // 5. Delete the staging and load files from tmp directory
-func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]uploadResult, error) {
+func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadResult, error) {
 	processStartTime := time.Now()
 
-	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory, sw.encodingFactory)
+	jr := newJobRun(job, w.conf, w.log, w.statsFactory, w.encodingFactory)
 
-	sw.log.Debugf("Starting processing staging file: %v at %s for %s",
+	w.log.Debugf("Starting processing staging file: %v at %s for %s",
 		job.StagingFileID,
 		job.StagingFileLocation,
 		jr.identifier,
 	)
 
 	defer func() {
-		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(sw.workerIdx)}).Count(1)
-		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(sw.workerIdx)}).Since(processStartTime)
+		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(1)
+		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Since(processStartTime)
 
 		jr.cleanup()
 	}()
@@ -225,7 +225,7 @@ func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]upload
 		interfaceSliceSample []interface{}
 	)
 
-	if jr.stagingFilePath, err = jr.getStagingFilePath(sw.workerIdx); err != nil {
+	if jr.stagingFilePath, err = jr.getStagingFilePath(w.workerIdx); err != nil {
 		return nil, err
 	}
 	if err = jr.downloadStagingFile(ctx); err != nil {
@@ -248,7 +248,7 @@ func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]upload
 
 	// default scanner buffer maxCapacity is 64K
 	// set it to higher value to avoid read stop on read size error
-	maxCapacity := sw.config.maxStagingFileReadBufferCapacityInK.Load() * 1024
+	maxCapacity := w.config.maxStagingFileReadBufferCapacityInK.Load() * 1024
 
 	bufScanner := bufio.NewScanner(jr.stagingFileReader)
 	bufScanner.Buffer(make([]byte, maxCapacity), maxCapacity)
@@ -292,7 +292,7 @@ func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]upload
 			return nil, err
 		}
 
-		eventLoader := sw.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
 
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
@@ -350,7 +350,7 @@ func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]upload
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 
-			violatedConstraints := sw.constraintsManager.ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
+			violatedConstraints := w.constraintsManager.ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
 				newColumnVal, convError := handleSchemaChange(
@@ -424,11 +424,11 @@ func (sw *worker) processStagingFile(ctx context.Context, job payload) ([]upload
 	return uploadsResults, err
 }
 
-func (sw *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
-		sw.log.Errorf("Error processing claim: %v", err)
+		w.log.Errorf("Error processing claim: %v", err)
 
-		sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
+		w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,
 		})
 	}
@@ -443,7 +443,7 @@ func (sw *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifi
 		return
 	}
 
-	jobResult, err := sw.runAsyncJob(ctx, job)
+	jobResult, err := w.runAsyncJob(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -455,23 +455,23 @@ func (sw *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifi
 		return
 	}
 
-	sw.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
+	w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 		Payload: jobResultJSON,
 	})
 }
 
-func (sw *worker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
+func (w *worker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
 	result := asyncJobRunResult{
 		ID:     asyncjob.Id,
 		Result: false,
 	}
 
-	warehouse, err := sw.destinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	warehouse, err := w.destinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
 		return result, err
 	}
 
-	integrationsManager, err := manager.NewWarehouseOperations(warehouse.Destination.DestinationDefinition.Name, sw.conf, sw.log, sw.statsFactory)
+	integrationsManager, err := manager.NewWarehouseOperations(warehouse.Destination.DestinationDefinition.Name, w.conf, w.log, w.statsFactory)
 	if err != nil {
 		return result, err
 	}
@@ -512,12 +512,12 @@ func (sw *worker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload
 	return result, nil
 }
 
-func (sw *worker) destinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
+func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
 	if destinationId == "" || sourceId == "" {
 		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
 
-	sourceMap, ok := sw.bcManager.ConnectionSourcesMap(destinationId)
+	sourceMap, ok := w.bcManager.ConnectionSourcesMap(destinationId)
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}

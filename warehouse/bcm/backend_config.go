@@ -88,8 +88,8 @@ type BackendConfigManager struct {
 	sourceIDsByWorkspaceMu sync.RWMutex
 }
 
-func (s *BackendConfigManager) Start(ctx context.Context) {
-	ch := s.tenantManager.WatchConfig(ctx)
+func (bcm *BackendConfigManager) Start(ctx context.Context) {
+	ch := bcm.tenantManager.WatchConfig(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -98,35 +98,35 @@ func (s *BackendConfigManager) Start(ctx context.Context) {
 			if !ok {
 				return
 			}
-			s.processData(ctx, data)
+			bcm.processData(ctx, data)
 		}
 	}
 }
 
-func (s *BackendConfigManager) Subscribe(ctx context.Context) <-chan []model.Warehouse {
-	s.subscriptionsMu.Lock()
-	defer s.subscriptionsMu.Unlock()
+func (bcm *BackendConfigManager) Subscribe(ctx context.Context) <-chan []model.Warehouse {
+	bcm.subscriptionsMu.Lock()
+	defer bcm.subscriptionsMu.Unlock()
 
 	ch := make(chan []model.Warehouse, 10)
-	s.subscriptions = append(s.subscriptions, ch)
+	bcm.subscriptions = append(bcm.subscriptions, ch)
 
-	s.warehousesMu.Lock()
-	if len(s.warehouses) > 0 {
-		ch <- s.warehouses
+	bcm.warehousesMu.Lock()
+	if len(bcm.warehouses) > 0 {
+		ch <- bcm.warehouses
 	}
-	s.warehousesMu.Unlock()
+	bcm.warehousesMu.Unlock()
 
 	go func() {
 		<-ctx.Done()
 
-		s.subscriptionsMu.Lock()
-		defer s.subscriptionsMu.Unlock()
+		bcm.subscriptionsMu.Lock()
+		defer bcm.subscriptionsMu.Unlock()
 
 		close(ch)
 
-		for i, item := range s.subscriptions {
+		for i, item := range bcm.subscriptions {
 			if item == ch {
-				s.subscriptions = append(s.subscriptions[:i], s.subscriptions[i+1:]...)
+				bcm.subscriptions = append(bcm.subscriptions[:i], bcm.subscriptions[i+1:]...)
 				return
 			}
 		}
@@ -135,9 +135,9 @@ func (s *BackendConfigManager) Subscribe(ctx context.Context) <-chan []model.War
 	return ch
 }
 
-func (s *BackendConfigManager) processData(ctx context.Context, data map[string]backendconfig.ConfigT) {
-	defer s.closeInitialConfigFetchedOnce.Do(func() {
-		close(s.InitialConfigFetched)
+func (bcm *BackendConfigManager) processData(ctx context.Context, data map[string]backendconfig.ConfigT) {
+	defer bcm.closeInitialConfigFetchedOnce.Do(func() {
+		close(bcm.InitialConfigFetched)
 	})
 
 	var (
@@ -155,12 +155,12 @@ func (s *BackendConfigManager) processData(ctx context.Context, data map[string]
 
 			for _, destination := range source.Destinations {
 				if _, ok := whutils.WarehouseDestinationMap[destination.DestinationDefinition.Name]; !ok {
-					s.logger.Debugf("Not a warehouse destination, skipping %s", destination.DestinationDefinition.Name)
+					bcm.logger.Debugf("Not a warehouse destination, skipping %s", destination.DestinationDefinition.Name)
 					continue
 				}
 
-				if s.internalControlPlaneClient != nil {
-					destination = s.attachSSHTunnellingInfo(ctx, destination)
+				if bcm.internalControlPlaneClient != nil {
+					destination = bcm.attachSSHTunnellingInfo(ctx, destination)
 				}
 
 				warehouse := model.Warehouse{
@@ -168,7 +168,7 @@ func (s *BackendConfigManager) processData(ctx context.Context, data map[string]
 					WorkspaceID: workspaceID,
 					Destination: destination,
 					Type:        destination.DestinationDefinition.Name,
-					Namespace:   s.namespace(ctx, source, destination),
+					Namespace:   bcm.namespace(ctx, source, destination),
 					Identifier:  whutils.GetWarehouseIdentifier(destination.DestinationDefinition.Name, source.ID, destination.ID),
 				}
 
@@ -181,8 +181,8 @@ func (s *BackendConfigManager) processData(ctx context.Context, data map[string]
 
 				if destination.Config["sslMode"] == "verify-ca" {
 					if err := whutils.WriteSSLKeys(destination); err.IsError() {
-						s.logger.Error(err.Error())
-						s.persistSSLFileErrorStat(
+						bcm.logger.Error(err.Error())
+						bcm.persistSSLFileErrorStat(
 							workspaceID, destination.DestinationDefinition.Name, destination.Name, destination.ID,
 							source.Name, source.ID, err.GetErrTag(),
 						)
@@ -192,30 +192,30 @@ func (s *BackendConfigManager) processData(ctx context.Context, data map[string]
 		}
 	}
 
-	s.connectionsMapMu.Lock()
-	s.connectionsMap = connectionsMap
-	s.connectionsMapMu.Unlock()
+	bcm.connectionsMapMu.Lock()
+	bcm.connectionsMap = connectionsMap
+	bcm.connectionsMapMu.Unlock()
 
-	s.warehousesMu.Lock()
-	s.warehouses = warehouses // TODO how is this used? because we are duplicating data
-	s.warehousesMu.Unlock()
+	bcm.warehousesMu.Lock()
+	bcm.warehouses = warehouses // TODO how is this used? because we are duplicating data
+	bcm.warehousesMu.Unlock()
 
-	s.sourceIDsByWorkspaceMu.Lock()
-	s.sourceIDsByWorkspace = sourceIDsByWorkspace
-	s.sourceIDsByWorkspaceMu.Unlock()
+	bcm.sourceIDsByWorkspaceMu.Lock()
+	bcm.sourceIDsByWorkspace = sourceIDsByWorkspace
+	bcm.sourceIDsByWorkspaceMu.Unlock()
 
-	s.subscriptionsMu.Lock()
-	for _, sub := range s.subscriptions {
+	bcm.subscriptionsMu.Lock()
+	for _, sub := range bcm.subscriptions {
 		sub <- warehouses
 	}
-	s.subscriptionsMu.Unlock()
+	bcm.subscriptionsMu.Unlock()
 }
 
 // namespace gives the namespace for the warehouse in the following order
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (s *BackendConfigManager) namespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+func (bcm *BackendConfigManager) namespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
 	destType := destination.DestinationDefinition.Name
 	destConfig := destination.Config
 
@@ -233,14 +233,14 @@ func (s *BackendConfigManager) namespace(ctx context.Context, source backendconf
 		}
 	}
 
-	namespacePrefix := s.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
+	namespacePrefix := bcm.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
 	if namespacePrefix != "" {
 		return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 
-	namespace, err := s.schema.GetNamespace(ctx, source.ID, destination.ID)
+	namespace, err := bcm.schema.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
-		s.logger.Errorw("getting namespace",
+		bcm.logger.Errorw("getting namespace",
 			logfield.SourceID, source.ID,
 			logfield.DestinationID, destination.ID,
 			logfield.DestinationType, destination.DestinationDefinition.Name,
@@ -255,55 +255,55 @@ func (s *BackendConfigManager) namespace(ctx context.Context, source backendconf
 	return namespace
 }
 
-func (s *BackendConfigManager) IsInitialized() bool {
+func (bcm *BackendConfigManager) IsInitialized() bool {
 	select {
-	case <-s.InitialConfigFetched:
+	case <-bcm.InitialConfigFetched:
 		return true
 	default:
 		return false
 	}
 }
 
-func (s *BackendConfigManager) Connections() map[string]map[string]model.Warehouse {
-	s.connectionsMapMu.RLock()
-	defer s.connectionsMapMu.RUnlock()
-	return s.connectionsMap
+func (bcm *BackendConfigManager) Connections() map[string]map[string]model.Warehouse {
+	bcm.connectionsMapMu.RLock()
+	defer bcm.connectionsMapMu.RUnlock()
+	return bcm.connectionsMap
 }
 
-func (s *BackendConfigManager) ConnectionSourcesMap(destID string) (map[string]model.Warehouse, bool) {
-	s.connectionsMapMu.RLock()
-	defer s.connectionsMapMu.RUnlock()
-	m, ok := s.connectionsMap[destID]
+func (bcm *BackendConfigManager) ConnectionSourcesMap(destID string) (map[string]model.Warehouse, bool) {
+	bcm.connectionsMapMu.RLock()
+	defer bcm.connectionsMapMu.RUnlock()
+	m, ok := bcm.connectionsMap[destID]
 	return m, ok
 }
 
-func (s *BackendConfigManager) SourceIDsByWorkspace() map[string][]string {
-	s.sourceIDsByWorkspaceMu.RLock()
-	defer s.sourceIDsByWorkspaceMu.RUnlock()
-	return s.sourceIDsByWorkspace
+func (bcm *BackendConfigManager) SourceIDsByWorkspace() map[string][]string {
+	bcm.sourceIDsByWorkspaceMu.RLock()
+	defer bcm.sourceIDsByWorkspaceMu.RUnlock()
+	return bcm.sourceIDsByWorkspace
 }
 
 // WarehousesBySourceID gets all WHs for the given source ID
-func (s *BackendConfigManager) WarehousesBySourceID(sourceID string) []model.Warehouse {
-	s.warehousesMu.RLock()
-	defer s.warehousesMu.RUnlock()
+func (bcm *BackendConfigManager) WarehousesBySourceID(sourceID string) []model.Warehouse {
+	bcm.warehousesMu.RLock()
+	defer bcm.warehousesMu.RUnlock()
 
-	return lo.Filter(s.warehouses, func(w model.Warehouse, _ int) bool {
+	return lo.Filter(bcm.warehouses, func(w model.Warehouse, _ int) bool {
 		return w.Source.ID == sourceID
 	})
 }
 
 // WarehousesByDestID gets all WHs for the given destination ID
-func (s *BackendConfigManager) WarehousesByDestID(destID string) []model.Warehouse {
-	s.warehousesMu.RLock()
-	defer s.warehousesMu.RUnlock()
+func (bcm *BackendConfigManager) WarehousesByDestID(destID string) []model.Warehouse {
+	bcm.warehousesMu.RLock()
+	defer bcm.warehousesMu.RUnlock()
 
-	return lo.Filter(s.warehouses, func(w model.Warehouse, _ int) bool {
+	return lo.Filter(bcm.warehouses, func(w model.Warehouse, _ int) bool {
 		return w.Destination.ID == destID
 	})
 }
 
-func (s *BackendConfigManager) attachSSHTunnellingInfo(
+func (bcm *BackendConfigManager) attachSSHTunnellingInfo(
 	ctx context.Context,
 	upstream backendconfig.DestinationT,
 ) backendconfig.DestinationT {
@@ -312,17 +312,17 @@ func (s *BackendConfigManager) attachSSHTunnellingInfo(
 		return upstream
 	}
 
-	s.logger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	bcm.logger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
 
-	keys, err := s.internalControlPlaneClient.GetDestinationSSHKeys(ctx, upstream.ID)
+	keys, err := bcm.internalControlPlaneClient.GetDestinationSSHKeys(ctx, upstream.ID)
 	if err != nil {
-		s.logger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		bcm.logger.Errorf("fetching ssh keys for destination: %s", err.Error())
 		return upstream
 	}
 
 	replica := backendconfig.DestinationT{}
 	if err := deepCopy(upstream, &replica); err != nil {
-		s.logger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		bcm.logger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
 		return upstream
 	}
 
@@ -338,7 +338,7 @@ func deepCopy(src, dest interface{}) error {
 	return json.Unmarshal(buf, dest)
 }
 
-func (s *BackendConfigManager) persistSSLFileErrorStat(
+func (bcm *BackendConfigManager) persistSSLFileErrorStat(
 	workspaceID, destType, destName,
 	destID, sourceName, sourceID,
 	errTag string,
@@ -351,5 +351,5 @@ func (s *BackendConfigManager) persistSSLFileErrorStat(
 		"destinationID": destID,
 		"errTag":        errTag,
 	}
-	s.stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
+	bcm.stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
 }
