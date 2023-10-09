@@ -4,6 +4,7 @@ package oauth
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -124,6 +125,8 @@ const (
 	// Identifier for invalid_grant or access_denied errors(during refreshing the token)
 	REF_TOKEN_INVALID_GRANT = "ref_token_invalid_grant"
 )
+
+var ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
 
 // This struct only exists for marshalling and sending payload to control-plane
 type RefreshTokenBodyParams struct {
@@ -445,7 +448,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
 		authStatusInactiveMutex.Unlock()
 		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request Active : %s\n", loggerNm, authStatusUpdateActiveReq)
-		return http.StatusOK, fmt.Sprintf(`{response: {authStatusInactive: %v, activeRequest: %v}`, false, authStatusUpdateActiveReq)
+		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	authErrHandler.authStatusUpdateActiveMap[destinationId] = true
@@ -490,7 +493,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 		authStatusInactiveStats.statName = getStatName("failure")
 		authStatusInactiveStats.errorMessage = msg
 		authStatusInactiveStats.SendCountStat()
-		return http.StatusBadRequest, "Problem with user permission or access/refresh token have been revoked"
+		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	authErrHandler.logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
@@ -505,7 +508,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	defer accountMutex.Unlock()
 	delete(authErrHandler.destAuthInfoMap, rudderAccountId)
 
-	return statusCode, "Problem with user permission or access/refresh token have been revoked"
+	return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 }
 
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
