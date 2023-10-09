@@ -611,7 +611,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.AUTH_STATUS_INACTIVE:
-			return rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+			return rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -629,7 +629,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				authStatusInactiveStCode, errResp := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+				authStatusInactiveStCode, errResp := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
 				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
@@ -652,7 +652,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, destResBody, rudderAccountId string) (int, string) {
+func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) (int, string) {
 	inactiveAuthStatusStatTags := stats.Tags{
 		"id":          destination.ID,
 		"destType":    destination.DestinationDefinition.Name,
