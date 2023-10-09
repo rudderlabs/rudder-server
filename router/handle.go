@@ -629,7 +629,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+				authStatusInactiveStCode, errResp := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
 				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
@@ -638,7 +638,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
-				return disableStCd, refSec.Err
+				return authStatusInactiveStCode, errResp
 			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
@@ -665,11 +665,8 @@ func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.Destinat
 		// Error while disabling a destination
 		// High-Priority notification to rudderstack needs to be sent
 		inactiveAuthStatusStatTags["success"] = "false"
-		stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
-		return http.StatusBadRequest, errCatResponse
 	}
-	// High-Priority notification to workspace(& rudderstack) needs to be sent
 	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
 	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest, destResBody
+	return http.StatusBadRequest, errCatResponse
 }
