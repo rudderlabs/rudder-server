@@ -3,12 +3,16 @@
 package types
 
 import (
-	"context"
 	"database/sql"
 	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+)
+
+const (
+	FilterEventCode   = 298
+	SuppressEventCode = 299
 )
 
 // SingularEventT single event structrue
@@ -56,10 +60,14 @@ type ConfigEnvI interface {
 
 // Reporting is interface to report metrics
 type Reporting interface {
-	WaitForSetup(ctx context.Context, clientName string) error
+	// Report reports metrics to reporting service
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
-	AddClient(ctx context.Context, c Config)
+
+	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
+	DatabaseSyncer(c SyncerConfig) ReportingSyncer
 }
+
+type ReportingSyncer func()
 
 // ConfigT simple map config structure
 type ConfigT map[string]interface{}

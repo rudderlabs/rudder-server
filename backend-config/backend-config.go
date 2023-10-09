@@ -153,6 +153,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 		source.Destinations = destinations
 		modifiedConfig.Sources = append(modifiedConfig.Sources, source)
 	}
+	modifiedConfig.Settings = config.Settings
 	return modifiedConfig
 }
 

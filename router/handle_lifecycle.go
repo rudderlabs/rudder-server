@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -54,12 +53,6 @@ func (rt *Handle) Setup(
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
-
-	// waiting for reporting client setup
-	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
-	if err != nil {
-		return
-	}
 
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
@@ -114,6 +107,7 @@ func (rt *Handle) Setup(
 	rt.backendConfigInitialized = make(chan bool)
 
 	isolationMode := isolationMode(destType, config)
+	var err error
 	if rt.isolationStrategy, err = isolation.GetStrategy(isolationMode, rt.destType, func(destinationID string) bool {
 		rt.destinationsMapMu.RLock()
 		defer rt.destinationsMapMu.RUnlock()
@@ -252,9 +246,11 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.Router.MaxRetries", "JobsDB.MaxRetries")
 	rt.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(20, 1, "Router."+rt.destType+".noOfJobsToBatchInAWorker", "Router.noOfJobsToBatchInAWorker")
 	rt.reloadableConfig.maxFailedCountForJob = config.GetReloadableIntVar(3, 1, "Router."+rt.destType+".maxFailedCountForJob", "Router.maxFailedCountForJob")
+	rt.reloadableConfig.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "Router.RSources"+rt.destType+".maxFailedCountForJob", "Router.RSources.maxFailedCountForJob")
 	rt.reloadableConfig.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Router."+rt.destType+".PayloadLimit", "Router.PayloadLimit")
 	rt.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(3600, time.Second, "Router."+rt.destType+".routerTimeout", "Router.routerTimeout")
-	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router."+rt.destType+".retryTimeWindowInMins", "Router.retryTimeWindow", "Router.retryTimeWindowInMins")
+	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router.retryTimeWindow")
+	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "Router.RSources"+rt.destType+".retryTimeWindow", "Router.RSources.retryTimeWindow")
 	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")
 	rt.reloadableConfig.jobIteratorMaxQueries = config.GetReloadableIntVar(50, 1, "Router.jobIterator.maxQueries")
 	rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance = config.GetReloadableIntVar(10, 1, "Router.jobIterator.discardedPercentageTolerance")

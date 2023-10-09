@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,8 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-server/app"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -42,13 +42,21 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
+const defaultUploadPriority = 100
+
+type (
+	workerIdentifierMapKey = string
+	jobID                  = int64
+)
+
 type router struct {
 	destType string
 
-	dbHandle     *sqlquerywrapper.DB
+	db           *sqlquerywrapper.DB
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
+	triggerStore *sync.Map
 
 	isEnabled atomic.Bool
 
@@ -63,7 +71,10 @@ type router struct {
 	workerChannelMap     map[string]chan *UploadJob
 	workerChannelMapLock sync.RWMutex
 
-	inProgressMap     map[WorkerIdentifierT][]JobID
+	createJobMarkerMap     map[string]time.Time
+	createJobMarkerMapLock sync.RWMutex
+
+	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
 
 	activeWorkerCount atomic.Int32
@@ -81,18 +92,19 @@ type router struct {
 	notifier         *notifier.Notifier
 
 	config struct {
-		noOfWorkers                       int
 		maxConcurrentUploadJobs           int
 		allowMultipleSourcesForJobsPickup bool
-		enableJitterForSyncs              bool
-		maxParallelJobCreation            int
 		waitForWorkerSleep                time.Duration
 		uploadAllocatorSleep              time.Duration
-		mainLoopSleep                     time.Duration
-		stagingFilesBatchSize             int
 		uploadStatusTrackFrequency        time.Duration
-		warehouseSyncFreqIgnore           bool
 		shouldPopulateHistoricIdentities  bool
+		uploadFreqInS                     misc.ValueLoader[int64]
+		noOfWorkers                       misc.ValueLoader[int]
+		enableJitterForSyncs              misc.ValueLoader[bool]
+		maxParallelJobCreation            misc.ValueLoader[int]
+		mainLoopSleep                     misc.ValueLoader[time.Duration]
+		stagingFilesBatchSize             misc.ValueLoader[int]
+		warehouseSyncFreqIgnore           misc.ValueLoader[bool]
 	}
 
 	stats struct {
@@ -108,7 +120,7 @@ type router struct {
 
 func newRouter(
 	ctx context.Context,
-	app app.App,
+	reporting types.Reporting,
 	destType string,
 	conf *config.Config,
 	logger logger.Logger,
@@ -119,6 +131,7 @@ func newRouter(
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
 	encodingFactory *encoding.Factory,
+	triggerStore *sync.Map,
 ) (*router, error) {
 	r := &router{}
 
@@ -128,9 +141,7 @@ func newRouter(
 	r.logger = logger.Child(destType)
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
-	r.dbHandle = db
-	// We now have access to the warehouseDBHandle through
-	// which we will be running the db calls.
+	r.db = db
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
@@ -140,21 +151,22 @@ func newRouter(
 	r.bcManager = bcManager
 	r.destType = destType
 	r.now = time.Now
+	r.triggerStore = triggerStore
+	r.createJobMarkerMap = make(map[string]time.Time)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
 	}
 
 	r.Enable()
-	r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
 	r.uploadJobFactory = UploadJobFactory{
-		app:                  app,
+		reporting:            reporting,
 		conf:                 r.conf,
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,
-		dbHandle:             r.dbHandle,
-		notifier:             r.notifier,
+		db:                   r.db,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
@@ -170,13 +182,19 @@ func newRouter(
 
 	whName := warehouseutils.WHDestNameMap[destType]
 
-	r.config.maxConcurrentUploadJobs = config.GetIntVar(1, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
-	r.config.waitForWorkerSleep = config.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
-	r.config.uploadAllocatorSleep = config.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
-	r.config.uploadStatusTrackFrequency = config.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
-	r.config.allowMultipleSourcesForJobsPickup = config.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
-	r.config.shouldPopulateHistoricIdentities = config.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
-	r.setupReloadableVars(whName)
+	r.config.maxConcurrentUploadJobs = r.conf.GetIntVar(1, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
+	r.config.waitForWorkerSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
+	r.config.uploadAllocatorSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
+	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
+	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
+	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")
+	r.config.noOfWorkers = r.conf.GetReloadableIntVar(8, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	r.config.maxParallelJobCreation = r.conf.GetReloadableIntVar(8, 1, "Warehouse.maxParallelJobCreation")
+	r.config.mainLoopSleep = r.conf.GetReloadableDurationVar(5, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
+	r.config.stagingFilesBatchSize = r.conf.GetReloadableIntVar(960, 1, "Warehouse.stagingFilesBatchSize")
+	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
+	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 
 	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 		"destType": r.destType,
@@ -221,16 +239,6 @@ func newRouter(
 	}))
 
 	return r, nil
-}
-
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
-func (r *router) setupReloadableVars(whName string) {
-	r.conf.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
-	r.conf.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
-	r.conf.RegisterDurationConfigVariable(5, &r.config.mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
-	r.conf.RegisterIntConfigVariable(960, &r.config.stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
-	r.conf.RegisterBoolConfigVariable(false, &r.config.warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
@@ -330,7 +338,7 @@ func (r *router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
 	defer r.inProgressMapLock.Unlock()
 
 	identifier := r.workerIdentifier(warehouse)
-	r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)], JobID(jobID))
+	r.inProgressMap[identifier] = append(r.inProgressMap[identifier], jobID)
 }
 
 func (r *router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
@@ -340,7 +348,7 @@ func (r *router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	identifier := r.workerIdentifier(warehouse)
 
 	if idx, inProgress := r.checkInProgressMap(jobID, identifier); inProgress {
-		r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)][:idx], r.inProgressMap[WorkerIdentifierT(identifier)][idx+1:]...)
+		r.inProgressMap[identifier] = append(r.inProgressMap[identifier][:idx], r.inProgressMap[identifier][idx+1:]...)
 	}
 }
 
@@ -358,15 +366,15 @@ func (r *router) getInProgressNamespaces() []string {
 	var identifiers []string
 	for k, v := range r.inProgressMap {
 		if len(v) >= r.config.maxConcurrentUploadJobs {
-			identifiers = append(identifiers, string(k))
+			identifiers = append(identifiers, k)
 		}
 	}
 	return identifiers
 }
 
 func (r *router) checkInProgressMap(jobID int64, identifier string) (int, bool) {
-	for idx, id := range r.inProgressMap[WorkerIdentifierT(identifier)] {
-		if jobID == int64(id) {
+	for idx, id := range r.inProgressMap[identifier] {
+		if jobID == id {
 			return idx, true
 		}
 	}
@@ -383,7 +391,7 @@ loop:
 			r.logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", r.destType)
 		}
 
-		availableWorkers := r.config.noOfWorkers - r.getActiveWorkerCount()
+		availableWorkers := r.config.noOfWorkers.Load() - r.getActiveWorkerCount()
 		if availableWorkers < 1 {
 			select {
 			case <-ctx.Done():
@@ -400,7 +408,7 @@ loop:
 		if err != nil {
 			var pqErr *pq.Error
 
-			switch true {
+			switch {
 			case errors.Is(err, context.Canceled),
 				errors.Is(err, context.DeadlineExceeded),
 				errors.As(err, &pqErr) && pqErr.Code == "57014":
@@ -523,12 +531,12 @@ func (r *router) mainLoop(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(r.config.mainLoopSleep):
+			case <-time.After(r.config.mainLoopSleep.Load()):
 			}
 			continue
 		}
 
-		jobCreationChan := make(chan struct{}, r.config.maxParallelJobCreation)
+		jobCreationChan := make(chan struct{}, r.config.maxParallelJobCreation.Load())
 
 		r.configSubscriberLock.RLock()
 
@@ -566,7 +574,7 @@ func (r *router) mainLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(r.config.mainLoopSleep):
+		case <-time.After(r.config.mainLoopSleep.Load()):
 		}
 	}
 }
@@ -621,7 +629,7 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return err
 	}
 
-	setLastProcessedMarker(warehouse, uploadStartAfter)
+	r.updateCreateJobMarker(warehouse, uploadStartAfter)
 
 	return nil
 }
@@ -653,7 +661,7 @@ func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse 
 }
 
 func (r *router) uploadStartAfterTime() time.Time {
-	if r.config.enableJitterForSyncs {
+	if r.config.enableJitterForSyncs.Load() {
 		return timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
 	}
 	return r.now()
@@ -664,12 +672,12 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	uploadTriggered := isUploadTriggered(warehouse)
+	_, uploadTriggered := r.triggerStore.Load(warehouse.Identifier)
 	if uploadTriggered {
 		priority = 50
 	}
 
-	batches := service.StageFileBatching(stagingFiles, r.config.stagingFilesBatchSize)
+	batches := service.StageFileBatching(stagingFiles, r.config.stagingFilesBatchSize.Load())
 	for _, batch := range batches {
 		upload := model.Upload{
 			SourceID:        warehouse.Source.ID,
@@ -700,10 +708,38 @@ func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 
 	// reset upload trigger if the upload was triggered
 	if uploadTriggered {
-		clearTriggeredUpload(warehouse)
+		r.triggerStore.Delete(warehouse.Identifier)
 	}
 
 	return nil
+}
+
+func (r *router) uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
+	freqInS := r.uploadFreqInS(syncFrequency)
+
+	r.createJobMarkerMapLock.RLock()
+	lastCreatedAt, ok := r.createJobMarkerMap[warehouse.Identifier]
+	r.createJobMarkerMapLock.RUnlock()
+
+	if !ok {
+		return true
+	}
+	return r.now().Sub(lastCreatedAt) > time.Duration(freqInS)*time.Second
+}
+
+func (r *router) uploadFreqInS(syncFrequency string) int64 {
+	freqInMin, err := strconv.ParseInt(syncFrequency, 10, 64)
+	if err != nil {
+		return r.config.uploadFreqInS.Load()
+	}
+	return freqInMin * 60
+}
+
+func (r *router) updateCreateJobMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
+	r.createJobMarkerMapLock.Lock()
+	defer r.createJobMarkerMapLock.Unlock()
+
+	r.createJobMarkerMap[warehouse.Identifier] = lastProcessedTime
 }
 
 // Enable enables a router :)

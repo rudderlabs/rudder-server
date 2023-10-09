@@ -58,25 +58,28 @@ type destDetail struct {
 }
 
 type ErrorDetailReporter struct {
-	onceInit                  sync.Once
-	init                      chan struct{}
-	reportingServiceURL       string
-	Table                     string
-	clients                   map[string]*types.Client
-	log                       logger.Logger
-	namespace                 string
+	ctx                 context.Context
+	onceInit            sync.Once
+	init                chan struct{}
+	reportingServiceURL string
+	syncersMu           sync.RWMutex
+	syncers             map[string]*types.SyncSource
+	log                 logger.Logger
+	namespace           string
+
+	instanceID            string
+	region                string
+	sleepInterval         misc.ValueLoader[time.Duration]
+	mainLoopSleepInterval misc.ValueLoader[time.Duration]
+	maxConcurrentRequests misc.ValueLoader[int]
+	maxOpenConnections    int
+
+	httpClient *http.Client
+
+	backendConfigMu           sync.RWMutex // protects the following
 	workspaceID               string
-	instanceID                string
-	region                    string
-	sleepInterval             misc.ValueLoader[time.Duration]
-	mainLoopSleepInterval     misc.ValueLoader[time.Duration]
-	maxConcurrentRequests     misc.ValueLoader[int]
-	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
-	srcWspMutex               sync.RWMutex
-	httpClient                *http.Client
-	clientsMapLock            sync.RWMutex
 
 	errorDetailExtractor *ExtractorHandle
 
@@ -90,7 +93,7 @@ type errorDetails struct {
 	ErrorMessage string
 }
 
-func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
+func NewErrorDetailReporter(ctx context.Context) *ErrorDetailReporter {
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -105,8 +108,8 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	extractor := NewErrorDetailExtractor(log)
 
 	return &ErrorDetailReporter{
+		ctx:                   ctx,
 		reportingServiceURL:   reportingServiceURL,
-		Table:                 ErrorDetailReportsTable,
 		log:                   log,
 		sleepInterval:         sleepInterval,
 		mainLoopSleepInterval: mainLoopSleepInterval,
@@ -120,46 +123,21 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		init:                      make(chan struct{}),
 		workspaceIDForSourceIDMap: make(map[string]string),
 		destinationIDMap:          make(map[string]destDetail),
-		clients:                   make(map[string]*types.Client),
+		syncers:                   make(map[string]*types.SyncSource),
 		errorDetailExtractor:      extractor,
 		maxOpenConnections:        maxOpenConnections,
 	}
 }
 
-func (edRep *ErrorDetailReporter) AddClient(ctx context.Context, c types.Config) {
-	if c.ClientName == "" {
-		c.ClientName = types.CoreReportingClient
-	}
-
-	edRep.clientsMapLock.RLock()
-	if _, ok := edRep.clients[c.ClientName]; ok {
+func (edr *ErrorDetailReporter) backendConfigSubscriber(beConfigHandle backendconfig.BackendConfig) {
+	edr.log.Info("[Error Detail Reporting] Setting up reporting handler")
+	defer edr.onceInit.Do(func() {
+		close(edr.init)
+	})
+	if edr.ctx.Err() != nil {
 		return
 	}
-	edRep.clientsMapLock.RUnlock()
-	dbHandle, err := edRep.migrate(c)
-	if err != nil {
-		panic(fmt.Errorf("failed during migration: %v", err))
-	}
-	edRep.clientsMapLock.Lock()
-	edRep.clients[c.ClientName] = &types.Client{Config: c, DbHandle: dbHandle}
-	edRep.clientsMapLock.Unlock()
-	// start main-loop
-	edRep.mainLoop(ctx, c.ClientName)
-}
-
-func (edRep *ErrorDetailReporter) GetClient(clientName string) *types.Client {
-	edRep.clientsMapLock.RLock()
-	defer edRep.clientsMapLock.RUnlock()
-	if c, ok := edRep.clients[clientName]; ok {
-		return c
-	}
-	return nil
-}
-
-func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConfig) {
-	edRep.log.Info("[Error Detail Reporting] Setting up reporting handler")
-
-	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := beConfigHandle.Subscribe(edr.ctx, backendconfig.TopicBackendConfig)
 
 	for c := range ch {
 		conf := c.Data.(map[string]backendconfig.ConfigT)
@@ -186,49 +164,71 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 		if len(conf) > 1 {
 			newWorkspaceID = ""
 		}
-		edRep.srcWspMutex.Lock()
-		edRep.workspaceID = newWorkspaceID
-		edRep.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		edRep.destinationIDMap = newDestinationIDMap
-		edRep.srcWspMutex.Unlock()
-		// r.piiReportingSettings = newPIIReportingSettings
-		edRep.onceInit.Do(func() {
-			close(edRep.init)
+		edr.backendConfigMu.Lock()
+		edr.workspaceID = newWorkspaceID
+		edr.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
+		edr.destinationIDMap = newDestinationIDMap
+		edr.backendConfigMu.Unlock()
+		edr.onceInit.Do(func() {
+			close(edr.init)
 		})
 	}
-
-	edRep.onceInit.Do(func() {
-		close(edRep.init)
-	})
 }
 
-func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
-	edRep.log.Debug("[ErrorDetailReport] Report method called\n")
+func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
+	if c.Label == "" {
+		c.Label = types.CoreReportingLabel
+	}
+
+	edr.syncersMu.Lock()
+	defer edr.syncersMu.Unlock()
+	if _, ok := edr.syncers[c.ConnInfo]; ok {
+		return func() {} // returning a no-op syncer since another go routine has already started syncing
+	}
+	dbHandle, err := edr.migrate(c)
+	if err != nil {
+		panic(fmt.Errorf("failed during migration: %v", err))
+	}
+	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
+
+	return func() {
+		edr.mainLoop(edr.ctx, c)
+	}
+}
+
+func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
+	edr.syncersMu.RLock()
+	defer edr.syncersMu.RUnlock()
+	return edr.syncers[syncerKey]
+}
+
+func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(edRep.Table, ErrorDetailReportsColumns...))
+	stmt, err := txn.Prepare(pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
 		_ = txn.Rollback()
-		edRep.log.Errorf("Failed during statement preparation: %v", err)
+		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return
 	}
 	defer func() { _ = stmt.Close() }()
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		workspaceID := edRep.getWorkspaceID(metric.ConnectionDetails.SourceID)
+		workspaceID := edr.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
-		destinationDetail := edRep.getDestDetail(metric.ConnectionDetails.DestinationID)
-		edRep.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
+		destinationDetail := edr.getDestDetail(metric.ConnectionDetails.DestinationID)
+		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
 		// extract error-message & error-code
-		errDets := edRep.extractErrorDetails(metric.StatusDetail.SampleResponse)
+		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
 		_, err = stmt.Exec(
 			workspaceID,
-			edRep.namespace,
-			edRep.instanceID,
+			edr.namespace,
+			edr.instanceID,
 			metric.ConnectionDetails.SourceDefinitionId,
 			metric.ConnectionDetails.SourceID,
 			destinationDetail.DestinationDefinitionID,
@@ -243,29 +243,16 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 			errDets.ErrorMessage,
 		)
 		if err != nil {
-			edRep.log.Errorf("Failed during statement execution(each metric): %v", err)
+			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
 			return
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		edRep.log.Errorf("Failed during statement preparation: %v", err)
+		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return
 	}
-}
-
-func (edRep *ErrorDetailReporter) WaitForSetup(ctx context.Context, clientName string) error {
-	for {
-		if edRep.GetClient(clientName) != nil {
-			break
-		}
-		if err := misc.SleepCtx(ctx, time.Second); err != nil {
-			return fmt.Errorf("wait for setup: %w", ctx.Err())
-		}
-	}
-
-	return nil
 }
 
 func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
@@ -273,12 +260,12 @@ func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
 	return false
 }
 
-func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
+func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	dbHandle, err := sql.Open("postgres", c.ConnInfo)
 	if err != nil {
 		return nil, err
 	}
-	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections)
+	dbHandle.SetMaxOpenConns(edr.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:          dbHandle,
@@ -293,46 +280,46 @@ func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
 	return dbHandle, nil
 }
 
-func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
-	edRep.srcWspMutex.RLock()
-	defer func() { edRep.srcWspMutex.RUnlock() }()
-	return edRep.workspaceIDForSourceIDMap[sourceID]
+func (edr *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
+	edr.backendConfigMu.RLock()
+	defer edr.backendConfigMu.RUnlock()
+	return edr.workspaceIDForSourceIDMap[sourceID]
 }
 
-func (edRep *ErrorDetailReporter) getDestDetail(destID string) destDetail {
-	edRep.srcWspMutex.RLock()
-	defer func() { edRep.srcWspMutex.RUnlock() }()
-	return edRep.destinationIDMap[destID]
+func (edr *ErrorDetailReporter) getDestDetail(destID string) destDetail {
+	edr.backendConfigMu.RLock()
+	defer edr.backendConfigMu.RUnlock()
+	return edr.destinationIDMap[destID]
 }
 
-func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
-	errMsg := edRep.errorDetailExtractor.GetErrorMessage(sampleResponse)
-	cleanedErrMsg := edRep.errorDetailExtractor.CleanUpErrorMessage(errMsg)
+func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
+	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
+	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
 	return errorDetails{
 		ErrorMessage: cleanedErrMsg,
 	}
 }
 
-func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error) {
-	client := edRep.GetClient(clientName)
-	if client != nil {
-		return client.DbHandle, nil
+func (edr *ErrorDetailReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
+	syncer := edr.GetSyncer(syncerKey)
+	if syncer != nil {
+		return syncer.DbHandle, nil
 	}
-
-	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
+	return nil, fmt.Errorf("DBHandle not found for syncer name: %s", syncerKey)
 }
 
-func (edRep *ErrorDetailReporter) getTags(clientName string) stats.Tags {
+func (edr *ErrorDetailReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
-		"workspaceID": edRep.workspaceID,
-		"clientName":  clientName,
-		"instanceId":  edRep.instanceID,
+		"workspaceID": edr.workspaceID,
+		"clientName":  label,
+		"instanceId":  edr.instanceID,
 	}
 }
 
 // Sending metrics to Reporting service --- STARTS
-func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName string) {
-	tags := edRep.getTags(clientName)
+func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
+	<-edr.init
+	tags := edr.getTags(c.Label)
 
 	mainLoopTimer := stats.Default.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)
 	getReportsTimer := stats.Default.NewTaggedStat("error_detail_reports_get_reports_time", stats.TimerType, tags)
@@ -342,9 +329,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 
 	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
 
-	edRep.minReportedAtQueryTime = stats.Default.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
-	edRep.errorDetailReportsQueryTime = stats.Default.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
-	edRep.edReportingRequestLatency = stats.Default.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
+	edr.minReportedAtQueryTime = stats.Default.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
+	edr.errorDetailReportsQueryTime = stats.Default.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
+	edr.edReportingRequestLatency = stats.Default.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
 
 	// In infinite loop
 	// Get Reports
@@ -353,30 +340,30 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 	// Delete in a separate go-routine
 	for {
 		if ctx.Err() != nil {
-			edRep.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+			edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 			return
 		}
-		requestChan := make(chan struct{}, edRep.maxConcurrentRequests.Load())
+		requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
 		loopStart := time.Now()
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt := edRep.getReports(ctx, currentMs, clientName)
+		reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
 		getReportsTimer.Since(getReportsStart)
 		getReportsSize.Observe(float64(len(reports)))
 
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
-				edRep.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return
-			case <-time.After(edRep.sleepInterval.Load()):
+			case <-time.After(edr.sleepInterval.Load()):
 			}
 			continue
 		}
 
 		aggregationStart := time.Now()
-		metrics := edRep.aggregate(reports)
+		metrics := edr.aggregate(reports)
 		aggregateTimer.Since(aggregationStart)
 		getAggregatedReportsSize.Observe(float64(len(metrics)))
 
@@ -389,9 +376,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 				break
 			}
 			errGroup.Go(func() error {
-				err := edRep.sendMetric(errCtx, clientName, metricToSend)
+				err := edr.sendMetric(errCtx, c.Label, metricToSend)
 				if err != nil {
-					edRep.log.Error("Error while sending to Reporting service:", err)
+					edr.log.Error("Error while sending to Reporting service:", err)
 				}
 				<-requestChan
 				return err
@@ -401,9 +388,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		err := errGroup.Wait()
 		if err == nil {
 			// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
-			dbHandle, err := edRep.getDBHandle(clientName)
+			dbHandle, err := edr.getDBHandle(c.ConnInfo)
 			if err != nil {
-				edRep.log.Errorf("error reports deletion getDbhandle failed: %v", err)
+				edr.log.Errorf("error reports deletion getDbhandle failed: %v", err)
 				continue
 			}
 			deleteReportsStart := time.Now()
@@ -411,7 +398,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
-				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
+				edr.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
 			delRows.Close()
 		}
@@ -420,26 +407,26 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(edRep.mainLoopSleepInterval.Load()):
+		case <-time.After(edr.mainLoopSleepInterval.Load()):
 		}
 	}
 }
 
-func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, clientName string) ([]*types.EDReportsDB, int64) {
+func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
 	var queryMin sql.NullInt64
-	dbHandle, err := edRep.getDBHandle(clientName)
+	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
-		edRep.log.Errorf("Failed while getting DbHandle: %v", err)
+		edr.log.Errorf("Failed while getting DbHandle: %v", err)
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
 	queryStart := time.Now()
 	err = dbHandle.QueryRowContext(ctx, "SELECT reported_at FROM "+ErrorDetailReportsTable+" WHERE reported_at < $1 ORDER BY reported_at ASC LIMIT 1", currentMs).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
-		edRep.log.Errorf("Failed while getting reported_at: %v", err)
+		edr.log.Errorf("Failed while getting reported_at: %v", err)
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
-	edRep.minReportedAtQueryTime.Since(queryStart)
+	edr.minReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
 		return nil, 0
 	}
@@ -464,10 +451,10 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
-		edRep.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
+		edr.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
-	edRep.errorDetailReportsQueryTime.Since(queryStart)
+	edr.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 	var metrics []*types.EDReportsDB
 	for rows.Next() {
@@ -510,7 +497,7 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 			&dbEdMetric.EDConnectionDetails.DestType,
 		)
 		if err != nil {
-			edRep.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
+			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		metrics = append(metrics, dbEdMetric)
@@ -518,7 +505,7 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 	return metrics, queryMin.Int64
 }
 
-func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types.EDMetric {
+func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types.EDMetric {
 	groupedReports := lo.GroupBy(reports, func(report *types.EDReportsDB) string {
 		keys := []string{
 			report.WorkspaceID,
@@ -533,14 +520,14 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 		}
 		return strings.Join(keys, groupKeyDelimitter)
 	})
-	var edReportingMetrics []*types.EDMetric
+	var edrortingMetrics []*types.EDMetric
 	groupKeys := lo.Keys(groupedReports)
 	sort.Strings(groupKeys)
 
 	for _, key := range groupKeys {
 		reports := groupedReports[key]
 		firstReport := reports[0]
-		edRepSchema := types.EDMetric{
+		edrSchema := types.EDMetric{
 			EDInstanceDetails: types.EDInstanceDetails{
 				WorkspaceID: firstReport.WorkspaceID,
 				Namespace:   firstReport.Namespace,
@@ -587,62 +574,62 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				Count:        reportsCountMap[rep],
 			})
 		}
-		edRepSchema.Errors = errs
-		edReportingMetrics = append(edReportingMetrics, &edRepSchema)
+		edrSchema.Errors = errs
+		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}
-	return edReportingMetrics
+	return edrortingMetrics
 }
 
-func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName string, metric *types.EDMetric) error {
+func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}
 	operation := func() error {
-		uri := fmt.Sprintf("%s/recordErrors", edRep.reportingServiceURL)
+		uri := fmt.Sprintf("%s/recordErrors", edr.reportingServiceURL)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBuffer(payload))
 		if err != nil {
 			return err
 		}
-		if edRep.region != "" {
+		if edr.region != "" {
 			q := req.URL.Query()
-			q.Add("region", edRep.region)
+			q.Add("region", edr.region)
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		httpRequestStart := time.Now()
-		resp, err := edRep.httpClient.Do(req)
+		resp, err := edr.httpClient.Do(req)
 		if err != nil {
-			edRep.log.Errorf("Sending request failed: %v", err)
+			edr.log.Errorf("Sending request failed: %v", err)
 			return err
 		}
 
-		edRep.edReportingRequestLatency.Since(httpRequestStart)
-		httpStatTags := edRep.getTags(clientName)
+		edr.edReportingRequestLatency.Since(httpRequestStart)
+		httpStatTags := edr.getTags(label)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
 		stats.Default.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
-		edRep.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
+		edr.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
-			edRep.log.Errorf("Reading response failed: %w", err)
+			edr.log.Errorf("Reading response failed: %w", err)
 			return err
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
 			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
-			edRep.log.Error(err.Error())
+			edr.log.Error(err.Error())
 		}
 		return err
 	}
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		edRep.log.Errorf(`[ Error Detail Reporting ]: Error reporting to service: %v`, err)
+		edr.log.Errorf(`[ Error Detail Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
-		edRep.log.Errorf(`[ Error Detail Reporting ]: Error making request to reporting service: %v`, err)
+		edr.log.Errorf(`[ Error Detail Reporting ]: Error making request to reporting service: %v`, err)
 	}
 	return err
 }

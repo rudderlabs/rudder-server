@@ -1,4 +1,4 @@
-package postgres
+package postgres_test
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -56,304 +58,6 @@ func cloneFiles(t *testing.T, files []string) []string {
 		tempFiles[i] = dst
 	}
 	return tempFiles
-}
-
-func TestLoadTable(t *testing.T) {
-	t.Parallel()
-
-	misc.Init()
-	warehouseutils.Init()
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	const (
-		namespace   = "test_namespace"
-		sourceID    = "test_source_id"
-		destID      = "test_dest_id"
-		sourceType  = "test_source_type"
-		destType    = "test_dest_type"
-		workspaceID = "test_workspace_id"
-	)
-
-	warehouse := model.Warehouse{
-		Source: backendconfig.SourceT{
-			ID: sourceID,
-			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: sourceType,
-			},
-		},
-		Destination: backendconfig.DestinationT{
-			ID: destID,
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: destType,
-			},
-		},
-		WorkspaceID: workspaceID,
-	}
-
-	t.Run("Regular tables", func(t *testing.T) {
-		t.Parallel()
-
-		tableName := "test_table"
-
-		testCases := []struct {
-			name                         string
-			wantError                    error
-			mockError                    error
-			skipSchemaCreation           bool
-			skipTableCreation            bool
-			cancelContext                bool
-			mockFiles                    []string
-			additionalFiles              []string
-			queryExecEnabledWorkspaceIDs []string
-		}{
-			{
-				name:               "schema not present",
-				skipSchemaCreation: true,
-				mockFiles:          []string{"load.csv.gz"},
-				wantError:          errors.New("loading table: executing transaction: creating temporary table: pq: schema \"test_namespace\" does not exist"),
-			},
-			{
-				name:              "table not present",
-				skipTableCreation: true,
-				mockFiles:         []string{"load.csv.gz"},
-				wantError:         errors.New("loading table: executing transaction: creating temporary table: pq: relation \"test_namespace.test_table\" does not exist"),
-			},
-			{
-				name:      "download error",
-				mockFiles: []string{"load.csv.gz"},
-				mockError: errors.New("test error"),
-				wantError: errors.New("loading table: executing transaction: downloading load files: test error"),
-			},
-			{
-				name:            "load file not present",
-				additionalFiles: []string{"testdata/random.csv.gz"},
-				wantError:       errors.New("loading table: executing transaction: opening load file: open testdata/random.csv.gz: no such file or directory"),
-			},
-			{
-				name:      "less records than expected",
-				mockFiles: []string{"less-records.csv.gz"},
-				wantError: errors.New("loading table: executing transaction: missing columns in csv file"),
-			},
-			{
-				name:      "bad records",
-				mockFiles: []string{"bad.csv.gz"},
-				wantError: errors.New("loading table: executing transaction: exec statement: pq: invalid input syntax for type timestamp: \"1\""),
-			},
-			{
-				name:      "success",
-				mockFiles: []string{"load.csv.gz"},
-			},
-			{
-				name:                         "enable query execution",
-				mockFiles:                    []string{"load.csv.gz"},
-				queryExecEnabledWorkspaceIDs: []string{workspaceID},
-			},
-			{
-				name:          "context cancelled",
-				mockFiles:     []string{"load.csv.gz"},
-				wantError:     errors.New("loading table: begin transaction: context canceled"),
-				cancelContext: true,
-			},
-		}
-
-		for _, tc := range testCases {
-			tc := tc
-
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
-				pgResource, err := resource.SetupPostgres(pool, t)
-				require.NoError(t, err)
-
-				t.Log("db:", pgResource.DBDsn)
-
-				db := sqlmiddleware.New(pgResource.DB)
-
-				store := memstats.New()
-				c := config.New()
-				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", tc.queryExecEnabledWorkspaceIDs)
-
-				ctx, cancel := context.WithCancel(context.Background())
-				if tc.cancelContext {
-					cancel()
-				} else {
-					defer cancel()
-				}
-
-				if !tc.skipSchemaCreation {
-					_, err = db.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
-					require.NoError(t, err)
-				}
-				if !tc.skipTableCreation && !tc.skipSchemaCreation {
-					_, err = db.Exec(fmt.Sprintf(`
-					CREATE TABLE IF NOT EXISTS %s.%s (
-						test_bool boolean,
-						test_datetime timestamp,
-						test_float float,
-						test_int int,
-						test_string varchar(255),
-						id varchar(255),
-						received_at timestamptz
-					)
-				`,
-						namespace,
-						tableName,
-					))
-					require.NoError(t, err)
-				}
-
-				loadFiles := cloneFiles(t, tc.mockFiles)
-				loadFiles = append(loadFiles, tc.additionalFiles...)
-				require.NotEmpty(t, loadFiles)
-
-				pg := New(c, logger.NOP, store)
-				pg.DB = db
-				pg.Namespace = namespace
-				pg.Warehouse = warehouse
-				pg.stats = store
-				pg.LoadFileDownloader = &mockLoadFileUploader{
-					mockFiles: map[string][]string{
-						tableName: loadFiles,
-					},
-					mockError: map[string]error{
-						tableName: tc.mockError,
-					},
-				}
-				pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
-					tableName: {
-						"test_bool":     "boolean",
-						"test_datetime": "datetime",
-						"test_float":    "float",
-						"test_int":      "int",
-						"test_string":   "string",
-						"id":            "string",
-						"received_at":   "datetime",
-					},
-				})
-
-				err = pg.LoadTable(ctx, tableName)
-				if tc.wantError != nil {
-					require.ErrorContains(t, err, tc.wantError.Error())
-					return
-				}
-				require.NoError(t, err)
-			})
-		}
-	})
-
-	t.Run("Discards tables", func(t *testing.T) {
-		t.Parallel()
-
-		tableName := warehouseutils.DiscardsTable
-
-		testCases := []struct {
-			name               string
-			wantError          error
-			mockError          error
-			skipSchemaCreation bool
-			skipTableCreation  bool
-			cancelContext      bool
-			mockFiles          []string
-		}{
-			{
-				name:               "schema not present",
-				skipSchemaCreation: true,
-				mockFiles:          []string{"discards.csv.gz"},
-				wantError:          errors.New("loading table: executing transaction: creating temporary table: pq: schema \"test_namespace\" does not exist"),
-			},
-			{
-				name:              "table not present",
-				skipTableCreation: true,
-				mockFiles:         []string{"discards.csv.gz"},
-				wantError:         errors.New("loading table: executing transaction: creating temporary table: pq: relation \"test_namespace.rudder_discards\" does not exist"),
-			},
-			{
-				name:      "download error",
-				mockFiles: []string{"discards.csv.gz"},
-				wantError: errors.New("loading table: executing transaction: downloading load files: test error"),
-				mockError: errors.New("test error"),
-			},
-			{
-				name:      "success",
-				mockFiles: []string{"discards.csv.gz"},
-			},
-		}
-
-		for _, tc := range testCases {
-			tc := tc
-
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
-				pgResource, err := resource.SetupPostgres(pool, t)
-				require.NoError(t, err)
-
-				t.Log("db:", pgResource.DBDsn)
-
-				db := sqlmiddleware.New(pgResource.DB)
-
-				store := memstats.New()
-				c := config.New()
-
-				ctx, cancel := context.WithCancel(context.Background())
-				if tc.cancelContext {
-					cancel()
-				} else {
-					defer cancel()
-				}
-
-				if !tc.skipSchemaCreation {
-					_, err = db.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
-					require.NoError(t, err)
-				}
-				if !tc.skipTableCreation && !tc.skipSchemaCreation {
-					_, err = db.Exec(fmt.Sprintf(`
-					CREATE TABLE IF NOT EXISTS %s.%s (
-						"column_name"  "varchar",
-						"column_value" "varchar",
-						"received_at"  "timestamptz",
-						"row_id"       "varchar",
-						"table_name"   "varchar",
-						"uuid_ts"      "timestamptz"
-					)
-				`,
-						namespace,
-						tableName,
-					))
-					require.NoError(t, err)
-				}
-
-				loadFiles := cloneFiles(t, tc.mockFiles)
-				require.NotEmpty(t, loadFiles)
-
-				pg := New(c, logger.NOP, store)
-				pg.DB = db
-				pg.Namespace = namespace
-				pg.Warehouse = warehouse
-				pg.stats = store
-				pg.LoadFileDownloader = &mockLoadFileUploader{
-					mockFiles: map[string][]string{
-						tableName: loadFiles,
-					},
-					mockError: map[string]error{
-						tableName: tc.mockError,
-					},
-				}
-				pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
-					tableName: warehouseutils.DiscardsSchema,
-				})
-
-				err = pg.LoadTable(ctx, tableName)
-				if tc.wantError != nil {
-					require.EqualError(t, err, tc.wantError.Error())
-					return
-				}
-				require.NoError(t, err)
-			})
-		}
-	})
 }
 
 func TestLoadUsersTable(t *testing.T) {
@@ -501,7 +205,7 @@ func TestLoadUsersTable(t *testing.T) {
 			identifiesLoadFiles := cloneFiles(t, tc.mockIdentifiesFiles)
 			require.NotEmpty(t, identifiesLoadFiles)
 
-			pg := New(c, logger.NOP, store)
+			pg := postgres.New(c, logger.NOP, store)
 
 			var (
 				identifiesSchemaInUpload = model.TableSchema{
@@ -530,10 +234,23 @@ func TestLoadUsersTable(t *testing.T) {
 				usersSchamaInUpload = tc.usersSchemaInUpload
 			}
 
+			ctrl := gomock.NewController(t)
+			t.Cleanup(ctrl.Finish)
+
+			schema := map[string]model.TableSchema{
+				warehouseutils.UsersTable:      usersSchamaInUpload,
+				warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
+			}
+			f := func(tableName string) model.TableSchema {
+				return schema[tableName]
+			}
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
+
 			pg.DB = db
 			pg.Namespace = namespace
 			pg.Warehouse = warehouse
-			pg.stats = store
 			pg.LoadFileDownloader = &mockLoadFileUploader{
 				mockFiles: map[string][]string{
 					warehouseutils.UsersTable:      usersLoadFiles,
@@ -544,10 +261,7 @@ func TestLoadUsersTable(t *testing.T) {
 					warehouseutils.IdentifiesTable: tc.mockIdentifiesError,
 				},
 			}
-			pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
-				warehouseutils.UsersTable:      usersSchamaInUpload,
-				warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
-			})
+			pg.Uploader = mockUploader
 
 			errorsMap := pg.LoadUserTables(ctx)
 			require.NotEmpty(t, errorsMap)
@@ -563,13 +277,4 @@ func TestLoadUsersTable(t *testing.T) {
 			}
 		})
 	}
-}
-
-func newMockUploader(t testing.TB, schema model.Schema) *mockuploader.MockUploader {
-	ctrl := gomock.NewController(t)
-	f := func(tableName string) model.TableSchema { return schema[tableName] }
-	u := mockuploader.NewMockUploader(ctrl)
-	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
-	u.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
-	return u
 }

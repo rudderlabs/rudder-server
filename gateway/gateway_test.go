@@ -1216,6 +1216,19 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 		})
+
+		It("should return empty batch payload error", func() {
+			expectHandlerResponse(
+				gateway.webBatchHandler(),
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(`{"batch":[]}`),
+				),
+				http.StatusBadRequest,
+				"Empty batch payload\n",
+				"batch",
+			)
+		})
 	})
 
 	Context("Robots", func() {

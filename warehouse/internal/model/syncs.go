@@ -33,3 +33,31 @@ type TableUploadInfo struct {
 	Count      int64
 	Duration   int64
 }
+
+type RetrieveFailedBatchesRequest struct {
+	DestinationID string
+	WorkspaceID   string
+	Start         time.Time
+	End           time.Time
+}
+
+type RetrieveFailedBatchesResponse struct {
+	ErrorCategory   string
+	SourceID        string
+	Status          string
+	TotalEvents     int64
+	TotalSyncs      int64
+	LastHappenedAt  time.Time
+	FirstHappenedAt time.Time
+	Error           string
+}
+
+type RetryFailedBatchesRequest struct {
+	DestinationID string
+	WorkspaceID   string
+	Start         time.Time
+	End           time.Time
+	ErrorCategory string
+	SourceID      string
+	Status        string
+}

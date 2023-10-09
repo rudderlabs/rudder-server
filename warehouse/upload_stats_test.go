@@ -44,7 +44,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -74,7 +74,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -105,7 +105,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -134,7 +134,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -168,7 +168,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -208,7 +208,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -249,7 +249,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(db),
+			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -286,7 +286,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
 		require.NoError(t, err)
 
-		timings, err := repo.NewUploads(job.dbHandle).UploadTimings(context.Background(), job.upload.ID)
+		timings, err := repo.NewUploads(job.db).UploadTimings(context.Background(), job.upload.ID)
 		require.NoError(t, err)
 		require.EqualValues(t, timings, model.Timings{
 			{
@@ -336,7 +336,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					conf:         config.Default,
 					logger:       logger.NOP,
 					statsFactory: mockStats,
-					dbHandle:     sqlmiddleware.New(db),
+					db:           sqlmiddleware.New(db),
 				}
 				job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 					Upload: model.Upload{

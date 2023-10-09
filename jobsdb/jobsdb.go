@@ -600,6 +600,7 @@ var (
 	Succeeded = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted   = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
 	Migrated  = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
+	Filtered  = jobStateT{isValid: true, isTerminal: true, State: "filtered"}
 
 	validTerminalStates    []string
 	validNonTerminalStates []string
@@ -615,6 +616,7 @@ var jobStates = []jobStateT{
 	Aborted,
 	Migrated,
 	Importing,
+	Filtered,
 }
 
 // OwnerType for this jobsdb instance
@@ -945,7 +947,7 @@ func (jd *Handle) loadConfig() {
 	jd.conf.backup.backupCheckSleepDuration = jd.config.GetReloadableDurationVar(
 		5, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...,
 	)
-	jd.conf.backup.PathPrefix = jd.config.GetString(
+	jd.conf.backup.PathPrefix = jd.config.GetStringVar(
 		jd.tablePrefix, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix),
 	)
 

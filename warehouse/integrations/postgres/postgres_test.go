@@ -10,6 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/compose-test/compose"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -39,7 +49,8 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{
-		"testdata/docker-compose.yml",
+		"testdata/docker-compose.postgres.yml",
+		"testdata/docker-compose.ssh-server.yml",
 		"../testdata/docker-compose.jobsdb.yml",
 		"../testdata/docker-compose.minio.yml",
 	}))
@@ -92,6 +103,7 @@ func TestIntegration(t *testing.T) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
+	region := "us-east-1"
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
 
@@ -137,13 +149,8 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
 	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", workspaceID)
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SLOW_QUERY_THRESHOLD", "0s")
 
 	svcDone := make(chan struct{})
 
@@ -162,6 +169,12 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", workspaceID)
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+
 		dsn := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "rudder-password", "localhost", strconv.Itoa(postgresPort), "rudderdb",
@@ -290,6 +303,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", workspaceID)
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+
 		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			tunnelledUser,
 			tunnelledPassword,
@@ -441,4 +460,400 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
+
+	t.Run("Load Table", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		namespace := testhelper.RandSchema(destType)
+
+		schemaInUpload := model.TableSchema{
+			"test_bool":     "boolean",
+			"test_datetime": "datetime",
+			"test_float":    "float",
+			"test_int":      "int",
+			"test_string":   "string",
+			"id":            "string",
+			"received_at":   "datetime",
+		}
+		schemaInWarehouse := model.TableSchema{
+			"test_bool":           "boolean",
+			"test_datetime":       "datetime",
+			"test_float":          "float",
+			"test_int":            "int",
+			"test_string":         "string",
+			"id":                  "string",
+			"received_at":         "datetime",
+			"extra_test_bool":     "boolean",
+			"extra_test_datetime": "datetime",
+			"extra_test_float":    "float",
+			"extra_test_int":      "int",
+			"extra_test_string":   "string",
+		}
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(postgresPort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: warehouseutils.MINIO,
+			Config: map[string]any{
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
+				"endPoint":         minioEndpoint,
+				"forcePathStyle":   true,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+				"enableSSE":        false,
+				"bucketProvider":   warehouseutils.MINIO,
+			},
+		})
+		require.NoError(t, err)
+
+		t.Run("schema does not exists", func(t *testing.T) {
+			tableName := "schema_not_exists_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("table does not exists", func(t *testing.T) {
+			tableName := "table_not_exists_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("merge", func(t *testing.T) {
+			tableName := "merge_test_table"
+
+			t.Run("without dedup", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				c := config.New()
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
+
+				pg := postgres.New(c, logger.NOP, stats.Default)
+				err := pg.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = pg.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := pg.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(14))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+				loadTableStat, err = pg.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+					fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %q.%q
+					ORDER BY
+					  id;
+					`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, testhelper.SampleTestRecords())
+			})
+			t.Run("with dedup", func(t *testing.T) {
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				c := config.New()
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
+
+				pg := postgres.New(config.Default, logger.NOP, stats.Default)
+				err := pg.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = pg.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := pg.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+					fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %q.%q
+					ORDER BY
+					  id;
+					`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, testhelper.DedupTestRecords())
+			})
+		})
+		t.Run("append", func(t *testing.T) {
+			tableName := "append_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			c := config.New()
+			c.Set("Warehouse.postgres.skipDedupDestinationIDs", destinationID)
+
+			pg := postgres.New(c, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			loadTableStat, err = pg.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %q.%q
+					ORDER BY
+					  id;
+					`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, testhelper.AppendTestRecords())
+		})
+		t.Run("load file does not exists", func(t *testing.T) {
+			tableName := "load_file_not_exists_test_table"
+
+			loadFiles := []warehouseutils.LoadFile{{
+				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
+			}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in number of columns", func(t *testing.T) {
+			tableName := "mismatch_columns_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("mismatch in schema", func(t *testing.T) {
+			tableName := "mismatch_schema_test_table"
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+		t.Run("discards", func(t *testing.T) {
+			tableName := warehouseutils.DiscardsTable
+
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+
+			pg := postgres.New(config.Default, logger.NOP, stats.Default)
+			err := pg.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = pg.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = pg.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			require.NoError(t, err)
+
+			loadTableStat, err := pg.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(6))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  column_name,
+					  column_value,
+					  received_at,
+					  row_id,
+					  table_name,
+					  uuid_ts
+					FROM
+					  %q.%q
+					ORDER BY row_id ASC;
+					`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, testhelper.DiscardTestRecords())
+		})
+	})
+}
+
+func mockUploader(
+	t testing.TB,
+	loadFiles []warehouseutils.LoadFile,
+	tableName string,
+	schemaInUpload model.TableSchema,
+	schemaInWarehouse model.TableSchema,
+) warehouseutils.Uploader {
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockUploader := mockuploader.NewMockUploader(ctrl)
+	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles).AnyTimes() // Try removing this
+	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
+	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+
+	return mockUploader
 }

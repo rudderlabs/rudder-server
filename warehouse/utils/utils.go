@@ -133,7 +133,7 @@ const (
 var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
-	AWSCredsExpiryInS  int64
+	awsCredsExpiryInS  misc.ValueLoader[int64]
 
 	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
@@ -194,10 +194,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
-// nolint:staticcheck // SA1019: config Register reloadable functions are deprecated
 func loadConfig() {
 	enableIDResolution = config.GetBoolVar(false, "Warehouse.enableIDResolution")
-	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
+	awsCredsExpiryInS = config.GetReloadableInt64Var(3600, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type DeleteByMetaData struct {
@@ -533,7 +532,10 @@ func ToSafeNamespace(provider, name string) string {
 		extractedValues = append(extractedValues, extractedValue)
 	}
 	namespace := strings.Join(extractedValues, "_")
-	namespace = strcase.ToSnake(namespace)
+	skipNamespaceSnakeCasing := config.GetBool(fmt.Sprintf("Warehouse.%s.skipNamespaceSnakeCasing", WHDestNameMap[provider]), false)
+	if !skipNamespaceSnakeCasing {
+		namespace = strcase.ToSnake(namespace)
+	}
 	if namespace != "" && int(namespace[0]) >= 48 && int(namespace[0]) <= 57 {
 		namespace = "_" + namespace
 	}
@@ -726,7 +728,8 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 	// Create an STS client from just a session.
 	svc := sts.New(awsSession)
 
-	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	expiryInSec := awsCredsExpiryInS.Load()
+	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &expiryInSec})
 	if err != nil {
 		return "", "", "", err
 	}

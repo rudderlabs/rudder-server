@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -77,9 +79,9 @@ func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, colum
 	return d.SchemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
 }
 
-func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
+func (d *Datalake) LoadTable(_ context.Context, tableName string) (*types.LoadTableStats, error) {
 	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
-	return nil
+	return &types.LoadTableStats{}, nil
 }
 
 func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) (err error) {
@@ -120,10 +122,6 @@ func (*Datalake) TestConnection(context.Context, model.Warehouse) error {
 
 func (*Datalake) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
-}
-
-func (*Datalake) GetTotalCountInTable(context.Context, string) (int64, error) {
-	return 0, nil
 }
 
 func (*Datalake) Connect(context.Context, model.Warehouse) (client.Client, error) {
