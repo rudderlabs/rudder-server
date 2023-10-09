@@ -13,7 +13,7 @@ var (
 func init() {
 	regexes := []string{
 		"(?P<SELECT>SELECT)",
-		"(?P<UPDATE>UPDATE\\s+.*SET)",
+		"(?P<UPDATE>UPDATE\\s+.*\\s+SET)",
 		"(?P<DELETE_FROM>DELETE\\s+FROM)",
 		"(?P<INSERT_INTO>INSERT\\s+INTO)",
 		"(?P<COPY>COPY)",
