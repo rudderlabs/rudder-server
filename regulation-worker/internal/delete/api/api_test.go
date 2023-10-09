@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -314,7 +315,6 @@ func TestOAuth(t *testing.T) {
 					jobResponse: `[{"status":"successful"}]`,
 				},
 			},
-
 			cpResponses: []cpResponseParams{
 				{
 					code:     200,
@@ -325,8 +325,7 @@ func TestOAuth(t *testing.T) {
 					response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
 				},
 			},
-
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 500, body: [{failed [GA] invalid credentials REFRESH_TOKEN}]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
 			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
 		{
@@ -365,15 +364,13 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-
 			cpResponses: []cpResponseParams{
 				{
 					code:     500,
 					response: `Internal Server Error`,
 				},
 			},
-			deleteResponses: []deleteResponseParams{{}},
-
+			deleteResponses:      []deleteResponseParams{{}},
 			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA][FetchToken] Error in Token Fetch statusCode: 500\t error: Unmarshal of response unsuccessful: Internal Server Error")},
 			expectedPayload:      "", // since request has not gone to transformer at all!
 		},
@@ -420,12 +417,10 @@ func TestOAuth(t *testing.T) {
 					timeout:  2 * time.Second,
 				},
 			},
-			deleteResponses: []deleteResponseParams{{}},
-
+			deleteResponses:        []deleteResponseParams{{}},
 			oauthHttpClientTimeout: 1 * time.Second,
-
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
-			expectedPayload:      "", // since request has not gone to transformer at all!
+			expectedDeleteStatus:   model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
+			expectedPayload:        "", // since request has not gone to transformer at all!
 		},
 		{
 			// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
@@ -576,9 +571,168 @@ func TestOAuth(t *testing.T) {
 					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN","error":"[GA] invalid credentials"}]`,
 				},
 			},
-
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] invalid credentials")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Failed to refresh token for destination in workspace(1001) & account(xyz) with Unmarshal of response unsuccessful: Post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)")},
 			expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
+		},
+
+		{
+			name: "when AUTH_STATUS_INACTIVE error happens & authStatus/toggle success, fail the job with Failed status",
+			job: model.Job{
+				ID:            15,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798475",
+						Attributes: map[string]string{
+							"phone": "7463633841",
+							"email": "dreymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      400,
+					jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				},
+			},
+			cpResponses: []cpResponseParams{
+				// fetch token http request
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// authStatus inactive http request
+				{
+					code: 200,
+				},
+			},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
+			expectedPayload:      `[{"jobId":"15","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dreymore@gmail.com","phone":"7463633841","userId":"203984798475"}]}]`,
+		},
+		{
+			name: "when AUTH_STATUS_INACTIVE error happens but authStatus/toggle failed, fail the job with Failed status",
+			job: model.Job{
+				ID:            16,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798476",
+						Attributes: map[string]string{
+							"phone": "8463633841",
+							"email": "greymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      400,
+					jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				},
+			},
+			cpResponses: []cpResponseParams{
+				// fetch token http request
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// authStatus inactive http request
+				{
+					code:     400,
+					response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
+				},
+			},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
+			expectedPayload:      `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
+		},
+
+		{
+			name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
+			job: model.Job{
+				ID:            17,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798477",
+						Attributes: map[string]string{
+							"phone": "8463633841",
+							"email": "greymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      500,
+					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+				},
+			},
+
+			cpResponses: []cpResponseParams{
+				// fetch token http request
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// refresh token http request
+				{
+					code:     403,
+					response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+				},
+				// authStatus inactive http request
+				{
+					code: 200,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
+			expectedPayload:      `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
 		},
 	}
 
@@ -606,15 +760,17 @@ func TestOAuth(t *testing.T) {
 			oauth.Init()
 			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
 			api := api.APIManager{
-				Client:           &http.Client{},
-				DestTransformURL: svr.URL,
-				OAuth:            OAuth,
+				Client:                       &http.Client{},
+				DestTransformURL:             svr.URL,
+				OAuth:                        OAuth,
+				MaxOAuthRefreshRetryAttempts: 1,
 			}
 
 			status := api.Delete(ctx, tt.job, tt.dest)
 			require.Equal(t, tt.expectedDeleteStatus.Status, status.Status)
 			if tt.expectedDeleteStatus.Status != model.JobStatusComplete {
-				require.Contains(t, status.Error.Error(), tt.expectedDeleteStatus.Error.Error())
+				jobError := strings.Replace(tt.expectedDeleteStatus.Error.Error(), "__cfgBE_server__", cfgBeSrv.URL, 1)
+				require.Contains(t, status.Error.Error(), jobError)
 			}
 			// require.Equal(t, tt.expectedDeleteStatus, status)
 			// TODO: Compare input payload for all "/deleteUsers" requests
@@ -650,7 +806,7 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 			param := chi.URLParam(req, reqParam)
 			if param == "" {
 				// This case wouldn't occur I guess
-				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusInternalServerError)
+				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusBadRequest)
 				return
 			}
 		}
@@ -665,7 +821,36 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 		// Lint error fix
 		_, err := w.Write([]byte(cpResp.response))
 		if err != nil {
-			fmt.Printf("I'm here!!!! Some shitty response!!")
+			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	srvMux.HandleFunc("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		// iterating over request parameters
+		for _, reqParam := range []string{"workspaceId", "destinationId"} {
+			param := chi.URLParam(req, reqParam)
+			if param == "" {
+				// This case wouldn't occur I guess
+				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusNotFound)
+				return
+			}
+		}
+
+		cpResp := cpRespProducer.GetNext()
+		// sleep is being used to mimic the waiting in actual transformer response
+		if cpResp.timeout > 0 {
+			time.Sleep(cpResp.timeout)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(cpResp.code)
+		// Lint error fix
+		_, err := w.Write([]byte(cpResp.response))
+		if err != nil {
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -708,13 +893,13 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
 		buf := new(bytes.Buffer)
 		_, bufErr := buf.ReadFrom(req.Body)
 		if bufErr != nil {
-			http.Error(w, bufErr.Error(), http.StatusInternalServerError)
+			http.Error(w, bufErr.Error(), http.StatusBadRequest)
 			return
 		}
+		delResp := delRespProducer.GetNext()
+
 		// useful in validating the payload(sent in request body to transformer)
 		delRespProducer.GetCurrent().actualPayload = buf.String()
-
-		delResp := delRespProducer.GetNext()
 		// sleep is being used to mimic the waiting in actual transformer response
 		if delResp.timeout > 0 {
 			time.Sleep(delResp.timeout)
@@ -724,7 +909,6 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
 		// Lint error fix
 		_, err := w.Write([]byte(delResp.jobResponse))
 		if err != nil {
-			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
