@@ -12,27 +12,27 @@ var (
 
 func init() {
 	regexes := []string{
-		"(?P<SELECT>SELECT)",
-		"(?P<UPDATE>UPDATE\\s+.*SET)",
-		"(?P<DELETE_FROM>DELETE\\s+FROM)",
-		"(?P<INSERT_INTO>INSERT\\s+INTO)",
+		"(WITH.*\\(.*)*(?P<SELECT>SELECT)",
+		"(?P<UPDATE>UPDATE.*SET)",
+		"(?P<DELETE_FROM>DELETE.*FROM)",
+		"(?P<INSERT_INTO>INSERT.*INTO)",
 		"(?P<COPY>COPY)",
-		"(?P<MERGE_INTO>MERGE\\s+INTO)",
-		"(?P<CREATE_TEMP_TABLE>CREATE\\s+TEMP(?:ORARY)*\\s+TABLE)",
-		"(?P<CREATE_DATABASE>CREATE\\s+DATABASE)",
-		"(?P<CREATE_SCHEMA>CREATE\\s+SCHEMA)",
-		"(?P<CREATE_TABLE>(?:IF\\s+NOT\\s+EXISTS\\s+.*)*CREATE\\s+(?:OR\\s+REPLACE\\s+)*TABLE)",
-		"(?P<CREATE_INDEX>CREATE\\s+INDEX)",
-		"(?P<ALTER_TABLE>ALTER\\s+TABLE)",
-		"(?P<ALTER_SESSION>ALTER\\s+SESSION)",
-		"(?P<DROP_TABLE>(?:IF\\s+.*)*DROP\\s+TABLE)",
-		"(?P<SHOW_TABLES>SHOW\\s+TABLES)",
-		"(?P<SHOW_PARTITIONS>SHOW\\s+PARTITIONS)",
-		"(?P<DESCRIBE_TABLE>DESCRIBE\\s+(?:QUERY\\s+)*TABLE)",
-		"(?P<SET_TO>SET\\s+.*\\s+TO)",
+		"(?P<MERGE_INTO>MERGE.*INTO)",
+		"(?P<CREATE_TEMP_TABLE>CREATE.*TEMP(?:ORARY)*.*TABLE)",
+		"(?P<CREATE_DATABASE>CREATE.*DATABASE)",
+		"(?P<CREATE_SCHEMA>CREATE.*SCHEMA)",
+		"(?P<CREATE_TABLE>(?:IF.*NOT.*EXISTS.*)*CREATE.*(?:OR.*REPLACE.*)*TABLE)",
+		"(?P<CREATE_INDEX>CREATE.*INDEX)",
+		"(?P<ALTER_TABLE>ALTER.*TABLE)",
+		"(?P<ALTER_SESSION>ALTER.*SESSION)",
+		"(?P<DROP_TABLE>(?:IF.*)*DROP.*TABLE)",
+		"(?P<SHOW_TABLES>SHOW.*TABLES)",
+		"(?P<SHOW_PARTITIONS>SHOW.*PARTITIONS)",
+		"(?P<DESCRIBE_TABLE>DESCRIBE.*(?:QUERY.*)*TABLE)",
+		"(?P<SET_TO>SET.*TO)",
 	}
 
-	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(` + strings.Join(regexes, "|") + `)\s+`)
+	queryTypeRegex = regexp.MustCompile(`^(?ism)\s*(` + strings.Join(regexes, "|") + `)\s+`)
 
 	queryTypeIndexes = make(map[int]string)
 	for i, n := range queryTypeRegex.SubexpNames() {
