@@ -906,12 +906,10 @@ func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	}
 
 	return (respStatusCode >= 500 &&
-		respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
+		respStatusCode != types.RouterTimedOutStatusCode &&
+		respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
 		time.Since(firstAttemptedAtTime) > retryTimeWindow &&
 		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
-
-	return (respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
-		(time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.retryTimeWindow.Load() && status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForJob.Load()) // retry time window exceeded
 }
 
 // AvailableSlots returns the number of available slots in the worker's input channel
