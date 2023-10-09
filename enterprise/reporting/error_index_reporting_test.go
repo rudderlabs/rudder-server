@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+
+	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
@@ -77,7 +78,7 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	receivedAt := time.Now()
 
-	now := func() time.Time {
+	failedAt := func() time.Time {
 		return receivedAt.Add(time.Hour)
 	}
 
@@ -146,7 +147,7 @@ func TestErrorIndexReporter(t *testing.T) {
 						TransformationID: transformationID,
 						TrackingPlanID:   trackingPlanID,
 						FailedStage:      reportedBy,
-						FailedAt:         now(),
+						FailedAt:         failedAt(),
 					},
 					{
 						MessageID:        messageID + "2",
@@ -156,7 +157,7 @@ func TestErrorIndexReporter(t *testing.T) {
 						TransformationID: transformationID,
 						TrackingPlanID:   trackingPlanID,
 						FailedStage:      reportedBy,
-						FailedAt:         now(),
+						FailedAt:         failedAt(),
 					},
 				},
 			},
@@ -164,8 +165,6 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				t.Skip() // Check with @Sidddddarth why individual test are succeeding but not the whole suite
-
 				postgresContainer, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
@@ -191,7 +190,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				}()
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
-				eir.now = now
+				eir.now = failedAt
 				eir.Report(tc.reports, txn)
 
 				errIndexDB := jobsdb.NewForRead("error_index", jobsdb.WithConfig(c))
@@ -220,7 +219,7 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, metadata.TrackingPlanID, tc.expectedMetadata[i].TrackingPlanID)
 					require.Equal(t, metadata.FailedStage, tc.expectedMetadata[i].FailedStage)
 
-					require.EqualValues(t, metadata.FailedAt.UTC(), now().UTC())
+					require.EqualValues(t, metadata.FailedAt.UTC(), failedAt().UTC())
 					require.EqualValues(t, metadata.ReceivedAt.UTC(), tc.expectedMetadata[i].ReceivedAt.UTC())
 				}
 
@@ -235,4 +234,5 @@ func TestErrorIndexReporter(t *testing.T) {
 			NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
 		})
 	})
+	t.Run("Graceful shutdown", func(t *testing.T) {})
 }
