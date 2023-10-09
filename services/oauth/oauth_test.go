@@ -12,10 +12,11 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
 
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	"github.com/stretchr/testify/require"
 )
 
 type cpResponseParams struct {
