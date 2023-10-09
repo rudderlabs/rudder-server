@@ -56,10 +56,13 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	return rm
 }
 
-func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
 	for _, reporter := range rm.reporters {
-		reporter.Report(metrics, txn)
+		if err := reporter.Report(metrics, txn); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {

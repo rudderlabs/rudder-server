@@ -48,5 +48,5 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 }
 
 type reporter interface {
-	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
+	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) error
 }

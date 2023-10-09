@@ -1898,7 +1898,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "created_remote_schema_failed",
 				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
-				errorCategory: model.UnCategorizedError,
+				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
 						"created_remote_schema_failed": now,
@@ -1952,7 +1952,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				Error:           `some error 6`,
-				ErrorCategory:   model.UnCategorizedError,
+				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
 				TotalSyncs:      1,
@@ -1991,7 +1991,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				Error:           `some error 6`,
-				ErrorCategory:   model.UnCategorizedError,
+				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
 				TotalSyncs:      1,
@@ -2011,7 +2011,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "created_remote_schema_failed",
 				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
-				errorCategory: model.UnCategorizedError,
+				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
 						"created_remote_schema_failed": now,
@@ -2064,7 +2064,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				Error:           `some error 6`,
-				ErrorCategory:   model.UnCategorizedError,
+				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
 				TotalSyncs:      1,
@@ -2093,7 +2093,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "internal_processing_failed",
 				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-				errorCategory:       model.UnCategorizedError,
+				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2150,7 +2150,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				Error:           `some error 2`,
-				ErrorCategory:   model.UnCategorizedError,
+				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     600,
 				TotalSyncs:      1,
@@ -2180,7 +2180,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "internal_processing_failed",
 				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
-				errorCategory:       model.UnCategorizedError,
+				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2191,7 +2191,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:              "generating_load_files_failed",
 				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
-				errorCategory:       model.UnCategorizedError,
+				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
 					{
@@ -2269,7 +2269,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				Error:           `some error 2`,
-				ErrorCategory:   model.UnCategorizedError,
+				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     1200,
 				TotalSyncs:      2,
@@ -2394,7 +2394,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "internal_processing_failed",
 				error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some error","some error"],"attempt":2}}`),
-				errorCategory: model.UnCategorizedError,
+				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
 						"internal_processing_failed": now,
@@ -2404,7 +2404,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			{
 				status:        "generating_load_files_failed",
 				error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some error","some error"],"attempt":2}}`),
-				errorCategory: model.UnCategorizedError,
+				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
 						"generating_load_files_failed": now,
@@ -2458,7 +2458,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				SourceID:      sourceID,
 				Start:         start,
 				End:           end,
-				ErrorCategory: model.UnCategorizedError,
+				ErrorCategory: model.UncategorizedError,
 				Status:        model.Failed,
 			})
 			require.NoError(t, err)

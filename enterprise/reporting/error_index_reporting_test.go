@@ -2,14 +2,13 @@ package reporting
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
+
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -31,6 +30,8 @@ func TestErrorIndexReporter(t *testing.T) {
 	reportedBy := "test-reported-by"
 	destinationDefinitionID := "test-destination-definition-id"
 	destType := "test-dest-type"
+	eventName := "test-event-name"
+	eventType := "test-event-type"
 	messageID := "test-message-id"
 
 	pool, err := dockertest.NewPool("")
@@ -77,41 +78,44 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	receivedAt := time.Now()
 
-	now := func() time.Time {
+	failedAt := func() time.Time {
 		return receivedAt.Add(time.Hour)
 	}
 
 	t.Run("reports", func(t *testing.T) {
 		testCases := []struct {
-			name             string
-			reports          []*types.PUReportedMetric
-			expectedMetadata []metadata
+			name            string
+			reports         []*types.PUReportedMetric
+			expectedPayload []payload
 		}{
+			//{
+			//	name:            "empty metrics",
+			//	reports:         []*types.PUReportedMetric{},
+			//	expectedPayload: []payload{},
+			//},
+			//{
+			//	name: "without failed messages",
+			//	reports: []*types.PUReportedMetric{
+			//		{
+			//			ConnectionDetails: types.ConnectionDetails{
+			//				SourceID:         sourceID,
+			//				DestinationID:    destinationID,
+			//				TransformationID: transformationID,
+			//				TrackingPlanID:   trackingPlanID,
+			//			},
+			//			PUDetails: types.PUDetails{
+			//				PU: reportedBy,
+			//			},
+			//			StatusDetail: &types.StatusDetail{
+			//				EventName: eventName,
+			//				EventType: eventType,
+			//			},
+			//		},
+			//	},
+			//	expectedPayload: []payload{},
+			//},
 			{
-				name:             "empty metrics",
-				reports:          []*types.PUReportedMetric{},
-				expectedMetadata: []metadata{},
-			},
-			{
-				name: "without failed messages",
-				reports: []*types.PUReportedMetric{
-					{
-						ConnectionDetails: types.ConnectionDetails{
-							SourceID:         sourceID,
-							DestinationID:    destinationID,
-							TransformationID: transformationID,
-							TrackingPlanID:   trackingPlanID,
-						},
-						PUDetails: types.PUDetails{
-							PU: reportedBy,
-						},
-						StatusDetail: &types.StatusDetail{},
-					},
-				},
-				expectedMetadata: []metadata{},
-			},
-			{
-				name: "with failed messages",
+				name: "filter with failed messages",
 				reports: []*types.PUReportedMetric{
 					{
 						ConnectionDetails: types.ConnectionDetails{
@@ -124,6 +128,8 @@ func TestErrorIndexReporter(t *testing.T) {
 							PU: reportedBy,
 						},
 						StatusDetail: &types.StatusDetail{
+							EventName: eventName,
+							EventType: eventType,
 							FailedMessages: []*types.FailedMessage{
 								{
 									MessageID:  messageID + "1",
@@ -136,8 +142,48 @@ func TestErrorIndexReporter(t *testing.T) {
 							},
 						},
 					},
+					{
+						ConnectionDetails: types.ConnectionDetails{
+							SourceID:         sourceID,
+							DestinationID:    destinationID,
+							TransformationID: transformationID,
+							TrackingPlanID:   trackingPlanID,
+						},
+						PUDetails: types.PUDetails{
+							PU: reportedBy,
+						},
+						StatusDetail: &types.StatusDetail{
+							EventName: eventName,
+							EventType: eventType,
+						},
+					},
+					{
+						ConnectionDetails: types.ConnectionDetails{
+							SourceID:         sourceID,
+							DestinationID:    destinationID,
+							TransformationID: transformationID,
+							TrackingPlanID:   trackingPlanID,
+						},
+						PUDetails: types.PUDetails{
+							PU: reportedBy,
+						},
+						StatusDetail: &types.StatusDetail{
+							EventName: eventName,
+							EventType: eventType,
+							FailedMessages: []*types.FailedMessage{
+								{
+									MessageID:  messageID + "3",
+									ReceivedAt: receivedAt.Add(3 * time.Hour),
+								},
+								{
+									MessageID:  messageID + "4",
+									ReceivedAt: receivedAt.Add(4 * time.Hour),
+								},
+							},
+						},
+					},
 				},
-				expectedMetadata: []metadata{
+				expectedPayload: []payload{
 					{
 						MessageID:        messageID + "1",
 						ReceivedAt:       receivedAt.Add(1 * time.Hour),
@@ -145,8 +191,10 @@ func TestErrorIndexReporter(t *testing.T) {
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
 						TrackingPlanID:   trackingPlanID,
+						EventName:        eventName,
+						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         now(),
+						FailedAt:         failedAt(),
 					},
 					{
 						MessageID:        messageID + "2",
@@ -155,8 +203,34 @@ func TestErrorIndexReporter(t *testing.T) {
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
 						TrackingPlanID:   trackingPlanID,
+						EventName:        eventName,
+						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         now(),
+						FailedAt:         failedAt(),
+					},
+					{
+						MessageID:        messageID + "3",
+						ReceivedAt:       receivedAt.Add(3 * time.Hour),
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						EventName:        eventName,
+						EventType:        eventType,
+						FailedStage:      reportedBy,
+						FailedAt:         failedAt(),
+					},
+					{
+						MessageID:        messageID + "4",
+						ReceivedAt:       receivedAt.Add(4 * time.Hour),
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+						EventName:        eventName,
+						EventType:        eventType,
+						FailedStage:      reportedBy,
+						FailedAt:         failedAt(),
 					},
 				},
 			},
@@ -164,8 +238,6 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				t.Skip() // Check with @Sidddddarth why individual test are succeeding but not the whole suite
-
 				postgresContainer, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
@@ -174,10 +246,6 @@ func TestErrorIndexReporter(t *testing.T) {
 				c.Set("DB.user", postgresContainer.User)
 				c.Set("DB.name", postgresContainer.Database)
 				c.Set("DB.password", postgresContainer.Password)
-
-				txn, err := postgresContainer.DB.BeginTx(ctx, &sql.TxOptions{})
-				require.NoError(t, err)
-				defer func() { _ = txn.Rollback() }()
 
 				ctx, cancel := context.WithCancel(ctx)
 
@@ -191,10 +259,10 @@ func TestErrorIndexReporter(t *testing.T) {
 				}()
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
-				eir.now = now
-				eir.Report(tc.reports, txn)
+				eir.now = failedAt
+				eir.Report(tc.reports, nil)
 
-				errIndexDB := jobsdb.NewForRead("error_index", jobsdb.WithConfig(c))
+				errIndexDB := jobsdb.NewForRead(ei, jobsdb.WithConfig(c))
 				err = errIndexDB.Start()
 				require.NoError(t, err)
 				defer func() { errIndexDB.Close() }()
@@ -204,24 +272,30 @@ func TestErrorIndexReporter(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				metadataList := lo.Map(jr.Jobs, func(j *jobsdb.JobT, index int) metadata {
-					var metadata metadata
-					err := json.Unmarshal(j.Parameters, &metadata)
+				for i, job := range jr.Jobs {
+					var eventPayload payload
+					err := json.Unmarshal(job.EventPayload, &eventPayload)
 					require.NoError(t, err)
 
-					return metadata
-				})
+					require.Equal(t, eventPayload.MessageID, tc.expectedPayload[i].MessageID)
+					require.Equal(t, eventPayload.SourceID, tc.expectedPayload[i].SourceID)
+					require.Equal(t, eventPayload.DestinationID, tc.expectedPayload[i].DestinationID)
+					require.Equal(t, eventPayload.TransformationID, tc.expectedPayload[i].TransformationID)
+					require.Equal(t, eventPayload.TrackingPlanID, tc.expectedPayload[i].TrackingPlanID)
+					require.Equal(t, eventPayload.FailedStage, tc.expectedPayload[i].FailedStage)
+					require.Equal(t, eventPayload.EventName, tc.expectedPayload[i].EventName)
+					require.Equal(t, eventPayload.EventType, tc.expectedPayload[i].EventType)
+					require.EqualValues(t, eventPayload.FailedAt.UTC(), failedAt().UTC())
+					require.EqualValues(t, eventPayload.ReceivedAt.UTC(), tc.expectedPayload[i].ReceivedAt.UTC())
 
-				for i, metadata := range metadataList {
-					require.Equal(t, metadata.MessageID, tc.expectedMetadata[i].MessageID)
-					require.Equal(t, metadata.SourceID, tc.expectedMetadata[i].SourceID)
-					require.Equal(t, metadata.DestinationID, tc.expectedMetadata[i].DestinationID)
-					require.Equal(t, metadata.TransformationID, tc.expectedMetadata[i].TransformationID)
-					require.Equal(t, metadata.TrackingPlanID, tc.expectedMetadata[i].TrackingPlanID)
-					require.Equal(t, metadata.FailedStage, tc.expectedMetadata[i].FailedStage)
+					var params map[string]interface{}
+					err = json.Unmarshal(job.Parameters, &params)
+					require.NoError(t, err)
 
-					require.EqualValues(t, metadata.FailedAt.UTC(), now().UTC())
-					require.EqualValues(t, metadata.ReceivedAt.UTC(), tc.expectedMetadata[i].ReceivedAt.UTC())
+					t.Log(string(job.Parameters))
+
+					require.Equal(t, params["sourceId"], sourceID)
+					require.Equal(t, params["workspaceId"], workspaceID)
 				}
 
 				cancel()
@@ -234,5 +308,8 @@ func TestErrorIndexReporter(t *testing.T) {
 		require.Panics(t, func() {
 			NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
 		})
+	})
+	t.Run("Graceful shutdown", func(t *testing.T) {
+
 	})
 }

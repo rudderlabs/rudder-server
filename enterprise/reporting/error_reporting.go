@@ -145,17 +145,16 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
-		return
+		return nil
 	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
-		_ = txn.Rollback()
 		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return
+		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
 
@@ -187,15 +186,17 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *s
 		)
 		if err != nil {
 			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
-			return
+			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return
+		return fmt.Errorf("executing final statement: %v", err)
 	}
+
+	return nil
 }
 
 func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {

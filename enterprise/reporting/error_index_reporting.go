@@ -18,16 +18,18 @@ import (
 )
 
 const (
-	customVal = "error_index"
+	ei = "ei"
 )
 
-type metadata struct {
+type payload struct {
 	MessageID        string    `json:"messageId"`
 	SourceID         string    `json:"sourceId"`
 	DestinationID    string    `json:"destinationId"`
 	TransformationID string    `json:"transformationId"`
 	TrackingPlanID   string    `json:"trackingPlanId"`
 	FailedStage      string    `json:"failedStage"`
+	EventType        string    `json:"eventType"`
+	EventName        string    `json:"eventName"`
 	ReceivedAt       time.Time `json:"receivedAt"`
 	FailedAt         time.Time `json:"failedAt"`
 }
@@ -63,8 +65,8 @@ func NewErrorIndexReporter(
 	eir.config.skipMaintenanceError = conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
 
-	eir.errIndexDB = jobsdb.NewForWrite(
-		"error_index",
+	eir.errIndexDB = jobsdb.NewForReadWrite(
+		ei,
 		jobsdb.WithDSLimit(eir.config.dsLimit),
 		jobsdb.WithConfig(conf),
 		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
@@ -81,71 +83,72 @@ func NewErrorIndexReporter(
 	return eir
 }
 
-// Report reports the metrics to the errIndexDB
-func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) {
-	if len(metrics) == 0 {
-		return
-	}
-
-	failedJobs := lo.SumBy(metrics, func(metric *types.PUReportedMetric) int {
+// Report reports the metrics to the ei JobsDB
+func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) error {
+	jobs := lo.Flatten(lo.FilterMap(metrics, func(metric *types.PUReportedMetric, _ int) ([]*jobsdb.JobT, bool) {
 		if metric.StatusDetail == nil {
-			return 0
-		}
-		return len(metric.StatusDetail.FailedMessages)
-	})
-	if failedJobs == 0 {
-		return
-	}
-
-	jobs := make([]*jobsdb.JobT, 0, failedJobs)
-
-	for _, metric := range metrics {
-		if metric.StatusDetail == nil {
-			continue
+			return nil, false
 		}
 
-		failedMessages := metric.StatusDetail.FailedMessages
-		if len(failedMessages) == 0 {
-			continue
-		}
+		var jobs []*jobsdb.JobT
+		for _, failedMessage := range metric.StatusDetail.FailedMessages {
+			workspaceID := eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 
-		for _, failedMessage := range failedMessages {
-			metadata := metadata{
+			payload := payload{
 				MessageID:        failedMessage.MessageID,
 				SourceID:         metric.SourceID,
 				DestinationID:    metric.DestinationID,
 				TransformationID: metric.TransformationID,
 				TrackingPlanID:   metric.TrackingPlanID,
 				FailedStage:      metric.PUDetails.PU,
-				FailedAt:         eir.now(),
+				EventName:        metric.StatusDetail.EventName,
+				EventType:        metric.StatusDetail.EventType,
 				ReceivedAt:       failedMessage.ReceivedAt,
+				FailedAt:         eir.now(),
+			}
+			payloadJSON, err := json.Marshal(payload)
+			if err != nil {
+				panic(fmt.Errorf("unable to marshal payload: %v", err))
 			}
 
-			metadataJSON, err := json.Marshal(metadata)
+			params := struct {
+				WorkspaceID string `json:"workspaceId"`
+				SourceID    string `json:"sourceId"`
+			}{
+				WorkspaceID: workspaceID,
+				SourceID:    metric.SourceID,
+			}
+			paramsJSON, err := json.Marshal(params)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("unable to marshal params: %v", err))
 			}
 
 			jobs = append(jobs, &jobsdb.JobT{
 				UUID:         uuid.New(),
-				UserID:       uuid.New().String(), // TODO: Check with @atzoum around what to use here?
-				Parameters:   metadataJSON,
-				CustomVal:    customVal,
-				EventPayload: json.RawMessage(`{}`),
+				UserID:       uuid.New().String(),
+				Parameters:   paramsJSON,
+				CustomVal:    ei,
+				EventPayload: payloadJSON,
 				EventCount:   0,
 				WorkspaceId:  eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID),
 			})
 		}
+
+		return jobs, len(jobs) > 0
+	}))
+
+	if len(jobs) == 0 {
+		return nil
 	}
 
 	if err := eir.errIndexDB.Store(eir.ctx, jobs); err != nil {
-		eir.log.Errorw("unable to store error index jobs", "error", err)
+		return fmt.Errorf("failed to store jobs: %v", err)
 	}
+
+	return nil
 }
 
-// DatabaseSyncer returns a syncer that syncs the database
-// Since errIndexDB already syncs the database,
-// It just returns a function that stops the errIndexDB once the context is done
+// DatabaseSyncer returns a function that stops the errIndexDB once the context is done
 func (eir *ErrorIndexReporter) DatabaseSyncer(
 	types.SyncerConfig,
 ) types.ReportingSyncer {

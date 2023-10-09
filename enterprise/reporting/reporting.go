@@ -507,21 +507,12 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
 	if len(metrics) == 0 {
-		return
+		return nil
 	}
 
-	var stmt *sql.Stmt
-	var err error
-
-	defer func() {
-		if err != nil {
-			_ = txn.Rollback()
-		}
-	}()
-
-	stmt, err = txn.Prepare(pq.CopyIn(ReportsTable,
+	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable,
 		"workspace_id", "namespace", "instance_id",
 		"source_definition_id",
 		"source_category",
@@ -546,7 +537,7 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 		"error_type",
 	))
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
 
@@ -585,16 +576,17 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
-			metric.StatusDetail.ErrorType)
+			metric.StatusDetail.ErrorType,
+		)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		panic(err)
+	if _, err = stmt.Exec(); err != nil {
+		return fmt.Errorf("executing final statement: %v", err)
 	}
+
+	return nil
 }
 
 func (r *DefaultReporter) getTags(label string) stats.Tags {
