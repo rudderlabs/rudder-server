@@ -212,7 +212,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		processor.WithFeaturesRetryMaxAttempts(0))
+		processor.NewNoOpGeoEnricher(),
+		processor.WithFeaturesRetryMaxAttempts(0),
+	)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)

@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/archiver"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -225,9 +226,21 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	geoEnricher, err := processor.NewGeoEnricher(config.Default, a.log, stats.Default)
-	if err != nil {
-		return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+	var geoEnricher proc.PipelineEnricher
+	if config.GetBool("GeoEnrichment.enabled", false) {
+
+		dbProvider, err := proc.NewGeoDBProvider(config.Default, a.log)
+		if err != nil {
+			return fmt.Errorf("creating new instance of db provider: %w", err)
+		}
+
+		geoEnricher, err = proc.NewGeoEnricher(dbProvider, config.Default, a.log, stats.Default)
+		if err != nil {
+			return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+		}
+
+	} else {
+		geoEnricher = proc.NewNoOpGeoEnricher()
 	}
 
 	p := proc.New(
@@ -321,6 +334,30 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	})
 
 	return g.Wait()
+}
+
+func s3FileDownloader(bucket, region, key, downloadPath string) error {
+	s3Manager, err := filemanager.NewS3Manager(map[string]interface{}{
+		"Bucket": bucket,
+		"Region": region,
+	}, logger.NewLogger(), func() time.Duration { return 1000 * time.Millisecond })
+	if err != nil {
+		return fmt.Errorf("creating a new instance of s3 file manager: %w", err)
+	}
+
+	f, err := os.Create(downloadPath)
+	if err != nil {
+		return fmt.Errorf("creating local file for storing database: %w", err)
+	}
+
+	defer f.Close()
+
+	err = s3Manager.Download(context.Background(), f, key)
+	if err != nil {
+		return fmt.Errorf("downloading instance of database from upstream: %w", err)
+	}
+
+	return nil
 }
 
 func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Handle) error {

@@ -669,6 +669,10 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	})
 })
 
+var _ = Describe("Processor with geoenrichment enabled", Ordered, func() {
+
+})
+
 var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	initProcessor()
 

@@ -2,8 +2,8 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net"
 	"os"
 	"time"
 
@@ -16,109 +16,196 @@ import (
 )
 
 type PipelineEnricher interface {
-	Enrich(sourceId string, request *types.GatewayBatchRequest)
+	Enrich(sourceId string, request *types.GatewayBatchRequest) error
 }
 
 type FileManager interface {
 	Download(context.Context, *os.File, string) error
 }
 
-type geolocationEnricher struct {
-	fetcher     geolocation.GeoFetcher
-	logger      logger.Logger
-	fileManager FileManager
-	stats       stats.Stats
+type Geolocation struct {
+	City     string `json:"city"`
+	Country  string `json:"country"`
+	Region   string `json:"region"`
+	Postal   string `json:"postal"`
+	Location string `json:"location"`
+	Timezone string `json:"timezone"`
 }
 
-func NewGeoEnricher(config *config.Config, log logger.Logger, stat stats.Stats) (PipelineEnricher, error) {
-
-	var (
-		bucket       = config.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region       = config.GetString("Geolocation.db.bucket.region", "us-east-1")
-		key          = config.GetString("Geolocation.db.key.path", "geolite2City.mmdb")
-		downloadPath = config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
-	)
-
-	s3Manager, err := filemanager.NewS3Manager(map[string]interface{}{
-		"Bucket": bucket,
-		"Region": region,
-	}, log, func() time.Duration { return 1000 * time.Millisecond })
-	if err != nil {
-		return nil, fmt.Errorf("creating a new instance of s3 file manager: %w", err)
+func extractMinimalGeoInfo(geocity *geolocation.GeoCity) *Geolocation {
+	if geocity == nil {
+		return nil
 	}
 
-	f, err := os.Create(downloadPath)
-	if err != nil {
-		return nil, fmt.Errorf("creating local file for storing database: %w", err)
+	toReturn := &Geolocation{
+		City:     geocity.City.Names["en"],
+		Country:  geocity.Country.IsoCode,
+		Postal:   geocity.Postal.Code,
+		Timezone: geocity.Location.TimeZone,
 	}
 
-	defer f.Close()
-
-	err = s3Manager.Download(context.Background(), f, key)
-	if err != nil {
-		return nil, fmt.Errorf("downloading instance of database from upstream: %w", err)
+	if len(geocity.Subdivisions) > 0 {
+		toReturn.Region = geocity.Subdivisions[0].Names["en"]
 	}
 
-	fetcher, err := geolocation.NewMaxmindGeoFetcher(downloadPath)
+	// default values of latitude and longitude can give
+	// incorrect result, so we have casted them in pointers so we know
+	// when the value is missing.
+	if geocity.Location.Latitude != nil && geocity.Location.Longitude != nil {
+		toReturn.Location = fmt.Sprintf("%f,%f",
+			*geocity.Location.Latitude,
+			*geocity.Location.Longitude,
+		)
+	}
+
+	return toReturn
+}
+
+type geolocationEnricher struct {
+	fetcher geolocation.GeoFetcher
+	logger  logger.Logger
+	stats   stats.Stats
+}
+
+func NewGeoEnricher(
+	dbProvider GeoDBProvider,
+	config *config.Config,
+	log logger.Logger,
+	statClient stats.Stats,
+) (PipelineEnricher, error) {
+	var upstreamDBKey = config.GetString("Geolocation.db.key.path", "geolite2City.mmdb")
+	localPath, err := dbProvider.GetDB(upstreamDBKey)
+	if err != nil {
+		return nil, fmt.Errorf("getting db from upstream: %w", err)
+	}
+
+	fetcher, err := geolocation.NewMaxmindGeoFetcher(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating new instance of maxmind's geolocation fetcher: %w", err)
 	}
 
 	return &geolocationEnricher{
-		fetcher:     fetcher,
-		fileManager: s3Manager,
-		stats:       stat,
-		logger:      log.Child("geolocation"),
+		fetcher: fetcher,
+		stats:   statClient,
+		logger:  log.Child("geolocation"),
 	}, nil
 }
 
 // Enrich function runs on a request of GatewayBatchRequest which contains
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
-func (e *geolocationEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) {
-	e.logger.Debugw("received a call to enrich gateway events for the customer", "sourceId", sourceId)
+func (e *geolocationEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
+	e.logger.Debugw("received a call to enrich gateway events for source", "sourceId", sourceId)
 
 	if request.RequestIP == "" {
 		e.stats.NewTaggedStat("proc_geo_enrincher_empty_ip", stats.CountType, stats.Tags{
 			"sourceId": sourceId,
 		}).Increment()
-		return
+
+		return nil
 	}
 
 	defer func(from time.Time) {
 		e.stats.NewTaggedStat(
-			"pro_geo_enricher_request_latency",
+			"proc_geo_enricher_request_latency",
 			stats.TimerType,
 			stats.Tags{"sourceId": sourceId}).Since(from)
 	}(time.Now())
 
-	parsedIP := net.ParseIP(request.RequestIP)
-	if parsedIP == nil {
-		e.stats.NewTaggedStat("proc_geo_enricher_invalid_ip", stats.CountType, stats.Tags{
-			"sourceId": sourceId,
-		}).Increment()
-		return
-	}
-
-	geoip, err := e.fetcher.GeoIP(parsedIP)
+	geoip, err := e.fetcher.GeoIP(request.RequestIP)
 	if err != nil {
-		e.logger.Errorw("unable to enrich the request with geolocation", "error", err)
-		e.stats.NewTaggedStat(
-			"proc_geo_enricher_geoip_lookup_failed",
-			stats.CountType,
-			stats.Tags{"sourceId": sourceId}).Increment()
-		return
+		switch {
+		// InvalidIP address being sent for lookup, log it for further analysis.
+		case errors.Is(err, geolocation.ErrInvalidIP):
+			e.logger.Errorw("unable to enrich the request with geolocation", "error", err, "ip", request.RequestIP)
+			e.stats.NewTaggedStat(
+				"proc_geo_enricher_invalid_ip",
+				stats.CountType,
+				stats.Tags{"sourceId": sourceId}).Increment()
+		default:
+			e.logger.Errorw("unable to enrich the request with geolocation", "error", err)
+			e.stats.NewTaggedStat(
+				"proc_geo_enricher_geoip_lookup_failed",
+				stats.CountType,
+				stats.Tags{"sourceId": sourceId}).Increment()
+		}
+
+		return fmt.Errorf("unable to enrich the request with geolocation: %w", err)
 	}
 
+	// for every event if we have context object set
+	// only then we add to geo section
 	for _, event := range request.Batch {
+
 		if context, ok := event["context"].(map[string]interface{}); ok {
-			context["geo"] = geoip
+			context["geo"] = extractMinimalGeoInfo(geoip)
 		}
 	}
+
+	return nil
+}
+
+func NewNoOpGeoEnricher() PipelineEnricher {
+	return NoOpGeoEnricher{}
 }
 
 type NoOpGeoEnricher struct {
 }
 
-func (NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) {
+func (NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
+	return nil
+}
+
+type GeoDBProvider interface {
+	GetDB(string) (string, error)
+}
+
+type geoDBProviderImpl struct {
+	bucket       string
+	region       string
+	downloadPath string
+	s3Manager    FileManager
+}
+
+// GetDB simply fetches the database from the upstream located at the key defined
+// in the argument.
+func (p *geoDBProviderImpl) GetDB(key string) (string, error) {
+	f, err := os.Open(p.downloadPath)
+	if err != nil {
+		return "", fmt.Errorf("creating a file to store db contents: %w", err)
+	}
+
+	defer f.Close()
+
+	err = p.s3Manager.Download(context.Background(), f, key)
+	if err != nil {
+		return "", fmt.Errorf("downloading db from upstream and storing in file: %w", err)
+	}
+
+	return p.downloadPath, nil
+}
+
+func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, error) {
+	var (
+		bucket       = config.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
+		region       = config.GetString("Geolocation.db.bucket.region", "us-east-1")
+		downloadPath = config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
+	)
+
+	manager, err := filemanager.NewS3Manager(map[string]interface{}{
+		"Bucket": bucket,
+		"Region": region}, log, func() time.Duration {
+		return 1000 * time.Millisecond
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("creating a new s3 manager client: %w", err)
+	}
+
+	return &geoDBProviderImpl{
+		bucket:       bucket,
+		region:       region,
+		downloadPath: downloadPath,
+		s3Manager:    manager,
+	}, nil
 }

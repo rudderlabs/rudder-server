@@ -83,7 +83,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
-	geoEnricher               PipelineEnricher
+	enricher                  PipelineEnricher
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
@@ -354,7 +354,11 @@ func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
-	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger, geoEnricher PipelineEnricher,
+	fileuploader fileuploader.Provider,
+	rsourcesService rsources.JobService,
+	destDebugger destinationdebugger.DestinationDebugger,
+	transDebugger transformationdebugger.TransformationDebugger,
+	enricher PipelineEnricher,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -375,7 +379,7 @@ func (proc *Handle) Setup(
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
-	proc.geoEnricher = geoEnricher
+	proc.enricher = enricher
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -1426,6 +1430,17 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 	return proc.config.eventAuditEnabled[workspaceID]
 }
 
+func (proc *Handle) geoEnrichmentEnabledForSource(sourceId string) bool {
+
+	source, err := proc.getSourceBySourceID(sourceId)
+	if err != nil {
+		proc.logger.Errorw("unable to get source by id for geoenrichment", "error", err.Error(), "sourceId", sourceId)
+		return false
+	}
+
+	return source.GeoEnrichmentEnabled
+}
+
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1487,8 +1502,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
-		if proc.config.geoEnrichmentEnabled {
-			proc.geoEnrichGatewayRequest(sourceId, &gatewayBatchEvent)
+		// Only if geo enrichment is enabled for deployment and then the source
+		// only then we perform the enrichment on gateway batch event.
+		if proc.config.geoEnrichmentEnabled && proc.geoEnrichmentEnabledForSource(sourceId) {
+			proc.enricher.Enrich(sourceId, &gatewayBatchEvent)
 		}
 
 		// Iterate through all the events in the batch
@@ -1864,23 +1881,6 @@ type transformationMessage struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
-}
-
-// geoEnrichGatewayRequest simply enriches the batch events for source received at gateway
-// with geolocation information.
-func (proc *Handle) geoEnrichGatewayRequest(sourceId string, request *types.GatewayBatchRequest) {
-	source, err := proc.getSourceBySourceID(sourceId)
-	if err != nil {
-		proc.logger.Errorw("unable to lookup source for geo enrichment", "sourceId", sourceId)
-		return
-	}
-
-	// only if customer at source level
-	// has enabled the flag, we will be enriching
-	// the events with geolocation information.
-	if source.GeoEnrichmentEnabled {
-		proc.geoEnricher.Enrich(sourceId, request)
-	}
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
