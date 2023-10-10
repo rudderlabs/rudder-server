@@ -210,6 +210,10 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	for i := range failedRecordsKeys {
 		k := failedRecordsKeys[i]
 		v := r.failedRecordsIndex[k]
+		// sort the records as well to avoid deadlocks
+		sort.Slice(v, func(i, j int) bool {
+			return string(v[i]) < string(v[j])
+		})
 		err := r.jobService.AddFailedRecords(ctx, tx, k.jobRunId, k.JobTargetKey, v)
 		if err != nil {
 			return err
