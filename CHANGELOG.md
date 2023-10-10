@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.15.0-test](https://github.com/rudderlabs/rudder-server/compare/v1.14.0...v1.15.0-test) (2023-10-10)
+
+
+### Features
+
+* add gzip bodyFormat support ([#3904](https://github.com/rudderlabs/rudder-server/issues/3904)) ([b050450](https://github.com/rudderlabs/rudder-server/commit/b050450cd02202f7d27c58d267f9c53b3bb64657))
+* added flags for event audit ([#3859](https://github.com/rudderlabs/rudder-server/issues/3859)) ([890ca68](https://github.com/rudderlabs/rudder-server/commit/890ca68ea983e436e08a9f11afc1bd89ce7d428e))
+* filter events support ([#3882](https://github.com/rudderlabs/rudder-server/issues/3882)) ([7ead8a9](https://github.com/rudderlabs/rudder-server/commit/7ead8a9e488033dab863554a9e0f8dedfe53ed86))
+* health dashboard ([#3906](https://github.com/rudderlabs/rudder-server/issues/3906)) ([dbd4ea6](https://github.com/rudderlabs/rudder-server/commit/dbd4ea6d1928fb4c9786ad6caef14620a7907562))
+
+
+### Bug Fixes
+
+* access_denied error handling for OAuth destinations ([#3853](https://github.com/rudderlabs/rudder-server/issues/3853)) ([0d30d3b](https://github.com/rudderlabs/rudder-server/commit/0d30d3b37fa1bef9a7cd8d11fd2deb9f481c3a51))
+* change jobsdb pathPrefix config ([a747653](https://github.com/rudderlabs/rudder-server/commit/a7476537817a636da828cb02ce6e13356ab0c06d))
+* event schema versions without a sample event ([#3913](https://github.com/rudderlabs/rudder-server/issues/3913)) ([ea92a2e](https://github.com/rudderlabs/rudder-server/commit/ea92a2e604abb1978f9c2b0ed96ac4b55855d4af))
+* googlecloudfunction destination implementation and refactor code ([#3907](https://github.com/rudderlabs/rudder-server/issues/3907)) ([44f5c23](https://github.com/rudderlabs/rudder-server/commit/44f5c238aea21902beb2a23bae17455bf23bf1a4))
+* increasing default marketo bulk upload timeout ([#3940](https://github.com/rudderlabs/rudder-server/issues/3940)) ([bd9166b](https://github.com/rudderlabs/rudder-server/commit/bd9166b55a6310249c2a1c78a3040f05e284992d))
+* increasing default marketo upload timeout ([bd9166b](https://github.com/rudderlabs/rudder-server/commit/bd9166b55a6310249c2a1c78a3040f05e284992d))
+* invalid JobsDB.backup.pathPrefix configuration ([#3921](https://github.com/rudderlabs/rudder-server/issues/3921)) ([a747653](https://github.com/rudderlabs/rudder-server/commit/a7476537817a636da828cb02ce6e13356ab0c06d))
+* replay request fails with 400 - request neither has anonymousId nor userId ([#3911](https://github.com/rudderlabs/rudder-server/issues/3911)) ([85adbbf](https://github.com/rudderlabs/rudder-server/commit/85adbbf586ef4aefb617ba9b428e304fe1d4458b))
+* router transformer client fails with error connect: cannot assign requested address ([#3898](https://github.com/rudderlabs/rudder-server/issues/3898)) ([f6c51b7](https://github.com/rudderlabs/rudder-server/commit/f6c51b7995d34368075f239ae0603a98e7842b19))
+* rsources dropped jobs at processor ([#3905](https://github.com/rudderlabs/rudder-server/issues/3905)) ([1c4fc5e](https://github.com/rudderlabs/rudder-server/commit/1c4fc5e9ab96f14785d5cb36f70c7f6a5f45250f))
+* skip snakecasing for namespace if skipNamespaceSnakeCasing is set to true ([#3932](https://github.com/rudderlabs/rudder-server/issues/3932)) ([6da163b](https://github.com/rudderlabs/rudder-server/commit/6da163be3d0d777f07c18154085a6bd9cc386af4))
+* test ssh ([#3915](https://github.com/rudderlabs/rudder-server/issues/3915)) ([36cdb44](https://github.com/rudderlabs/rudder-server/commit/36cdb44a64d72087f868ede95bcb4718e5e1c3da))
+* use dedup on new records for deltalake ([#3927](https://github.com/rudderlabs/rudder-server/issues/3927)) ([9192975](https://github.com/rudderlabs/rudder-server/commit/91929753bec137f5b234f322e7dbce3cfea96c79))
+* wh query types ([#3951](https://github.com/rudderlabs/rudder-server/issues/3951)) ([1e415e0](https://github.com/rudderlabs/rudder-server/commit/1e415e004e5c2b63560e9dc7b58290ae54076f14))
+
+
+### Miscellaneous
+
+* add rsources stats for dropped events at processor ([#3852](https://github.com/rudderlabs/rudder-server/issues/3852)) ([f5b8e7b](https://github.com/rudderlabs/rudder-server/commit/f5b8e7b4976945207ec0c011ed6d7fe30e1eb323))
+* adding missing query types ([#3917](https://github.com/rudderlabs/rudder-server/issues/3917)) ([be24be3](https://github.com/rudderlabs/rudder-server/commit/be24be3251970d863f798fc1fcceb39abff44d24))
+* app for warehouse ([#3862](https://github.com/rudderlabs/rudder-server/issues/3862)) ([5c9789f](https://github.com/rudderlabs/rudder-server/commit/5c9789fd5c5afb8e0a149cb96a90c8f351abb31f))
+* applying 1.14.3 hotfixes to main branch ([#3926](https://github.com/rudderlabs/rudder-server/issues/3926)) ([e08decb](https://github.com/rudderlabs/rudder-server/commit/e08decba7cb101f10b94df2517f58c00e4c9fee3))
+* backmerge 1.14.5 to master ([#3935](https://github.com/rudderlabs/rudder-server/issues/3935)) ([c7a485f](https://github.com/rudderlabs/rudder-server/commit/c7a485f0ef672919a20699d3d6c5bd7fe8de24d9))
+* cleanup JobsDB.useSingleGetJobsQuery config option ([#3893](https://github.com/rudderlabs/rudder-server/issues/3893)) ([be0a62e](https://github.com/rudderlabs/rudder-server/commit/be0a62e40b9a09bc922b22fb65c01fb52cac4555))
+* cleanup notifier ([#3867](https://github.com/rudderlabs/rudder-server/issues/3867)) ([98498ee](https://github.com/rudderlabs/rudder-server/commit/98498eed972a79016c9e531fc29abb9fa654ba6f))
+* different router retry limits for sources jobs ([#3944](https://github.com/rudderlabs/rudder-server/issues/3944)) ([f13dbc3](https://github.com/rudderlabs/rudder-server/commit/f13dbc367225d89e249430dd7afa2054fecaecc2))
+* empty batch payload ([#3947](https://github.com/rudderlabs/rudder-server/issues/3947)) ([1e20655](https://github.com/rudderlabs/rudder-server/commit/1e2065512ffe591cb9a22975319bb3e3b3da9c28))
+* enable user deletion for supported destinations ([#3946](https://github.com/rudderlabs/rudder-server/issues/3946)) ([6ceb4e5](https://github.com/rudderlabs/rudder-server/commit/6ceb4e500914d29fbf7cca093fb711bb02ed4c1e))
+* fix archiver test - inconsistent number of files ([#3902](https://github.com/rudderlabs/rudder-server/issues/3902)) ([01a0737](https://github.com/rudderlabs/rudder-server/commit/01a07370e23f28416eb0463a8d5870416f47b3ae))
+* introduce load table total rows ([#3851](https://github.com/rudderlabs/rudder-server/issues/3851)) ([1fcabdd](https://github.com/rudderlabs/rudder-server/commit/1fcabddf9624fc12c5e3f1426320e0703856cc61))
+* moving uploadSchema into UploadJob ([#3888](https://github.com/rudderlabs/rudder-server/issues/3888)) ([2a5547f](https://github.com/rudderlabs/rudder-server/commit/2a5547f8045ca4d4a0efcaeafaddda976cfe7bde))
+* omit failedMessages from reporting json object ([#3936](https://github.com/rudderlabs/rudder-server/issues/3936)) ([0969b31](https://github.com/rudderlabs/rudder-server/commit/0969b31f75477969aa002267925ef98a75534850))
+* populate error category ([#3949](https://github.com/rudderlabs/rudder-server/issues/3949)) ([37bbbbe](https://github.com/rudderlabs/rudder-server/commit/37bbbbea1faaba059269910d94ed912c65a4241c))
+* reporting feature ([#3912](https://github.com/rudderlabs/rudder-server/issues/3912)) ([37b9cbc](https://github.com/rudderlabs/rudder-server/commit/37b9cbc13fe5ccc8dc4ba80edcc0302ef72ec2ff))
+* rsources tests - postgres resources use different creds ([#3919](https://github.com/rudderlabs/rudder-server/issues/3919)) ([7ca721c](https://github.com/rudderlabs/rudder-server/commit/7ca721c1041d366471d97a9c357d200c776aea3a))
+* sampling errors if no message in the batch succeeds ([#3918](https://github.com/rudderlabs/rudder-server/issues/3918)) ([69be777](https://github.com/rudderlabs/rudder-server/commit/69be7771069cb57e212a9b309ea20a7676c0574c))
+* split warehouse package ([#3937](https://github.com/rudderlabs/rudder-server/issues/3937)) ([c94c953](https://github.com/rudderlabs/rudder-server/commit/c94c953ff672222248c07a4523f8eb0e90cf9676))
+* support replay with new file format ([#3834](https://github.com/rudderlabs/rudder-server/issues/3834)) ([5c76185](https://github.com/rudderlabs/rudder-server/commit/5c7618595f03243e14fb2748926661d8d433e954))
+* upgrade go mod replace versions ([#3880](https://github.com/rudderlabs/rudder-server/issues/3880)) ([3c3e407](https://github.com/rudderlabs/rudder-server/commit/3c3e407dba4234f528273662cc2e2e6007a47f8e))
+* upgrade go mod replace versions ([#3880](https://github.com/rudderlabs/rudder-server/issues/3880)) ([5c3aefb](https://github.com/rudderlabs/rudder-server/commit/5c3aefbc9956f30bb62f5e79ca55072abf63475a))
+* use common PAT instead of rudder-server-bot ([#3952](https://github.com/rudderlabs/rudder-server/issues/3952)) ([08d036e](https://github.com/rudderlabs/rudder-server/commit/08d036eed9f21dbae64169b555d6d7e4d350d2f4))
+* use memoized payloadFunc for dedup ([#3780](https://github.com/rudderlabs/rudder-server/issues/3780)) ([74f5f11](https://github.com/rudderlabs/rudder-server/commit/74f5f11db024c9cdd40f09d78fd783924c54be55))
+* use new reloadable config api for warehouse ([#3920](https://github.com/rudderlabs/rudder-server/issues/3920)) ([6f2b7b9](https://github.com/rudderlabs/rudder-server/commit/6f2b7b9a18225bce7c0837a137c9819302eda1fe))
+* use publicly available transformer docker image ([#3916](https://github.com/rudderlabs/rudder-server/issues/3916)) ([5f3820f](https://github.com/rudderlabs/rudder-server/commit/5f3820f98058410ad3d62166a263863863746e95))
+* use the new reloadable config api in reporting ([#3909](https://github.com/rudderlabs/rudder-server/issues/3909)) ([741fd74](https://github.com/rudderlabs/rudder-server/commit/741fd74b57ee104b9b0f7c314e034a965bd19684))
+* warehouse schema race and cleanup ([#3900](https://github.com/rudderlabs/rudder-server/issues/3900)) ([61883be](https://github.com/rudderlabs/rudder-server/commit/61883bed00204c543153e75fbfda553142100651))
+
 ## [1.14.6](https://github.com/rudderlabs/rudder-server/compare/v1.14.5...v1.14.6) (2023-10-04)
 
 
