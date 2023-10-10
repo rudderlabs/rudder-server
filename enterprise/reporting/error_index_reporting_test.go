@@ -9,6 +9,7 @@ import (
 	"github.com/ory/dockertest/v3"
 
 	"github.com/golang/mock/gomock"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -260,7 +261,9 @@ func TestErrorIndexReporter(t *testing.T) {
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 				eir.now = failedAt
-				eir.Report(tc.reports, nil)
+
+				err = eir.Report(tc.reports, nil)
+				require.NoError(t, err)
 
 				errIndexDB := jobsdb.NewForRead(ei, jobsdb.WithConfig(c))
 				err = errIndexDB.Start()
@@ -312,4 +315,5 @@ func TestErrorIndexReporter(t *testing.T) {
 	t.Run("Graceful shutdown", func(t *testing.T) {
 
 	})
+	t.Run("Graceful shutdown", func(t *testing.T) {})
 }
