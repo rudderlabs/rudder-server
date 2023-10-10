@@ -69,7 +69,7 @@ func (cs *configSubscriber) Subscribe(
 			for _, source := range wConfig.Sources {
 				workspaceIDForSourceIDMap[source.ID] = workspaceID
 
-				// Reduce to destination detail based on destination-id
+				// Reduce to destination detail based on destinationID
 				destinationIDMap = lo.Reduce(
 					source.Destinations,
 					func(agg map[string]destDetail, destination backendconfig.DestinationT, _ int) map[string]destDetail {

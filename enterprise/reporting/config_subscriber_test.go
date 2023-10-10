@@ -22,6 +22,7 @@ func TestConfigSubscriber(t *testing.T) {
 
 	unknownWokspaceID := "unknown-workspace-id"
 	unknownSourceID := "unknown-source-id"
+	unknownDestinationID := "unknown-destination-id"
 
 	otherWorkspaceID := "other-workspace-id"
 	otherSourceID := "other-source-id"
@@ -81,9 +82,7 @@ func TestConfigSubscriber(t *testing.T) {
 
 		require.Equal(t, workspaceID, cs.WorkspaceID())
 		require.Equal(t, workspaceID, cs.WorkspaceIDFromSource(sourceID))
-		require.Empty(t, cs.WorkspaceIDFromSource(unknownSourceID))
-		require.Equal(
-			t,
+		require.Equal(t,
 			destDetail{
 				destinationDefinitionID: destinationDefinitionID,
 				destType:                destType,
@@ -91,6 +90,9 @@ func TestConfigSubscriber(t *testing.T) {
 			cs.GetDestDetail(destinationID),
 		)
 		require.True(t, cs.IsPIIReportingDisabled(workspaceID))
+
+		require.Empty(t, cs.GetDestDetail(unknownDestinationID))
+		require.Empty(t, cs.WorkspaceIDFromSource(unknownSourceID))
 		require.False(t, cs.IsPIIReportingDisabled(unknownWokspaceID))
 
 		cancel()
@@ -174,8 +176,7 @@ func TestConfigSubscriber(t *testing.T) {
 
 		require.Empty(t, cs.WorkspaceID())
 		require.Equal(t, otherWorkspaceID, cs.WorkspaceIDFromSource(otherSourceID))
-		require.Equal(
-			t,
+		require.Equal(t,
 			destDetail{
 				destinationDefinitionID: otherDestinationDefinitionID,
 				destType:                destType,
@@ -218,7 +219,7 @@ func TestConfigSubscriber(t *testing.T) {
 		require.Empty(t, cs.WorkspaceID())
 		require.Empty(t, cs.WorkspaceIDFromSource(sourceID))
 		require.Empty(t, cs.GetDestDetail(destinationID))
-		require.False(t, cs.IsPIIReportingDisabled(unknownWokspaceID))
+		require.False(t, cs.IsPIIReportingDisabled(workspaceID))
 
 		<-subscribeDone
 	})

@@ -15,7 +15,11 @@ func TestGetQueryType(t *testing.T) {
 	}{
 		{"select 1", "Select * from table", "SELECT", true},
 		{"select 2", "\t\n\n  \t\n\n  seLeCt * from table", "SELECT", true},
-		{"update", "\t\n\n  \t\n\n  UpDaTe something SET some_column = 'x'", "UPDATE", true},
+		{"select 3", "\n\t\tWITH load_files as (\n\t\t  SELECT\n\t\t\tlocation,\n\t\t\tmetadata,\n\t\t\t  " +
+			"FROM\n\t\t\tt1\n\t\t  WHERE\n\t\t\ta IN (1,2,3) \n\t\t)\n\t\tSELECT\n\t\t  location,\n\t\t  " +
+			"metadata\n\t\tFROM\n\t\t  t2\n\t\tWHERE\n\t\t  x = 1\n\t\t;\n", "SELECT", true},
+		{"update 1", "\t\n\n  \t\n\n  UpDaTe something SET some_column = 'x'", "UPDATE", true},
+		{"update 2", "\n\t\tUPDATE\n\t\t  t1\n\t\tSET\n\t\t  a=$2,b=$3\n\t\tWHERE\n\t\t id = $1;", "UPDATE", true},
 		{"delete", "\t\n\n  \t\n\n  DeLeTe FROm something", "DELETE_FROM", true},
 		{"insert", "\t\n\n  \t\n\n  InSerT INTO something", "INSERT_INTO", true},
 		{"copy", "\t\n\n  \t\n\n  cOpY t1 from t2", "COPY", true},

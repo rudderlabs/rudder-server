@@ -43,9 +43,9 @@ func TestFeatureSetup(t *testing.T) {
 }
 
 func TestSetupForDelegates(t *testing.T) {
-	config.Reset()
 	logger.Reset()
 
+	config.Reset()
 	defer config.Reset()
 
 	pool, err := dockertest.NewPool("")

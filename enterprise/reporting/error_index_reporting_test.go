@@ -89,32 +89,32 @@ func TestErrorIndexReporter(t *testing.T) {
 			reports         []*types.PUReportedMetric
 			expectedPayload []payload
 		}{
-			//{
-			//	name:            "empty metrics",
-			//	reports:         []*types.PUReportedMetric{},
-			//	expectedPayload: []payload{},
-			//},
-			//{
-			//	name: "without failed messages",
-			//	reports: []*types.PUReportedMetric{
-			//		{
-			//			ConnectionDetails: types.ConnectionDetails{
-			//				SourceID:         sourceID,
-			//				DestinationID:    destinationID,
-			//				TransformationID: transformationID,
-			//				TrackingPlanID:   trackingPlanID,
-			//			},
-			//			PUDetails: types.PUDetails{
-			//				PU: reportedBy,
-			//			},
-			//			StatusDetail: &types.StatusDetail{
-			//				EventName: eventName,
-			//				EventType: eventType,
-			//			},
-			//		},
-			//	},
-			//	expectedPayload: []payload{},
-			//},
+			{
+				name:            "empty metrics",
+				reports:         []*types.PUReportedMetric{},
+				expectedPayload: []payload{},
+			},
+			{
+				name: "without failed messages",
+				reports: []*types.PUReportedMetric{
+					{
+						ConnectionDetails: types.ConnectionDetails{
+							SourceID:         sourceID,
+							DestinationID:    destinationID,
+							TransformationID: transformationID,
+							TrackingPlanID:   trackingPlanID,
+						},
+						PUDetails: types.PUDetails{
+							PU: reportedBy,
+						},
+						StatusDetail: &types.StatusDetail{
+							EventName: eventName,
+							EventType: eventType,
+						},
+					},
+				},
+				expectedPayload: []payload{},
+			},
 			{
 				name: "filter with failed messages",
 				reports: []*types.PUReportedMetric{
@@ -261,6 +261,7 @@ func TestErrorIndexReporter(t *testing.T) {
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 				eir.now = failedAt
+				defer eir.errIndexDB.TearDown()
 
 				err = eir.Report(tc.reports, nil)
 				require.NoError(t, err)
@@ -268,7 +269,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				errIndexDB := jobsdb.NewForRead(ei, jobsdb.WithConfig(c))
 				err = errIndexDB.Start()
 				require.NoError(t, err)
-				defer func() { errIndexDB.Close() }()
+				defer errIndexDB.TearDown()
 
 				jr, err := errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					JobsLimit: 100,
@@ -295,8 +296,6 @@ func TestErrorIndexReporter(t *testing.T) {
 					err = json.Unmarshal(job.Parameters, &params)
 					require.NoError(t, err)
 
-					t.Log(string(job.Parameters))
-
 					require.Equal(t, params["sourceId"], sourceID)
 					require.Equal(t, params["workspaceId"], workspaceID)
 				}
@@ -309,11 +308,48 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 	t.Run("panic in case of not able to start errIndexDB", func(t *testing.T) {
 		require.Panics(t, func() {
-			NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
+			eir := NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
+			defer eir.errIndexDB.TearDown()
 		})
 	})
 	t.Run("Graceful shutdown", func(t *testing.T) {
+		postgresContainer, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
 
+		c := config.New()
+		c.Set("DB.port", postgresContainer.Port)
+		c.Set("DB.user", postgresContainer.User)
+		c.Set("DB.name", postgresContainer.Database)
+		c.Set("DB.password", postgresContainer.Password)
+
+		ctx, cancel := context.WithCancel(ctx)
+
+		cs := newConfigSubscriber(logger.NOP)
+
+		subscribeDone := make(chan struct{})
+		go func() {
+			defer close(subscribeDone)
+
+			cs.Subscribe(ctx, mockBackendConfig)
+		}()
+
+		eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
+		defer eir.errIndexDB.TearDown()
+
+		err = eir.Report([]*types.PUReportedMetric{}, nil)
+		require.NoError(t, err)
+
+		syncerDone := make(chan struct{})
+		go func() {
+			defer close(syncerDone)
+
+			syncer := eir.DatabaseSyncer(types.SyncerConfig{})
+			syncer()
+		}()
+
+		cancel()
+
+		<-subscribeDone
+		<-syncerDone
 	})
-	t.Run("Graceful shutdown", func(t *testing.T) {})
 }
