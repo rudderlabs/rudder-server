@@ -35,6 +35,21 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 	return m.recorder
 }
 
+// DisableDestination mocks base method.
+func (m *MockAuthorizer) DisableDestination(arg0 *backendconfig.DestinationT, arg1, arg2 string) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableDestination", arg0, arg1, arg2)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// DisableDestination indicates an expected call of DisableDestination.
+func (mr *MockAuthorizerMockRecorder) DisableDestination(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableDestination", reflect.TypeOf((*MockAuthorizer)(nil).DisableDestination), arg0, arg1, arg2)
+}
+
 // FetchToken mocks base method.
 func (m *MockAuthorizer) FetchToken(arg0 *oauth.RefreshTokenParams) (int, *oauth.AuthResponse) {
 	m.ctrl.T.Helper()
@@ -63,19 +78,4 @@ func (m *MockAuthorizer) RefreshToken(arg0 *oauth.RefreshTokenParams) (int, *oau
 func (mr *MockAuthorizerMockRecorder) RefreshToken(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockAuthorizer)(nil).RefreshToken), arg0)
-}
-
-// UpdateAuthStatusToInactive mocks base method.
-func (m *MockAuthorizer) UpdateAuthStatusToInactive(arg0 *backendconfig.DestinationT, arg1, arg2 string) (int, string) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateAuthStatusToInactive", arg0, arg1, arg2)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(string)
-	return ret0, ret1
-}
-
-// UpdateAuthStatusToInactive indicates an expected call of UpdateAuthStatusToInactive.
-func (mr *MockAuthorizerMockRecorder) UpdateAuthStatusToInactive(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAuthStatusToInactive", reflect.TypeOf((*MockAuthorizer)(nil).UpdateAuthStatusToInactive), arg0, arg1, arg2)
 }
