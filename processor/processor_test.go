@@ -2258,11 +2258,18 @@ var _ = Describe("Processor", Ordered, func() {
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				transformer.DestTransformerStage,
-				false,
-				false)
+				types.DEST_TRANSFORMER,
+				types.EVENT_FILTER,
+			)
 
-			key := fmt.Sprintf("%s!<<#>>!%s!<<#>>!%s!<<#>>!%s!<<#>>!%s", commonMetadata.SourceID, commonMetadata.DestinationID, commonMetadata.SourceJobRunID, commonMetadata.EventName, commonMetadata.EventType)
+			key := fmt.Sprintf(
+				"%s!<<#>>!%s!<<#>>!%s!<<#>>!%s!<<#>>!%s",
+				commonMetadata.SourceID,
+				commonMetadata.DestinationID,
+				commonMetadata.SourceJobRunID,
+				commonMetadata.EventName,
+				commonMetadata.EventType,
+			)
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
