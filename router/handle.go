@@ -611,7 +611,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.AUTH_STATUS_INACTIVE:
-			authStatusStCd, _ := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
 			authStatusMsg := gjson.Get(trRespBody, "message").Raw
 			return authStatusStCd, authStatusMsg
 		case oauth.REFRESH_TOKEN:
@@ -631,7 +631,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				authStatusInactiveStCode, _ := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+				authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
 				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
@@ -654,7 +654,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) (int, string) {
+func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
 	inactiveAuthStatusStatTags := stats.Tags{
 		"id":          destination.ID,
 		"destType":    destination.DestinationDefinition.Name,
@@ -662,12 +662,12 @@ func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.Destinat
 		"success":     "true",
 		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.UpdateAuthStatusToInactive(destination, workspaceID, rudderAccountId)
+	errCatStatusCode, _ := rt.oauth.UpdateAuthStatusToInactive(destination, workspaceID, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
 		// Error while inactivating authStatus
 		inactiveAuthStatusStatTags["success"] = "false"
 	}
 	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
 	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest, errCatResponse
+	return http.StatusBadRequest
 }
