@@ -128,6 +128,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				}
 				payload = strings.NewReader(formValues.Encode())
 			case "GZIP":
+				fmt.Printf("--- In GZIP ---")
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
 					return &utils.SendPostResponse{
@@ -155,6 +156,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 
 				headers["Content-Encoding"] = "gzip"
 				payload = &buf
+				fmt.Printf("payload: %s", payload)
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
 			}
