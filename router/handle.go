@@ -113,6 +113,8 @@ type Handle struct {
 			process   *partition.Stats
 		}
 	}
+
+	drainer routerutils.Drainer
 }
 
 // activePartitions returns the list of active partitions, depending on the active isolation strategy

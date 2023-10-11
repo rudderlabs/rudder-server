@@ -89,13 +89,9 @@ func (w *worker) workLoop() {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
 			w.rt.destinationsMapMu.RLock()
-			abort, abortReason := routerutils.ToBeDrained(
+			abort, abortReason := w.rt.drainer.Drain(
 				job,
 				parameters,
-				routerutils.AbortConfigs{
-					DestinationIDs: w.rt.reloadableConfig.toAbortDestinationIDs.Load(),
-					JobRunIDs:      w.rt.reloadableConfig.toAbortJobRunIDs.Load(),
-				},
 				w.rt.destinationsMap,
 			)
 			abortTag := abortReason

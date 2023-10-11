@@ -603,7 +603,7 @@ var _ = Describe("router", func() {
 		})
 
 		It("aborts jobs that bear a abort configured jobRunId", func() {
-			config.Set("RSources.toAbortJobRunIDs", "someJobRunId")
+			conf.Set("RSources.toAbortJobRunIDs", "someJobRunId")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}

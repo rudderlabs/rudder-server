@@ -71,46 +71,6 @@ func (jp *JobParameters) ParseReceivedAtTime() time.Time {
 	return receivedAt
 }
 
-type AbortConfigs struct {
-	DestinationIDs string
-	JobRunIDs      string
-	// ...
-}
-
-func ToBeDrained(
-	job *jobsdb.JobT,
-	jobParams JobParameters,
-	abortConfig AbortConfigs,
-	destinationsMap map[string]*DestinationWithSources,
-) (bool, string) {
-	// drain if job is older than the destination's retention time
-	createdAt := job.CreatedAt
-	destID := jobParams.DestinationID
-	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
-		return true, "job expired"
-	}
-
-	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {
-		return true, "destination is disabled"
-	}
-
-	if abortConfig.DestinationIDs != "" {
-		abortIDs := strings.Split(abortConfig.DestinationIDs, ",")
-		if slices.Contains(abortIDs, destID) {
-			return true, "destination configured to abort"
-		}
-	}
-
-	if abortConfig.JobRunIDs != "" {
-		abortIDs := strings.Split(abortConfig.JobRunIDs, ",")
-		if slices.Contains(abortIDs, jobParams.SourceJobRunID) {
-			return true, "jobRunID configured to abort"
-		}
-	}
-
-	return false, ""
-}
-
 // rawMsg passed must be a valid JSON
 func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	resp, err := sjson.SetBytes(rawMsg, key, val)
@@ -134,4 +94,60 @@ func EnhanceJsonWithTime(t time.Time, key string, resp []byte) []byte {
 
 func IsNotEmptyString(s string) bool {
 	return len(strings.TrimSpace(s)) > 0
+}
+
+type Drainer interface {
+	Drain(
+		job *jobsdb.JobT,
+		jobParams JobParameters,
+		destinationsMap map[string]*DestinationWithSources,
+	) (bool, string)
+}
+
+func NewDrainer(conf *config.Config) Drainer {
+	return &drainer{
+		destinationIDs: conf.GetReloadableStringSliceVar(
+			[]string{},
+			"Router.toAbortDestinationIDs",
+		),
+		jobRunIDs: conf.GetReloadableStringSliceVar(
+			[]string{},
+			"RSources.toAbortJobRunIDs",
+		),
+	}
+}
+
+type drainer struct {
+	destinationIDs misc.ValueLoader[[]string]
+	jobRunIDs      misc.ValueLoader[[]string]
+}
+
+func (d *drainer) Drain(
+	job *jobsdb.JobT,
+	jobParams JobParameters,
+	destinationsMap map[string]*DestinationWithSources,
+) (bool, string) {
+	createdAt := job.CreatedAt
+	destID := jobParams.DestinationID
+	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
+		return true, "job expired"
+	}
+
+	if dest, ok := destinationsMap[destID]; ok && !dest.Destination.Enabled {
+		return true, "destination is disabled"
+	}
+
+	if len(d.destinationIDs.Load()) > 0 {
+		if slices.Contains(d.destinationIDs.Load(), destID) {
+			return true, "destination configured to abort"
+		}
+	}
+
+	if len(d.jobRunIDs.Load()) > 0 {
+		if slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+			return true, "cancelled jobRunID"
+		}
+	}
+
+	return false, ""
 }

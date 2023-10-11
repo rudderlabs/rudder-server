@@ -58,6 +58,7 @@ func (rt *Handle) Setup(
 	rt.errorDB = errorDB
 	rt.destType = destType
 
+	rt.drainer = routerutils.NewDrainer(config)
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()
 	rt.crashRecover()
@@ -265,8 +266,6 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.maxStatusUpdateWait = config.GetReloadableDurationVar(5, time.Second, "Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS")
 	rt.reloadableConfig.minRetryBackoff = config.GetReloadableDurationVar(10, time.Second, "Router.minRetryBackoff", "Router.minRetryBackoffInS")
 	rt.reloadableConfig.maxRetryBackoff = config.GetReloadableDurationVar(300, time.Second, "Router.maxRetryBackoff", "Router.maxRetryBackoffInS")
-	rt.reloadableConfig.toAbortDestinationIDs = config.GetReloadableStringVar("", "Router.toAbortDestinationIDs")
-	rt.reloadableConfig.toAbortJobRunIDs = config.GetReloadableStringVar("", "RSources.toAbortJobRunIDs")
 	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, "Router.pickupFlushInterval")
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, "Router.failingJobsPenaltySleep")
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, "Router.failingJobsPenaltyThreshold")

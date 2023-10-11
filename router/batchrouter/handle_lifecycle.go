@@ -29,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -49,6 +49,7 @@ func (brt *Handle) Setup(
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
+	conf *config.Config,
 ) {
 	brt.destType = destType
 	brt.backendConfig = backendConfig
@@ -94,6 +95,7 @@ func (brt *Handle) Setup(
 	brt.disableEgress = config.GetBoolVar(false, "disableEgress")
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	brt.setupReloadableVars()
+	brt.drainer = routerutils.NewDrainer(conf)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
@@ -103,7 +105,7 @@ func (brt *Handle) Setup(
 	brt.backendConfigInitializedOnce = sync.Once{}
 	brt.backendConfigInitialized = make(chan bool)
 
-	brt.destinationsMap = map[string]*router_utils.DestinationWithSources{}
+	brt.destinationsMap = map[string]*routerutils.DestinationWithSources{}
 	brt.connectionWHNamespaceMap = map[string]string{}
 	brt.encounteredMergeRuleMap = map[string]map[string]bool{}
 	brt.uploadIntervalMap = map[string]time.Duration{}
@@ -199,8 +201,6 @@ func (brt *Handle) setupReloadableVars() {
 	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter.minIdleSleep")
 	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
 	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.mainLoopFreq")
-	brt.toAbortDestinationIDs = config.GetReloadableStringVar("", "BatchRouter.toAbortDestinationIDs")
-	brt.toAbortJobRunIDs = config.GetReloadableStringVar("", "RSources.toAbortJobRunIDs")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
@@ -366,7 +366,7 @@ func (brt *Handle) backendConfigSubscriber() {
 	}
 	defer initialized()
 	for data := range ch {
-		destinationsMap := map[string]*router_utils.DestinationWithSources{}
+		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		connectionWHNamespaceMap := map[string]string{}
 		uploadIntervalMap := map[string]time.Duration{}
 		config := data.Data.(map[string]backendconfig.ConfigT)
@@ -376,7 +376,7 @@ func (brt *Handle) backendConfigSubscriber() {
 					for _, destination := range source.Destinations {
 						if destination.DestinationDefinition.Name == brt.destType {
 							if _, ok := destinationsMap[destination.ID]; !ok {
-								destinationsMap[destination.ID] = &router_utils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
+								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
