@@ -144,7 +144,8 @@ func (d *drainer) Drain(
 	}
 
 	if len(d.jobRunIDs.Load()) > 0 {
-		if slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+		if jobParams.SourceJobRunID != "" &&
+			slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
 			return true, "cancelled jobRunID"
 		}
 	}

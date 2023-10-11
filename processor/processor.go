@@ -1591,10 +1591,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 			// check if jobRunId is cancelled
 			if len(proc.drainConfig.jobRunIDs.Load()) > 0 {
-				if slices.Contains(
-					proc.drainConfig.jobRunIDs.Load(),
-					commonMetadataFromSingularEvent.SourceJobRunID,
-				) {
+				if commonMetadataFromSingularEvent.SourceJobRunID != "" &&
+					slices.Contains(
+						proc.drainConfig.jobRunIDs.Load(),
+						commonMetadataFromSingularEvent.SourceJobRunID,
+					) {
 					proc.logger.Debugf(
 						"cancelled jobRunID: %s",
 						commonMetadataFromSingularEvent.SourceJobRunID,
