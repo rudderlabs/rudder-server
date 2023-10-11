@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
 	"github.com/tidwall/sjson"
@@ -223,12 +225,14 @@ func (brt *Handle) updateRudderSourcesStats(
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	for _, status := range jobStatuses {
-		if status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
-			status.JobState == jobsdb.Aborted.State {
-			rsourcesStats.CollectFailedRecords([]*jobsdb.JobStatusT{status})
-		}
-	}
+	rsourcesStats.CollectFailedRecords(
+		lo.Filter(
+			jobStatuses,
+			func(status *jobsdb.JobStatusT, _ int) bool {
+				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
+			},
+		),
+	)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)

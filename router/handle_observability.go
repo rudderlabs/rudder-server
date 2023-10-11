@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -88,17 +90,20 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 func (rt *Handle) updateRudderSourcesStats(
 	ctx context.Context,
 	tx jobsdb.UpdateSafeTx,
-	workerJobStatuses []workerJobStatus,
+	jobs []*jobsdb.JobT,
+	jobStatuses []*jobsdb.JobStatusT,
 ) error {
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
-	for _, wj := range workerJobStatuses {
-		rsourcesStats.BeginProcessing([]*jobsdb.JobT{wj.job})
-		rsourcesStats.CollectStats([]*jobsdb.JobStatusT{wj.status})
-		if wj.status.ErrorCode == routerutils.DRAIN_ERROR_CODE &&
-			wj.status.JobState == jobsdb.Aborted.State {
-			rsourcesStats.CollectFailedRecords([]*jobsdb.JobStatusT{wj.status})
-		}
-	}
+	rsourcesStats.BeginProcessing(jobs)
+	rsourcesStats.CollectStats(jobStatuses)
+	rsourcesStats.CollectFailedRecords(
+		lo.Filter(
+			jobStatuses,
+			func(status *jobsdb.JobStatusT, _ int) bool {
+				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
+			},
+		),
+	)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
