@@ -654,7 +654,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -846,7 +846,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Expect(jobs).To(HaveLen(2))
 				})
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -995,7 +995,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1046,7 +1046,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -1076,7 +1076,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
@@ -1112,7 +1112,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should only send proper stats, if not pending jobs are returned", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			processor.Setup(
 				c.mockBackendConfig,
@@ -1277,7 +1277,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
@@ -1485,7 +1485,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1666,7 +1666,7 @@ var _ = Describe("Processor", Ordered, func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, true, false)
 
@@ -1773,7 +1773,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1910,7 +1910,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1997,7 +1997,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -2036,13 +2036,99 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
+
+		It("should drop messages where jobRunID is cancelled", func() {
+			messages := map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+			}
+			payload := createBatchPayload(
+				WriteKeyEnabledNoUT2,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{
+					messages["message-1"],
+				},
+				createMessagePayload,
+			)
+			payload, _ = sjson.SetBytes(payload, "batch.0.type", "identify")
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  payload,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParametersWithSources(SourceIDEnabledNoUT2),
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+				CustomValFilters: gatewayCustomVal,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+			// Test transformer failure
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any()).Times(0)
+
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+				})
+
+			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), "job_run_id_1", gomock.Any(), rsources.Stats{Out: 1}).Times(1)
+
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(0)
+
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
+			}).Return(nil).Times(0)
+
+			// One Store call is expected for all events
+			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
+				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
+
+			config.Set("RSources.toAbortJobRunIDs", "job_run_id_1")
+			defer config.Reset()
+			processorSetupAndAssertJobHandling(processor, c)
+		})
 	})
 
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -2100,7 +2186,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -2173,7 +2259,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2212,7 +2298,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, true)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2433,7 +2519,7 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("updateMetricMaps Tests", func() {
 		It("Should update metric maps", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.reportingEnabled = true
 			proc.reporting = &mockReportingTypes.MockReporting{}
 
@@ -3490,74 +3576,6 @@ var _ = Describe("Static Function Tests", func() {
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
 		})
-
-		It("filters events if jobRunID is configured to abort", func() {
-			destinationConfig := backendconfig.DestinationT{
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{},
-				},
-			}
-			config.Set("RSources.toAbortJobRunIDs", "abortJobRunID")
-
-			events := []transformer.TransformerEvent{
-				{
-					Metadata: transformer.Metadata{
-						MessageID:      "message-1",
-						SourceJobRunID: "abortJobRunID",
-					},
-					Message: map[string]interface{}{
-						"some-key-1": "some-value-1",
-						"type":       "  IDENTIFY ",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.Metadata{
-						MessageID: "message-2",
-					},
-					Message: map[string]interface{}{
-						"some-key-2": "some-value-2",
-						"type":       "track",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.Metadata{
-						MessageID: "message-2",
-					},
-					Message: map[string]interface{}{
-						"some-key-2": "some-value-2",
-						"type":       123,
-					},
-					Destination: destinationConfig,
-				},
-			}
-
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
-					{
-						Output:     events[1].Message,
-						StatusCode: 200,
-						Metadata:   events[1].Metadata,
-					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
-					},
-				},
-				FailedEvents: []transformer.TransformerResponse{
-					{
-						Output:     events[0].Message,
-						StatusCode: 400,
-						Metadata:   events[0].Metadata,
-						Error:      "jobRunID configured to abort",
-					},
-				},
-			}
-			response := ConvertToFilteredTransformerResponse(events, true)
-			Expect(response).To(Equal(expectedResponse))
-		})
 	})
 })
 
@@ -3835,7 +3853,7 @@ var _ = Describe("TestJobSplitter", func() {
 	}
 	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
 		It("default subJobSize: 2k", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
@@ -3862,7 +3880,7 @@ var _ = Describe("TestJobSplitter", func() {
 			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.config.subJobSize = 1
 			expectedSubJobs := []subJob{
 				{
@@ -3909,7 +3927,7 @@ var _ = Describe("TestJobSplitter", func() {
 			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.config.subJobSize = 2
 			expectedSubJobs := []subJob{
 				{

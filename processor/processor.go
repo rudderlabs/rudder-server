@@ -62,14 +62,15 @@ const (
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func NewHandle(transformer transformer.Transformer) *Handle {
-	h := &Handle{transformer: transformer}
+func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
+	h := &Handle{transformer: transformer, conf: c}
 	h.loadConfig()
 	return h
 }
 
 // Handle is a handle to the processor module
 type Handle struct {
+	conf          *config.Config
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
 	lastJobID     int64
@@ -143,6 +144,10 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
+	}
+
+	drainConfig struct {
+		jobRunIDs misc.ValueLoader[[]string]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -351,8 +356,11 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 
 // Setup initializes the module
 func (proc *Handle) Setup(
-	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
+	backendConfig backendconfig.BackendConfig,
+	gatewayDB, routerDB, batchRouterDB,
+	readErrorDB, writeErrorDB,
+	eventSchemaDB, archivalDB jobsdb.JobsDB,
+	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
@@ -364,6 +372,9 @@ func (proc *Handle) Setup(
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	if proc.conf == nil {
+		proc.conf = config.Default
+	}
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
@@ -483,9 +494,10 @@ func (proc *Handle) Setup(
 }
 
 func (proc *Handle) setupReloadableVars() {
-	proc.jobdDBQueryRequestTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
-	proc.jobsDBCommandTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
-	proc.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	proc.jobdDBQueryRequestTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	proc.jobsDBCommandTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
+	proc.jobdDBMaxRetries = proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	proc.drainConfig.jobRunIDs = proc.conf.GetReloadableStringSliceVar([]string{}, "RSources.toAbortJobRunIDs")
 }
 
 // Start starts this processor's main loops.
@@ -1577,6 +1589,19 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			if !proc.isDestinationAvailable(singularEvent, sourceId) {
 				continue
 			}
+			// check if jobRunId is cancelled
+			if len(proc.drainConfig.jobRunIDs.Load()) > 0 {
+				if slices.Contains(
+					proc.drainConfig.jobRunIDs.Load(),
+					commonMetadataFromSingularEvent.SourceJobRunID,
+				) {
+					proc.logger.Debugf(
+						"cancelled jobRunID: %s",
+						commonMetadataFromSingularEvent.SourceJobRunID,
+					)
+					continue
+				}
+			}
 
 			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
 				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
@@ -2555,26 +2580,9 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 	supportedMessageTypesCache := make(map[string]*cacheValue)
 	supportedMessageEventsCache := make(map[string]*cacheValue)
 
-	toAbortJobRunIDs := config.GetStringVar("", "RSources.toAbortJobRunIDs")
-
 	// filter unsupported message types
 	for i := range events {
 		event := &events[i]
-
-		if toAbortJobRunIDs != "" {
-			abortIDs := strings.Split(toAbortJobRunIDs, ",")
-			if slices.Contains(abortIDs, event.Metadata.SourceJobRunID) {
-				failedEvents = append(failedEvents,
-					transformer.TransformerResponse{
-						Output:     event.Message,
-						StatusCode: 400,
-						Metadata:   event.Metadata,
-						Error:      "jobRunID configured to abort",
-					},
-				)
-				continue
-			}
-		}
 
 		if filter {
 			// filter unsupported message types
