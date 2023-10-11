@@ -446,7 +446,7 @@ func (eventOrderMethods) countDrainedJobs(db *sql.DB) int {
 
 	for _, table := range tables {
 		var dsCount int
-		_ = db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE error_code = ?`, utils.DRAIN_ERROR_CODE).Scan(&count)
+		_ = db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE error_code = $1`, utils.DRAIN_ERROR_CODE).Scan(&count)
 		count += dsCount
 	}
 	return count
