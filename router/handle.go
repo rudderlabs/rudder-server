@@ -611,7 +611,9 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.AUTH_STATUS_INACTIVE:
-			return rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			authStatusStCd, _ := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			authStatusMsg := gjson.Get(trRespBody, "message").Raw
+			return authStatusStCd, authStatusMsg
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -629,7 +631,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				authStatusInactiveStCode, errResp := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+				authStatusInactiveStCode, _ := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
 				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
@@ -638,7 +640,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
-				return authStatusInactiveStCode, errResp
+				return authStatusInactiveStCode, refSecret.ErrorMessage
 			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {

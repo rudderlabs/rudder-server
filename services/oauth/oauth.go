@@ -46,8 +46,9 @@ type AccountSecret struct {
 	Secret         json.RawMessage `json:"secret"`
 }
 type AuthResponse struct {
-	Account AccountSecret
-	Err     string
+	Account      AccountSecret
+	Err          string
+	ErrorMessage string
 }
 
 type OAuthStats struct {
@@ -349,13 +350,15 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		return http.StatusInternalServerError
 	}
 
-	if refErrMsg := getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
+	if errType, refErrMsg := authErrHandler.getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
 		if _, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]; !ok {
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-				Err: refErrMsg,
+				Err:          errType,
+				ErrorMessage: refErrMsg,
 			}
 		} else {
-			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = refErrMsg
+			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = errType
+			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].ErrorMessage = refErrMsg
 		}
 		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
 		authStats.errorMessage = refErrMsg
@@ -378,15 +381,24 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	return http.StatusOK
 }
 
-func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (message string) {
+func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
 	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
+		errorType = "unmarshallableResponse"
 	} else if gjson.Get(response, "body.code").String() == REF_TOKEN_INVALID_GRANT {
 		// User (or) AccessToken (or) RefreshToken has been revoked
-		message = REF_TOKEN_INVALID_GRANT
+		bodyMsg := gjson.Get(response, "body.message").String()
+		if bodyMsg == "" {
+			// Default message
+			authErrHandler.logger.Debugf("Failed with error response: %v\n", response)
+			message = ErrPermissionOrTokenRevoked.Error()
+		} else {
+			message = bodyMsg
+		}
+		errorType = REF_TOKEN_INVALID_GRANT
 	}
-	return message
+	return errorType, message
 }
 
 func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
@@ -501,7 +513,7 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	authStatusInactiveStats.errorMessage = ""
 	authStatusInactiveStats.SendCountStat()
 
-	// After a successfully disabling the destination, need to remove existing accessToken(from in-memory cache)
+	// After a successfully inactivating authStatus in destination, need to remove existing accessToken(from in-memory cache)
 	// This is being done to obtain new token after re-enabling disabled destination
 	accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
 	accountMutex.Lock()

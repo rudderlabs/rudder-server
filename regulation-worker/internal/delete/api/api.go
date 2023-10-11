@@ -198,7 +198,7 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 		EventNamePrefix: "fetch_token",
 	})
 	if tokenStatusCode != http.StatusOK {
-		return oauthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.Err)
+		return oauthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.ErrorMessage)
 	}
 	return oauthDetail{
 		id:          id,
@@ -233,13 +233,13 @@ func (api *APIManager) refreshOAuthToken(destination *model.Destination, job mod
 	if statusCode != http.StatusOK {
 		if refreshResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// authStatus should be made inactive
-			errJobStatus := api.inactivateAuthStatus(destination, job, oAuthDetail)
-			return fmt.Errorf(errJobStatus.Error.Error())
+			api.inactivateAuthStatus(destination, job, oAuthDetail)
+			return fmt.Errorf(refreshResponse.ErrorMessage)
 		}
 
 		var refreshRespErr string
 		if refreshResponse != nil {
-			refreshRespErr = refreshResponse.Err
+			refreshRespErr = refreshResponse.ErrorMessage
 		}
 		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destination.Name, job.WorkspaceID, oAuthDetail.id, refreshRespErr)
 	}

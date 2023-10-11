@@ -731,7 +731,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
 			expectedPayload:      `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
 		},
 	}
