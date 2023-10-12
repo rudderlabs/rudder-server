@@ -18,6 +18,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -41,9 +45,6 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 type testContext struct {

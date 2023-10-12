@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/bugsnag/bugsnag-go/v2"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -37,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"golang.org/x/sync/errgroup"
 )
 
 // processorApp is the type for Processor type implementation

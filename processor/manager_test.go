@@ -17,6 +17,8 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -32,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/stretchr/testify/require"
 )
 
 var (

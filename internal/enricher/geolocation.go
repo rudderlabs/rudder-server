@@ -41,8 +41,8 @@ func NewGeoEnricher(
 	log logger.Logger,
 	statClient stats.Stats,
 ) (PipelineEnricher, error) {
-	var upstreamDBKey = config.GetString("Geolocation.db.key", "geolite2City.mmdb")
-	var downloadPath = config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
+	upstreamDBKey := config.GetString("Geolocation.db.key", "geolite2City.mmdb")
+	downloadPath := config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
 
 	err := dbProvider.GetDB(upstreamDBKey, downloadPath)
 	if err != nil {
@@ -106,8 +106,7 @@ func (e *geoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest
 	return nil
 }
 
-type NoOpGeoEnricher struct {
-}
+type NoOpGeoEnricher struct{}
 
 func (e NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
 	return nil
@@ -119,7 +118,7 @@ type geoDBProviderImpl struct {
 
 // GetDB simply fetches the database from the upstream located at the key defined
 // in the argument.
-func (p *geoDBProviderImpl) GetDB(key string, downloadPath string) error {
+func (p *geoDBProviderImpl) GetDB(key, downloadPath string) error {
 	f, err := os.Open(downloadPath)
 	if err != nil {
 		return fmt.Errorf("creating a file to store db contents: %w", err)
@@ -143,10 +142,10 @@ func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, er
 
 	manager, err := filemanager.NewS3Manager(map[string]interface{}{
 		"Bucket": bucket,
-		"Region": region}, log, func() time.Duration {
+		"Region": region,
+	}, log, func() time.Duration {
 		return 1000 * time.Millisecond
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("creating a new s3 manager client: %w", err)
 	}

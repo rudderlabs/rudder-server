@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/stretchr/testify/require"
 )
 
-type GeoTestDBProvider struct {
-}
+type GeoTestDBProvider struct{}
 
-func (p *GeoTestDBProvider) GetDB(key string, downloadPath string) error {
+func (p *GeoTestDBProvider) GetDB(key, downloadPath string) error {
 	return nil
 }
 
@@ -44,8 +44,8 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 		t.Log(err)
 		require.True(t, errors.Is(err, geolocation.ErrInvalidDatabase))
 	})
-
 }
+
 func TestGeolocationEnrichment_Success(t *testing.T) {
 	c := config.New()
 	c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
@@ -104,7 +104,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 							Location: "",
 							Timezone: "",
 						},
-					}},
+					},
+				},
 				val, // actual value which was augmented in the batch
 			)
 		}
@@ -135,7 +136,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 							Location: "51.750000,-1.250000",
 							Timezone: "Europe/London",
 						},
-					}},
+					},
+				},
 				val, // actual value which was augmented in the batch
 			)
 		}
@@ -192,7 +194,6 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 }
 
 func TestMapUpstreamToGeolocation(t *testing.T) {
-
 	t.Run("it returns the output as nil when input is nil", func(t *testing.T) {
 		data := extractGeolocationData(nil)
 		require.Nil(t, data)
@@ -245,6 +246,5 @@ func TestMapUpstreamToGeolocation(t *testing.T) {
 			Timezone: "",
 			Region:   "",
 		}, *actual)
-
 	})
 }

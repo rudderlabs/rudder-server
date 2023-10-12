@@ -1432,7 +1432,6 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 }
 
 func (proc *Handle) geoEnrichmentEnabledForSource(sourceId string) bool {
-
 	source, err := proc.getSourceBySourceID(sourceId)
 	if err != nil {
 		proc.logger.Errorw("unable to get source by id for geoenrichment", "error", err.Error(), "sourceId", sourceId)

@@ -4,8 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/services/geolocation"
 )
 
 func TestGeolocationReader_Failure(t *testing.T) {
@@ -52,5 +53,4 @@ func TestGeolocationFetcher(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, geolocation.GeoCity{}, *emptyLookup)
 	})
-
 }
