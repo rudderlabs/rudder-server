@@ -50,18 +50,17 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 	return resp
 }
 
-func (bt *batchWebhookTransformerT) transformUsingPlugin(plugin plugins.Plugin, payload []byte, sourceType string) transformerBatchResponseT {
+func (bt *batchWebhookTransformerT) transformUsingPlugin(plugin plugins.Plugin, events [][]byte, sourceType string) transformerBatchResponseT {
 	transformStart := time.Now()
-	var events []map[string]interface{}
-	err := json.Unmarshal(payload, &events)
-	if err != nil {
-		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: err, statusCode: http.StatusInternalServerError}
-	}
-
 	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
 	for idx, event := range events {
-		pluginOutput, err := plugin.Execute(context.Background(), plugins.NewMessage(event))
+		var eventObj any
+		err := json.Unmarshal(event, &eventObj)
+		if err != nil {
+			batchResponse.responses[idx] = bt.markResponseFail(response.InvalidJSON)
+			continue
+		}
+		pluginOutput, err := plugin.Execute(context.Background(), plugins.NewMessage(eventObj))
 		if err != nil {
 			batchResponse.responses[idx] = bt.markResponseFail(err.Error())
 		}
@@ -93,7 +92,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 	sourcePlugin, err := integrations.SourceManager.Get(sourceType)
 	if err == nil && sourcePlugin != nil {
-		return bt.transformUsingPlugin(sourcePlugin, payload, sourceType)
+		return bt.transformUsingPlugin(sourcePlugin, events, sourceType)
 	}
 
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
