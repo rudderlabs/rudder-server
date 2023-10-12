@@ -1,4 +1,4 @@
-package reporting
+package event_stats
 
 import (
 	"strconv"
