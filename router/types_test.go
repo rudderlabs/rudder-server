@@ -13,7 +13,7 @@ import (
 func TestJobParameters(t *testing.T) {
 	t.Run("ParseReceivedAtTime", func(t *testing.T) {
 		refTime := time.Now().UTC().Truncate(time.Millisecond)
-		t.Run("invalid string", func(t *testing.T) {
+		t.Run("valid string", func(t *testing.T) {
 			jp := router.JobParameters{
 				ReceivedAt: refTime.Format(misc.RFC3339Milli),
 			}

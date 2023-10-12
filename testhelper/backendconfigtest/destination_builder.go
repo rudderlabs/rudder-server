@@ -49,7 +49,7 @@ func (b *DestinationBuilder) WithUserTransformation(id, version string) *Destina
 	return b
 }
 
-// WithDestinationTransformation adds a config option to the destination definition
+// WithDefinitionConfigOption adds a config option to the destination definition
 func (b *DestinationBuilder) WithDefinitionConfigOption(key string, value any) *DestinationBuilder {
 	b.v.DestinationDefinition.Config[key] = value
 	return b

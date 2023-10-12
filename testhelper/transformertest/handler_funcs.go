@@ -39,7 +39,7 @@ func ErrorTransformerHandler(code int, err string) TransformerHandler {
 	}
 }
 
-// ValidationErrorTransformerHandler mirrors the request payload in the response but uses an error status code along with the provided validation errors
+// ViolationErrorTransformerHandler mirrors the request payload in the response but uses an error status code along with the provided validation errors
 func ViolationErrorTransformerHandler(code int, err string, validationErrors []transformer.ValidationError) TransformerHandler {
 	return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
 		for i := range request {
