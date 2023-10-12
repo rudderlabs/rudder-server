@@ -7,7 +7,6 @@ run:
 
 linters:
   enable:
-    - deadcode
     - errcheck
     - gosimple
     - govet
@@ -17,7 +16,6 @@ linters:
     - unused
     - unparam
     - unconvert
-    - varcheck
     - bodyclose
     - decorder
     - makezero
@@ -30,6 +28,7 @@ linters:
     - misspell
     - unconvert
     - depguard
+    - unused
 
 issues:
   exclude-use-default: true
