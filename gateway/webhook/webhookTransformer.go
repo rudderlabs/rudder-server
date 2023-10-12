@@ -40,13 +40,14 @@ type transformerBatchResponseT struct {
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerResponse {
+func (bt *batchWebhookTransformerT) markResponseFail(sourceType, reason string) transformerResponse {
 	statusCode := response.GetErrorStatusCode(reason)
 	resp := transformerResponse{
 		Err:        response.GetStatus(reason),
 		StatusCode: statusCode,
 	}
 	bt.stats.failedStat.Count(1)
+	bt.stats.sourceStats[sourceType].failedEvents.Count(1)
 	return resp
 }
 
@@ -57,24 +58,24 @@ func (bt *batchWebhookTransformerT) transformUsingPlugin(plugin plugins.Plugin, 
 		var eventObj any
 		err := json.Unmarshal(event, &eventObj)
 		if err != nil {
-			batchResponse.responses[idx] = bt.markResponseFail(response.InvalidJSON)
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, response.InvalidJSON)
 			continue
 		}
 		pluginOutput, err := plugin.Execute(context.Background(), plugins.NewMessage(eventObj))
 		if err != nil {
-			batchResponse.responses[idx] = bt.markResponseFail(err.Error())
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, err.Error())
 		}
 		var eventResponse transformerResponse
 		err = mapstructure.Decode(pluginOutput.Data, &eventResponse)
 		if err != nil {
-			batchResponse.responses[idx] = bt.markResponseFail(err.Error())
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, err.Error())
 		}
 		if eventResponse.Err != "" {
 			batchResponse.responses[idx] = eventResponse
 			continue
 		}
 		if eventResponse.Output == nil && eventResponse.OutputToSource == nil {
-			batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerFailedToReadOutput)
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, response.SourceTransformerFailedToReadOutput)
 			continue
 		}
 		batchResponse.responses[idx] = eventResponse
@@ -193,7 +194,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 			continue
 		}
 		if resp.Output == nil && resp.OutputToSource == nil {
-			batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerFailedToReadOutput)
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, response.SourceTransformerFailedToReadOutput)
 			continue
 		}
 		bt.stats.receivedStat.Count(1)

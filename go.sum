@@ -1903,10 +1903,10 @@ github.com/rudderlabs/parquet-go v0.0.2 h1:ZXRdZdimB0PdJtmxeSSxfI0fDQ3kZjwzBxRi6
 github.com/rudderlabs/parquet-go v0.0.2/go.mod h1:g6guum7o8uhj/uNhunnt7bw5Vabu/goI5i21/3fnxWQ=
 github.com/rudderlabs/rudder-go-kit v0.15.11 h1:pvZMQWgCVeUmCJVWIkJ2hIiDEjVDYg0Tx5VTJ6X4feM=
 github.com/rudderlabs/rudder-go-kit v0.15.11/go.mod h1:W7b3rft7Kt8TvNd4gguw5ZB9Hu4M1k60EGLv91+N2zM=
-github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012055358-2d0a9d0f6fae h1:REAdpcbI6bcV81EjBIh8liOWJ+ykVbzWve+OW0IkKkk=
-github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012055358-2d0a9d0f6fae/go.mod h1:oJl5W73IqKwE3zOt0fA5FrOFyTdPaiX9dpAZUXV8yR8=
-github.com/rudderlabs/rudder-plugins-manager v0.6.1 h1:aB7pjB+kIxOXFhmxFW7iHGZbCw8tTEZ/1YhFAbp8sro=
-github.com/rudderlabs/rudder-plugins-manager v0.6.1/go.mod h1:CFj3awhmBD/4jPy8M8na5mLsVst2c3M/vVh36BJjarg=
+github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012120945-4401f4bfe941 h1:nkkFwKqVADnWMyzjROf7F+nUpqKd1AdN/7R5uBH3QII=
+github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012120945-4401f4bfe941/go.mod h1:vJsmbUJJSWbG3tv/EUK89k277jOOqxad+7xDh61hii4=
+github.com/rudderlabs/rudder-plugins-manager v0.7.0 h1:qcgpIruA979PnnzBP6XF6pbwnxWJ7FJavBRimft8P4s=
+github.com/rudderlabs/rudder-plugins-manager v0.7.0/go.mod h1:CFj3awhmBD/4jPy8M8na5mLsVst2c3M/vVh36BJjarg=
 github.com/rudderlabs/sql-tunnels v0.1.5 h1:L/e9GQtqJlTVMauAE+ym/XUqhg+Va6RZQiOvBgbhspY=
 github.com/rudderlabs/sql-tunnels v0.1.5/go.mod h1:ZwQkCLb/5hHm5U90juAj9idkkFGv2R2dzDHJoPbKIto=
 github.com/russross/blackfriday v1.6.0/go.mod h1:ti0ldHuxg49ri4ksnFxlkCfN+hvslNlmVHqNRXXJNAY=

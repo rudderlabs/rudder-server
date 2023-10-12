@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-integration-plugins/integrations"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
@@ -73,6 +74,7 @@ type webhookSourceStatT struct {
 	id              string
 	numEvents       stats.Measurement
 	numOutputEvents stats.Measurement
+	failedEvents    stats.Measurement
 	sourceTransform stats.Measurement
 }
 
@@ -375,7 +377,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
 					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
-					webRequest.done <- bt.markResponseFail(errMessage)
+					webRequest.done <- bt.markResponseFail(breq.sourceType, errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
@@ -461,16 +463,24 @@ func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*w
 // TODO: Check if correct
 func newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
-		"sourceType": sourceType,
+		"sourceType":      sourceType,
+		"integrationType": "serivce",
+	}
+
+	if integrations.SourceManager.Has(sourceType) {
+		tags["integrationType"] = "plugin"
 	}
 	numEvents := stats.Default.NewTaggedStat("webhook_num_events", stats.CountType, tags)
 	numOutputEvents := stats.Default.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
 	sourceTransform := stats.Default.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
+	failedEvents := stats.Default.NewTaggedStat("webhook_failed_events", stats.TimerType, tags)
+
 	return &webhookSourceStatT{
 		id:              sourceType,
 		numEvents:       numEvents,
 		numOutputEvents: numOutputEvents,
 		sourceTransform: sourceTransform,
+		failedEvents:    failedEvents,
 	}
 }
 

@@ -3,6 +3,7 @@ module github.com/rudderlabs/rudder-server
 go 1.21.2
 
 toolchain go1.21.3
+
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
@@ -81,8 +82,8 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.0
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.15.11
-	github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012055358-2d0a9d0f6fae
-	github.com/rudderlabs/rudder-plugins-manager v0.6.1
+	github.com/rudderlabs/rudder-integration-plugins v0.0.0-20231012120945-4401f4bfe941
+	github.com/rudderlabs/rudder-plugins-manager v0.7.0
 	github.com/rudderlabs/sql-tunnels v0.1.5
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
