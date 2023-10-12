@@ -247,6 +247,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				c.Set("DB.user", postgresContainer.User)
 				c.Set("DB.name", postgresContainer.Database)
 				c.Set("DB.password", postgresContainer.Password)
+				c.Set("Reporting.errorIndexReporting.skipMaintenanceError", true)
 
 				ctx, cancel := context.WithCancel(ctx)
 
@@ -321,6 +322,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		c.Set("DB.user", postgresContainer.User)
 		c.Set("DB.name", postgresContainer.Database)
 		c.Set("DB.password", postgresContainer.Password)
+		c.Set("Reporting.errorIndexReporting.skipMaintenanceError", true)
 
 		ctx, cancel := context.WithCancel(ctx)
 
