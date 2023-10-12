@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
@@ -669,10 +670,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	})
 })
 
-var _ = Describe("Processor with geoenrichment enabled", Ordered, func() {
-
-})
-
 var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	initProcessor()
 
@@ -1068,7 +1065,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				NoOpGeoEnricher{},
+				enricher.NoOpGeoEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1097,7 +1094,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				NoOpGeoEnricher{},
+				enricher.NoOpGeoEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1131,7 +1128,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				NoOpGeoEnricher{},
+				enricher.NoOpGeoEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -2064,7 +2061,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				NoOpGeoEnricher{},
+				enricher.NoOpGeoEnricher{},
 			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
@@ -2122,7 +2119,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				NoOpGeoEnricher{},
+				enricher.NoOpGeoEnricher{},
 			)
 			defer processor.Shutdown()
 
@@ -3733,7 +3730,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.MockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		NoOpGeoEnricher{},
+		enricher.NoOpGeoEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
 }

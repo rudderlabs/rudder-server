@@ -30,6 +30,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -83,7 +84,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
-	enricher                  PipelineEnricher
+	enricher                  enricher.PipelineEnricher
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
@@ -358,7 +359,7 @@ func (proc *Handle) Setup(
 	rsourcesService rsources.JobService,
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
-	enricher PipelineEnricher,
+	enricher enricher.PipelineEnricher,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -1438,7 +1439,7 @@ func (proc *Handle) geoEnrichmentEnabledForSource(sourceId string) bool {
 		return false
 	}
 
-	return source.GeoEnrichmentEnabled
+	return source.GeoEnrichment.Enabled
 }
 
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {

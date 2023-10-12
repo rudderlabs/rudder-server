@@ -4,13 +4,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/processor/geolocation"
+	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGeolocationReader_Failure(t *testing.T) {
 	t.Run("reader errors out when db is corrupted", func(t *testing.T) {
-		_, err := geolocation.NewMaxmindGeoFetcher("./testdata/corrupted_city_test.mmdb")
+		_, err := geolocation.NewMaxmindDBReader("./testdata/corrupted_city_test.mmdb")
 		require.True(
 			t,
 			errors.Is(err, geolocation.ErrInvalidDatabase))
@@ -20,7 +20,7 @@ func TestGeolocationReader_Failure(t *testing.T) {
 func TestGeolocationFetcher(t *testing.T) {
 	// below data is a test database provided by maxmind for testing purposes
 	// https://github.com/maxmind/MaxMind-DB/tree/main/test-data
-	f, err := geolocation.NewMaxmindGeoFetcher("./testdata/city_test.mmdb")
+	f, err := geolocation.NewMaxmindDBReader("./testdata/city_test.mmdb")
 	require.Nil(t, err)
 
 	t.Run("fetcher returns error ErrInvalidIP if ip is empty or invalid", func(t *testing.T) {

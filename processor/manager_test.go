@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
@@ -219,7 +220,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		NoOpGeoEnricher{},
+		enricher.NoOpGeoEnricher{},
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
 			m.Handle.config.featuresRetryMaxAttempts = 0

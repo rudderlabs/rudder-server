@@ -10,38 +10,36 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/archiver"
-	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/router/throttler"
-	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
-	"github.com/rudderlabs/rudder-server/utils/payload"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/bugsnag/bugsnag-go/v2"
-
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	proc "github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
+	"github.com/rudderlabs/rudder-server/router/throttler"
+	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"golang.org/x/sync/errgroup"
 )
 
 // processorApp is the type for Processor type implementation
@@ -226,21 +224,21 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	var geoEnricher proc.PipelineEnricher
+	var geoEnricher enricher.PipelineEnricher
 	if config.GetBool("GeoEnrichment.enabled", false) {
 
-		dbProvider, err := proc.NewGeoDBProvider(config.Default, a.log)
+		dbProvider, err := enricher.NewGeoDBProvider(config.Default, a.log)
 		if err != nil {
 			return fmt.Errorf("creating new instance of db provider: %w", err)
 		}
 
-		geoEnricher, err = proc.NewGeoEnricher(dbProvider, config.Default, a.log, stats.Default)
+		geoEnricher, err = enricher.NewGeoEnricher(dbProvider, config.Default, a.log, stats.Default)
 		if err != nil {
 			return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
 		}
 
 	} else {
-		geoEnricher = proc.NewNoOpGeoEnricher()
+		geoEnricher = enricher.NoOpGeoEnricher{}
 	}
 
 	p := proc.New(

@@ -70,7 +70,9 @@ type SourceT struct {
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
 	EventSchemasEnabled        bool
-	GeoEnrichmentEnabled       bool
+	GeoEnrichment              struct {
+		Enabled bool
+	}
 }
 
 func (s *SourceT) IsReplaySource() bool {

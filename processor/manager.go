@@ -8,14 +8,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
-
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -43,7 +41,7 @@ type LifecycleManager struct {
 	rsourcesService  rsources.JobService
 	destDebugger     destinationdebugger.DestinationDebugger
 	transDebugger    transformationdebugger.TransformationDebugger
-	enricher         PipelineEnricher
+	enricher         enricher.PipelineEnricher
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -95,7 +93,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
-	enricher PipelineEnricher,
+	enricher enricher.PipelineEnricher,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{

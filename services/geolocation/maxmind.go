@@ -14,11 +14,11 @@ var (
 	ErrInvalidIP       = errors.New("ip for lookup cannot be empty or invalid")
 )
 
-type maxmindGeoFetcher struct {
+type dbReader struct {
 	reader *maxminddb.Reader
 }
 
-func NewMaxmindGeoFetcher(dbLoc string) (GeoFetcher, error) {
+func NewMaxmindDBReader(dbLoc string) (*dbReader, error) {
 	reader, err := maxminddb.Open(dbLoc)
 	if err != nil {
 
@@ -31,10 +31,10 @@ func NewMaxmindGeoFetcher(dbLoc string) (GeoFetcher, error) {
 
 		return nil, fmt.Errorf("opening maxmind reader from location: %w", err)
 	}
-	return &maxmindGeoFetcher{reader}, nil
+	return &dbReader{reader}, nil
 }
 
-func (f *maxmindGeoFetcher) GeoIP(ip string) (*GeoCity, error) {
+func (f *dbReader) GeoIP(ip string) (*GeoCity, error) {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		return nil, ErrInvalidIP

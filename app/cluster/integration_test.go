@@ -12,37 +12,34 @@ import (
 	"testing"
 	"time"
 
-	arc "github.com/rudderlabs/rudder-server/archiver"
-	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	arc "github.com/rudderlabs/rudder-server/archiver"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -212,7 +209,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		processor.NewNoOpGeoEnricher(),
+		enricher.NoOpGeoEnricher{},
 		processor.WithFeaturesRetryMaxAttempts(0),
 	)
 	processor.BackendConfig = mockBackendConfig

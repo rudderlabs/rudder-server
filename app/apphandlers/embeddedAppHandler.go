@@ -17,11 +17,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
-	proc "github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -233,21 +233,21 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	var geoEnricher processor.PipelineEnricher
+	var geoEnricher enricher.PipelineEnricher
 	if config.GetBool("GeoEnrichment.enabled", false) {
 
-		dbProvider, err := processor.NewGeoDBProvider(config, a.log)
+		dbProvider, err := enricher.NewGeoDBProvider(config, a.log)
 		if err != nil {
 			return fmt.Errorf("creating new instance of db provider: %w", err)
 		}
 
-		geoEnricher, err = processor.NewGeoEnricher(dbProvider, config, a.log, stats.Default)
+		geoEnricher, err = enricher.NewGeoEnricher(dbProvider, config, a.log, stats.Default)
 		if err != nil {
 			return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
 		}
 
 	} else {
-		geoEnricher = proc.NewNoOpGeoEnricher()
+		geoEnricher = enricher.NoOpGeoEnricher{}
 	}
 
 	proc := processor.New(

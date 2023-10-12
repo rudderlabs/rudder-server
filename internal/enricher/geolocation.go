@@ -1,26 +1,23 @@
-package processor
+package enricher
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/processor/geolocation"
+	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type PipelineEnricher interface {
-	Enrich(sourceId string, request *types.GatewayBatchRequest) error
-}
-
-type FileManager interface {
-	Download(context.Context, *os.File, string) error
+type GeoDBProvider interface {
+	GetDB(string) (string, error)
 }
 
 type Geolocation struct {
@@ -32,36 +29,7 @@ type Geolocation struct {
 	Timezone string `json:"timezone"`
 }
 
-func extractMinimalGeoInfo(geocity *geolocation.GeoCity) *Geolocation {
-	if geocity == nil {
-		return nil
-	}
-
-	toReturn := &Geolocation{
-		City:     geocity.City.Names["en"],
-		Country:  geocity.Country.IsoCode,
-		Postal:   geocity.Postal.Code,
-		Timezone: geocity.Location.TimeZone,
-	}
-
-	if len(geocity.Subdivisions) > 0 {
-		toReturn.Region = geocity.Subdivisions[0].Names["en"]
-	}
-
-	// default values of latitude and longitude can give
-	// incorrect result, so we have casted them in pointers so we know
-	// when the value is missing.
-	if geocity.Location.Latitude != nil && geocity.Location.Longitude != nil {
-		toReturn.Location = fmt.Sprintf("%f,%f",
-			*geocity.Location.Latitude,
-			*geocity.Location.Longitude,
-		)
-	}
-
-	return toReturn
-}
-
-type geolocationEnricher struct {
+type geoEnricher struct {
 	fetcher geolocation.GeoFetcher
 	logger  logger.Logger
 	stats   stats.Stats
@@ -74,17 +42,18 @@ func NewGeoEnricher(
 	statClient stats.Stats,
 ) (PipelineEnricher, error) {
 	var upstreamDBKey = config.GetString("Geolocation.db.key.path", "geolite2City.mmdb")
+
 	localPath, err := dbProvider.GetDB(upstreamDBKey)
 	if err != nil {
 		return nil, fmt.Errorf("getting db from upstream: %w", err)
 	}
 
-	fetcher, err := geolocation.NewMaxmindGeoFetcher(localPath)
+	fetcher, err := geolocation.NewMaxmindDBReader(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating new instance of maxmind's geolocation fetcher: %w", err)
 	}
 
-	return &geolocationEnricher{
+	return &geoEnricher{
 		fetcher: fetcher,
 		stats:   statClient,
 		logger:  log.Child("geolocation"),
@@ -94,7 +63,7 @@ func NewGeoEnricher(
 // Enrich function runs on a request of GatewayBatchRequest which contains
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
-func (e *geolocationEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
+func (e *geoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
 	e.logger.Debugw("received a call to enrich gateway events for source", "sourceId", sourceId)
 
 	if request.RequestIP == "" {
@@ -114,21 +83,13 @@ func (e *geolocationEnricher) Enrich(sourceId string, request *types.GatewayBatc
 
 	geoip, err := e.fetcher.GeoIP(request.RequestIP)
 	if err != nil {
-		switch {
-		// InvalidIP address being sent for lookup, log it for further analysis.
-		case errors.Is(err, geolocation.ErrInvalidIP):
-			e.logger.Errorw("unable to enrich the request with geolocation", "error", err, "ip", request.RequestIP)
-			e.stats.NewTaggedStat(
-				"proc_geo_enricher_invalid_ip",
-				stats.CountType,
-				stats.Tags{"sourceId": sourceId}).Increment()
-		default:
-			e.logger.Errorw("unable to enrich the request with geolocation", "error", err)
-			e.stats.NewTaggedStat(
-				"proc_geo_enricher_geoip_lookup_failed",
-				stats.CountType,
-				stats.Tags{"sourceId": sourceId}).Increment()
-		}
+		e.stats.NewTaggedStat(
+			"proc_geo_enricher_geoip_lookup_failed",
+			stats.CountType,
+			stats.Tags{
+				"sourceId": sourceId,
+				"validIP":  strconv.FormatBool(errors.Is(err, geolocation.ErrInvalidIP)),
+			}).Increment()
 
 		return fmt.Errorf("unable to enrich the request with geolocation: %w", err)
 	}
@@ -136,35 +97,26 @@ func (e *geolocationEnricher) Enrich(sourceId string, request *types.GatewayBatc
 	// for every event if we have context object set
 	// only then we add to geo section
 	for _, event := range request.Batch {
-
 		if context, ok := event["context"].(map[string]interface{}); ok {
-			context["geo"] = extractMinimalGeoInfo(geoip)
+			context["geo"] = extractGeolocationData(geoip)
 		}
 	}
 
 	return nil
 }
 
-func NewNoOpGeoEnricher() PipelineEnricher {
-	return NoOpGeoEnricher{}
-}
-
 type NoOpGeoEnricher struct {
 }
 
-func (NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
+func (e NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
 	return nil
-}
-
-type GeoDBProvider interface {
-	GetDB(string) (string, error)
 }
 
 type geoDBProviderImpl struct {
 	bucket       string
 	region       string
 	downloadPath string
-	s3Manager    FileManager
+	s3Manager    filemanager.FileManager
 }
 
 // GetDB simply fetches the database from the upstream located at the key defined
@@ -208,4 +160,33 @@ func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, er
 		downloadPath: downloadPath,
 		s3Manager:    manager,
 	}, nil
+}
+
+func extractGeolocationData(geocity *geolocation.GeoCity) *Geolocation {
+	if geocity == nil {
+		return nil
+	}
+
+	toReturn := &Geolocation{
+		City:     geocity.City.Names["en"],
+		Country:  geocity.Country.IsoCode,
+		Postal:   geocity.Postal.Code,
+		Timezone: geocity.Location.TimeZone,
+	}
+
+	if len(geocity.Subdivisions) > 0 {
+		toReturn.Region = geocity.Subdivisions[0].Names["en"]
+	}
+
+	// default values of latitude and longitude can give
+	// incorrect result, so we have casted them in pointers so we know
+	// when the value is missing.
+	if geocity.Location.Latitude != nil && geocity.Location.Longitude != nil {
+		toReturn.Location = fmt.Sprintf("%f,%f",
+			*geocity.Location.Latitude,
+			*geocity.Location.Longitude,
+		)
+	}
+
+	return toReturn
 }
