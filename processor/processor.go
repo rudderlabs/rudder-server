@@ -1505,7 +1505,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		// Only if geo enrichment is enabled for deployment and then the source
 		// only then we perform the enrichment on gateway batch event.
 		if proc.config.geoEnrichmentEnabled && proc.geoEnrichmentEnabledForSource(sourceId) {
-			proc.enricher.Enrich(sourceId, &gatewayBatchEvent)
+			_ = proc.enricher.Enrich(sourceId, &gatewayBatchEvent)
 		}
 
 		// Iterate through all the events in the batch
