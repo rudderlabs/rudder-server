@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
+
+	"github.com/rudderlabs/rudder-integration-plugins/integrations"
+	"github.com/rudderlabs/rudder-plugins-manager/plugins"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -45,11 +50,53 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 	return resp
 }
 
+func (bt *batchWebhookTransformerT) transformUsingPlugin(plugin plugins.Plugin, payload []byte, sourceType string) transformerBatchResponseT {
+	transformStart := time.Now()
+	var events []map[string]interface{}
+	err := json.Unmarshal(payload, &events)
+	if err != nil {
+		bt.stats.failedStat.Count(len(events))
+		return transformerBatchResponseT{batchError: err, statusCode: http.StatusInternalServerError}
+	}
+
+	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
+	for idx, event := range events {
+		pluginOutput, err := plugin.Execute(context.Background(), plugins.NewMessage(event))
+		if err != nil {
+			batchResponse.responses[idx] = bt.markResponseFail(err.Error())
+		}
+		var eventResponse transformerResponse
+		err = mapstructure.Decode(pluginOutput.Data, &eventResponse)
+		if err != nil {
+			batchResponse.responses[idx] = bt.markResponseFail(err.Error())
+		}
+		if eventResponse.Err != "" {
+			batchResponse.responses[idx] = eventResponse
+			continue
+		}
+		if eventResponse.Output == nil && eventResponse.OutputToSource == nil {
+			batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerFailedToReadOutput)
+			continue
+		}
+		bt.stats.receivedStat.Count(1)
+		batchResponse.responses[idx] = eventResponse
+	}
+	bt.stats.transformTimerStat.Since(transformStart)
+	bt.stats.receivedStat.Count(len(events))
+	return batchResponse
+}
+
 func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	transformStart := time.Now()
 
 	payload := misc.MakeJSONArray(events)
+
+	sourcePlugin, err := integrations.SourceManager.Get(sourceType)
+	if err == nil && sourcePlugin != nil {
+		return bt.transformUsingPlugin(sourcePlugin, payload, sourceType)
+	}
+
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
