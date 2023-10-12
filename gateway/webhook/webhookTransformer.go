@@ -78,7 +78,6 @@ func (bt *batchWebhookTransformerT) transformUsingPlugin(plugin plugins.Plugin, 
 			batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerFailedToReadOutput)
 			continue
 		}
-		bt.stats.receivedStat.Count(1)
 		batchResponse.responses[idx] = eventResponse
 	}
 	bt.stats.transformTimerStat.Since(transformStart)
