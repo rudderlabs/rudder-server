@@ -266,7 +266,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				err = eir.Report(tc.reports, nil)
 				require.NoError(t, err)
 
-				errIndexDB := jobsdb.NewForRead(ei, jobsdb.WithConfig(c))
+				errIndexDB := jobsdb.NewForRead(eridx, jobsdb.WithConfig(c))
 				err = errIndexDB.Start()
 				require.NoError(t, err)
 				defer errIndexDB.TearDown()
@@ -296,7 +296,7 @@ func TestErrorIndexReporter(t *testing.T) {
 					err = json.Unmarshal(job.Parameters, &params)
 					require.NoError(t, err)
 
-					require.Equal(t, params["sourceId"], sourceID)
+					require.Equal(t, params["source_id"], sourceID)
 					require.Equal(t, params["workspaceId"], workspaceID)
 				}
 

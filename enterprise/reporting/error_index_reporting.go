@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -18,7 +17,7 @@ import (
 )
 
 const (
-	ei = "ei"
+	eridx = "eridx"
 )
 
 type payload struct {
@@ -66,7 +65,7 @@ func NewErrorIndexReporter(
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
-		ei,
+		eridx,
 		jobsdb.WithDSLimit(eir.config.dsLimit),
 		jobsdb.WithConfig(conf),
 		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
@@ -83,14 +82,16 @@ func NewErrorIndexReporter(
 	return eir
 }
 
-// Report reports the metrics to the ei JobsDB
+// Report reports the metrics to the eridx JobsDB
 func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) error {
-	jobs := lo.Flatten(lo.FilterMap(metrics, func(metric *types.PUReportedMetric, _ int) ([]*jobsdb.JobT, bool) {
+	failedAt := eir.now()
+
+	var jobs []*jobsdb.JobT
+	for _, metric := range metrics {
 		if metric.StatusDetail == nil {
-			return nil, false
+			continue
 		}
 
-		var jobs []*jobsdb.JobT
 		for _, failedMessage := range metric.StatusDetail.FailedMessages {
 			workspaceID := eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 
@@ -104,38 +105,34 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.
 				EventName:        metric.StatusDetail.EventName,
 				EventType:        metric.StatusDetail.EventType,
 				ReceivedAt:       failedMessage.ReceivedAt,
-				FailedAt:         eir.now(),
+				FailedAt:         failedAt,
 			}
 			payloadJSON, err := json.Marshal(payload)
 			if err != nil {
-				panic(fmt.Errorf("unable to marshal payload: %v", err))
+				return fmt.Errorf("unable to marshal payload: %v", err)
 			}
 
 			params := struct {
 				WorkspaceID string `json:"workspaceId"`
-				SourceID    string `json:"sourceId"`
+				SourceID    string `json:"source_id"`
 			}{
 				WorkspaceID: workspaceID,
 				SourceID:    metric.SourceID,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {
-				panic(fmt.Errorf("unable to marshal params: %v", err))
+				return fmt.Errorf("unable to marshal params: %v", err)
 			}
 
 			jobs = append(jobs, &jobsdb.JobT{
 				UUID:         uuid.New(),
-				UserID:       uuid.New().String(),
 				Parameters:   paramsJSON,
-				CustomVal:    ei,
 				EventPayload: payloadJSON,
-				EventCount:   0,
-				WorkspaceId:  eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID),
+				EventCount:   1,
+				WorkspaceId:  workspaceID,
 			})
 		}
-
-		return jobs, len(jobs) > 0
-	}))
+	}
 
 	if len(jobs) == 0 {
 		return nil
@@ -148,7 +145,7 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.
 	return nil
 }
 
-// DatabaseSyncer returns a syncer that syncs the ei jobsDB. Once the context is done, it stops the ei jobsDB
+// DatabaseSyncer returns a syncer that syncs the eridx jobsDB. Once the context is done, it stops the eridx jobsDB
 func (eir *ErrorIndexReporter) DatabaseSyncer(
 	types.SyncerConfig,
 ) types.ReportingSyncer {
