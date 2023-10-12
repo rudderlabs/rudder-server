@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	eventStats "github.com/rudderlabs/rudder-server/enterprise/reporting/event-stats"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -643,6 +644,8 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 		if err != nil {
 			panic(err)
 		}
+
+		eventStats.Report(workspaceID, &metric)
 	}
 
 	_, err = stmt.Exec()
