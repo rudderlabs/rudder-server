@@ -2,7 +2,7 @@ module github.com/rudderlabs/rudder-server
 
 go 1.21
 
-toolchain go1.21.1
+toolchain go1.21.3
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
