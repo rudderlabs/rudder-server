@@ -839,7 +839,7 @@ func (as *AzureSynapse) CrashRecover(ctx context.Context) {
 	as.dropDanglingStagingTables(ctx)
 }
 
-func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
+func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -855,7 +855,6 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 	rows, err := as.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		as.logger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
-		return false
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -872,15 +871,12 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 		panic(fmt.Errorf("iterating result from query: %s\nwith Error : %w", sqlStatement, err))
 	}
 	as.logger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := as.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
 		if err != nil {
 			as.logger.Errorf("WH: SYNAPSE:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 // FetchSchema returns the schema of the warehouse
