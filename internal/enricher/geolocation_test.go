@@ -14,11 +14,10 @@ import (
 )
 
 type GeoTestDBProvider struct {
-	loc string
 }
 
-func (p *GeoTestDBProvider) GetDB(key string) (string, error) {
-	return p.loc, nil
+func (p *GeoTestDBProvider) GetDB(key string, downloadPath string) error {
+	return nil
 }
 
 func TestGeolocationEnrichment_Setup(t *testing.T) {
@@ -29,14 +28,18 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 	)
 
 	t.Run("inexistent db file causes enricher to fail setup", func(t *testing.T) {
-		_, err := NewGeoEnricher(&GeoTestDBProvider{loc: "./testdata/invalid-db-path"}, defaultConf, logger, stats)
+		t.Setenv("Geolocation.db.downloadPath", "./testdata/invalid-db-path")
+
+		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
 		require.NotNil(t, err)
 		t.Log(err)
 		require.True(t, errors.Is(err, geolocation.ErrInvalidDatabase))
 	})
 
 	t.Run("corrupted db file causes enricher to fail", func(t *testing.T) {
-		_, err := NewGeoEnricher(&GeoTestDBProvider{loc: "./testdata/corrupted_city_test.mmdb"}, defaultConf, logger, stats)
+		t.Setenv("Geolocation.db.downloadPath", "./testdata/corrupted_city_test.mmdb")
+
+		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
 		require.NotNil(t, err)
 		t.Log(err)
 		require.True(t, errors.Is(err, geolocation.ErrInvalidDatabase))
@@ -44,8 +47,10 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 
 }
 func TestGeolocationEnrichment_Success(t *testing.T) {
-	enricher, err := NewGeoEnricher(&GeoTestDBProvider{loc: "./testdata/city_test.mmdb"},
-		config.New(), logger.NewLogger(), stats.Default)
+	c := config.New()
+	c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
+	enricher, err := NewGeoEnricher(&GeoTestDBProvider{}, c, logger.NewLogger(), stats.Default)
+
 	require.Nil(t, err)
 
 	t.Run("it silently returns without enrichment if ip is empty", func(t *testing.T) {
@@ -59,6 +64,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		// enrichment doesn't happen at all on the context and event remains the same
 		err := enricher.Enrich("source-id", ip)
 		require.Nil(t, err)
+		// require.Equal(t, nil, ip)
 		require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0"}}, ip.Batch[0])
 		require.Equal(t, types.SingularEventT{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0"}}, ip.Batch[1])
 	})
@@ -77,7 +83,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		input := &types.GatewayBatchRequest{
 			RequestIP: `22.125.160.216`,
 			Batch: []types.SingularEventT{
-				{"version": "0.1.0"},
+				{"userId": "u1", "context": map[string]interface{}{"version": "0.1.0"}},
 			},
 		}
 
@@ -87,6 +93,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		for _, val := range input.Batch {
 			require.Equal(t,
 				types.SingularEventT{ // expected type with context
+					"userId": "u1",
 					"context": map[string]interface{}{
 						"version": "0.1.0",
 						"geo": &Geolocation{
@@ -107,7 +114,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		input := &types.GatewayBatchRequest{
 			RequestIP: `2.125.160.216`,
 			Batch: []types.SingularEventT{
-				{"version": "0.1.0"},
+				{"userId": "u1", "context": map[string]interface{}{"version": "0.1.0"}},
 			},
 		}
 
@@ -117,6 +124,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		for _, val := range input.Batch {
 			require.Equal(t,
 				types.SingularEventT{ // expected type with context
+					"userId": "u1",
 					"context": map[string]interface{}{
 						"version": "0.1.0",
 						"geo": &Geolocation{

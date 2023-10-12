@@ -17,7 +17,7 @@ import (
 )
 
 type GeoDBProvider interface {
-	GetDB(string) (string, error)
+	GetDB(string, string) error
 }
 
 type Geolocation struct {
@@ -41,14 +41,15 @@ func NewGeoEnricher(
 	log logger.Logger,
 	statClient stats.Stats,
 ) (PipelineEnricher, error) {
-	var upstreamDBKey = config.GetString("Geolocation.db.key.path", "geolite2City.mmdb")
+	var upstreamDBKey = config.GetString("Geolocation.db.key", "geolite2City.mmdb")
+	var downloadPath = config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
 
-	localPath, err := dbProvider.GetDB(upstreamDBKey)
+	err := dbProvider.GetDB(upstreamDBKey, downloadPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting db from upstream: %w", err)
 	}
 
-	fetcher, err := geolocation.NewMaxmindDBReader(localPath)
+	fetcher, err := geolocation.NewMaxmindDBReader(downloadPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating new instance of maxmind's geolocation fetcher: %w", err)
 	}
@@ -113,35 +114,31 @@ func (e NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequ
 }
 
 type geoDBProviderImpl struct {
-	bucket       string
-	region       string
-	downloadPath string
-	s3Manager    filemanager.FileManager
+	s3Manager filemanager.FileManager
 }
 
 // GetDB simply fetches the database from the upstream located at the key defined
 // in the argument.
-func (p *geoDBProviderImpl) GetDB(key string) (string, error) {
-	f, err := os.Open(p.downloadPath)
+func (p *geoDBProviderImpl) GetDB(key string, downloadPath string) error {
+	f, err := os.Open(downloadPath)
 	if err != nil {
-		return "", fmt.Errorf("creating a file to store db contents: %w", err)
+		return fmt.Errorf("creating a file to store db contents: %w", err)
 	}
 
 	defer f.Close()
 
 	err = p.s3Manager.Download(context.Background(), f, key)
 	if err != nil {
-		return "", fmt.Errorf("downloading db from upstream and storing in file: %w", err)
+		return fmt.Errorf("downloading db from upstream and storing in file: %w", err)
 	}
 
-	return p.downloadPath, nil
+	return nil
 }
 
 func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, error) {
 	var (
-		bucket       = config.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region       = config.GetString("Geolocation.db.bucket.region", "us-east-1")
-		downloadPath = config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
+		bucket = config.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
+		region = config.GetString("Geolocation.db.bucket.region", "us-east-1")
 	)
 
 	manager, err := filemanager.NewS3Manager(map[string]interface{}{
@@ -155,10 +152,7 @@ func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, er
 	}
 
 	return &geoDBProviderImpl{
-		bucket:       bucket,
-		region:       region,
-		downloadPath: downloadPath,
-		s3Manager:    manager,
+		s3Manager: manager,
 	}, nil
 }
 
