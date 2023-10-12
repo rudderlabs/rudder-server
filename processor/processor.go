@@ -2115,7 +2115,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			}
 
 			// rsources stats
-			in.rsourcesStats.JobStatusesUpdated(statusList)
+			in.rsourcesStats.CollectStats(statusList)
 			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)

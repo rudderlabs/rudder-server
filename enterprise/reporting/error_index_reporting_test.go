@@ -266,7 +266,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				err = eir.Report(tc.reports, nil)
 				require.NoError(t, err)
 
-				errIndexDB := jobsdb.NewForRead(eridx, jobsdb.WithConfig(c))
+				errIndexDB := jobsdb.NewForRead(errorIndex, jobsdb.WithConfig(c))
 				err = errIndexDB.Start()
 				require.NoError(t, err)
 				defer errIndexDB.TearDown()

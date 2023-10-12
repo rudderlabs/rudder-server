@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	eridx = "eridx"
+	errorIndex = "err_idx"
 )
 
 type payload struct {
@@ -65,7 +65,7 @@ func NewErrorIndexReporter(
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
-		eridx,
+		errorIndex,
 		jobsdb.WithDSLimit(eir.config.dsLimit),
 		jobsdb.WithConfig(conf),
 		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
@@ -82,7 +82,7 @@ func NewErrorIndexReporter(
 	return eir
 }
 
-// Report reports the metrics to the eridx JobsDB
+// Report reports the metrics to the errorIndex JobsDB
 func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) error {
 	failedAt := eir.now()
 
@@ -145,7 +145,7 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.
 	return nil
 }
 
-// DatabaseSyncer returns a syncer that syncs the eridx jobsDB. Once the context is done, it stops the eridx jobsDB
+// DatabaseSyncer returns a syncer that syncs the errorIndex jobsDB. Once the context is done, it stops the errorIndex jobsDB
 func (eir *ErrorIndexReporter) DatabaseSyncer(
 	types.SyncerConfig,
 ) types.ReportingSyncer {
