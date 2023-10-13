@@ -2258,8 +2258,8 @@ var _ = Describe("Processor", Ordered, func() {
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				types.DEST_TRANSFORMER,
 				types.EVENT_FILTER,
+				types.DEST_TRANSFORMER,
 			)
 
 			key := fmt.Sprintf(
