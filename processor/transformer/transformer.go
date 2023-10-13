@@ -279,7 +279,11 @@ func (trans *handle) transform(
 
 	trackWg.Add(1)
 	go func() {
-		trackLongRunningTransformation(ctx, stage, sTags, trans.config.timeoutDuration, trans.logger)
+		var loggerCtx []interface{}
+		for k, v := range sTags {
+			loggerCtx = append(loggerCtx, k, v)
+		}
+		trackLongRunningTransformation(ctx, stage, trans.config.timeoutDuration, trans.logger.With(loggerCtx...))
 		trackWg.Done()
 	}()
 
@@ -541,7 +545,7 @@ func (trans *handle) trackingPlanValidationURL() string {
 	return trans.config.destTransformationURL + "/v0/validate"
 }
 
-func trackLongRunningTransformation(ctx context.Context, stage string, tags map[string]string, timeout time.Duration, log logger.Logger) {
+func trackLongRunningTransformation(ctx context.Context, stage string, timeout time.Duration, log logger.Logger) {
 	start := time.Now()
 	t := time.NewTimer(timeout)
 	defer t.Stop()
@@ -550,14 +554,9 @@ func trackLongRunningTransformation(ctx context.Context, stage string, tags map[
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			keysAndValues := []interface{}{
+			log.Errorw("Long running transformation detected",
 				"stage", stage,
-				"duration", time.Since(start).String(),
-			}
-			for k, v := range tags {
-				keysAndValues = append(keysAndValues, k, v)
-			}
-			log.Errorw("Long running transformation detected", keysAndValues)
+				"duration", time.Since(start).String())
 		}
 	}
 }
