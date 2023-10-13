@@ -270,8 +270,18 @@ func (trans *handle) transform(
 	if len(clientEvents) == 0 {
 		return Response{}
 	}
-
 	sTags := statsTags(&clientEvents[0])
+
+	var trackWg sync.WaitGroup
+	defer trackWg.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	trackWg.Add(1)
+	go func() {
+		trackLongRunningTransformation(ctx, stage, sTags, trans.config.timeoutDuration, trans.logger)
+		trackWg.Done()
+	}()
 
 	batches := lo.Chunk(clientEvents, batchSize)
 
@@ -284,7 +294,7 @@ func (trans *handle) transform(
 
 	transformResponse := make([][]TransformerResponse, len(batches))
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(len(batches))
 
 	lo.ForEach(
@@ -529,4 +539,25 @@ func (trans *handle) userTransformURL() string {
 
 func (trans *handle) trackingPlanValidationURL() string {
 	return trans.config.destTransformationURL + "/v0/validate"
+}
+
+func trackLongRunningTransformation(ctx context.Context, stage string, tags map[string]string, timeout time.Duration, log logger.Logger) {
+	start := time.Now()
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			keysAndValues := []interface{}{
+				"stage", stage,
+				"duration", time.Since(start).String(),
+			}
+			for k, v := range tags {
+				keysAndValues = append(keysAndValues, k, v)
+			}
+			log.Errorw("Long running transformation detected", keysAndValues)
+		}
+	}
 }
