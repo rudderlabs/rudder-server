@@ -404,7 +404,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if err != nil {
 					return err
 				}
-				rt.Reporting.Report(reportMetrics, tx.SqlTx())
+				if err = rt.Reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 				return nil
 			})
 		}, rt.sendRetryStoreStats)

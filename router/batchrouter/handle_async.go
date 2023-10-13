@@ -58,7 +58,9 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.SqlTx())
+				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 			}
 			return nil
 		})
@@ -686,7 +688,9 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.SqlTx())
+				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 			}
 			return nil
 		})

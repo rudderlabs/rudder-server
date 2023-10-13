@@ -762,7 +762,9 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.SqlTx())
+				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 			}
 			return nil
 		})
