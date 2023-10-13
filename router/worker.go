@@ -762,8 +762,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
-		t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt)
-		if err == nil {
+		if t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
 	}

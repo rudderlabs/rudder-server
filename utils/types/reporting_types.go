@@ -125,7 +125,7 @@ type EDReportsDB struct {
 	Count int64  `json:"-"`
 }
 
-// The structure in which the error detail data is being sent to reporting service
+// EDMetric The structure in which the error detail data is being sent to reporting service
 type EDMetric struct {
 	EDInstanceDetails
 	PU string `json:"reportedBy"`
