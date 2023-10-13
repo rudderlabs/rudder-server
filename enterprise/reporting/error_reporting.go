@@ -191,6 +191,10 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
+	if !config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
+		return func() {}
+	}
+
 	return func() {
 		edr.mainLoop(edr.ctx, c)
 	}
