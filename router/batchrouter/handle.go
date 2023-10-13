@@ -530,7 +530,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Succeeded.State
 			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
-		case errors.Is(errOccurred, rterror.InvalidServiceProvider):
+		case errors.Is(errOccurred, filemanager.ErrInvalidServiceProvider):
 			brt.logger.Warnf("BRT: Destination %s : %s for destination ID : %v at %v",
 				batchJobs.Connection.Destination.DestinationDefinition.DisplayName, errOccurred.Error(),
 				batchJobs.Connection.Destination.ID, time.Now().Format("01-02-2006"))
@@ -599,13 +599,15 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		}
 
 		timeElapsed := time.Since(firstAttemptedAt)
-		errorCode := ""
+		var failedMessage *types.FailedMessage
+		var errorCode string
 		switch jobState {
 		case jobsdb.Failed.State:
 			if !notifyWarehouseErr && timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
+				failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 				jobState = jobsdb.Aborted.State
 				errorCode = router_utils.DRAIN_ERROR_CODE
 			}
@@ -616,6 +618,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
+					failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 					jobState = jobsdb.Aborted.State
 					errorCode = router_utils.DRAIN_ERROR_CODE
 				}
@@ -624,6 +627,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		case jobsdb.Aborted.State:
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
+			failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 			abortedEvents = append(abortedEvents, job)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
@@ -671,6 +675,9 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 					batchRouterWorkspaceJobStatusCount[workspaceID] += 1
 				}
 				sd.Count++
+				if failedMessage != nil {
+					sd.FailedMessages = append(sd.FailedMessages, failedMessage)
+				}
 			}
 		}
 		// REPORTING - END
@@ -755,7 +762,9 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.SqlTx())
+				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 			}
 			return nil
 		})

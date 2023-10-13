@@ -6,6 +6,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type Connection struct {
@@ -27,6 +28,12 @@ type JobParameters struct {
 	EventName               string `json:"event_name"`
 	EventType               string `json:"event_type"`
 	MessageID               string `json:"message_id"`
+}
+
+// ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails
+func (jp *JobParameters) ParseReceivedAtTime() time.Time {
+	receivedAt, _ := time.Parse(misc.RFC3339Milli, jp.ReceivedAt)
+	return receivedAt
 }
 
 type DestinationJobs struct {
