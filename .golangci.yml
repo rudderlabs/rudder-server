@@ -52,12 +52,6 @@ issues:
       linters:
         - bodyclose
 
-    # Temporary disable until we fix the number of issues
-    - path: 'warehouse'
-      linters:
-        - errcheck
-        - unparam
-
     - path: 'cmd/rudder-cli/status/status.go'
       linters:
         - bodyclose

@@ -189,7 +189,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 		// TODO : support add row for parquet loader
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
-		gzWriter.WriteGZ(data)
+		_ = gzWriter.WriteGZ(data)
 	}
 
 	return len(rows), err
@@ -372,7 +372,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 				eventLoader.AddColumn(columnName, "", rowData[i])
 			}
 			rowString, _ := eventLoader.WriteToString()
-			gzWriter.WriteGZ(rowString)
+			_ = gzWriter.WriteGZ(rowString)
 		}
 		if err = rows.Err(); err != nil {
 			return
@@ -451,7 +451,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 		pkgLogger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
 		return
 	}
-	mergeRulesFileGzWriter.CloseGZ()
+	_ = mergeRulesFileGzWriter.CloseGZ()
 	pkgLogger.Infof(`IDR: Added %d unique rules to %s and file`, len(ruleIDs), idr.mergeRulesTable())
 	// END: Add new merge rules to local pg table and also to file
 
@@ -479,7 +479,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 			)
 		}
 	}
-	mappingsFileGzWriter.CloseGZ()
+	_ = mappingsFileGzWriter.CloseGZ()
 	// END: Add new/changed identity mappings to local pg table and also to file
 
 	// upload new merge rules to object storage
@@ -526,7 +526,7 @@ func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) 
 	defer misc.RemoveFilePaths(loadFileNames...)
 	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	err = idr.warehouseManager.DownloadIdentityRules(ctx, &gzWriter)
-	gzWriter.CloseGZ()
+	_ = gzWriter.CloseGZ()
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
 		return
