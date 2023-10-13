@@ -1590,18 +1590,16 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				continue
 			}
 			// check if jobRunId is cancelled
-			if len(proc.drainConfig.jobRunIDs.Load()) > 0 {
-				if commonMetadataFromSingularEvent.SourceJobRunID != "" &&
-					slices.Contains(
-						proc.drainConfig.jobRunIDs.Load(),
-						commonMetadataFromSingularEvent.SourceJobRunID,
-					) {
-					proc.logger.Debugf(
-						"cancelled jobRunID: %s",
-						commonMetadataFromSingularEvent.SourceJobRunID,
-					)
-					continue
-				}
+			if commonMetadataFromSingularEvent.SourceJobRunID != "" &&
+				slices.Contains(
+					proc.drainConfig.jobRunIDs.Load(),
+					commonMetadataFromSingularEvent.SourceJobRunID,
+				) {
+				proc.logger.Debugf(
+					"cancelled jobRunID: %s",
+					commonMetadataFromSingularEvent.SourceJobRunID,
+				)
+				continue
 			}
 
 			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
