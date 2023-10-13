@@ -2357,6 +2357,10 @@ func (proc *Handle) transformSrcDest(
 	var successCountMetadataMap map[string]MetricMetadata
 	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
+	if _, ok := procErrorJobsByDestID[destID]; !ok {
+		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
+	}
+	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
