@@ -70,7 +70,7 @@ func (nf *AbortingForwarder) Start() error {
 					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
-				time.Sleep(nf.GetSleepTime(limitReached))
+				_ = misc.SleepCtx(ctx, nf.GetSleepTime(limitReached))
 			}
 		}
 	}))

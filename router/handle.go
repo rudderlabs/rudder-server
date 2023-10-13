@@ -327,6 +327,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
+			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
 			routerAbortedJobs = append(routerAbortedJobs, workerJobStatus.job)
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		}

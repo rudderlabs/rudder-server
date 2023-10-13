@@ -131,6 +131,9 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
+	if !config.GetBool("Reporting.syncer.enabled", true) {
+		return func() {}
+	}
 	return func() {
 		r.mainLoop(r.ctx, c)
 	}

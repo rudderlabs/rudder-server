@@ -79,18 +79,13 @@ func enhanceErrorResponseWithFirstAttemptedAtt(msg stdjson.RawMessage, errorResp
 }
 
 func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
-	var err error
-	var firstAttemptedAt time.Time
-	firstAttemptedAtString := gjson.GetBytes(msg, "firstAttemptedAt").Str
-	if firstAttemptedAtString != "" {
-		firstAttemptedAt, err = time.Parse(misc.RFC3339Milli, firstAttemptedAtString)
-		if err != nil {
-			firstAttemptedAt = time.Now()
+	res := time.Now()
+	if firstAttemptedAtString := gjson.GetBytes(msg, "firstAttemptedAt").Str; firstAttemptedAtString != "" {
+		if firstAttemptedAt, err := time.Parse(misc.RFC3339Milli, firstAttemptedAtString); err == nil {
+			res = firstAttemptedAt
 		}
-	} else {
-		firstAttemptedAt = time.Now()
 	}
-	return firstAttemptedAt
+	return res
 }
 
 func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT) ([]*jobsdb.JobStatusT, []*jobsdb.JobT) {
@@ -551,6 +546,7 @@ func (brt *Handle) getReportMetrics(statusList []*jobsdb.JobStatusT, parametersM
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 		case jobsdb.Aborted.State:
+			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 		}
