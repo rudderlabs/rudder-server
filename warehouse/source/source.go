@@ -37,7 +37,6 @@ type Manager struct {
 	}
 }
 
-// New Initializes AsyncJobWh structure with appropriate variabless
 func New(
 	conf *config.Config,
 	log logger.Logger,
@@ -155,7 +154,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 				}
 
 				if pj, ok := pendingJobsMap[response.Id]; ok {
-					pj.Status = job.Status
+					pj.Status = string(job.Status)
 					pj.Error = job.Error
 				}
 			}

@@ -84,7 +84,7 @@ func (repo *Source) Insert(
 			model.SourceJobStatusWaiting,
 			repo.now(),
 			repo.now(),
-			sourceJob.Status,
+			sourceJob.JobType,
 			sourceJob.WorkspaceID,
 			sourceJob.Metadata,
 		).Scan(&id)
@@ -237,7 +237,7 @@ func (repo *Source) OnUpdateSuccess(
 	ctx context.Context,
 	id int64,
 ) error {
-	_, err := repo.db.ExecContext(ctx, `
+	r, err := repo.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -253,6 +253,14 @@ func (repo *Source) OnUpdateSuccess(
 	if err != nil {
 		return fmt.Errorf("on update success: %w", err)
 	}
+	rowsAffected, err := r.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no rows affected")
+	}
+
 	return nil
 }
 
@@ -262,7 +270,7 @@ func (repo *Source) OnUpdateFailure(
 	error error,
 	maxAttempt int,
 ) error {
-	_, err := repo.db.ExecContext(ctx, `
+	r, err := repo.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -284,5 +292,13 @@ func (repo *Source) OnUpdateFailure(
 	if err != nil {
 		return fmt.Errorf("on update success: %w", err)
 	}
+	rowsAffected, err := r.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no rows affected")
+	}
+
 	return nil
 }

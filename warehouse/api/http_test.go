@@ -187,7 +187,12 @@ func TestHTTPApi(t *testing.T) {
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
-	sourcesManager := source.New(config.New(), logger.NOP, db, n)
+	sourcesManager := source.New(
+		config.Default,
+		logger.NOP,
+		db,
+		n,
+	)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
