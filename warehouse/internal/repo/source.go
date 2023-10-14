@@ -96,7 +96,7 @@ func (repo *Source) Insert(
 	}
 
 	if err = txn.Commit(); err != nil {
-		return nil, fmt.Errorf(`commiting: %w`, err)
+		return nil, fmt.Errorf(`committing: %w`, err)
 	}
 
 	return ids, nil

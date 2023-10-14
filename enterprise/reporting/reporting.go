@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -46,8 +45,7 @@ const (
 
 type DefaultReporter struct {
 	ctx                 context.Context
-	init                chan struct{}
-	onceInit            sync.Once
+	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
 	syncers             map[string]*types.SyncSource
 	log                 logger.Logger
@@ -64,17 +62,12 @@ type DefaultReporter struct {
 	maxOpenConnections                   int
 	maxConcurrentRequests                misc.ValueLoader[int]
 
-	backendConfigMu           sync.RWMutex // protects the following
-	workspaceID               string
-	workspaceIDForSourceIDMap map[string]string
-	piiReportingSettings      map[string]bool
-
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 }
 
-func NewDefaultReporter(ctx context.Context, log logger.Logger) *DefaultReporter {
+func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
@@ -93,14 +86,12 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger) *DefaultReporter
 	}
 	return &DefaultReporter{
 		ctx:                                  ctx,
-		init:                                 make(chan struct{}),
 		log:                                  log,
+		configSubscriber:                     configSubscriber,
 		syncers:                              make(map[string]*types.SyncSource),
 		reportingServiceURL:                  reportingServiceURL,
 		namespace:                            config.GetKubeNamespace(),
 		instanceID:                           config.GetString("INSTANCE_ID", "1"),
-		workspaceIDForSourceIDMap:            make(map[string]string),
-		piiReportingSettings:                 make(map[string]bool),
 		whActionsOnly:                        whActionsOnly,
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
@@ -110,53 +101,6 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger) *DefaultReporter
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 	}
-}
-
-func (r *DefaultReporter) backendConfigSubscriber(beConfigHandle backendconfig.BackendConfig) {
-	r.log.Info("[[ Reporting ]] Setting up reporting handler")
-	defer r.onceInit.Do(func() {
-		close(r.init)
-	})
-
-	if r.ctx.Err() != nil {
-		return
-	}
-	ch := beConfigHandle.Subscribe(r.ctx, backendconfig.TopicBackendConfig)
-
-	for c := range ch {
-		conf := c.Data.(map[string]backendconfig.ConfigT)
-		newWorkspaceIDForSourceIDMap := make(map[string]string)
-		newPIIReportingSettings := make(map[string]bool)
-		var newWorkspaceID string
-
-		for workspaceID, wConfig := range conf {
-			newWorkspaceID = workspaceID
-			for _, source := range wConfig.Sources {
-				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
-			}
-			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
-		}
-		if len(conf) > 1 {
-			newWorkspaceID = ""
-		}
-
-		r.backendConfigMu.Lock()
-		r.workspaceID = newWorkspaceID
-		r.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		r.piiReportingSettings = newPIIReportingSettings
-		r.backendConfigMu.Unlock()
-
-		r.onceInit.Do(func() {
-			close(r.init)
-		})
-	}
-}
-
-func (r *DefaultReporter) getWorkspaceID(sourceID string) string {
-	<-r.init
-	r.backendConfigMu.RLock()
-	defer r.backendConfigMu.RUnlock()
-	return r.workspaceIDForSourceIDMap[sourceID]
 }
 
 func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
@@ -187,6 +131,9 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
+	if !config.GetBool("Reporting.syncer.enabled", true) {
+		return func() {}
+	}
 	return func() {
 		r.mainLoop(r.ctx, c)
 	}
@@ -367,7 +314,8 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 }
 
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
-	<-r.init
+	r.configSubscriber.Wait()
+
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(c.Label)
@@ -562,16 +510,9 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) IsPIIReportingDisabled(workspaceID string) bool {
-	<-r.init
-	r.backendConfigMu.RLock()
-	defer r.backendConfigMu.RUnlock()
-	return r.piiReportingSettings[workspaceID]
-}
-
-func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
 	if len(metrics) == 0 {
-		return
+		return nil
 	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable,
@@ -599,21 +540,20 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 		"error_type",
 	))
 	if err != nil {
-		_ = txn.Rollback()
-		panic(err)
+		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
+		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
 		if slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
 			metric.StatusDetail.EventName = metric.StatusDetail.EventType
 		}
 
-		if r.IsPIIReportingDisabled(workspaceID) {
+		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
@@ -639,21 +579,22 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
-			metric.StatusDetail.ErrorType)
+			metric.StatusDetail.ErrorType,
+		)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		panic(err)
+	if _, err = stmt.Exec(); err != nil {
+		return fmt.Errorf("executing final statement: %v", err)
 	}
+
+	return nil
 }
 
 func (r *DefaultReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
-		"workspaceId": r.workspaceID,
+		"workspaceId": r.configSubscriber.WorkspaceID(),
 		"instanceId":  r.instanceID,
 		"clientName":  label,
 	}

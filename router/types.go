@@ -29,6 +29,12 @@ type JobParameters struct {
 	RudderAccountID         string      `json:"rudderAccountId"`
 }
 
+// ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails
+func (jp *JobParameters) ParseReceivedAtTime() time.Time {
+	receivedAt, _ := time.Parse(misc.RFC3339Milli, jp.ReceivedAt)
+	return receivedAt
+}
+
 type workerJobStatus struct {
 	userID string
 	worker *worker
@@ -85,9 +91,11 @@ type reloadableConfig struct {
 	jobsDBCommandTimeout                    misc.ValueLoader[time.Duration]
 	jobdDBMaxRetries                        misc.ValueLoader[int]
 	maxFailedCountForJob                    misc.ValueLoader[int]
+	maxFailedCountForSourcesJob             misc.ValueLoader[int]
 	payloadLimit                            misc.ValueLoader[int64]
 	routerTimeout                           misc.ValueLoader[time.Duration]
 	retryTimeWindow                         misc.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow                  misc.ValueLoader[time.Duration]
 	pickupFlushInterval                     misc.ValueLoader[time.Duration]
 	maxDSQuerySize                          misc.ValueLoader[int]
 	jobIteratorMaxQueries                   misc.ValueLoader[int]

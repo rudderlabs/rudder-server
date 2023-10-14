@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"time"
 
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
@@ -213,12 +214,15 @@ func (*SourceUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.
 func (*SourceUploader) GetLocalSchema(context.Context) (model.Schema, error) {
 	return model.Schema{}, nil
 }
+
 func (*SourceUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
+
 func (*SourceUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
+
 func (*SourceUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
 	return "", nil
 }

@@ -105,7 +105,7 @@ func (w *worker) workLoop() {
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     strconv.Itoa(routerutils.DRAIN_ERROR_CODE),
+					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
 					Parameters:    routerutils.EmptyPayload,
 					JobParameters: job.Parameters,
 					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
@@ -762,8 +762,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
-		t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt)
-		if err == nil {
+		if t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
 	}
@@ -897,8 +896,19 @@ func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
 		}
 	}
 	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
-	return (respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
-		(time.Since(firstAttemptedAtTime) > w.rt.reloadableConfig.retryTimeWindow.Load() && status.AttemptNum >= w.rt.reloadableConfig.maxFailedCountForJob.Load()) // retry time window exceeded
+
+	maxFailedCountForJob := w.rt.reloadableConfig.maxFailedCountForJob.Load()
+	retryTimeWindow := w.rt.reloadableConfig.retryTimeWindow.Load()
+	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+		maxFailedCountForJob = w.rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
+		retryTimeWindow = w.rt.reloadableConfig.sourcesRetryTimeWindow.Load()
+	}
+
+	return (respStatusCode >= 500 &&
+		respStatusCode != types.RouterTimedOutStatusCode &&
+		respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
+		time.Since(firstAttemptedAtTime) > retryTimeWindow &&
+		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }
 
 // AvailableSlots returns the number of available slots in the worker's input channel

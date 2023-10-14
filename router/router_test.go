@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strconv"
 	"testing"
 	"time"
 
@@ -676,7 +675,117 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, strconv.Itoa(routerUtils.DRAIN_ERROR_CODE), fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
+					assertJobStatus(
+						jobs[0],
+						drainList[0],
+						jobsdb.Aborted.State,
+						routerUtils.DRAIN_ERROR_CODE,
+						fmt.Sprintf(
+							`{"reason": %s}`,
+							fmt.Sprintf(
+								`{"firstAttemptedAt": %q}`,
+								firstAttemptedAt.Format(misc.RFC3339Milli),
+							),
+						),
+						jobs[0].LastJobStatus.AttemptNum,
+					)
+					routerAborted = true
+				})
+
+			<-router.backendConfigInitialized
+			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			defer worker.Stop()
+			Expect(worker.Work()).To(BeTrue())
+			Expect(worker.pickupCount).To(Equal(len(jobs)))
+			Eventually(func() bool {
+				return routerAborted && procErrorStored
+			}, 60*time.Second, 10*time.Millisecond).
+				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
+		})
+
+		It("aborts sources events that have reached max retries - different limits", func() {
+			config.Set("Router.jobRetention", "24h")
+			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+
+			router := &Handle{
+				Reporting: &reporting.NOOP{},
+			}
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.netHandle = mockNetHandle
+
+			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.sourcesRetryTimeWindow.Load())
+			jobs := []*jobsdb.JobT{
+				{
+					UUID:         uuid.New(),
+					UserID:       "u1",
+					JobID:        2010,
+					CreatedAt:    firstAttemptedAt.Add(-time.Minute),
+					ExpireAt:     firstAttemptedAt.Add(-time.Minute),
+					CustomVal:    customVal["GA"],
+					EventPayload: []byte(`{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum:    router.reloadableConfig.maxFailedCountForSourcesJob.Load(),
+						JobState:      jobsdb.Failed.State,
+						ErrorCode:     "500",
+						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
+						JobParameters: []byte(fmt.Sprintf(`{
+							"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+							"destination_id": "%s",
+							"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
+							"received_at": "%s",
+							"transform_at": "processor",
+							"source_job_run_id": "someJobRunId"
+						}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					},
+					Parameters: []byte(fmt.Sprintf(`{
+						"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+						"destination_id": "%s",
+						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
+						"received_at": "%s",
+						"transform_at": "processor",
+						"source_job_run_id": "someJobRunId"
+					}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					WorkspaceId: workspaceID,
+				},
+			}
+
+			payloadLimit := router.reloadableConfig.payloadLimit
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
+				CustomValFilters: []string{customVal["GA"]},
+				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
+				PayloadSizeLimit: payloadLimit.Load(),
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
+
+			var routerAborted bool
+			var procErrorStored bool
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
+					job := jobList[0]
+					var parameters map[string]interface{}
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						panic(err)
+					}
+
+					Expect(job.JobID).To(Equal(jobs[0].JobID))
+					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
+					Expect(job.UserID).To(Equal(jobs[0].UserID))
+					procErrorStored = true
+				})
+
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+					Expect(drainList).To(HaveLen(1))
+					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, routerUtils.DRAIN_ERROR_CODE, fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
 					routerAborted = true
 				})
 

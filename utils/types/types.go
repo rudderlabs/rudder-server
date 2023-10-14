@@ -61,7 +61,7 @@ type ConfigEnvI interface {
 // Reporting is interface to report metrics
 type Reporting interface {
 	// Report reports metrics to reporting service
-	Report(metrics []*PUReportedMetric, txn *sql.Tx)
+	Report(metrics []*PUReportedMetric, txn *sql.Tx) error
 
 	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
 	DatabaseSyncer(c SyncerConfig) ReportingSyncer

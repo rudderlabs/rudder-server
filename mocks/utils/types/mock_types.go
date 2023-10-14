@@ -88,9 +88,11 @@ func (mr *MockReportingMockRecorder) DatabaseSyncer(arg0 interface{}) *gomock.Ca
 }
 
 // Report mocks base method.
-func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) {
+func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Report", arg0, arg1)
+	ret := m.ctrl.Call(m, "Report", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Report indicates an expected call of Report.

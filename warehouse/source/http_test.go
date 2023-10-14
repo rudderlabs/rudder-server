@@ -203,13 +203,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  false,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
 
@@ -221,13 +215,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  true,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -239,13 +227,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  true,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -265,10 +247,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			jobsManager := Manager{
-				db:       db,
-				enabled:  true,
 				logger:   logger.NOP,
-				context:  ctx,
 				notifier: n,
 			}
 			jobsManager.InsertJobHandler(resp, req)
@@ -287,13 +266,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  false,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
 
@@ -305,13 +278,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  true,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -336,17 +303,11 @@ func TestAsyncJobHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				db:       db,
-				enabled:  true,
-				logger:   logger.NOP,
-				context:  ctx,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
-			var statusResponse JobStatusResponse
+			var statusResponse jobStatusResponse
 			err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 			require.NoError(t, err)
 			require.Equal(t, statusResponse.Status, "aborted")

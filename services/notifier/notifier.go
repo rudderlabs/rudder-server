@@ -187,11 +187,11 @@ func New(
 	})
 	n.stats.claimSucceeded = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": string(Succeeded),
+		"status": Succeeded,
 	})
 	n.stats.claimFailed = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
 		"module": module,
-		"status": string(Failed),
+		"status": Failed,
 	})
 	n.stats.claimUpdateFailed = n.statsFactory.NewStat("pgnotifier.claimUpdateFailed", stats.CountType)
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
@@ -199,11 +199,11 @@ func New(
 	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": string(Succeeded),
+		"status": Succeeded,
 	})
 	n.stats.claimFailedTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": module,
-		"status": string(Failed),
+		"status": Failed,
 	})
 	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier.aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,

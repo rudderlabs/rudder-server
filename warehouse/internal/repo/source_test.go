@@ -3,10 +3,11 @@ package repo_test
 import (
 	"context"
 	"encoding/json"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strconv"
 	"testing"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/require"
 
