@@ -3,6 +3,7 @@ package reporting
 import (
 	"context"
 	"encoding/json"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"testing"
 	"time"
 
@@ -21,6 +22,43 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+func TestParquet(t *testing.T) {
+	payloads := []payload{
+		{
+			MessageID:        "test-message-id",
+			SourceID:         "test-source-id",
+			DestinationID:    "test-destination-id",
+			TransformationID: "test-transformation-id",
+			TrackingPlanID:   "test-tracking-plan-id",
+			FailedStage:      "test-failed-stage",
+			EventType:        "test-event-type",
+			EventName:        "test-event-name",
+			ReceivedAt:       time.Now().UTC(),
+			FailedAt:         time.Now().UTC(),
+		},
+		{
+			MessageID:        "test-message-id-2",
+			SourceID:         "test-source-id-2",
+			DestinationID:    "test-destination-id-2",
+			TransformationID: "test-transformation-id-2",
+			TrackingPlanID:   "test-tracking-plan-id-2",
+			FailedStage:      "test-failed-stage-2",
+			EventType:        "test-event-type-2",
+			EventName:        "test-event-name-2",
+			ReceivedAt:       time.Now().UTC(),
+			FailedAt:         time.Now().UTC(),
+		},
+	}
+	eir := &ErrorIndexReporter{}
+	eir.config.parquetParallelWriters = misc.SingleValueLoader(int64(1))
+	eir.now = func() time.Time {
+		return time.Now().UTC()
+	}
+
+	_, err := eir.createParquetFile(payloads)
+	require.NoError(t, err)
+}
 
 func TestErrorIndexReporter(t *testing.T) {
 	workspaceID := "test-workspace-id"
