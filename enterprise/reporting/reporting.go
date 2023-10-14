@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	eventStats "github.com/rudderlabs/rudder-server/enterprise/reporting/event-stats"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -585,8 +584,6 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx)
 		if err != nil {
 			return fmt.Errorf("executing statement: %v", err)
 		}
-
-		eventStats.Report(workspaceID, &metric)
 	}
 	if _, err = stmt.Exec(); err != nil {
 		return fmt.Errorf("executing final statement: %v", err)

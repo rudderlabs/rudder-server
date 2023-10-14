@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -18,11 +20,13 @@ type Mediator struct {
 	g         *errgroup.Group
 	ctx       context.Context
 	reporters []types.Reporting
+	stats     stats.Stats
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
 	rm := &Mediator{
-		log: log,
+		log:   log,
+		stats: stats.Default,
 	}
 	rm.g, rm.ctx = errgroup.WithContext(ctx)
 
@@ -52,6 +56,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 		errorIndexReporter := NewErrorIndexReporter(rm.ctx, config.Default, rm.log, configSubscriber)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
+	rm.reporters = append(rm.reporters, NewEventStatsReporter(configSubscriber, rm.stats))
 
 	return rm
 }
