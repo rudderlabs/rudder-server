@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestEventStatsReporter(t *testing.T) {
@@ -138,5 +139,4 @@ func TestEventStatsReporter(t *testing.T) {
 		"sourceCategory": sourceCategory,
 		"terminal":       "false",
 	}), nil)
-
 }
