@@ -2,7 +2,6 @@ package reporting
 
 import (
 	"database/sql"
-	"fmt"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -33,7 +32,6 @@ func (es *EventStatsReporter) Report(metrics []*types.PUReportedMetric, _ *sql.T
 		if !(metric.StatusDetail.Status == "aborted" || metric.StatusDetail.Status == "succeeded") {
 			continue
 		}
-		fmt.Println(es.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID))
 		tags := stats.Tags{
 			"workspaceId":    es.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID),
 			"sourceId":       metric.ConnectionDetails.SourceID,
@@ -42,14 +40,11 @@ func (es *EventStatsReporter) Report(metrics []*types.PUReportedMetric, _ *sql.T
 			"sourceCategory": metric.ConnectionDetails.SourceCategory,
 			"terminal":       strconv.FormatBool(metric.PUDetails.TerminalPU),
 		}
-		fmt.Println(tags, "tags")
 
 		metricName := EventsDeliveredMetricName
 		if metric.StatusDetail.Status == "aborted" {
 			metricName = EventsAbortedMetricName
 		}
-		fmt.Println(metricName, "metricName")
-		fmt.Println(es.stats)
 		es.stats.NewTaggedStat(metricName, stats.CountType, tags).Count(int(metric.StatusDetail.Count))
 	}
 	return nil
