@@ -74,7 +74,7 @@ type Api struct {
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
 	bcManager     *bcm.BackendConfigManager
-	asyncManager  *source.Manager
+	sourceManager *source.Manager
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
@@ -99,7 +99,7 @@ func NewApi(
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
-	asyncManager *source.Manager,
+	sourceManager *source.Manager,
 	triggerStore *sync.Map,
 ) *Api {
 	a := &Api{
@@ -111,7 +111,7 @@ func NewApi(
 		statsFactory:  statsFactory,
 		tenantManager: tenantManager,
 		bcManager:     bcManager,
-		asyncManager:  asyncManager,
+		sourceManager: sourceManager,
 		triggerStore:  triggerStore,
 		stagingRepo:   repo.NewStagingFiles(db),
 		uploadRepo:    repo.NewUploads(db),
@@ -166,8 +166,8 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 			r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
 			r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
 
-			r.Post("/jobs", a.logMiddleware(a.asyncManager.InsertJobHandler))       // TODO: add degraded mode
-			r.Get("/jobs/status", a.logMiddleware(a.asyncManager.StatusJobHandler)) // TODO: add degraded mode
+			r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))       // TODO: add degraded mode
+			r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler)) // TODO: add degraded mode
 
 			r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
 		})

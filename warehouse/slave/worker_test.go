@@ -604,13 +604,13 @@ func TestSlaveWorker(t *testing.T) {
 			go func() {
 				defer close(claimedJobDone)
 
-				slaveWorker.processClaimedAsyncJob(ctx, claim)
+				slaveWorker.processClaimedSourceJob(ctx, claim)
 			}()
 
 			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
-			var asyncResult asyncJobRunResult
+			var asyncResult sourceJobRunResult
 			err = json.Unmarshal(response.Payload, &asyncResult)
 			require.NoError(t, err)
 
@@ -654,7 +654,7 @@ func TestSlaveWorker(t *testing.T) {
 					sourceID:      sourceID,
 					destinationID: destinationID,
 					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid asyncJob type"),
+					expectedError: errors.New("invalid sourceJob type"),
 				},
 				{
 					name:          "invalid parameters",
@@ -710,7 +710,7 @@ func TestSlaveWorker(t *testing.T) {
 					go func() {
 						defer close(claimedJobDone)
 
-						slaveWorker.processClaimedAsyncJob(ctx, claim)
+						slaveWorker.processClaimedSourceJob(ctx, claim)
 					}()
 
 					response := <-subscribeCh

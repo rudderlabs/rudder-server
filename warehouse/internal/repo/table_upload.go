@@ -91,15 +91,7 @@ func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames
 	defer func() { _ = stmt.Close() }()
 
 	for _, tableName := range tableNames {
-		_, err = stmt.ExecContext(
-			ctx,
-			uploadID,
-			tableName,
-			model.TableUploadWaiting,
-			"{}",
-			repo.now(),
-			repo.now(),
-		)
+		_, err = stmt.ExecContext(ctx, uploadID, tableName, model.TableUploadWaiting, "{}", repo.now(), repo.now())
 		if err != nil {
 			return fmt.Errorf(`stmt exec: %w`, err)
 		}
@@ -120,6 +112,7 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 	if err != nil {
 		return nil, fmt.Errorf("querying table uploads: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 
 	var tableUploads []model.TableUpload
 	for rows.Next() {

@@ -51,7 +51,7 @@ type uploadResult struct {
 	UseRudderStorage      bool
 }
 
-type asyncJobRunResult struct {
+type sourceJobRunResult struct {
 	Result bool  `json:"Result"`
 	ID     int64 `json:"Id"`
 }
@@ -134,7 +134,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
-				w.processClaimedAsyncJob(ctx, claimedJob)
+				w.processClaimedSourceJob(ctx, claimedJob)
 			default:
 				w.processClaimedUploadJob(ctx, claimedJob)
 			}
@@ -424,7 +424,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 	return uploadsResults, err
 }
 
-func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
 		w.log.Errorf("Error processing claim: %v", err)
 
@@ -443,7 +443,7 @@ func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifie
 		return
 	}
 
-	jobResult, err := w.runAsyncJob(ctx, job)
+	jobResult, err := w.runSourceJob(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -460,13 +460,13 @@ func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifie
 	})
 }
 
-func (w *worker) runAsyncJob(ctx context.Context, asyncjob model.SourceJob) (asyncJobRunResult, error) {
-	result := asyncJobRunResult{
-		ID:     asyncjob.ID,
+func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (sourceJobRunResult, error) {
+	result := sourceJobRunResult{
+		ID:     sourceJob.ID,
 		Result: false,
 	}
 
-	warehouse, err := w.destinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	warehouse, err := w.destinationFromSlaveConnectionMap(sourceJob.DestinationID, sourceJob.SourceID)
 	if err != nil {
 		return result, err
 	}
@@ -488,20 +488,20 @@ func (w *worker) runAsyncJob(ctx context.Context, asyncjob model.SourceJob) (asy
 	defer integrationsManager.Cleanup(ctx)
 
 	var metadata warehouseutils.DeleteByMetaData
-	if err = json.Unmarshal(asyncjob.Metadata, &metadata); err != nil {
+	if err = json.Unmarshal(sourceJob.Metadata, &metadata); err != nil {
 		return result, err
 	}
 
-	switch asyncjob.JobType {
+	switch sourceJob.JobType {
 	case model.DeleteByJobRunID:
-		err = integrationsManager.DeleteBy(ctx, []string{asyncjob.TableName}, warehouseutils.DeleteByParams{
-			SourceId:  asyncjob.SourceID,
+		err = integrationsManager.DeleteBy(ctx, []string{sourceJob.TableName}, warehouseutils.DeleteByParams{
+			SourceId:  sourceJob.SourceID,
 			TaskRunId: metadata.TaskRunId,
 			JobRunId:  metadata.JobRunId,
 			StartTime: metadata.StartTime,
 		})
 	default:
-		err = errors.New("invalid asyncJob type")
+		err = errors.New("invalid sourceJob type")
 	}
 	if err != nil {
 		return result, err

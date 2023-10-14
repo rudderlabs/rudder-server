@@ -43,13 +43,13 @@ func (a *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	var payload insertJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.logger.Warnw("invalid JSON in request body for inserting async jobs", lf.Error, err.Error())
+		a.logger.Warnw("invalid JSON in request body for inserting source jobs", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := validatePayload(&payload); err != nil {
-		a.logger.Warnw("invalid payload for inserting async job", lf.Error, err.Error())
+		a.logger.Warnw("invalid payload for inserting source job", lf.Error, err.Error())
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -66,7 +66,7 @@ func (a *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorw("extracting tableNames for inserting async job", lf.Error, err.Error())
+		a.logger.Errorw("extracting tableNames for inserting source job", lf.Error, err.Error())
 		http.Error(w, "can't extract tableNames", http.StatusInternalServerError)
 		return
 	}
@@ -97,7 +97,7 @@ func (a *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		JobType:   string(notifier.JobTypeAsync),
 	})
 	if err != nil {
-		a.logger.Errorw("marshalling metadata for inserting async job", lf.Error, err.Error())
+		a.logger.Errorw("marshalling metadata for inserting source job", lf.Error, err.Error())
 		http.Error(w, "can't marshall metadata", http.StatusInternalServerError)
 		return
 	}
@@ -128,7 +128,7 @@ func (a *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		Err:    nil,
 	})
 	if err != nil {
-		a.logger.Errorw("marshalling response for inserting async job", lf.Error, err.Error())
+		a.logger.Errorw("marshalling response for inserting source job", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -149,7 +149,7 @@ func (a *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID:   queryParams.Get("workspace_id"),
 	}
 	if err := validatePayload(&payload); err != nil {
-		a.logger.Warnw("invalid payload for async job status", lf.Error, err.Error())
+		a.logger.Warnw("invalid payload for source job status", lf.Error, err.Error())
 		http.Error(w, fmt.Sprintf("invalid request: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -160,8 +160,8 @@ func (a *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Warnw("unable to get async job status", lf.Error, err.Error())
-		http.Error(w, fmt.Sprintf("can't get async job status: %s", err.Error()), http.StatusBadRequest)
+		a.logger.Warnw("unable to get source job status", lf.Error, err.Error())
+		http.Error(w, fmt.Sprintf("can't get source job status: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
@@ -182,7 +182,7 @@ func (a *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	resBody, err := json.Marshal(statusResponse)
 	if err != nil {
-		a.logger.Errorw("marshalling response for async job status", lf.Error, err.Error())
+		a.logger.Errorw("marshalling response for source job status", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}

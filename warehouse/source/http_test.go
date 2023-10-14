@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAsyncJobHandlers(t *testing.T) {
+func TestHTTPHandlers(t *testing.T) {
 	const (
 		workspaceID         = "test_workspace_id"
 		sourceID            = "test_source_id"
@@ -199,18 +199,6 @@ func TestAsyncJobHandlers(t *testing.T) {
 	})
 
 	t.Run("InsertJobHandler", func(t *testing.T) {
-		t.Run("Not enabled", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", nil)
-			resp := httptest.NewRecorder()
-
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.InsertJobHandler(resp, req)
-			require.Equal(t, http.StatusInternalServerError, resp.Code)
-
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, "warehouse jobs api not initialized\n", string(b))
-		})
 		t.Run("invalid payload", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
@@ -262,18 +250,6 @@ func TestAsyncJobHandlers(t *testing.T) {
 	})
 
 	t.Run("StatusJobHandler", func(t *testing.T) {
-		t.Run("Not enabled", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
-			resp := httptest.NewRecorder()
-
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.StatusJobHandler(resp, req)
-			require.Equal(t, http.StatusInternalServerError, resp.Code)
-
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, "warehouse jobs api not initialized\n", string(b))
-		})
 		t.Run("invalid payload", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()

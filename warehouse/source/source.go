@@ -37,7 +37,6 @@ type Manager struct {
 	}
 }
 
-// New Initializes AsyncJobWh structure with appropriate variabless
 func New(
 	conf *config.Config,
 	log logger.Logger,
@@ -69,7 +68,7 @@ func (a *Manager) Run(ctx context.Context) error {
 
 /*
 startProcessing is the main runner that
-1) Periodically queries the db for any pending async jobs
+1) Periodically queries the db for any pending source jobs
 2) Groups them together
 3) Publishes them to the notifier
 4) Spawns a subroutine that periodically checks for responses from Notifier/slave worker post trackBatch
@@ -84,7 +83,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 
 		pendingJobs, err := a.sourceRepo.GetToProcess(ctx, a.config.maxBatchSizeToProcess)
 		if err != nil {
-			return fmt.Errorf("unable to get pending async jobs with error %s", err.Error())
+			return fmt.Errorf("unable to get pending source jobs with error %s", err.Error())
 		}
 		if len(pendingJobs) == 0 {
 			continue
@@ -94,7 +93,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 		for _, job := range pendingJobs {
 			message, err := json.Marshal(job)
 			if err != nil {
-				return fmt.Errorf("unable to marshal async job payload with error %s", err.Error())
+				return fmt.Errorf("unable to marshal source job payload with error %s", err.Error())
 			}
 			notifierClaims = append(notifierClaims, message)
 		}
@@ -105,7 +104,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 			Priority: 100,
 		})
 		if err != nil {
-			return fmt.Errorf("unable to publish async jobs to notifier with error %s", err.Error())
+			return fmt.Errorf("unable to publish source jobs to notifier with error %s", err.Error())
 		}
 
 		pendingJobsMap := make(map[int64]model.SourceJob)
@@ -127,7 +126,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 						a.config.maxAttemptsPerJob,
 					)
 					if err != nil {
-						return fmt.Errorf("unable to update async job with error %s", err.Error())
+						return fmt.Errorf("unable to update source job with error %s", err.Error())
 					}
 				}
 				continue
@@ -141,7 +140,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 						a.config.maxAttemptsPerJob,
 					)
 					if err != nil {
-						return fmt.Errorf("unable to update async job with error %s", err.Error())
+						return fmt.Errorf("unable to update source job with error %s", err.Error())
 					}
 				}
 				continue
@@ -155,7 +154,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 				}
 
 				if pj, ok := pendingJobsMap[response.Id]; ok {
-					pj.Status = job.Status
+					pj.Status = string(job.Status)
 					pj.Error = job.Error
 				}
 			}
@@ -169,7 +168,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 						a.config.maxAttemptsPerJob,
 					)
 					if err != nil {
-						return fmt.Errorf("unable to update async job with error %s", err.Error())
+						return fmt.Errorf("unable to update source job with error %s", err.Error())
 					}
 					continue
 				}
@@ -178,7 +177,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 					job.ID,
 				)
 				if err != nil {
-					return fmt.Errorf("unable to update async job with error %s", err.Error())
+					return fmt.Errorf("unable to update source job with error %s", err.Error())
 				}
 			}
 		case <-time.After(a.config.processingTimeout):
@@ -190,7 +189,7 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 					a.config.maxAttemptsPerJob,
 				)
 				if err != nil {
-					return fmt.Errorf("unable to update async job with error %s", err.Error())
+					return fmt.Errorf("unable to update source job with error %s", err.Error())
 				}
 			}
 		}

@@ -159,7 +159,7 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap                  testhelper.EventsCountMap
 			tableUploadsEventsMap               testhelper.EventsCountMap
 			warehouseEventsMap                  testhelper.EventsCountMap
-			asyncJob                            bool
+			sourceJob                           bool
 			skipModifiedEvents                  bool
 			prerequisite                        func(t testing.TB)
 			isDedupEnabled                      bool
@@ -189,7 +189,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-merge-mode",
 			},
 			{
-				name:          "Async Job",
+				name:          "Source Job",
 				writeKey:      sourcesWriteKey,
 				sourceID:      sourcesSourceID,
 				destinationID: sourcesDestinationID,
@@ -204,7 +204,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				isDedupEnabled:        false,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
@@ -341,7 +341,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -353,7 +353,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
