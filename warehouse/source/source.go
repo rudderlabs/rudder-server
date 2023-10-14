@@ -196,32 +196,24 @@ func (a *Manager) startProcessing(ctx context.Context) error {
 	}
 }
 
-type SourceUploader struct{}
+type Uploader struct{}
 
-func (*SourceUploader) IsWarehouseSchemaEmpty() bool                          { return true }
-func (*SourceUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
-func (*SourceUploader) GetTableSchemaInUpload(string) model.TableSchema       { return model.TableSchema{} }
-func (*SourceUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
-	return model.TableSchema{}
-}
-func (*SourceUploader) ShouldOnDedupUseNewRecord() bool           { return false }
-func (*SourceUploader) UseRudderStorage() bool                    { return false }
-func (*SourceUploader) CanAppend() bool                           { return false }
-func (*SourceUploader) GetLoadFileGenStartTIme() time.Time        { return time.Time{} }
-func (*SourceUploader) GetLoadFileType() string                   { return "" }
-func (*SourceUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Now(), time.Now() }
-func (*SourceUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-
-func (*SourceUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (*SourceUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (*Uploader) IsWarehouseSchemaEmpty() bool                                      { return true }
+func (*Uploader) UpdateLocalSchema(context.Context, model.Schema) error             { return nil }
+func (*Uploader) GetTableSchemaInUpload(string) model.TableSchema                   { return model.TableSchema{} }
+func (*Uploader) ShouldOnDedupUseNewRecord() bool                                   { return false }
+func (*Uploader) UseRudderStorage() bool                                            { return false }
+func (*Uploader) CanAppend() bool                                                   { return false }
+func (*Uploader) GetLoadFileGenStartTIme() time.Time                                { return time.Time{} }
+func (*Uploader) GetLoadFileType() string                                           { return "" }
+func (*Uploader) GetFirstLastEvent() (time.Time, time.Time)                         { return time.Now(), time.Now() }
+func (*Uploader) GetLocalSchema(context.Context) (model.Schema, error)              { return model.Schema{}, nil }
+func (*Uploader) GetTableSchemaInWarehouse(string) model.TableSchema                { return model.TableSchema{} }
+func (*Uploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
+func (*Uploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
-func (*SourceUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
-	return "", nil
+func (*Uploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }

@@ -24,6 +24,7 @@ type insertJobRequest struct {
 	StartTime     string `json:"start_time"`
 	JobRunID      string `json:"job_run_id"`
 	TaskRunID     string `json:"task_run_id"`
+	JobType       string `json:"async_job_type"`
 	WorkspaceID   string `json:"workspace_id"`
 }
 
@@ -108,7 +109,7 @@ func (a *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			DestinationID: payload.DestinationID,
 			WorkspaceID:   payload.WorkspaceID,
 			TableName:     item,
-			JobType:       model.DeleteByJobRunID,
+			JobType:       payload.JobType,
 			Metadata:      metadataJson,
 		}
 	})

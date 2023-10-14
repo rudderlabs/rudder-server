@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
+//nolint:unparam
 func sourcesJobs(
 	sourceID, destinationID, workspaceID string,
 	jobType string, metadata json.RawMessage,
@@ -236,6 +237,14 @@ func TestSource_GetByJobRunTaskRun(t *testing.T) {
 }
 
 func TestSource_OnUpdateSuccess(t *testing.T) {
+	const (
+		sourceId      = "test_source_id"
+		destinationId = "test_destination_id"
+		workspaceId   = "test_workspace_id"
+		jobRun        = "test-job-run"
+		taskRun       = "test-task-run"
+	)
+
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -243,8 +252,39 @@ func TestSource_OnUpdateSuccess(t *testing.T) {
 		return now
 	}))
 
-	t.Run("success", func(t *testing.T) {})
-	t.Run("job not found", func(t *testing.T) {})
+	t.Run("success", func(t *testing.T) {
+		ids, err := repoSource.Insert(
+			ctx,
+			sourcesJobs(sourceId, destinationId, workspaceId, model.DeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
+		)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+
+		err = repoSource.OnUpdateSuccess(ctx, int64(1))
+		require.NoError(t, err)
+
+		job, err := repoSource.GetByJobRunTaskRun(ctx, jobRun, taskRun)
+		require.NoError(t, err)
+
+		require.Equal(t, job, &model.SourceJob{
+			ID:            1,
+			SourceID:      sourceId,
+			DestinationID: destinationId,
+			WorkspaceID:   workspaceId,
+			TableName:     "table0",
+			Status:        model.SourceJobStatusSucceeded,
+			Error:         nil,
+			JobType:       model.DeleteByJobRunID,
+			Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+			CreatedAt:     now.UTC(),
+			UpdatedAt:     now.UTC(),
+			Attempts:      0,
+		})
+	})
+	t.Run("job not found", func(t *testing.T) {
+		err := repoSource.OnUpdateSuccess(ctx, int64(-1))
+		require.ErrorIs(t, err, model.ErrSourcesJobNotFound)
+	})
 	t.Run("context cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
@@ -256,7 +296,12 @@ func TestSource_OnUpdateSuccess(t *testing.T) {
 
 func TestSource_OnUpdateFailure(t *testing.T) {
 	const (
-		testError = "test-error"
+		sourceId      = "test_source_id"
+		destinationId = "test_destination_id"
+		workspaceId   = "test_workspace_id"
+		jobRun        = "test-job-run"
+		taskRun       = "test-task-run"
+		testError     = "test-error"
 	)
 
 	db, ctx := setupDB(t), context.Background()
@@ -266,8 +311,63 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 		return now
 	}))
 
-	t.Run("success", func(t *testing.T) {})
-	t.Run("job not found", func(t *testing.T) {})
+	t.Run("success", func(t *testing.T) {
+		ids, err := repoSource.Insert(
+			ctx,
+			sourcesJobs(sourceId, destinationId, workspaceId, model.DeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
+		)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+
+		t.Run("not crossed max attempt", func(t *testing.T) {
+			err = repoSource.OnUpdateFailure(ctx, int64(1), errors.New(testError), 1)
+			require.NoError(t, err)
+
+			job, err := repoSource.GetByJobRunTaskRun(ctx, jobRun, taskRun)
+			require.NoError(t, err)
+
+			require.Equal(t, job, &model.SourceJob{
+				ID:            1,
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				WorkspaceID:   workspaceId,
+				TableName:     "table0",
+				Status:        model.Failed,
+				Error:         errors.New(testError),
+				JobType:       model.DeleteByJobRunID,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt:     now.UTC(),
+				UpdatedAt:     now.UTC(),
+				Attempts:      1,
+			})
+		})
+		t.Run("crossed max attempt", func(t *testing.T) {
+			err = repoSource.OnUpdateFailure(ctx, int64(1), errors.New(testError), -1)
+			require.NoError(t, err)
+
+			job, err := repoSource.GetByJobRunTaskRun(ctx, jobRun, taskRun)
+			require.NoError(t, err)
+
+			require.Equal(t, job, &model.SourceJob{
+				ID:            1,
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				WorkspaceID:   workspaceId,
+				TableName:     "table0",
+				Status:        model.Aborted,
+				Error:         errors.New(testError),
+				JobType:       model.DeleteByJobRunID,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt:     now.UTC(),
+				UpdatedAt:     now.UTC(),
+				Attempts:      2,
+			})
+		})
+	})
+	t.Run("job not found", func(t *testing.T) {
+		err := repoSource.OnUpdateFailure(ctx, int64(-1), errors.New(testError), 1)
+		require.ErrorIs(t, err, model.ErrSourcesJobNotFound)
+	})
 	t.Run("context cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()

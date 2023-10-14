@@ -258,7 +258,7 @@ func (repo *Source) OnUpdateSuccess(
 		return fmt.Errorf("rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("no rows affected")
+		return model.ErrSourcesJobNotFound
 	}
 
 	return nil
@@ -274,17 +274,19 @@ func (repo *Source) OnUpdateFailure(
 		UPDATE
 			`+sourceJobTableName+`
 		SET
- 		  status =(
-			CASE WHEN attempt > $1 THEN `+model.SourceJobStatusAborted+`
-			ELSE `+model.SourceJobStatusFailed+`) END
+ 		  status = (
+			CASE WHEN attempt > $1 THEN $2
+			ELSE $3 END
 		  ),
 		  attempt = attempt + 1,
-		  updated_at = $2,
-		  error = $3
+		  updated_at = $4,
+		  error = $5
 		WHERE
-			id = $3;
+			id = $6;
 `,
 		maxAttempt,
+		model.SourceJobStatusAborted,
+		model.SourceJobStatusFailed,
 		repo.now(),
 		error.Error(),
 		id,
@@ -297,7 +299,7 @@ func (repo *Source) OnUpdateFailure(
 		return fmt.Errorf("rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("no rows affected")
+		return model.ErrSourcesJobNotFound
 	}
 
 	return nil

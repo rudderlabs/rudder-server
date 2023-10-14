@@ -229,15 +229,13 @@ func TestHTTPHandlers(t *testing.T) {
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
 				  "job_run_id": "test_source_job_run_id",
-				  "task_run_id": "test_source_task_run_id"
+				  "task_run_id": "test_source_task_run_id",
+                  "async_job_type": "deletebyjobrunid"
 				}
 			`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := Manager{
-				logger:   logger.NOP,
-				notifier: n,
-			}
+			jobsManager := New(config.New(), logger.NOP, db, n)
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -263,12 +261,6 @@ func TestHTTPHandlers(t *testing.T) {
 			require.Equal(t, "invalid request: source_id is required\n", string(b))
 		})
 		t.Run("success", func(t *testing.T) {
-			_, err := db.ExecContext(ctx, `
-				INSERT INTO `+whutils.WarehouseAsyncJobTable+` (source_id, destination_id, status, created_at, updated_at, tablename, error, async_job_type, metadata, workspace_id)
-				VALUES ('test_source_id', 'test_destination_id', 'aborted', NOW(), NOW(), 'test_table_name', 'test_error', 'deletebyjobrunid', '{"job_run_id": "test_source_job_run_id", "task_run_id": "test_source_task_run_id"}', 'test_workspace_id')
-			`)
-			require.NoError(t, err)
-
 			qp := url.Values{}
 			qp.Add("task_run_id", sourceTaskRunID)
 			qp.Add("job_run_id", sourceJobRunID)
@@ -286,8 +278,8 @@ func TestHTTPHandlers(t *testing.T) {
 			var statusResponse jobStatusResponse
 			err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 			require.NoError(t, err)
-			require.Equal(t, statusResponse.Status, "aborted")
-			require.Equal(t, statusResponse.Err, "test_error")
+			require.Equal(t, statusResponse.Status, model.SourceJobStatusExecuting)
+			require.Empty(t, statusResponse.Err)
 		})
 	})
 }

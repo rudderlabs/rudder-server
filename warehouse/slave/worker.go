@@ -481,7 +481,7 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (s
 		warehouse.Destination.ID,
 	))
 
-	err = integrationsManager.Setup(ctx, warehouse, &source.SourceUploader{})
+	err = integrationsManager.Setup(ctx, warehouse, &source.Uploader{})
 	if err != nil {
 		return result, err
 	}
