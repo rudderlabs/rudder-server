@@ -471,6 +471,12 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 		authErrHandler.authStatusUpdateActiveMap[destinationId] = false
 		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request is inactive!", loggerNm)
 		authStatusInactiveMutex.Unlock()
+		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
+		// This is being done to obtain new token after an update such as re-authorisation is done
+		accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
+		accountMutex.Lock()
+		delete(authErrHandler.destAuthInfoMap, rudderAccountId)
+		accountMutex.Unlock()
 	}()
 
 	authStatusInactiveUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, workspaceId, destinationId)
@@ -512,13 +518,6 @@ func (authErrHandler *OAuthErrResHandler) UpdateAuthStatusToInactive(destination
 	authStatusInactiveStats.statName = getStatName("success")
 	authStatusInactiveStats.errorMessage = ""
 	authStatusInactiveStats.SendCountStat()
-
-	// After a successfully inactivating authStatus in destination, need to remove existing accessToken(from in-memory cache)
-	// This is being done to obtain new token after re-enabling disabled destination
-	accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
-	accountMutex.Lock()
-	defer accountMutex.Unlock()
-	delete(authErrHandler.destAuthInfoMap, rudderAccountId)
 
 	return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 }
