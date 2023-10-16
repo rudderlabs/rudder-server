@@ -131,7 +131,7 @@ var (
 	// ErrContextCancelled is returned when the context is cancelled
 	ErrContextCancelled = errors.New("context cancelled")
 	// ErrParamsUnmarshal is returned when it is not possible to unmarshal the job parameters
-	ErrParamsUnmarshal = errors.New("unmarhall params")
+	ErrParamsUnmarshal = errors.New("unmarshal params")
 	// ErrJobOrderBlocked is returned when the job is blocked by another job discarded by the router in the same loop
 	ErrJobOrderBlocked = errors.New("blocked")
 	// ErrWorkerNoSlot is returned when the worker doesn't have an available slot
