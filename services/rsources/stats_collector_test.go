@@ -176,9 +176,9 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 							jobStatuses = append(jobStatuses, newAbortedStatus(job.JobID))
 						}
 					})
-					Context("it calls JobStatusesUpdated", func() {
+					Context("it calls CollectStats", func() {
 						BeforeEach(func() {
-							statsCollector.JobStatusesUpdated(jobStatuses)
+							statsCollector.CollectStats(jobStatuses)
 						})
 
 						It("can publish without error all statuses but with updating all stats as Failed stats and without adding failed records", func() {
@@ -229,9 +229,9 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
 					}
 				})
-				Context("it calls JobStatusesUpdated", func() {
+				Context("it calls CollectStats", func() {
 					BeforeEach(func() {
-						statsCollector.JobStatusesUpdated(jobStatuses)
+						statsCollector.CollectStats(jobStatuses)
 					})
 
 					It("can publish without error all statuses as Out stats", func() {
@@ -261,9 +261,9 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						jobStatuses = append(jobStatuses, newFailedStatus(job.JobID))
 					}
 				})
-				Context("it calls JobStatusesUpdated", func() {
+				Context("it calls CollectStats", func() {
 					BeforeEach(func() {
-						statsCollector.JobStatusesUpdated(jobStatuses)
+						statsCollector.CollectStats(jobStatuses)
 					})
 
 					It("can publish without error all statuses but without actually updating stats", func() {
@@ -283,9 +283,10 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						}
 					}
 				})
-				Context("it calls JobStatusesUpdated", func() {
+				Context("it calls CollectStats and CollectFailedRecords", func() {
 					BeforeEach(func() {
-						statsCollector.JobStatusesUpdated(jobStatuses)
+						statsCollector.CollectStats(jobStatuses)
+						statsCollector.CollectFailedRecords(jobStatuses)
 					})
 
 					It("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func() {
@@ -329,13 +330,13 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		})
 
 		Context("processing of jobs has not started", func() {
-			It("should not allow for calling JobStatusesUpdated", func() {
+			It("should not allow for calling CollectStats", func() {
 				var err error
 				defer func() {
 					err = recover().(error)
 					Expect(err).ToNot(BeNil())
 				}()
-				statsCollector.JobStatusesUpdated(jobStatuses)
+				statsCollector.CollectStats(jobStatuses)
 				Expect(err).ToNot(BeNil())
 			})
 		})
@@ -399,9 +400,9 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						jobStatuses = append(jobStatuses, newSucceededStatus(job.JobID))
 					}
 				})
-				Context("it calls JobStatusesUpdated", func() {
+				Context("it calls CollectStats", func() {
 					BeforeEach(func() {
-						statsCollector.JobStatusesUpdated(jobStatuses)
+						statsCollector.CollectStats(jobStatuses)
 					})
 
 					It("doesn't publish any jobs", func() {

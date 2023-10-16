@@ -327,6 +327,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
+			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
 			routerAbortedJobs = append(routerAbortedJobs, workerJobStatus.job)
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		}
@@ -403,7 +404,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if err != nil {
 					return err
 				}
-				rt.Reporting.Report(reportMetrics, tx.SqlTx())
+				if err = rt.Reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+					return fmt.Errorf("reporting metrics: %w", err)
+				}
 				return nil
 			})
 		}, rt.sendRetryStoreStats)

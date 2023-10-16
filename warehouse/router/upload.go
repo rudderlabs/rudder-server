@@ -1393,16 +1393,25 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 		if err != nil {
 			return
 		}
+		defer func() {
+			if err != nil {
+				_ = txn.Rollback()
+			}
+		}()
+
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
 			return
 		}
 		if job.config.reportingEnabled {
-			job.reporting.Report(
+			err = job.reporting.Report(
 				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
 				txn.GetTx(),
 			)
+			if err != nil {
+				return
+			}
 		}
 		err = txn.Commit()
 		return
@@ -1586,10 +1595,16 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
-		return "", fmt.Errorf("unable to start transaction: %w", err)
+		return "", fmt.Errorf("starting transaction: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+		}
+	}()
+
 	if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
-		return "", fmt.Errorf("unable to change upload columns: %w", err)
+		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
 	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
@@ -1646,9 +1661,13 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		job.reporting.Report(reportingMetrics, txn.GetTx())
+		if err = job.reporting.Report(reportingMetrics, txn.GetTx()); err != nil {
+			return "", fmt.Errorf("reporting metrics: %w", err)
+		}
 	}
-	err = txn.Commit()
+	if err = txn.Commit(); err != nil {
+		return "", fmt.Errorf("committing transaction: %w", err)
+	}
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr

@@ -850,7 +850,7 @@ func (ms *MSSQL) CrashRecover(ctx context.Context) {
 	ms.dropDanglingStagingTables(ctx)
 }
 
-func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
+func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -866,7 +866,7 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
 	rows, err := ms.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		ms.logger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -883,15 +883,12 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
 		panic(fmt.Errorf("iterating result from query: %s\nwith Error : %w", sqlStatement, err))
 	}
 	ms.logger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := ms.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
 		if err != nil {
 			ms.logger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace

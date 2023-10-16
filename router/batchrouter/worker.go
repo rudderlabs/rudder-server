@@ -82,7 +82,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     "",
+					ErrorCode:     router_utils.DRAIN_ERROR_CODE,
 					ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 					Parameters:    []byte(`{}`), // check
 					JobParameters: job.Parameters,
@@ -134,12 +134,17 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if err != nil {
 				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 			}
-
+			reportMetrics := brt.getReportMetrics(drainList, brt.getParamertsFromJobs(drainJobList))
 			err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 					err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
 					if err != nil {
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
+					}
+					if brt.reporting != nil && brt.reportingEnabled {
+						if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+							return fmt.Errorf("reporting metrics: %w", err)
+						}
 					}
 					// rsources stats
 					return brt.updateRudderSourcesStats(ctx, tx, drainJobList, drainList)
