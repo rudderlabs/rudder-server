@@ -411,7 +411,7 @@ func (w *worker) processDestinationJobs() {
 					respBody := fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-					routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+					routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 					w.logger.Debugf(
 						"Will drop with %d because of time expiry %v",
 						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
@@ -425,7 +425,7 @@ func (w *worker) processDestinationJobs() {
 					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-					routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+					routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 					errorAt = routerutils.ERROR_AT_CUST
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
@@ -434,7 +434,7 @@ func (w *worker) processDestinationJobs() {
 						respStatusCode, respBody := types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 						respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-						routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+						routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 					} else {
 						var respStatusCode int
 						var respBodyTemp string
@@ -517,7 +517,7 @@ func (w *worker) processDestinationJobs() {
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
 						w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-						routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+						routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 
 						if transformerProxy {
 							stats.Default.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
@@ -558,7 +558,7 @@ func (w *worker) processDestinationJobs() {
 				}
 				respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 				w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-				routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+				routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 				errorAt = routerutils.ERROR_AT_TF
 			}
 		} else {
@@ -578,7 +578,7 @@ func (w *worker) processDestinationJobs() {
 			}
 			respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 			w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-			routerJobResponses = w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)
+			routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
 			errorAt = routerutils.ERROR_AT_TF
 		}
 	}

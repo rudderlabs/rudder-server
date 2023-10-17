@@ -309,6 +309,11 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
 			routerJobResponseBodys[resp.Metadata.JobID] = resp.Error
 		}
+	} else {
+		for _, m := range proxyReqParams.ResponseData.Metadata {
+			routerJobResponseCodes[m.JobID] = respCode
+			routerJobResponseBodys[m.JobID] = string(respData)
+		}
 	}
 
 	return respCode, string(respData), "application/json", routerJobResponseCodes, routerJobResponseBodys
@@ -437,7 +442,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 		}
 	}
 
-	trans.logger.Infof(`[TransformerProxy] (Dest-%[1]v) Proxy Request response - %[2]s`, destName, string(payload))
+	trans.logger.Infof(`[TransformerProxy] (Dest-%[1]v) Proxy Request response - %[2]s`, destName, string(respData))
 
 	return httpProxyResponse{
 		respData:   respData,
