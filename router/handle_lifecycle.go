@@ -58,7 +58,18 @@ func (rt *Handle) Setup(
 	rt.errorDB = errorDB
 	rt.destType = destType
 
-	rt.drainer = routerutils.NewDrainer(config)
+	rt.drainer = routerutils.NewDrainer(
+		config,
+		func(destinationID string) (bool, string) {
+			rt.destinationsMapMu.RLock()
+			defer rt.destinationsMapMu.RUnlock()
+			if dest, ok := rt.destinationsMap[destinationID]; !ok {
+				return true, routerutils.DestNotFoundInConfig
+			} else if !dest.Destination.Enabled {
+				return true, routerutils.DestDisabled
+			}
+			return false, ""
+		})
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()
 	rt.crashRecover()

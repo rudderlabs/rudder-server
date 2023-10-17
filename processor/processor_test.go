@@ -2110,9 +2110,7 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
-			}).Return(nil).Times(0)
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Return(nil).Times(0)
 
 			// One Store call is expected for all events
 			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).

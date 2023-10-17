@@ -47,20 +47,18 @@ func (w *worker) Work() bool {
 	if len(workerJobs) == 0 {
 		return false
 	}
-	brt.configSubscriberMu.RLock()
-	destinationsMap := brt.destinationsMap
-	brt.configSubscriberMu.RUnlock()
+
 	var jobsWg sync.WaitGroup
 	jobsWg.Add(len(workerJobs))
 	for _, workerJob := range workerJobs {
-		w.processJobAsync(&jobsWg, workerJob, destinationsMap)
+		w.processJobAsync(&jobsWg, workerJob)
 	}
 	jobsWg.Wait()
 	return true
 }
 
 // processJobAsync spawns a goroutine and processes the destination's jobs. The provided wait group is notified when the goroutine completes.
-func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *DestinationJobs, destinationsMap map[string]*routerutils.DestinationWithSources) {
+func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *DestinationJobs) {
 	brt := w.brt
 	rruntime.Go(func() {
 		defer brt.limiter.process.Begin(w.partition)()
@@ -79,7 +77,6 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if drain, reason := brt.drainer.Drain(
 				job,
 				params,
-				destinationsMap,
 			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,

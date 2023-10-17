@@ -23,6 +23,11 @@ const (
 	ERROR_AT_DEL = "delivery"
 	// custom destination manager
 	ERROR_AT_CUST = "custom"
+
+	DestNotFoundInConfig = "destination is not available in the config"
+	DestDisabled         = "destination is disabled"
+	DestAbort            = "destination configured to abort"
+	JobRunIDCancelled    = "cancelled jobRunID"
 )
 
 type DestinationWithSources struct {
@@ -100,11 +105,13 @@ type Drainer interface {
 	Drain(
 		job *jobsdb.JobT,
 		jobParams JobParameters,
-		destinationsMap map[string]*DestinationWithSources,
 	) (bool, string)
 }
 
-func NewDrainer(conf *config.Config) Drainer {
+func NewDrainer(
+	conf *config.Config,
+	destDrainFunc func(string) (bool, string),
+) Drainer {
 	return &drainer{
 		destinationIDs: conf.GetReloadableStringSliceVar(
 			[]string{},
@@ -114,18 +121,20 @@ func NewDrainer(conf *config.Config) Drainer {
 			[]string{},
 			"RSources.toAbortJobRunIDs",
 		),
+		destDrainFunc: destDrainFunc,
 	}
 }
 
 type drainer struct {
 	destinationIDs misc.ValueLoader[[]string]
 	jobRunIDs      misc.ValueLoader[[]string]
+
+	destDrainFunc func(string) (bool, string)
 }
 
 func (d *drainer) Drain(
 	job *jobsdb.JobT,
 	jobParams JobParameters,
-	destinationsMap map[string]*DestinationWithSources,
 ) (bool, string) {
 	createdAt := job.CreatedAt
 	destID := jobParams.DestinationID
@@ -133,21 +142,17 @@ func (d *drainer) Drain(
 		return true, "job expired"
 	}
 
-	if dest, ok := destinationsMap[destID]; ok && !dest.Destination.Enabled {
-		return true, "destination is disabled"
+	if destDrain, destDrainReason := d.destDrainFunc(destID); destDrain {
+		return true, destDrainReason
 	}
 
-	if len(d.destinationIDs.Load()) > 0 {
-		if slices.Contains(d.destinationIDs.Load(), destID) {
-			return true, "destination configured to abort"
-		}
+	if slices.Contains(d.destinationIDs.Load(), destID) {
+		return true, DestAbort
 	}
 
-	if len(d.jobRunIDs.Load()) > 0 {
-		if jobParams.SourceJobRunID != "" &&
-			slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
-			return true, "cancelled jobRunID"
-		}
+	if jobParams.SourceJobRunID != "" &&
+		slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+		return true, JobRunIDCancelled
 	}
 
 	return false, ""

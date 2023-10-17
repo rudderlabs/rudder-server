@@ -88,14 +88,11 @@ func (w *worker) workLoop() {
 			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
-			w.rt.destinationsMapMu.RLock()
 			abort, abortReason := w.rt.drainer.Drain(
 				job,
 				parameters,
-				w.rt.destinationsMap,
 			)
 			abortTag := abortReason
-			w.rt.destinationsMapMu.RUnlock()
 			if !abort {
 				abort = w.retryLimitReached(&job.LastJobStatus)
 				abortReason = string(job.LastJobStatus.ErrorResponse)
@@ -181,25 +178,6 @@ func (w *worker) workLoop() {
 			batchDestination, ok := w.rt.destinationsMap[parameters.DestinationID]
 			w.rt.destinationsMapMu.RUnlock()
 			if !ok {
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Failed.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
-					Parameters:    routerutils.EmptyPayload,
-					JobParameters: job.Parameters,
-					WorkspaceId:   job.WorkspaceId,
-				}
-				if w.rt.guaranteeUserEventOrder {
-					orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
-					w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
-					if err := w.barrier.StateChanged(orderKey, job.JobID, status.JobState); err != nil {
-						panic(err)
-					}
-				}
-				w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
 				continue
 			}
 			destination := batchDestination.Destination

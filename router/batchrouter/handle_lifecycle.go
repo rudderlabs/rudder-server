@@ -95,7 +95,18 @@ func (brt *Handle) Setup(
 	brt.disableEgress = config.GetBoolVar(false, "disableEgress")
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	brt.setupReloadableVars()
-	brt.drainer = routerutils.NewDrainer(conf)
+	brt.drainer = routerutils.NewDrainer(
+		conf,
+		func(destinationID string) (bool, string) {
+			brt.configSubscriberMu.RLock()
+			defer brt.configSubscriberMu.RUnlock()
+			if dest, destFound := brt.destinationsMap[destinationID]; !destFound {
+				return true, routerutils.DestNotFoundInConfig
+			} else if !dest.Destination.Enabled {
+				return true, routerutils.DestDisabled
+			}
+			return false, ""
+		})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
