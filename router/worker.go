@@ -278,11 +278,18 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 	}()
 
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
+	w.rt.routerTransformInputHistogram.Observe(float64(len(routerJobs)))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
 		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
 	)
 	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
+	w.rt.routerTransformOutputHistogram.Observe(float64(len(destinationJobs)))
+	// destinationJob.JobMetadataArray
+	// iterate over JobMetadataArray and put observe histogram on the length of JobMetadataArray
+	for _, destinationJob := range destinationJobs {
+		w.rt.routerTransformDestJobsHistogram.Observe(float64(len(destinationJob.JobMetadataArray)))
+	}
 	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
 	return destinationJobs
 }
