@@ -8,7 +8,6 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 )
 
@@ -33,6 +32,21 @@ func NewMockAuthorizer(ctrl *gomock.Controller) *MockAuthorizer {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 	return m.recorder
+}
+
+// AuthStatusToggle mocks base method.
+func (m *MockAuthorizer) AuthStatusToggle(arg0 *oauth.AuthStatusToggleParams) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuthStatusToggle", arg0)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// AuthStatusToggle indicates an expected call of AuthStatusToggle.
+func (mr *MockAuthorizerMockRecorder) AuthStatusToggle(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthStatusToggle", reflect.TypeOf((*MockAuthorizer)(nil).AuthStatusToggle), arg0)
 }
 
 // FetchToken mocks base method.
@@ -63,19 +77,4 @@ func (m *MockAuthorizer) RefreshToken(arg0 *oauth.RefreshTokenParams) (int, *oau
 func (mr *MockAuthorizerMockRecorder) RefreshToken(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockAuthorizer)(nil).RefreshToken), arg0)
-}
-
-// UpdateAuthStatusToInactive mocks base method.
-func (m *MockAuthorizer) UpdateAuthStatusToInactive(arg0 *backendconfig.DestinationT, arg1, arg2 string) (int, string) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateAuthStatusToInactive", arg0, arg1, arg2)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(string)
-	return ret0, ret1
-}
-
-// UpdateAuthStatusToInactive indicates an expected call of UpdateAuthStatusToInactive.
-func (mr *MockAuthorizerMockRecorder) UpdateAuthStatusToInactive(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAuthStatusToInactive", reflect.TypeOf((*MockAuthorizer)(nil).UpdateAuthStatusToInactive), arg0, arg1, arg2)
 }

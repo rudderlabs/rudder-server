@@ -215,7 +215,12 @@ func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job 
 			Config: destination.DestDefConfig,
 		},
 	}
-	_, resp := api.OAuth.UpdateAuthStatusToInactive(dest, job.WorkspaceID, oAuthDetail.id)
+	_, resp := api.OAuth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+		Destination:     dest,
+		WorkspaceId:     job.WorkspaceID,
+		RudderAccountId: oAuthDetail.id,
+		AuthStatus:      oauth.AuthStatusInactive,
+	})
 	jobStatus.Status = model.JobStatusAborted
 	jobStatus.Error = fmt.Errorf(resp)
 	return jobStatus

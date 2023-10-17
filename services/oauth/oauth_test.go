@@ -145,7 +145,12 @@ func TestMultipleRequestsForOAuth(t *testing.T) {
 		for i := 0; i < totalGoRoutines; i++ {
 			wg.Add(1)
 			go func() {
-				status, _ := OAuth.UpdateAuthStatusToInactive(dest, "wspId", "accountId")
+				status, _ := OAuth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+					Destination:     dest,
+					WorkspaceId:     "wspId",
+					RudderAccountId: "accountId",
+					AuthStatus:      oauth.AuthStatusInactive,
+				})
 				allJobStatus = append(allJobStatus, status)
 				wg.Done()
 			}()

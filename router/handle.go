@@ -665,7 +665,12 @@ func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.Destinat
 		"success":     "true",
 		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
-	errCatStatusCode, _ := rt.oauth.UpdateAuthStatusToInactive(destination, workspaceID, rudderAccountId)
+	errCatStatusCode, _ := rt.oauth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+		Destination:     destination,
+		WorkspaceId:     workspaceID,
+		RudderAccountId: rudderAccountId,
+		AuthStatus:      oauth.AuthStatusInactive,
+	})
 	if errCatStatusCode != http.StatusOK {
 		// Error while inactivating authStatus
 		inactiveAuthStatusStatTags["success"] = "false"
