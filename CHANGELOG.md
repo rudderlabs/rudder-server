@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.1](https://github.com/rudderlabs/rudder-server/compare/v1.15.0...v1.15.1) (2023-10-13)
+
+
+### Bug Fixes
+
+* create schema before even fetching for deltalake ([#3971](https://github.com/rudderlabs/rudder-server/issues/3971)) ([50f9758](https://github.com/rudderlabs/rudder-server/commit/50f9758a826ae975c165b0cafbc13c269acb6080))
+
+
+### Miscellaneous
+
+* send filtered events in ut as dropped ([#3972](https://github.com/rudderlabs/rudder-server/issues/3972)) ([b7590d2](https://github.com/rudderlabs/rudder-server/commit/b7590d21b02e6cd38fa06df5eac61a07a57e4c30))
+
 ## [1.15.0](https://github.com/rudderlabs/rudder-server/compare/v1.14.0...v1.15.0) (2023-10-11)
 
 
