@@ -64,6 +64,7 @@ func (gw *Handle) Setup(
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
 
+	gw.sampler = newSampler[string](config.GetDuration("Suppression.Sampler.Duration", 24, time.Hour), 10000)
 	gw.conf.httpTimeout = config.GetDurationVar(30, time.Second, "Gateway.httpTimeout")
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")

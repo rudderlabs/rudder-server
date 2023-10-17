@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ type Handle struct {
 	jobsDB          jobsdb.JobsDB
 	errDB           jobsdb.JobsDB
 	rateLimiter     throttler.Throttler
+	sampler         *sampler[string]
 	versionHandler  func(w http.ResponseWriter, r *http.Request)
 	rsourcesService rsources.JobService
 	sourcehandle    sourcedebugger.SourceDebugger
@@ -383,7 +385,26 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 		}
 
-		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+		if isUserSuppressed, age := isUserSuppressed(workspaceId, userIDFromReq, sourceID); isUserSuppressed {
+			if !age.IsZero() {
+				gw.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
+					"workspaceId": workspaceId,
+					"sourceID":    sourceID,
+					"type":        eventTypeFromReq,
+				}).Since(age)
+
+				func() {
+					defer func() { _ = recover() }()                                                      // recover from panic if any
+					if time.Since(age) > 2190*time.Hour && gw.sampler.Sample(sourceID+eventTypeFromReq) { // only sample suppressions older than 3 months
+						eventData, _ := json.Marshal(toSet)
+						tmpDir, _ := misc.CreateTMPDIR()
+						if f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_%s_%dh_*.json", sourceID, eventTypeFromReq, int(time.Since(age).Hours()))); err == nil {
+							_, _ = f.Write(eventData)
+							_ = f.Close()
+						}
+					}
+				}()
+			}
 			suppressed = true
 			continue
 		}
@@ -497,34 +518,32 @@ func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
 }
 
 // memoizedIsUserSuppressed is a memoized version of isUserSuppressed
-func (gw *Handle) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
-	cache := map[string]bool{}
-	return func(workspaceID, userID, sourceID string) bool {
+func (gw *Handle) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) (bool, time.Time) {
+	type value struct {
+		val bool
+		ts  time.Time
+	}
+	cache := map[string]value{}
+	return func(workspaceID, userID, sourceID string) (bool, time.Time) {
 		key := workspaceID + ":" + userID + ":" + sourceID
 		if val, ok := cache[key]; ok {
-			return val
+			return val.val, val.ts
 		}
-		val := gw.isUserSuppressed(workspaceID, userID, sourceID)
-		cache[key] = val
-		return val
+		val, ts := gw.isUserSuppressed(workspaceID, userID, sourceID)
+		cache[key] = value{val: val, ts: ts}
+		return val, ts
 	}
 }
 
 // isUserSuppressed checks if the user is suppressed or not
-func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
+func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) (bool, time.Time) {
 	if !gw.conf.enableSuppressUserFeature || gw.suppressUserHandler == nil {
-		return false
+		return false, time.Time{}
 	}
 	if metadata := gw.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
-		if !metadata.CreatedAt.IsZero() {
-			gw.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
-				"workspaceId": workspaceID,
-				"sourceID":    sourceID,
-			}).Since(metadata.CreatedAt)
-		}
-		return true
+		return true, metadata.CreatedAt
 	}
-	return false
+	return false, time.Time{}
 }
 
 // getPayload reads the request body and returns the payload's bytes or an error if the payload cannot be read

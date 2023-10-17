@@ -265,7 +265,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		})
 
 		It("should not accept events from suppress users", func() {
-			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
+			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q, "type": "identify"}]}`, SuppressedUserID)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK", "batch")
 			Eventually(
@@ -294,6 +294,7 @@ var _ = Describe("Gateway Enterprise", func() {
 						map[string]string{
 							"sourceID":    rCtxEnabled.SourceID,
 							"workspaceId": rCtxEnabled.WorkspaceID,
+							"type":        "identify",
 						},
 					)
 					return stat != nil
