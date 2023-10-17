@@ -87,7 +87,10 @@ type Handle struct {
 	batchInputCountStat            stats.Measurement
 	batchOutputCountStat           stats.Measurement
 	routerTransformInputCountStat  stats.Measurement
+	routerTransformInputHistogram  stats.Measurement
 	routerTransformOutputCountStat stats.Measurement
+	routerTransformOutputHistogram stats.Measurement
+	routerTransformDestJobsHistogram stats.Measurement
 	batchInputOutputDiffCountStat  stats.Measurement
 	routerResponseTransformStat    stats.Measurement
 	throttlingErrorStat            stats.Measurement
