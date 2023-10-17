@@ -29,8 +29,8 @@ func (*WhAsyncJob) GetTableSchemaInUpload(string) model.TableSchema {
 	return model.TableSchema{}
 }
 
-func (*WhAsyncJob) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return []warehouseutils.LoadFile{}
+func (*WhAsyncJob) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+	return []warehouseutils.LoadFile{}, nil
 }
 
 func (*WhAsyncJob) GetSampleLoadFileLocation(context.Context, string) (string, error) {
