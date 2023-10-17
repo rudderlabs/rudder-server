@@ -1,6 +1,7 @@
 package enricher
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 type GeoTestDBProvider struct{}
 
-func (p *GeoTestDBProvider) GetDB(key, downloadPath string) error {
+func (p *GeoTestDBProvider) GetDB(ctx context.Context, key, downloadPath string) error {
 	return nil
 }
 
@@ -28,7 +29,10 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 	)
 
 	t.Run("inexistent db file causes enricher to fail setup", func(t *testing.T) {
-		t.Setenv("Geolocation.db.downloadPath", "./testdata/invalid-db-path")
+		t.Parallel()
+
+		c := config.New()
+		c.Set("Geolocation.db.downloadPath", "./testdata/invalid-db-path")
 
 		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
 		require.NotNil(t, err)
@@ -37,7 +41,10 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 	})
 
 	t.Run("corrupted db file causes enricher to fail", func(t *testing.T) {
-		t.Setenv("Geolocation.db.downloadPath", "./testdata/corrupted_city_test.mmdb")
+		t.Parallel()
+
+		c := config.New()
+		c.Set("Geolocation.db.downloadPath", "./testdata/corrupted_city_test.mmdb")
 
 		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
 		require.NotNil(t, err)
@@ -54,6 +61,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	require.Nil(t, err)
 
 	t.Run("it silently returns without enrichment if ip is empty", func(t *testing.T) {
+		t.Parallel()
+
 		ip := &types.GatewayBatchRequest{
 			RequestIP: ``,
 			Batch: []types.SingularEventT{
@@ -70,16 +79,20 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	})
 
 	t.Run("it returns ErrInvalidIP in case ip address passed is malformed", func(t *testing.T) {
+		t.Parallel()
+
 		err := enricher.Enrich("source-id", &types.GatewayBatchRequest{
 			RequestIP: `invalid-ip`,
 			Batch:     nil,
 		})
 
 		require.NotNil(t, err)
-		require.True(t, errors.Is(err, geolocation.ErrInvalidIP))
+		require.ErrorIs(t, err, geolocation.ErrInvalidIP)
 	})
 
 	t.Run("it adds empty geolocation if the ipaddress is not found in database", func(t *testing.T) {
+		t.Parallel()
+
 		input := &types.GatewayBatchRequest{
 			RequestIP: `22.125.160.216`,
 			Batch: []types.SingularEventT{
@@ -144,6 +157,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	})
 
 	t.Run("it doesn't add geolocation if the ipaddress is found but context section on event is empty", func(t *testing.T) {
+		t.Parallel()
+
 		input := &types.GatewayBatchRequest{
 			RequestIP: `2.125.160.216`,
 			Batch: []types.SingularEventT{
@@ -195,27 +210,31 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 
 func TestMapUpstreamToGeolocation(t *testing.T) {
 	t.Run("it returns the output as nil when input is nil", func(t *testing.T) {
+		t.Parallel()
+
 		data := extractGeolocationData(nil)
 		require.Nil(t, data)
 	})
 
 	t.Run("it returns the extracted fields when input contains all the information", func(t *testing.T) {
+		t.Parallel()
+
 		latitude, longitude := float64(0.0002), float64(1.876)
 
-		input := &geolocation.GeoCity{
+		input := &geolocation.GeoInfo{
 			City: geolocation.City{
 				Names: map[string]string{
 					"en": "Gurugram",
 				},
 			},
 			Country: geolocation.Country{
-				IsoCode: "IN",
+				ISOCode: "IN",
 			},
 			Postal: geolocation.Postal{
 				Code: "122002",
 			},
 			Location: geolocation.Location{
-				TimeZone:  "Asia/Kolkata",
+				Timezone:  "Asia/Kolkata",
 				Latitude:  &latitude,
 				Longitude: &longitude,
 			},
@@ -236,15 +255,10 @@ func TestMapUpstreamToGeolocation(t *testing.T) {
 	})
 
 	t.Run("it returns fields with empty data in case the parent fields are missing", func(t *testing.T) {
-		input := &geolocation.GeoCity{}
+		t.Parallel()
+
+		input := &geolocation.GeoInfo{}
 		actual := extractGeolocationData(input)
-		require.Equal(t, Geolocation{
-			City:     "",
-			Country:  "",
-			Postal:   "",
-			Location: "",
-			Timezone: "",
-			Region:   "",
-		}, *actual)
+		require.Empty(t, *actual)
 	})
 }

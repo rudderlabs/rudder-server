@@ -226,9 +226,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	var geoEnricher enricher.PipelineEnricher
 	if config.GetBool("GeoEnrichment.enabled", false) {
 
-		dbProvider, err := enricher.NewGeoDBProvider(config.Default, a.log)
+		dbProvider, err := enricher.NewGeoDBFetcher(config.Default, a.log)
 		if err != nil {
-			return fmt.Errorf("creating new instance of db provider: %w", err)
+			return fmt.Errorf("creating new instance of geo db fetcher: %w", err)
 		}
 
 		geoEnricher, err = enricher.NewGeoEnricher(dbProvider, config.Default, a.log, stats.Default)

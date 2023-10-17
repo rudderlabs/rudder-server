@@ -73,6 +73,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.12.0
 	github.com/onsi/gomega v1.27.10
 	github.com/ory/dockertest/v3 v3.10.0
+	github.com/oschwald/maxminddb-golang v1.11.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16
 	github.com/redis/go-redis/v9 v9.1.0
@@ -109,8 +110,6 @@ require (
 	google.golang.org/grpc v1.58.2
 	google.golang.org/protobuf v1.31.0
 )
-
-require github.com/oschwald/maxminddb-golang v1.11.0
 
 require (
 	cloud.google.com/go v0.110.8 // indirect

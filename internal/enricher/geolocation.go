@@ -16,8 +16,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type GeoDBProvider interface {
-	GetDB(string, string) error
+type GeoDBFetcher interface {
+	GetDB(ctx context.Context, key string, downloadPath string) error
 }
 
 type Geolocation struct {
@@ -36,7 +36,7 @@ type geoEnricher struct {
 }
 
 func NewGeoEnricher(
-	dbProvider GeoDBProvider,
+	dbProvider GeoDBFetcher,
 	config *config.Config,
 	log logger.Logger,
 	statClient stats.Stats,
@@ -44,7 +44,7 @@ func NewGeoEnricher(
 	upstreamDBKey := config.GetString("Geolocation.db.key", "geolite2City.mmdb")
 	downloadPath := config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
 
-	err := dbProvider.GetDB(upstreamDBKey, downloadPath)
+	err := dbProvider.GetDB(context.Background(), upstreamDBKey, downloadPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting db from upstream: %w", err)
 	}
@@ -64,42 +64,42 @@ func NewGeoEnricher(
 // Enrich function runs on a request of GatewayBatchRequest which contains
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
-func (e *geoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
-	e.logger.Debugw("received a call to enrich gateway events for source", "sourceId", sourceId)
+func (e *geoEnricher) Enrich(sourceID string, request *types.GatewayBatchRequest) error {
+	e.logger.Debugw("received a call to enrich gateway events for source", "sourceId", sourceID)
 
 	if request.RequestIP == "" {
 		e.stats.NewTaggedStat("proc_geo_enrincher_empty_ip", stats.CountType, stats.Tags{
-			"sourceId": sourceId,
+			"sourceId": sourceID,
 		}).Increment()
 
 		return nil
 	}
 
-	defer func(from time.Time) {
-		e.stats.NewTaggedStat(
-			"proc_geo_enricher_request_latency",
-			stats.TimerType,
-			stats.Tags{"sourceId": sourceId}).Since(from)
-	}(time.Now())
+	defer e.stats.NewTaggedStat(
+		"proc_geo_enricher_request_latency",
+		stats.TimerType,
+		stats.Tags{"sourceId": sourceID}).RecordDuration()()
 
-	geoip, err := e.fetcher.GeoIP(request.RequestIP)
+	geoip, err := e.fetcher.Locate(request.RequestIP)
 	if err != nil {
 		e.stats.NewTaggedStat(
 			"proc_geo_enricher_geoip_lookup_failed",
 			stats.CountType,
 			stats.Tags{
-				"sourceId": sourceId,
+				"sourceId": sourceID,
 				"validIP":  strconv.FormatBool(errors.Is(err, geolocation.ErrInvalidIP)),
 			}).Increment()
 
-		return fmt.Errorf("unable to enrich the request with geolocation: %w", err)
+		return fmt.Errorf("enriching request with geolocation: %w", err)
 	}
 
 	// for every event if we have context object set
 	// only then we add to geo section
+	geoData := extractGeolocationData(geoip)
+
 	for _, event := range request.Batch {
 		if context, ok := event["context"].(map[string]interface{}); ok {
-			context["geo"] = extractGeolocationData(geoip)
+			context["geo"] = geoData
 		}
 	}
 
@@ -108,25 +108,25 @@ func (e *geoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest
 
 type NoOpGeoEnricher struct{}
 
-func (e NoOpGeoEnricher) Enrich(sourceId string, request *types.GatewayBatchRequest) error {
+func (e NoOpGeoEnricher) Enrich(string, *types.GatewayBatchRequest) error {
 	return nil
 }
 
-type geoDBProviderImpl struct {
+type geoDB struct {
 	s3Manager filemanager.FileManager
 }
 
 // GetDB simply fetches the database from the upstream located at the key defined
-// in the argument.
-func (p *geoDBProviderImpl) GetDB(key, downloadPath string) error {
-	f, err := os.Open(downloadPath)
+// in the argument and stores it in the downloadPath provided.
+func (db *geoDB) GetDB(ctx context.Context, key, downloadPath string) error {
+	f, err := os.Create(downloadPath)
 	if err != nil {
 		return fmt.Errorf("creating a file to store db contents: %w", err)
 	}
 
 	defer f.Close()
 
-	err = p.s3Manager.Download(context.Background(), f, key)
+	err = db.s3Manager.Download(ctx, f, key)
 	if err != nil {
 		return fmt.Errorf("downloading db from upstream and storing in file: %w", err)
 	}
@@ -134,10 +134,10 @@ func (p *geoDBProviderImpl) GetDB(key, downloadPath string) error {
 	return nil
 }
 
-func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, error) {
+func NewGeoDBFetcher(conf *config.Config, log logger.Logger) (GeoDBFetcher, error) {
 	var (
-		bucket = config.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region = config.GetString("Geolocation.db.bucket.region", "us-east-1")
+		bucket = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
+		region = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
 	)
 
 	manager, err := filemanager.NewS3Manager(map[string]interface{}{
@@ -150,34 +150,34 @@ func NewGeoDBProvider(conf *config.Config, log logger.Logger) (GeoDBProvider, er
 		return nil, fmt.Errorf("creating a new s3 manager client: %w", err)
 	}
 
-	return &geoDBProviderImpl{
+	return &geoDB{
 		s3Manager: manager,
 	}, nil
 }
 
-func extractGeolocationData(geocity *geolocation.GeoCity) *Geolocation {
-	if geocity == nil {
+func extractGeolocationData(geoCity *geolocation.GeoInfo) *Geolocation {
+	if geoCity == nil {
 		return nil
 	}
 
 	toReturn := &Geolocation{
-		City:     geocity.City.Names["en"],
-		Country:  geocity.Country.IsoCode,
-		Postal:   geocity.Postal.Code,
-		Timezone: geocity.Location.TimeZone,
+		City:     geoCity.City.Names["en"],
+		Country:  geoCity.Country.ISOCode,
+		Postal:   geoCity.Postal.Code,
+		Timezone: geoCity.Location.Timezone,
 	}
 
-	if len(geocity.Subdivisions) > 0 {
-		toReturn.Region = geocity.Subdivisions[0].Names["en"]
+	if len(geoCity.Subdivisions) > 0 {
+		toReturn.Region = geoCity.Subdivisions[0].Names["en"]
 	}
 
 	// default values of latitude and longitude can give
 	// incorrect result, so we have casted them in pointers so we know
 	// when the value is missing.
-	if geocity.Location.Latitude != nil && geocity.Location.Longitude != nil {
+	if geoCity.Location.Latitude != nil && geoCity.Location.Longitude != nil {
 		toReturn.Location = fmt.Sprintf("%f,%f",
-			*geocity.Location.Latitude,
-			*geocity.Location.Longitude,
+			*geoCity.Location.Latitude,
+			*geoCity.Location.Longitude,
 		)
 	}
 

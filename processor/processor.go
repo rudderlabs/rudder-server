@@ -1431,10 +1431,10 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 	return proc.config.eventAuditEnabled[workspaceID]
 }
 
-func (proc *Handle) geoEnrichmentEnabledForSource(sourceId string) bool {
-	source, err := proc.getSourceBySourceID(sourceId)
+func (proc *Handle) geoEnrichmentEnabledForSource(sourceID string) bool {
+	source, err := proc.getSourceBySourceID(sourceID)
 	if err != nil {
-		proc.logger.Errorw("unable to get source by id for geoenrichment", "error", err.Error(), "sourceId", sourceId)
+		proc.logger.Errorw("unable to get source by id for geoenrichment", "error", err.Error(), "sourceId", sourceID)
 		return false
 	}
 

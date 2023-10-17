@@ -1,7 +1,6 @@
 package geolocation_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,9 +11,7 @@ import (
 func TestGeolocationReader_Failure(t *testing.T) {
 	t.Run("reader errors out when db is corrupted", func(t *testing.T) {
 		_, err := geolocation.NewMaxmindDBReader("./testdata/corrupted_city_test.mmdb")
-		require.True(
-			t,
-			errors.Is(err, geolocation.ErrInvalidDatabase))
+		require.ErrorIs(t, err, geolocation.ErrInvalidDatabase)
 	})
 }
 
@@ -25,32 +22,32 @@ func TestGeolocationFetcher(t *testing.T) {
 	require.Nil(t, err)
 
 	t.Run("fetcher returns error ErrInvalidIP if ip is empty or invalid", func(t *testing.T) {
-		lookup, err := f.GeoIP(``)
-		require.True(t, errors.Is(err, geolocation.ErrInvalidIP))
+		lookup, err := f.Locate(``)
+		require.ErrorIs(t, err, geolocation.ErrInvalidIP)
 		require.Nil(t, lookup)
 
-		_, err = f.GeoIP(`invalid-ip`)
-		require.True(t, errors.Is(err, geolocation.ErrInvalidIP))
+		_, err = f.Locate(`invalid-ip`)
+		require.ErrorIs(t, err, geolocation.ErrInvalidIP)
 	})
 
 	t.Run("fetcher returns the geocity data for valid IP present in database", func(t *testing.T) {
-		lookup, err := f.GeoIP(`2.125.160.216`) // picked the value from city_test_input.json
+		lookup, err := f.Locate(`2.125.160.216`) // picked the value from city_test_input.json
 		require.Nil(t, err)
 		require.Equal(t, map[string]string{"en": "Boxford"}, lookup.City.Names)
 		require.Equal(t, `OX1`, lookup.Postal.Code)
 
-		lookup, err = f.GeoIP(`2a02:ff40::0`) // IPv6
+		lookup, err = f.Locate(`2a02:ff40::0`) // IPv6
 		require.Nil(t, err)
 		require.Equal(t, `Europe`, lookup.Continent.Names["en"]) // TODO: Do complete matching here.
 	})
 
 	t.Run("fetcher returns empty lookup for IP address not available in database", func(t *testing.T) {
-		emptyLookup, err := f.GeoIP(`1.1.1.1`)
+		emptyLookup, err := f.Locate(`1.1.1.1`)
 		require.Nil(t, err)
-		require.Equal(t, geolocation.GeoCity{}, *emptyLookup)
+		require.Empty(t, *emptyLookup)
 
-		emptyLookup, err = f.GeoIP(`3a02:ff81::0`) // IPv6 lookup
+		emptyLookup, err = f.Locate(`3a02:ff81::0`) // IPv6 lookup
 		require.Nil(t, err)
-		require.Equal(t, geolocation.GeoCity{}, *emptyLookup)
+		require.Empty(t, *emptyLookup)
 	})
 }
