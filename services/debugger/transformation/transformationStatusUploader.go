@@ -377,9 +377,17 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 				singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
 				eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
 				eventAfter := &EventsAfterTransform{
-					Error:      failedEvent.Error,
 					ReceivedAt: time.Now().Format(misc.RFC3339Milli),
 					StatusCode: failedEvent.StatusCode,
+				}
+				var isError bool
+				switch failedEvent.StatusCode {
+				case types.FilterEventCode:
+					eventAfter.IsDropped = true
+					isError = false
+				default:
+					eventAfter.Error = failedEvent.Error
+					isError = true
 				}
 
 				h.RecordTransformationStatus(&TransformStatusT{
@@ -388,7 +396,7 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 					DestinationID:    tStatus.DestID,
 					EventBefore:      eventBefore,
 					EventsAfter:      eventAfter,
-					IsError:          true,
+					IsError:          isError,
 				})
 			}
 		}

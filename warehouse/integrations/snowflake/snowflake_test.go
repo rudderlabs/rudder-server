@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -1034,8 +1035,8 @@ func newMockUploader(
 	mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
 	mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(dedupUseNewRecord).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options whutils.GetLoadFilesOptions) []whutils.LoadFile {
-			return slices.Clone(loadFiles)
+		func(ctx context.Context, options whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
+			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
