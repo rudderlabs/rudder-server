@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -255,38 +256,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
-func getResp() string {
-	return `
-	{
-		"output": {
-		  "message": "Success",
-		  "destinationResponse": {
-
-		  },
-		  "response": [
-			{
-			  "error": "",
-			  "statusCode": 200,
-			  "metadata": {
-				"jobId": 1,
-				"attemptNum": 0,
-				"userId": "",
-				"sourceId": "xxx",
-				"destinationId": "xxx",
-				"workspaceId": "xxx",
-				"secret": {
-				  "access_token": "xxx",
-				  "refresh_token": "xxx",
-				  "developer_token": "developer_Token"
-				}
-			  }
-			}
-		  ]
-		}
-	  }
-	  `
-}
-
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string, map[int64]int, map[int64]string) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
@@ -301,10 +270,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	rdlTime := time.Now()
 	httpPrxResp := trans.doProxyRequest(ctx, proxyReqParams)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
-
-	// TODO: Remove overrides
-	respCode = 200
-	respData = []byte(getResp())
 
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
 	stats.Default.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
@@ -419,8 +384,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 		"destType": destName,
 	}).SendTiming(reqRoundTripTime)
 
-	// TODO: Uncomment
-	/* if os.IsTimeout(err) {
+	if os.IsTimeout(err) {
 		// A timeout error occurred
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, err.Error())
 		return httpProxyResponse{
@@ -458,7 +422,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 			statusCode: http.StatusInternalServerError,
 			err:        fmt.Errorf(errStr),
 		}
-	}*/
+	}
 
 	respData, err = io.ReadAll(resp.Body)
 	defer func() { httputil.CloseResponse(resp) }()
