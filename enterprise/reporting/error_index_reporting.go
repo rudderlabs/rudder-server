@@ -5,11 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/xitongsys/parquet-go-source/local"
-	"github.com/xitongsys/parquet-go/parquet"
-	"github.com/xitongsys/parquet-go/source"
-	"github.com/xitongsys/parquet-go/writer"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,16 +26,20 @@ const (
 )
 
 type payload struct {
-	MessageID        string    `json:"messageId" parquet:"name=messageId, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	SourceID         string    `json:"sourceId" parquet:"name=sourceId, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	DestinationID    string    `json:"destinationId" parquet:"name=destinationId, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	TransformationID string    `json:"transformationId" parquet:"name=transformationId, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	TrackingPlanID   string    `json:"trackingPlanId" parquet:"name=trackingPlanId, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	FailedStage      string    `json:"failedStage" parquet:"name=failedStage, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	EventType        string    `json:"eventType" parquet:"name=eventType, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	EventName        string    `json:"eventName" parquet:"name=eventName, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	ReceivedAt       time.Time `json:"receivedAt" parquet:"name=receivedAt, type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"`
-	FailedAt         time.Time `json:"failedAt" parquet:"name=failedAt, type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"`
+	MessageID        string    `json:"messageId"`
+	SourceID         string    `json:"sourceId"`
+	DestinationID    string    `json:"destinationId"`
+	TransformationID string    `json:"transformationId"`
+	TrackingPlanID   string    `json:"trackingPlanId"`
+	FailedStage      string    `json:"failedStage"`
+	EventType        string    `json:"eventType"`
+	EventName        string    `json:"eventName"`
+	ReceivedAt       time.Time `json:"receivedAt"`
+	FailedAt         time.Time `json:"failedAt"`
+}
+
+type Writer interface {
+	Write(w io.Writer, payloads []payload) error
 }
 
 type ErrorIndexReporter struct {
@@ -48,13 +48,12 @@ type ErrorIndexReporter struct {
 	configSubscriber *configSubscriber
 	errIndexDB       *jobsdb.Handle
 	now              func() time.Time
+	writer           Writer
 
 	config struct {
 		dsLimit              misc.ValueLoader[int]
 		skipMaintenanceError bool
 		jobRetention         time.Duration
-
-		parquetParallelWriters misc.ValueLoader[int64]
 	}
 }
 
@@ -69,12 +68,12 @@ func NewErrorIndexReporter(
 		log:              log,
 		configSubscriber: configSubscriber,
 		now:              time.Now,
+		writer:           newWriterParquet(conf),
 	}
 
 	eir.config.dsLimit = conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")
 	eir.config.skipMaintenanceError = conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
-	eir.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Reporting.errorIndexReporting.parquetParallelWriters")
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
 		errorIndex,
@@ -183,16 +182,16 @@ func (eir *ErrorIndexReporter) processJobs(jobs []*jobsdb.JobT) error {
 		payloadsBySrcMap[p.SourceID] = append(payloadsBySrcMap[p.SourceID], p)
 	}
 
-	var files []*source.ParquetFile
+	var files []*os.File
 	defer func() {
-		for _, f := range files {
-			misc.RemoveFilePaths(f.Name())
+		for _, file := range files {
+			misc.RemoveFilePaths(file.Name())
 		}
 	}()
 	for _, payloadsBySrc := range payloadsBySrcMap {
-		f, err := eir.createParquetFile(payloadsBySrc)
+		f, err := eir.createFile(payloadsBySrc)
 		if err != nil {
-			return fmt.Errorf("creating parquet file: %v", err)
+			return fmt.Errorf("creating file: %v", err)
 		}
 
 		files = append(files, f)
@@ -207,7 +206,7 @@ func (eir *ErrorIndexReporter) processJobs(jobs []*jobsdb.JobT) error {
 	return nil
 }
 
-func (eir *ErrorIndexReporter) createParquetFile(payloadsBySrc []payload) (*source.ParquetFile, error) {
+func (eir *ErrorIndexReporter) createFile(payloads []payload) (*os.File, error) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
@@ -222,39 +221,20 @@ func (eir *ErrorIndexReporter) createParquetFile(payloadsBySrc []payload) (*sour
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 		return nil, fmt.Errorf("creating tmp dir: %w", err)
 	}
-	fmt.Println(filePath)
 
-	fw, err := local.NewLocalFileWriter(filePath)
+	f, err := os.Create(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating local file writer: %v", err)
+		return nil, fmt.Errorf("creating file: %w", err)
 	}
-	defer func() { _ = fw.Close() }()
+	defer func() { _ = f.Close() }()
 
-	pw, err := writer.NewParquetWriter(
-		fw,
-		new(payload),
-		eir.config.parquetParallelWriters.Load(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating parquet writer: %v", err)
+	if err = eir.writer.Write(f, payloads); err != nil {
+		return nil, fmt.Errorf("writing to file: %w", err)
 	}
 
-	pw.RowGroupSize = 128 * bytesize.MB
-	pw.CompressionType = parquet.CompressionCodec_SNAPPY
-
-	for _, payloadBySrc := range payloadsBySrc {
-		if err = pw.Write(payloadBySrc); err != nil {
-			return nil, fmt.Errorf("writing parquet: %v", err)
-		}
-	}
-
-	if err = pw.WriteStop(); err != nil {
-		return nil, fmt.Errorf("stopping parquet writer: %v", err)
-	}
-
-	return &fw, nil
+	return f, nil
 }
 
-func (eir *ErrorIndexReporter) uploadParquetFile(*source.ParquetFile) error {
+func (eir *ErrorIndexReporter) uploadParquetFile(*os.File) error {
 	return nil
 }
