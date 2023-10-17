@@ -318,6 +318,12 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 
 // FetchSchema fetches the schema from the warehouse
 func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
+	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
+	if err := d.CreateSchema(ctx); err != nil {
+		return nil, nil, fmt.Errorf("creating schema: %w", err)
+	}
+
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 	tableNames, err := d.fetchTables(ctx, nonRudderStagingTableRegex)

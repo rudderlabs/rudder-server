@@ -14,9 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -231,7 +232,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				flush()
 			}
 		} else {
-			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error()}).Increment()
+			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId}).Increment()
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
@@ -478,14 +479,6 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return nil, types.ErrParamsUnmarshal
 	}
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
-
-	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
-	// this check is done to maintain order.
-	if _, ok := blockedOrderKeys[orderKey]; ok {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
-		return nil, types.ErrJobOrderBlocked
-	}
 
 	if !rt.guaranteeUserEventOrder {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
@@ -506,37 +499,45 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 
 	}
 
+	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+
+	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
+	// this check is done to maintain order.
+	if _, ok := blockedOrderKeys[orderKey]; ok {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
+		return nil, types.ErrJobOrderBlocked
+	}
+
 	//#JobOrder (see other #JobOrder comment)
-	worker := workers[getWorkerPartition(orderKey, len(workers))]
 	if rt.shouldBackoff(job) { // backoff
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrJobBackoff
 	}
+	worker := workers[getWorkerPartition(orderKey, len(workers))]
 	slot := worker.ReserveSlot()
 	if slot == nil {
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrWorkerNoSlot
 	}
 
-	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
-	if enter {
-		rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-		if rt.shouldThrottle(job, parameters) {
-			blockedOrderKeys[orderKey] = struct{}{}
-			worker.barrier.Leave(orderKey, job.JobID)
-			slot.Release()
-			return nil, types.ErrDestinationThrottled
+	if enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID); !enter {
+		previousFailedJobIDStr := "<nil>"
+		if previousFailedJobID != nil {
+			previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 		}
-		return slot, nil
+		rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
+		slot.Release()
+		blockedOrderKeys[orderKey] = struct{}{}
+		return nil, types.ErrBarrierExists
 	}
-	previousFailedJobIDStr := "<nil>"
-	if previousFailedJobID != nil {
-		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
+	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
+	if rt.shouldThrottle(job, parameters) {
+		blockedOrderKeys[orderKey] = struct{}{}
+		worker.barrier.Leave(orderKey, job.JobID)
+		slot.Release()
+		return nil, types.ErrDestinationThrottled
 	}
-	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
-	slot.Release()
-	blockedOrderKeys[orderKey] = struct{}{}
-	return nil, types.ErrBarrierExists
+	return slot, nil
 	//#EndJobOrder
 }
 
