@@ -1201,7 +1201,7 @@ func newMockUploader(
 	u := mockuploader.NewMockUploader(ctrl)
 	u.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(sampleLocation, nil).AnyTimes()
 	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).Return(tableSchema).AnyTimes()
-	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(metadata).AnyTimes()
+	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(metadata, nil).AnyTimes()
 	u.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	u.EXPECT().IsWarehouseSchemaEmpty().Return(true).AnyTimes()
 

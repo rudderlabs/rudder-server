@@ -351,12 +351,16 @@ func (rs *Redshift) createSchema(ctx context.Context) (err error) {
 }
 
 func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (string, error) {
-	loadFiles := warehouseutils.GetS3Locations(rs.Uploader.GetLoadFilesMetadata(
+	metadata, err := rs.Uploader.GetLoadFilesMetadata(
 		ctx,
 		warehouseutils.GetLoadFilesOptions{
 			Table: tableName,
 		},
-	))
+	)
+	if err != nil {
+		return "", err
+	}
+	loadFiles := warehouseutils.GetS3Locations(metadata)
 
 	entries := lo.Map(loadFiles, func(loadFile warehouseutils.LoadFile, index int) s3ManifestEntry {
 		manifestEntry := s3ManifestEntry{

@@ -175,7 +175,7 @@ func TestDownloader(t *testing.T) {
 func newMockUploader(t testing.TB, loadFiles []warehouseutils.LoadFile) *mockuploader.MockUploader {
 	ctrl := gomock.NewController(t)
 	u := mockuploader.NewMockUploader(ctrl)
-	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).AnyTimes().Return(loadFiles)
+	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).AnyTimes().Return(loadFiles, nil)
 	u.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	return u
 }
