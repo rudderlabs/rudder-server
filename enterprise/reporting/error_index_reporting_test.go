@@ -266,12 +266,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				err = eir.Report(tc.reports, nil)
 				require.NoError(t, err)
 
-				errIndexDB := jobsdb.NewForRead(errorIndex, jobsdb.WithConfig(c))
-				err = errIndexDB.Start()
-				require.NoError(t, err)
-				defer errIndexDB.TearDown()
-
-				jr, err := errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+				jr, err := eir.errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					JobsLimit: 100,
 				})
 				require.NoError(t, err)

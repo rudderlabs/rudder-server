@@ -614,8 +614,10 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 			return trRespStatusCode, trRespBody
 		}
 		switch destErrOutput.AuthErrorCategory {
-		case oauth.DISABLE_DEST:
-			return rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+		case oauth.AUTH_STATUS_INACTIVE:
+			authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			authStatusMsg := gjson.Get(trRespBody, "message").Raw
+			return authStatusStCd, authStatusMsg
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -628,21 +630,21 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
-			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
+			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.REF_TOKEN_INVALID_GRANT {
 				// In-case the refresh token has been revoked, this error comes in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
-				stats.Default.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
+				authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destType":      refTokenParams.DestDefName,
 					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
-				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
-				return disableStCd, refSec.Err
+				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
+				return authStatusInactiveStCode, refSecret.ErrorMessage
 			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
@@ -656,24 +658,25 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *Handle) execDisableDestination(destination *backendconfig.DestinationT, workspaceID, destResBody, rudderAccountId string) (int, string) {
-	disableDestStatTags := stats.Tags{
+func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
+	inactiveAuthStatusStatTags := stats.Tags{
 		"id":          destination.ID,
 		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceID,
 		"success":     "true",
 		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceID, rudderAccountId)
+	errCatStatusCode, _ := rt.oauth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+		Destination:     destination,
+		WorkspaceId:     workspaceID,
+		RudderAccountId: rudderAccountId,
+		AuthStatus:      oauth.AuthStatusInactive,
+	})
 	if errCatStatusCode != http.StatusOK {
-		// Error while disabling a destination
-		// High-Priority notification to rudderstack needs to be sent
-		disableDestStatTags["success"] = "false"
-		stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-		return http.StatusBadRequest, errCatResponse
+		// Error while inactivating authStatus
+		inactiveAuthStatusStatTags["success"] = "false"
 	}
-	// High-Priority notification to workspace(& rudderstack) needs to be sent
-	stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
 	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest, destResBody
+	return http.StatusBadRequest
 }
