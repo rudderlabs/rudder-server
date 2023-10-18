@@ -111,6 +111,8 @@ require (
 	google.golang.org/protobuf v1.31.0
 )
 
+require github.com/marcboeker/go-duckdb v1.5.1 // indirect
+
 require (
 	cloud.google.com/go v0.110.6 // indirect
 	cloud.google.com/go/compute v1.23.0 // indirect

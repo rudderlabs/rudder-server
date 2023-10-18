@@ -9,6 +9,8 @@ import (
 	"github.com/xitongsys/parquet-go/types"
 	"github.com/xitongsys/parquet-go/writer"
 	"io"
+	"sort"
+	"strings"
 )
 
 type payloadParquet struct {
@@ -34,23 +36,29 @@ func toParquet(p payload) payloadParquet {
 		FailedStage:      p.FailedStage,
 		EventType:        p.EventType,
 		EventName:        p.EventName,
-		ReceivedAt:       types.TimeToTIMESTAMP_MICROS(p.ReceivedAt, false),
-		FailedAt:         types.TimeToTIMESTAMP_MICROS(p.FailedAt, false),
+		ReceivedAt:       types.TimeToTIMESTAMP_MICROS(p.ReceivedAt, true),
+		FailedAt:         types.TimeToTIMESTAMP_MICROS(p.FailedAt, true),
 	}
 }
 
 type WriterParquet struct {
 	config struct {
 		parquetParallelWriters misc.ValueLoader[int64]
+		rowGroupSizeInMB       misc.ValueLoader[int64]
+		pageSizeInKB           misc.ValueLoader[int64]
 	}
 }
 
 func newWriterParquet(conf *config.Config) WriterParquet {
 	wp := WriterParquet{}
 	wp.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Reporting.parquetParallelWriters")
+	wp.config.rowGroupSizeInMB = conf.GetReloadableInt64Var(128, 1, "Reporting.rowGroupSizeInMB")
+	wp.config.pageSizeInKB = conf.GetReloadableInt64Var(8, 1, "Reporting.pageSizeInKB")
 	return wp
 }
 
+// Write writes the given payloads to the given writer in parquet format.
+// Also, sorts the payloads by sortKey to achieve better encoding.
 func (wp WriterParquet) Write(w io.Writer, payloads []payload) error {
 	pw, err := writer.NewParquetWriterFromWriter(
 		w,
@@ -61,9 +69,13 @@ func (wp WriterParquet) Write(w io.Writer, payloads []payload) error {
 		return fmt.Errorf("creating parquet writer: %v", err)
 	}
 
-	pw.RowGroupSize = 128 * bytesize.MB
-	pw.PageSize = 8 * bytesize.KB
+	pw.RowGroupSize = wp.config.rowGroupSizeInMB.Load() * bytesize.MB
+	pw.PageSize = wp.config.pageSizeInKB.Load() * bytesize.KB
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
+
+	sort.Slice(payloads, func(i, j int) bool {
+		return wp.sortKey(payloads[i]) < wp.sortKey(payloads[j])
+	})
 
 	for _, payload := range payloads {
 		if err = pw.Write(toParquet(payload)); err != nil {
@@ -76,4 +88,20 @@ func (wp WriterParquet) Write(w io.Writer, payloads []payload) error {
 	}
 
 	return nil
+}
+
+func (eir *WriterParquet) sortKey(p payload) string {
+	keys := []string{
+		p.DestinationID,
+		p.TransformationID,
+		p.TrackingPlanID,
+		p.FailedStage,
+		p.EventType,
+		p.EventName,
+	}
+	return strings.Join(keys, "::")
+}
+
+func (wp WriterParquet) Extension() string {
+	return ".parquet"
 }

@@ -352,4 +352,5 @@ func TestErrorIndexReporter(t *testing.T) {
 		<-subscribeDone
 		<-syncerDone
 	})
+	t.Run("Proper encoding is used", func(t *testing.T) {})
 }

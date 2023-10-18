@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,7 +25,7 @@ import (
 
 const (
 	errorIndex = "err_idx"
-	dirName    = "error-index"
+	folderName = "rudder-failed-messages"
 )
 
 type payload struct {
@@ -40,6 +43,7 @@ type payload struct {
 
 type Writer interface {
 	Write(w io.Writer, payloads []payload) error
+	Extension() string
 }
 
 type ErrorIndexReporter struct {
@@ -49,11 +53,13 @@ type ErrorIndexReporter struct {
 	errIndexDB       *jobsdb.Handle
 	now              func() time.Time
 	writer           Writer
+	fileManager      filemanager.FileManager
 
 	config struct {
 		dsLimit              misc.ValueLoader[int]
 		skipMaintenanceError bool
 		jobRetention         time.Duration
+		instanceID           string
 	}
 }
 
@@ -74,6 +80,25 @@ func NewErrorIndexReporter(
 	eir.config.dsLimit = conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")
 	eir.config.skipMaintenanceError = conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
+	eir.config.instanceID = conf.GetString("INSTANCE_ID", "1")
+
+	var err error
+
+	provider := conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	eir.fileManager, err = filemanager.New(&filemanager.Settings{
+		Provider: provider,
+		Config: filemanager.GetProviderConfigFromEnv(
+			filemanagerutil.ProviderConfigOpts(
+				ctx,
+				provider,
+				conf,
+			),
+		),
+		Conf: conf,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("creating filemanager: %v", err))
+	}
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
 		errorIndex,
@@ -86,7 +111,7 @@ func NewErrorIndexReporter(
 			},
 		),
 	)
-	if err := eir.errIndexDB.Start(); err != nil {
+	if err = eir.errIndexDB.Start(); err != nil {
 		panic(fmt.Sprintf("starting error index db: %v", err))
 	}
 
@@ -95,7 +120,7 @@ func NewErrorIndexReporter(
 
 // Report reports the metrics to the errorIndex JobsDB
 func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) error {
-	failedAt := eir.now()
+	failedAt := eir.now().UTC()
 
 	var jobs []*jobsdb.JobT
 	for _, metric := range metrics {
@@ -168,18 +193,13 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(
 }
 
 // processJobs
-// 1. groups by sourceID
-// 2. create parquet files
-// 3. upload parquet files
-func (eir *ErrorIndexReporter) processJobs(jobs []*jobsdb.JobT) error {
-	payloadsBySrcMap := make(map[string][]payload)
-	for _, job := range jobs {
-		var p payload
-		if err := json.Unmarshal(job.EventPayload, &p); err != nil {
-			return fmt.Errorf("unmarshalling payload: %v", err)
-		}
-
-		payloadsBySrcMap[p.SourceID] = append(payloadsBySrcMap[p.SourceID], p)
+// 1. Groups by aggregateKey
+// 2. Creates a file for each aggregateKey
+// 3. Uploads the files
+func (eir *ErrorIndexReporter) processJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
+	aggregatedJobs, err := eir.aggregateJobs(jobs)
+	if err != nil {
+		return fmt.Errorf("aggregating jobs: %v", err)
 	}
 
 	var files []*os.File
@@ -188,22 +208,48 @@ func (eir *ErrorIndexReporter) processJobs(jobs []*jobsdb.JobT) error {
 			misc.RemoveFilePaths(file.Name())
 		}
 	}()
-	for _, payloadsBySrc := range payloadsBySrcMap {
-		f, err := eir.createFile(payloadsBySrc)
+	for _, aggregatedJob := range aggregatedJobs {
+		windowFormat := aggregatedJob[0].FailedAt.Format("2006/01/02/15")
+
+		f, err := eir.createFile(aggregatedJob)
 		if err != nil {
 			return fmt.Errorf("creating file: %v", err)
 		}
 
+		if err := eir.uploadFile(ctx, f, windowFormat); err != nil {
+			return fmt.Errorf("uploading file: %v", err)
+		}
+
 		files = append(files, f)
 	}
+	return nil
+}
 
-	for _, file := range files {
-		if err := eir.uploadParquetFile(file); err != nil {
-			return fmt.Errorf("uploading parquet file: %v", err)
+// aggregateJobs
+// 1. Groups jobs by aggregateKey
+// 2. Sorts the jobs by sortKey to achieve better encoding
+func (eir *ErrorIndexReporter) aggregateJobs(jobs []*jobsdb.JobT) (map[string][]payload, error) {
+	aggregatedJobs := make(map[string][]payload)
+
+	for _, job := range jobs {
+		var p payload
+		if err := json.Unmarshal(job.EventPayload, &p); err != nil {
+			return nil, fmt.Errorf("unmarshalling payload: %v", err)
 		}
+
+		key := eir.aggregateKey(p)
+		aggregatedJobs[key] = append(aggregatedJobs[key], p)
 	}
 
-	return nil
+	return aggregatedJobs, nil
+}
+
+func (eir *ErrorIndexReporter) aggregateKey(p payload) string {
+	keys := []string{
+		p.SourceID,
+		p.FailedAt.String(),
+	}
+	return strings.Join(keys, "::")
 }
 
 func (eir *ErrorIndexReporter) createFile(payloads []payload) (*os.File, error) {
@@ -212,11 +258,12 @@ func (eir *ErrorIndexReporter) createFile(payloads []payload) (*os.File, error) 
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	fileName := fmt.Sprintf("%d.%s.parquet",
-		eir.now().Unix(),
+	fileName := fmt.Sprintf("%s.%d.%s.%d%s", payloads[0].SourceID, payloads[0].FailedAt.Unix(),
 		uuid.New().String(),
+		eir.now().Unix(),
+		eir.writer.Extension(),
 	)
-	filePath := path.Join(tmpDirPath, dirName, fileName)
+	filePath := path.Join(tmpDirPath, folderName, fileName)
 
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 		return nil, fmt.Errorf("creating tmp dir: %w", err)
@@ -235,6 +282,14 @@ func (eir *ErrorIndexReporter) createFile(payloads []payload) (*os.File, error) 
 	return f, nil
 }
 
-func (eir *ErrorIndexReporter) uploadParquetFile(*os.File) error {
+func (eir *ErrorIndexReporter) uploadFile(ctx context.Context, file *os.File, windowFormat string) error {
+	_, err := eir.fileManager.Upload(ctx, file,
+		eir.config.instanceID,
+		folderName,
+		windowFormat,
+	)
+	if err != nil {
+		return fmt.Errorf("uploading file %s: %v", file.Name(), err)
+	}
 	return nil
 }
