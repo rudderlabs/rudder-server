@@ -1129,8 +1129,8 @@ func newMockUploader(
 	mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(onDedupUseNewRecords).AnyTimes()
 	mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-			return slices.Clone(loadFiles)
+		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()

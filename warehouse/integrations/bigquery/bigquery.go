@@ -412,11 +412,10 @@ func (bq *BigQuery) loadFileLocations(
 		}
 		return []warehouseutils.LoadFile{loadfile}, nil
 	default:
-		metadata := bq.uploader.GetLoadFilesMetadata(
+		return bq.uploader.GetLoadFilesMetadata(
 			ctx,
 			warehouseutils.GetLoadFilesOptions{Table: tableName},
 		)
-		return metadata, nil
 	}
 }
 
