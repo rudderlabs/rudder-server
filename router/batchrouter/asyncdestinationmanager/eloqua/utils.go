@@ -93,7 +93,11 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		}
 		var values []string
 		for _, field := range fields {
-			values = append(values, data.Message.Data[field].(string))
+			if data.Message.Data[field].(string) == "null" {
+				values = append(values, "")
+			} else {
+				values = append(values, data.Message.Data[field].(string))
+			}
 		}
 		fileInfo, err := csvFile.Stat()
 		if err != nil {
