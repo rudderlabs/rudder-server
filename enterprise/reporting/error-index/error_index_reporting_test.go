@@ -1,26 +1,52 @@
-package reporting
+package error_index
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ory/dockertest/v3"
-
-	"github.com/golang/mock/gomock"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+func newMockConfigFetcher() *mockConfigFetcher {
+	return &mockConfigFetcher{
+		workspaceIDForSourceIDMap: make(map[string]string),
+		piiReportingSettings:      make(map[string]bool),
+	}
+}
+
+type mockConfigFetcher struct {
+	workspaceIDForSourceIDMap map[string]string
+	piiReportingSettings      map[string]bool
+}
+
+func (m *mockConfigFetcher) WorkspaceIDFromSource(sourceID string) string {
+	return m.workspaceIDForSourceIDMap[sourceID]
+}
+
+func (m *mockConfigFetcher) IsPIIReportingDisabled(workspaceID string) bool {
+	return m.piiReportingSettings[workspaceID]
+}
+
+func (m *mockConfigFetcher) addWorkspaceIDForSourceID(sourceID, workspaceID string) {
+	m.workspaceIDForSourceIDMap[sourceID] = workspaceID
+}
+
+func (m *mockConfigFetcher) addPIIReportingSettings(workspaceID string, disabled bool) {
+	m.piiReportingSettings[workspaceID] = disabled
+}
 
 func TestErrorIndexReporter(t *testing.T) {
 	workspaceID := "test-workspace-id"
@@ -29,8 +55,6 @@ func TestErrorIndexReporter(t *testing.T) {
 	transformationID := "test-transformation-id"
 	trackingPlanID := "test-tracking-plan-id"
 	reportedBy := "test-reported-by"
-	destinationDefinitionID := "test-destination-definition-id"
-	destType := "test-dest-type"
 	eventName := "test-event-name"
 	eventType := "test-event-type"
 	messageID := "test-message-id"
@@ -39,43 +63,6 @@ func TestErrorIndexReporter(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-
-	ctrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{
-			Data: map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										ID:   destinationDefinitionID,
-										Name: destType,
-									},
-								},
-							},
-						},
-					},
-					Settings: backendconfig.Settings{
-						DataRetention: backendconfig.DataRetention{
-							DisableReportingPII: true,
-						},
-					},
-				},
-			},
-			Topic: string(backendconfig.TopicBackendConfig),
-		}
-		close(ch)
-		return ch
-	}).AnyTimes()
 
 	receivedAt := time.Now()
 
@@ -249,14 +236,10 @@ func TestErrorIndexReporter(t *testing.T) {
 				c.Set("DB.password", postgresContainer.Password)
 
 				ctx, cancel := context.WithCancel(ctx)
+				defer cancel()
 
-				cs := newConfigSubscriber(logger.NOP)
-
-				subscribeDone := make(chan struct{})
-				go func() {
-					defer close(subscribeDone)
-					cs.Subscribe(ctx, mockBackendConfig)
-				}()
+				cs := newMockConfigFetcher()
+				cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 				eir.now = failedAt
@@ -295,14 +278,12 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, params["source_id"], sourceID)
 					require.Equal(t, params["workspaceId"], workspaceID)
 				}
-				cancel()
-				<-subscribeDone
 			})
 		}
 	})
 	t.Run("panic in case of not able to start errIndexDB", func(t *testing.T) {
 		require.Panics(t, func() {
-			_ = NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
+			_ = NewErrorIndexReporter(ctx, config.New(), logger.NOP, newMockConfigFetcher())
 		})
 	})
 	t.Run("Graceful shutdown", func(t *testing.T) {
@@ -317,14 +298,8 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(ctx)
 
-		cs := newConfigSubscriber(logger.NOP)
-
-		subscribeDone := make(chan struct{})
-		go func() {
-			defer close(subscribeDone)
-
-			cs.Subscribe(ctx, mockBackendConfig)
-		}()
+		cs := newMockConfigFetcher()
+		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
 		eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 		defer eir.errIndexDB.TearDown()
@@ -342,8 +317,98 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		cancel()
 
-		<-subscribeDone
 		<-syncerDone
 	})
-	t.Run("Proper encoding is used", func(t *testing.T) {})
+	t.Run("txn rollback", func(t *testing.T) {})
+}
+
+func TestFileFormatComparisonEncoding(t *testing.T) {
+	now := time.Now()
+
+	t.Run("CSV", func(t *testing.T) {
+		var records [][]string
+		var record []string
+
+		for i := 0; i < 1000000; i++ {
+			record = append(record, "messageId"+strconv.Itoa(i))
+			record = append(record, "sourceId")
+			record = append(record, "destinationId"+strconv.Itoa(i%10))
+			record = append(record, "transformationId"+strconv.Itoa(i%10))
+			record = append(record, "trackingPlanId"+strconv.Itoa(i%10))
+			record = append(record, "failedStage"+strconv.Itoa(i%10))
+			record = append(record, "eventType"+strconv.Itoa(i%10))
+			record = append(record, "eventName"+strconv.Itoa(i%10))
+			record = append(record, now.Add(time.Duration(i)*time.Second).Format(time.RFC3339))
+			record = append(record, now.Add(time.Duration(i)*time.Second).Format(time.RFC3339))
+			records = append(records, record)
+			record = nil
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, 1024))
+		c := csv.NewWriter(buf)
+
+		err := c.WriteAll(records)
+		require.NoError(t, err)
+
+		t.Log("csv size:", buf.Len()) // csv size: 160MB
+	})
+	t.Run("JSON", func(t *testing.T) {
+		var records []payload
+
+		for i := 0; i < 1000000; i++ {
+			records = append(records, payload{
+				MessageID:        "messageId" + strconv.Itoa(i),
+				SourceID:         "sourceId",
+				DestinationID:    "destinationId" + strconv.Itoa(i%10),
+				TransformationID: "transformationId" + strconv.Itoa(i%10),
+				TrackingPlanID:   "trackingPlanId" + strconv.Itoa(i%10),
+				FailedStage:      "failedStage" + strconv.Itoa(i%10),
+				EventType:        "eventType" + strconv.Itoa(i%10),
+				EventName:        "eventName" + strconv.Itoa(i%10),
+				ReceivedAt:       now.Add(time.Duration(i) * time.Second),
+				FailedAt:         now.Add(time.Duration(i) * time.Second),
+			})
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, 1024))
+		e := json.NewEncoder(buf)
+
+		for _, record := range records {
+			err := e.Encode(record)
+			require.NoError(t, err)
+		}
+
+		t.Log("json size:", buf.Len()) // json size: 333MB
+	})
+	t.Run("Parquet", func(t *testing.T) {
+		var records []payload
+
+		for i := 0; i < 1000000; i++ {
+			records = append(records, payload{
+				MessageID:        "messageId" + strconv.Itoa(i),
+				SourceID:         "sourceId",
+				DestinationID:    "destinationId" + strconv.Itoa(i%10),
+				TransformationID: "transformationId" + strconv.Itoa(i%10),
+				TrackingPlanID:   "trackingPlanId" + strconv.Itoa(i%10),
+				FailedStage:      "failedStage" + strconv.Itoa(i%10),
+				EventType:        "eventType" + strconv.Itoa(i%10),
+				EventName:        "eventName" + strconv.Itoa(i%10),
+				ReceivedAt:       now.Add(time.Duration(i) * time.Second),
+				FailedAt:         now.Add(time.Duration(i) * time.Second),
+			})
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, 1024))
+		wp := newWriterParquet(config.New())
+
+		err := wp.Write(buf, records)
+		require.NoError(t, err)
+		t.Log("parquet size:", buf.Len())
+		// parquet size: 13.74MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED], No sorting) // Check with @atzoum
+		// parquet size: 21.71MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 21.71MB (rowGroupSizeInMB=1024, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 21.71MB (rowGroupSizeInMB=128, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 23.52MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY])
+		// parquet size: 25.98MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[])
+	})
 }
