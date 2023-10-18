@@ -455,6 +455,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				}
 
 				req.Header.Set("Content-Type", "application/json; charset=utf-8")
+				req.Header.Set("X-Feature-GZIP-SUPPORT", "?1")
 				// Header to let transformer know that the client understands event filter code
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 
