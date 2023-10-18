@@ -19,7 +19,6 @@ type maxmindDBReader struct {
 }
 
 func NewMaxmindDBReader(dbLoc string) (*maxmindDBReader, error) {
-
 	reader, err := maxminddb.Open(dbLoc)
 	if err != nil {
 
