@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	errorIndex = "err_idx"
 	folderName = "rudder-failed-messages"
 )
 
@@ -102,7 +101,7 @@ func NewErrorIndexReporter(
 	}
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
-		errorIndex,
+		"err_idx",
 		jobsdb.WithDSLimit(eir.config.dsLimit),
 		jobsdb.WithConfig(conf),
 		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
