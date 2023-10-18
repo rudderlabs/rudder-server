@@ -2,7 +2,6 @@ package enricher
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -23,9 +22,8 @@ func (p *GeoTestDBProvider) GetDB(ctx context.Context, key, downloadPath string)
 
 func TestGeolocationEnrichment_Setup(t *testing.T) {
 	var (
-		defaultConf = config.New()
-		logger      = logger.NewLogger()
-		stats       = stats.Default
+		defaultLog   = logger.NewLogger()
+		defaultStats = stats.Default
 	)
 
 	t.Run("inexistent db file causes enricher to fail setup", func(t *testing.T) {
@@ -34,30 +32,43 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 		c := config.New()
 		c.Set("Geolocation.db.downloadPath", "./testdata/invalid-db-path")
 
-		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
+		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
 		require.NotNil(t, err)
-		t.Log(err)
-		require.True(t, errors.Is(err, geolocation.ErrInvalidDatabase))
+		require.ErrorIs(t, err, geolocation.ErrInvalidDatabase)
 	})
 
-	t.Run("corrupted db file causes enricher to fail", func(t *testing.T) {
+	t.Run("corrupted db file causes enricher to fail setup", func(t *testing.T) {
 		t.Parallel()
 
 		c := config.New()
 		c.Set("Geolocation.db.downloadPath", "./testdata/corrupted_city_test.mmdb")
 
-		_, err := NewGeoEnricher(&GeoTestDBProvider{}, defaultConf, logger, stats)
+		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
 		require.NotNil(t, err)
-		t.Log(err)
-		require.True(t, errors.Is(err, geolocation.ErrInvalidDatabase))
+		require.ErrorIs(t, err, geolocation.ErrInvalidDatabase)
+	})
+
+	t.Run("correctly downloaded file causes enricher to setup correctly", func(t *testing.T) {
+		t.Parallel()
+
+		c := config.New()
+		c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
+
+		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
+		require.Nil(t, err)
 	})
 }
 
 func TestGeolocationEnrichment_Success(t *testing.T) {
 	c := config.New()
 	c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
-	enricher, err := NewGeoEnricher(&GeoTestDBProvider{}, c, logger.NewLogger(), stats.Default)
 
+	// The original fetcher works here because the file exists at the
+	// path and it assumes it is correct.
+	fetcher, err := NewGeoDBFetcher(c, logger.NewLogger())
+	require.Nil(t, err)
+
+	enricher, err := NewGeoEnricher(fetcher, c, logger.NewLogger(), stats.Default)
 	require.Nil(t, err)
 
 	t.Run("it silently returns without enrichment if ip is empty", func(t *testing.T) {

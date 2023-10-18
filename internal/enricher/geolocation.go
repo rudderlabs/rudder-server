@@ -17,7 +17,7 @@ import (
 )
 
 type GeoDBFetcher interface {
-	GetDB(ctx context.Context, key string, downloadPath string) error
+	GetDB(ctx context.Context, key, downloadPath string) error
 }
 
 type Geolocation struct {
@@ -37,12 +37,12 @@ type geoEnricher struct {
 
 func NewGeoEnricher(
 	dbProvider GeoDBFetcher,
-	config *config.Config,
+	conf *config.Config,
 	log logger.Logger,
 	statClient stats.Stats,
 ) (PipelineEnricher, error) {
-	upstreamDBKey := config.GetString("Geolocation.db.key", "geolite2City.mmdb")
-	downloadPath := config.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
+	upstreamDBKey := conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
+	downloadPath := conf.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
 
 	err := dbProvider.GetDB(context.Background(), upstreamDBKey, downloadPath)
 	if err != nil {
@@ -119,6 +119,12 @@ type geoDB struct {
 // GetDB simply fetches the database from the upstream located at the key defined
 // in the argument and stores it in the downloadPath provided.
 func (db *geoDB) GetDB(ctx context.Context, key, downloadPath string) error {
+	// If the file already exists, do not go into the loop of downloading
+	// the file again from s3.
+	if _, err := os.Stat(downloadPath); err == nil {
+		return nil
+	}
+
 	f, err := os.Create(downloadPath)
 	if err != nil {
 		return fmt.Errorf("creating a file to store db contents: %w", err)
