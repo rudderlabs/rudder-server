@@ -19,14 +19,16 @@ type EloquaService interface {
 }
 
 type EloquaBulkUploader struct {
-	destName      string
-	logger        logger.Logger
-	authorization string
-	baseEndpoint  string
-	fileSizeLimit int64
-	eventsLimit   int64
-	service       EloquaService
-	jobToCSVMap   map[int64]int64
+	destName          string
+	logger            logger.Logger
+	authorization     string
+	baseEndpoint      string
+	fileSizeLimit     int64
+	eventsLimit       int64
+	service           EloquaService
+	jobToCSVMap       map[int64]int64
+	uniqueKeys        []string
+	successStatusCode []string
 }
 type DestinationConfig struct {
 	CompanyName              string   `json:"companyName"`
