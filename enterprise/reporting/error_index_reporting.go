@@ -5,14 +5,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 
 	"github.com/google/uuid"
 

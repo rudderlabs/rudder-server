@@ -2,15 +2,17 @@ package reporting
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/xitongsys/parquet-go/parquet"
-	"github.com/xitongsys/parquet-go/types"
-	"github.com/xitongsys/parquet-go/writer"
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/types"
+	"github.com/xitongsys/parquet-go/writer"
+
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type payloadParquet struct {

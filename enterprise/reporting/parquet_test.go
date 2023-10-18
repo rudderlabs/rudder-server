@@ -5,16 +5,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/config"
+	"path"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/stretchr/testify/require"
 	"github.com/xitongsys/parquet-go-source/buffer"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 	"github.com/xitongsys/parquet-go/types"
-	"path"
-	"strconv"
-	"testing"
-	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	_ "github.com/marcboeker/go-duckdb"
 )

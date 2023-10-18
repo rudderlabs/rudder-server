@@ -319,6 +319,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(c.Label)
+	mainLoopTimer := stats.Default.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := stats.Default.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
 	getReportsCount := stats.Default.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
@@ -417,6 +418,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 		}
 
+		mainLoopTimer.Since(loopStart)
 		select {
 		case <-ctx.Done():
 			return
