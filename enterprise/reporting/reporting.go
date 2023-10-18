@@ -369,7 +369,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			if err == nil {
 				lastReportedAtTime.Store(loopStart)
 			} else {
-				r.log.Errorf("error getting reports: %v", err)
+				r.log.Errorw("getting reports", "error", err)
 			}
 			select {
 			case <-ctx.Done():
