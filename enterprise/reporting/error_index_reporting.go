@@ -100,24 +100,6 @@ func NewErrorIndexReporter(
 		panic(fmt.Sprintf("creating filemanager: %v", err))
 	}
 
-	var err error
-
-	provider := conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-	eir.fileManager, err = filemanager.New(&filemanager.Settings{
-		Provider: provider,
-		Config: filemanager.GetProviderConfigFromEnv(
-			filemanagerutil.ProviderConfigOpts(
-				ctx,
-				provider,
-				conf,
-			),
-		),
-		Conf: conf,
-	})
-	if err != nil {
-		panic(fmt.Sprintf("creating filemanager: %v", err))
-	}
-
 	eir.errIndexDB = jobsdb.NewForReadWrite(
 		errorIndex,
 		jobsdb.WithDSLimit(eir.config.dsLimit),
@@ -300,7 +282,11 @@ func (eir *ErrorIndexReporter) createFile(payloads []payload) (*os.File, error) 
 	return f, nil
 }
 
-func (eir *ErrorIndexReporter) uploadFile(ctx context.Context, file *os.File, windowFormat string) error {
+func (eir *ErrorIndexReporter) uploadFile(
+	ctx context.Context,
+	file *os.File,
+	windowFormat string,
+) error {
 	_, err := eir.fileManager.Upload(ctx, file,
 		eir.config.instanceID,
 		folderName,
