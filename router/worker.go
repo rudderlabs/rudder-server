@@ -505,6 +505,12 @@ func (w *worker) processDestinationJobs() {
 									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
 									rdlTime := time.Now()
 									resp := w.rt.netHandle.SendPost(sendCtx, val)
+									stats.Default.NewTaggedStat("num_requests_out", stats.CountType, stats.Tags{
+										"destType":      w.rt.destType,
+										"destinationId": destinationJob.Destination.ID,
+										"workspace":     workspaceID,
+										"workspaceId":   workspaceID,
+									}).Count(1)
 									cancel()
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 									// stat end
