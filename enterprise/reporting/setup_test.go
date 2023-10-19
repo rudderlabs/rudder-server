@@ -122,7 +122,6 @@ func TestSetupForDelegates(t *testing.T) {
 				}
 			}
 			med := NewReportingMediator(context.Background(), logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
-			defer med.Stop()
 			require.Len(t, med.reporters, tc.expectedDelegates)
 		})
 
