@@ -16,10 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-const (
-	errorIndex = "err_idx"
-)
-
 type payload struct {
 	MessageID        string    `json:"messageId"`
 	SourceID         string    `json:"sourceId"`
@@ -65,7 +61,7 @@ func NewErrorIndexReporter(
 	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
 
 	eir.errIndexDB = jobsdb.NewForReadWrite(
-		errorIndex,
+		"err_idx",
 		jobsdb.WithDSLimit(eir.config.dsLimit),
 		jobsdb.WithConfig(conf),
 		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
