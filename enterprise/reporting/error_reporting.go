@@ -231,8 +231,11 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
+	// Version deprecation logic
+	errCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg)
 	return errorDetails{
 		ErrorMessage: cleanedErrMsg,
+		ErrorCode:    errCode,
 	}
 }
 

@@ -255,3 +255,8 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 
 	return regexdMsg
 }
+
+func (ext *ExtractorHandle) GetErrorCode(errMsg string) string {
+	// version deprecation logic
+	return ""
+}
