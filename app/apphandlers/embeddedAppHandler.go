@@ -378,17 +378,10 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	enrichers := make([]enricher.PipelineEnricher, 0)
 
 	if conf.GetBool("GeoEnrichment.enabled", false) {
-
-		dbProvider, err := enricher.NewGeoDBFetcher(conf, log)
-		if err != nil {
-			return nil, fmt.Errorf("creating new instance of geo db fetcher: %w", err)
-		}
-
-		geoEnricher, err := enricher.NewGeoEnricher(dbProvider, conf, log, stats)
+		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
 		if err != nil {
 			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
 		}
-
 		enrichers = append(enrichers, geoEnricher)
 	}
 

@@ -1431,15 +1431,6 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 	return proc.config.eventAuditEnabled[workspaceID]
 }
 
-func (proc *Handle) geoEnrichmentEnabledForSource(sourceID string) bool {
-	source, err := proc.getSourceBySourceID(sourceID)
-	if err != nil {
-		return false
-	}
-
-	return source.GeoEnrichment.Enabled
-}
-
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1501,13 +1492,27 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
+		newStatus := jobsdb.JobStatusT{
+			JobID:         batchEvent.JobID,
+			JobState:      jobsdb.Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
+			JobParameters: batchEvent.Parameters,
+			WorkspaceId:   batchEvent.WorkspaceId,
+		}
+		statusList = append(statusList, &newStatus)
+
 		source, err := proc.getSourceBySourceID(sourceId)
 		if err != nil {
 			continue
 		}
 
 		for _, enricher := range proc.enrichers {
-			enricher.Enrich(source, &gatewayBatchEvent)
+			_ = enricher.Enrich(source, &gatewayBatchEvent)
 		}
 
 		// Iterate through all the events in the batch
@@ -1651,20 +1656,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 		}
 
-		// Mark the batch event as processed
-		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.Succeeded.State,
-			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "200",
-			ErrorResponse: []byte(`{"success":"OK"}`),
-			Parameters:    []byte(`{}`),
-			JobParameters: batchEvent.Parameters,
-			WorkspaceId:   batchEvent.WorkspaceId,
-		}
-		statusList = append(statusList, &newStatus)
 	}
 
 	g, groupCtx := errgroup.WithContext(context.Background())

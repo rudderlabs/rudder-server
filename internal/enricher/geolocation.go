@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -17,9 +17,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type GeoDBFetcher interface {
-	GetDB(ctx context.Context, key, downloadPath string) error
-}
+const (
+	ERR_INVALID_IP    = "invalid_ip"
+	ERR_EMPTY_IP      = "empty_ip"
+	ERR_LOCATE_FAILED = "locate_failed"
+)
 
 type Geolocation struct {
 	City     string `json:"city"`
@@ -36,23 +38,17 @@ type geoEnricher struct {
 	stats   stats.Stats
 }
 
-func NewGeoEnricher(
-	dbProvider GeoDBFetcher,
-	conf *config.Config,
-	log logger.Logger,
-	statClient stats.Stats,
-) (PipelineEnricher, error) {
+func NewGeoEnricher(conf *config.Config, log logger.Logger, statClient stats.Stats) (PipelineEnricher, error) {
 	upstreamDBKey := conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
-	downloadPath := conf.GetString("Geolocation.db.downloadPath", "geolite2City.mmdb")
 
-	err := dbProvider.GetDB(context.Background(), upstreamDBKey, downloadPath)
+	dbPath, err := downloadMaxmindDB(context.Background(), conf, log, upstreamDBKey)
 	if err != nil {
-		return nil, fmt.Errorf("getting db from upstream: %w", err)
+		return nil, fmt.Errorf("downloading instance of maxmind db: %w", err)
 	}
 
-	fetcher, err := geolocation.NewMaxmindDBReader(downloadPath)
+	fetcher, err := geolocation.NewMaxmindDBReader(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("creating new instance of maxmind's geolocation fetcher: %w", err)
+		return nil, fmt.Errorf("creating new instance of maxmind's geolocation db reader: %w", err)
 	}
 
 	return &geoEnricher{
@@ -66,43 +62,72 @@ func NewGeoEnricher(
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
 func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.GatewayBatchRequest) error {
-	if source == nil || !source.GeoEnrichment.Enabled {
+	if !source.GeoEnrichment.Enabled {
 		return nil
 	}
-
 	e.logger.Debugw("received a call to enrich gateway events for source", "sourceID", source.ID)
-	if request.RequestIP == "" {
-		e.stats.NewTaggedStat("proc_geo_enrincher_empty_ip", stats.CountType, stats.Tags{
-			"sourceID": source.ID,
-		}).Increment()
 
+	var (
+		rawGeo *geolocation.GeoInfo
+		err    error
+	)
+
+	defer func() {
+		errType := ""
+
+		if request.RequestIP == "" {
+			errType = ERR_EMPTY_IP
+		}
+
+		if err != nil {
+			errType = ERR_LOCATE_FAILED
+
+			if errors.Is(err, geolocation.ErrInvalidIP) {
+				errType = ERR_INVALID_IP
+			}
+		}
+
+		e.stats.NewTaggedStat(
+			"proc_geo_enricher_request",
+			stats.CountType,
+			stats.Tags{
+				"sourceID": source.ID,
+				"error":    errType,
+			}).Increment()
+	}()
+
+	if request.RequestIP == "" {
 		return nil
 	}
 
 	defer e.stats.NewTaggedStat(
 		"proc_geo_enricher_request_latency",
 		stats.TimerType,
-		stats.Tags{"sourceID": source.ID}).RecordDuration()()
+		stats.Tags{
+			"sourceID": source.ID,
+		},
+	).RecordDuration()()
 
-	geoip, err := e.fetcher.Locate(request.RequestIP)
+	rawGeo, err = e.fetcher.Locate(request.RequestIP)
 	if err != nil {
-		e.stats.NewTaggedStat(
-			"proc_geo_enricher_geoip_lookup_failed",
-			stats.CountType,
-			stats.Tags{
-				"sourceId": source.ID,
-				"validIP":  strconv.FormatBool(errors.Is(err, geolocation.ErrInvalidIP)),
-			}).Increment()
-
 		return fmt.Errorf("enriching request with geolocation: %w", err)
 	}
 
-	// for every event if we have context object set
-	// only then we add to geo section
-	geoData := extractGeolocationData(geoip)
+	geoData := extractGeolocationData(rawGeo)
 
 	for _, event := range request.Batch {
+		// if the context section is missing on the event
+		// set it with default as map[string]interface{}
+		if _, ok := event["context"]; !ok {
+			event["context"] = map[string]interface{}{}
+		}
+
 		if context, ok := event["context"].(map[string]interface{}); ok {
+			// if the `geo` key already present fire a stat for observability
+			if _, ok := context["geo"]; ok {
+				continue
+			}
+			// update the geo section
 			context["geo"] = geoData
 		}
 	}
@@ -117,48 +142,66 @@ func (e *geoEnricher) Close() error {
 	return nil
 }
 
-type geoDB struct {
-	s3Manager filemanager.FileManager
-}
+func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger, key string) (string, error) {
+	var (
+		tmpDirPath = strings.TrimSuffix(conf.GetString("RUDDER_TMPDIR", ""), "/")
+		baseDIR    = fmt.Sprintf("%s/geolocation", tmpDirPath)
+		fullpath   = fmt.Sprintf("%s/%s", baseDIR, key)
+	)
 
-// GetDB simply fetches the database from the upstream located at the key defined
-// in the argument and stores it in the downloadPath provided.
-func (db *geoDB) GetDB(ctx context.Context, key, downloadPath string) error {
-
-	f, err := os.Create(downloadPath)
-	if err != nil {
-		return fmt.Errorf("creating a file to store db contents: %w", err)
+	// If the filepath exists return
+	_, err := os.Stat(fullpath)
+	if err == nil {
+		return fullpath, nil
 	}
 
-	defer f.Close()
-
-	err = db.s3Manager.Download(ctx, f, key)
+	err = os.MkdirAll(baseDIR, os.ModePerm)
 	if err != nil {
-		return fmt.Errorf("downloading db from upstream and storing in file: %w", err)
+		return "", fmt.Errorf("creating directory for storing db: %w", err)
 	}
 
-	return nil
-}
+	f, err := os.CreateTemp(baseDIR, "geodb-*.mmdb")
+	if err != nil {
+		return "", fmt.Errorf("creating a temporary file: %w", err)
+	}
 
-func NewGeoDBFetcher(conf *config.Config, log logger.Logger) (GeoDBFetcher, error) {
+	// Make sure we close and remove the file
+	defer func() {
+		f.Close()
+		os.Remove(fmt.Sprintf("%s/%s", baseDIR, f.Name()))
+	}()
+
 	var (
 		bucket = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
 		region = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
 	)
 
 	manager, err := filemanager.NewS3Manager(map[string]interface{}{
-		"Bucket": bucket,
-		"Region": region,
+		"bucketName": bucket,
+		"region":     region,
 	}, log, func() time.Duration {
 		return 1000 * time.Millisecond
 	})
 	if err != nil {
-		return nil, fmt.Errorf("creating a new s3 manager client: %w", err)
+		return "", fmt.Errorf("creating a new s3 manager client: %w", err)
 	}
 
-	return &geoDB{
-		s3Manager: manager,
-	}, nil
+	err = manager.Download(ctx, f, key)
+	if err != nil {
+		return "", fmt.Errorf("downloading file with key: %s from bucket: %s and region: %s, err: %w",
+			key,
+			bucket,
+			region,
+			err)
+	}
+
+	// Finally move the downloaded file from previous temp location to new location
+	err = os.Rename(fmt.Sprintf("%s/%s", baseDIR, f.Name()), fullpath)
+	if err != nil {
+		return "", fmt.Errorf("renaming file: %w", err)
+	}
+
+	return fullpath, nil
 }
 
 func extractGeolocationData(geoCity *geolocation.GeoInfo) *Geolocation {

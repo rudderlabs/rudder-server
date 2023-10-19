@@ -27,24 +27,15 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 		defaultStats = stats.Default
 	)
 
-	t.Run("inexistent db file causes enricher to fail setup", func(t *testing.T) {
-		t.Parallel()
-
-		c := config.New()
-		c.Set("Geolocation.db.downloadPath", "./testdata/invalid-db-path")
-
-		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
-		require.NotNil(t, err)
-		require.ErrorIs(t, err, geolocation.ErrInvalidDatabase)
-	})
-
 	t.Run("corrupted db file causes enricher to fail setup", func(t *testing.T) {
 		t.Parallel()
 
 		c := config.New()
-		c.Set("Geolocation.db.downloadPath", "./testdata/corrupted_city_test.mmdb")
 
-		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
+		c.Set("RUDDER_TMPDIR", "./testdata")
+		c.Set("Geolocation.db.key", "corrupted_city_test.mmdb")
+
+		_, err := NewGeoEnricher(c, defaultLog, defaultStats)
 		require.NotNil(t, err)
 		require.ErrorIs(t, err, geolocation.ErrInvalidDatabase)
 	})
@@ -53,21 +44,24 @@ func TestGeolocationEnrichment_Setup(t *testing.T) {
 		t.Parallel()
 
 		c := config.New()
-		c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
+		c.Set("RUDDER_TMPDIR", "./testdata")
+		c.Set("Geolocation.db.key", "city_test.mmdb")
 
-		_, err := NewGeoEnricher(&GeoTestDBProvider{}, c, defaultLog, defaultStats)
+		_, err := NewGeoEnricher(c, defaultLog, defaultStats)
 		require.Nil(t, err)
 	})
 }
 
 func TestGeolocationEnrichment_Success(t *testing.T) {
 	c := config.New()
-	c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
 
-	enricher, err := NewGeoEnricher(&GeoTestDBProvider{}, c, logger.NewLogger(), stats.Default)
+	c.Set("RUDDER_TMPDIR", "./testdata")
+	c.Set("Geolocation.db.key", "city_test.mmdb")
+
+	enricher, err := NewGeoEnricher(c, logger.NewLogger(), stats.Default)
 	require.Nil(t, err)
 
-	t.Run("it silently returns without enrichment if ip is empty", func(t *testing.T) {
+	t.Run("it returns silently without enrichment if ip is empty", func(t *testing.T) {
 		t.Parallel()
 
 		ip := &types.GatewayBatchRequest{
@@ -177,7 +171,52 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		}
 	})
 
-	t.Run("it doesn't add geolocation if the ipaddress is found but context section on event is empty", func(t *testing.T) {
+	t.Run("it doesn't add geolocation for valid ipaddress if source is null or flag for enrichment not enabled", func(t *testing.T) {
+		t.Parallel()
+		input := &types.GatewayBatchRequest{
+			RequestIP: `2.125.160.216`,
+			Batch: []types.SingularEventT{
+				{
+					"anonymousId": "a1",
+					"properties": map[string]interface{}{
+						"userId": "u1",
+					},
+				},
+				{
+					"anonymousId": "a2",
+					"context": map[string]interface{}{
+						"version": "0.1.0",
+					},
+				},
+			},
+		}
+
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(false).
+				Build(),
+			input,
+		)
+		require.Nil(t, err)
+
+		// in the first event, we dont have context section and hence
+		// no updates to it
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a1",
+			"properties": map[string]interface{}{
+				"userId": "u1",
+			},
+		}, input.Batch[0])
+
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a2",
+			"context": map[string]interface{}{
+				"version": "0.1.0",
+			},
+		}, input.Batch[1])
+	})
+
+	t.Run("it adds geolocation if the ipaddress is found and context section on event is empty", func(t *testing.T) {
 		t.Parallel()
 
 		input := &types.GatewayBatchRequest{
@@ -204,17 +243,25 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Build(), input)
 		require.Nil(t, err)
 
-		// in the first event, we dont have context section and hence
-		// no updates to it
+		// In both the events below, we have context section
+		// being added or updated to with the geolocation information.
 		require.Equal(t, types.SingularEventT{
 			"anonymousId": "a1",
 			"properties": map[string]interface{}{
 				"userId": "u1",
 			},
+			"context": map[string]interface{}{
+				"geo": &Geolocation{
+					City:     "Boxford",
+					Country:  "GB",
+					Postal:   "OX1",
+					Region:   "England",
+					Location: "51.750000,-1.250000",
+					Timezone: "Europe/London",
+				},
+			},
 		}, input.Batch[0])
 
-		// in the second event as context section present
-		// it handles it correctly by adding geolocation data to it.
 		require.Equal(t, types.SingularEventT{
 			"anonymousId": "a2",
 			"context": map[string]interface{}{
@@ -228,6 +275,56 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					Timezone: "Europe/London",
 				},
 			},
+		}, input.Batch[1])
+	})
+
+	t.Run("it doesn't add geo information if context is not a map or `geo` key already present in it", func(t *testing.T) {
+		t.Parallel()
+
+		input := &types.GatewayBatchRequest{
+			RequestIP: `2.125.160.216`,
+			Batch: []types.SingularEventT{
+				{
+					"anonymousId": "a1",
+					"properties": map[string]interface{}{
+						"userId": "u1",
+					},
+					"context": map[string]interface{}{
+						"geo": "some previous information",
+					},
+				},
+				{
+					"anonymousId": "a2",
+					"properties": map[string]interface{}{
+						"userId": "u2",
+					},
+					"context": 1.23, // context section is integer and not a map
+				},
+			},
+		}
+
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(), input)
+		require.Nil(t, err)
+
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a1",
+			"properties": map[string]interface{}{
+				"userId": "u1",
+			},
+			"context": map[string]interface{}{
+				"geo": "some previous information",
+			},
+		}, input.Batch[0])
+
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a2",
+			"properties": map[string]interface{}{
+				"userId": "u2",
+			},
+			"context": 1.23,
 		}, input.Batch[1])
 	})
 }
