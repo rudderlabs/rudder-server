@@ -233,22 +233,16 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	var geoEnricher enricher.PipelineEnricher
-	if config.GetBool("GeoEnrichment.enabled", false) {
-
-		dbProvider, err := enricher.NewGeoDBFetcher(config, a.log)
-		if err != nil {
-			return fmt.Errorf("creating new instance of geo db fetcher: %w", err)
-		}
-
-		geoEnricher, err = enricher.NewGeoEnricher(dbProvider, config, a.log, stats.Default)
-		if err != nil {
-			return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
-		}
-
-	} else {
-		geoEnricher = enricher.NoOpGeoEnricher{}
+	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	if err != nil {
+		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
+
+	defer func() {
+		for _, enricher := range enrichers {
+			enricher.Close()
+		}
+	}()
 
 	proc := processor.New(
 		ctx,
@@ -266,7 +260,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
-		geoEnricher,
+		enrichers,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)
@@ -378,4 +372,25 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	})
 
 	return g.Wait()
+}
+
+func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
+	enrichers := make([]enricher.PipelineEnricher, 0)
+
+	if conf.GetBool("GeoEnrichment.enabled", false) {
+
+		dbProvider, err := enricher.NewGeoDBFetcher(conf, log)
+		if err != nil {
+			return nil, fmt.Errorf("creating new instance of geo db fetcher: %w", err)
+		}
+
+		geoEnricher, err := enricher.NewGeoEnricher(dbProvider, conf, log, stats)
+		if err != nil {
+			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+		}
+
+		enrichers = append(enrichers, geoEnricher)
+	}
+
+	return enrichers, nil
 }

@@ -84,7 +84,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
-	enricher                  enricher.PipelineEnricher
+	enrichers                 []enricher.PipelineEnricher
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
@@ -359,7 +359,7 @@ func (proc *Handle) Setup(
 	rsourcesService rsources.JobService,
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
-	enricher enricher.PipelineEnricher,
+	enrichers []enricher.PipelineEnricher,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -380,7 +380,7 @@ func (proc *Handle) Setup(
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
-	proc.enricher = enricher
+	proc.enrichers = enrichers
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -1434,7 +1434,6 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 func (proc *Handle) geoEnrichmentEnabledForSource(sourceID string) bool {
 	source, err := proc.getSourceBySourceID(sourceID)
 	if err != nil {
-		proc.logger.Errorw("unable to get source by id for geoenrichment", "error", err.Error(), "sourceId", sourceID)
 		return false
 	}
 
@@ -1502,20 +1501,19 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
-		// Only if geo enrichment is enabled for deployment and then the source
-		// only then we perform the enrichment on gateway batch event.
-		if proc.config.geoEnrichmentEnabled && proc.geoEnrichmentEnabledForSource(sourceId) {
-			_ = proc.enricher.Enrich(sourceId, &gatewayBatchEvent)
+		source, err := proc.getSourceBySourceID(sourceId)
+		if err != nil {
+			continue
+		}
+
+		for _, enricher := range proc.enrichers {
+			enricher.Enrich(source, &gatewayBatchEvent)
 		}
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			source, sourceError := proc.getSourceBySourceID(sourceId)
-			if sourceError != nil {
-				proc.logger.Errorf("Dropping Job since Source not found for sourceId %q: %v", sourceId, sourceError)
-				continue
-			}
+
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
 				if err != nil {

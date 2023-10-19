@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -64,12 +65,15 @@ func NewGeoEnricher(
 // Enrich function runs on a request of GatewayBatchRequest which contains
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
-func (e *geoEnricher) Enrich(sourceID string, request *types.GatewayBatchRequest) error {
-	e.logger.Debugw("received a call to enrich gateway events for source", "sourceId", sourceID)
+func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.GatewayBatchRequest) error {
+	if source == nil || !source.GeoEnrichment.Enabled {
+		return nil
+	}
 
+	e.logger.Debugw("received a call to enrich gateway events for source", "sourceID", source.ID)
 	if request.RequestIP == "" {
 		e.stats.NewTaggedStat("proc_geo_enrincher_empty_ip", stats.CountType, stats.Tags{
-			"sourceId": sourceID,
+			"sourceID": source.ID,
 		}).Increment()
 
 		return nil
@@ -78,7 +82,7 @@ func (e *geoEnricher) Enrich(sourceID string, request *types.GatewayBatchRequest
 	defer e.stats.NewTaggedStat(
 		"proc_geo_enricher_request_latency",
 		stats.TimerType,
-		stats.Tags{"sourceId": sourceID}).RecordDuration()()
+		stats.Tags{"sourceID": source.ID}).RecordDuration()()
 
 	geoip, err := e.fetcher.Locate(request.RequestIP)
 	if err != nil {
@@ -86,7 +90,7 @@ func (e *geoEnricher) Enrich(sourceID string, request *types.GatewayBatchRequest
 			"proc_geo_enricher_geoip_lookup_failed",
 			stats.CountType,
 			stats.Tags{
-				"sourceId": sourceID,
+				"sourceId": source.ID,
 				"validIP":  strconv.FormatBool(errors.Is(err, geolocation.ErrInvalidIP)),
 			}).Increment()
 
@@ -106,9 +110,10 @@ func (e *geoEnricher) Enrich(sourceID string, request *types.GatewayBatchRequest
 	return nil
 }
 
-type NoOpGeoEnricher struct{}
-
-func (e NoOpGeoEnricher) Enrich(string, *types.GatewayBatchRequest) error {
+func (e *geoEnricher) Close() error {
+	if err := e.fetcher.Close(); err != nil {
+		return fmt.Errorf("closing the geo enricher: %w", err)
+	}
 	return nil
 }
 
@@ -119,11 +124,6 @@ type geoDB struct {
 // GetDB simply fetches the database from the upstream located at the key defined
 // in the argument and stores it in the downloadPath provided.
 func (db *geoDB) GetDB(ctx context.Context, key, downloadPath string) error {
-	// If the file already exists, do not go into the loop of downloading
-	// the file again from s3.
-	if _, err := os.Stat(downloadPath); err == nil {
-		return nil
-	}
 
 	f, err := os.Create(downloadPath)
 	if err != nil {

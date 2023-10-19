@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -223,22 +222,16 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	var geoEnricher enricher.PipelineEnricher
-	if config.GetBool("GeoEnrichment.enabled", false) {
-
-		dbProvider, err := enricher.NewGeoDBFetcher(config.Default, a.log)
-		if err != nil {
-			return fmt.Errorf("creating new instance of geo db fetcher: %w", err)
-		}
-
-		geoEnricher, err = enricher.NewGeoEnricher(dbProvider, config.Default, a.log, stats.Default)
-		if err != nil {
-			return fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
-		}
-
-	} else {
-		geoEnricher = enricher.NoOpGeoEnricher{}
+	enrichers, err := setupPipelineEnrichers(config.Default, a.log, stats.Default)
+	if err != nil {
+		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
+
+	defer func() {
+		for _, enricher := range enrichers {
+			enricher.Close()
+		}
+	}()
 
 	p := proc.New(
 		ctx,
@@ -256,7 +249,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
-		geoEnricher,
+		enrichers,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.New(stats.Default)

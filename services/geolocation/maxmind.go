@@ -47,3 +47,11 @@ func (f *maxmindDBReader) Locate(ip string) (*GeoInfo, error) {
 
 	return &lookup, nil
 }
+
+func (f *maxmindDBReader) Close() error {
+	if err := f.Reader.Close(); err != nil {
+		return fmt.Errorf("closing the underlying maxmind db reader: %w", err)
+	}
+
+	return nil
+}

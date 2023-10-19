@@ -210,7 +210,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		enricher.NoOpGeoEnricher{},
+		[]enricher.PipelineEnricher{},
 		processor.WithFeaturesRetryMaxAttempts(0),
 	)
 	processor.BackendConfig = mockBackendConfig

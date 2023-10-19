@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -63,12 +64,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	c := config.New()
 	c.Set("Geolocation.db.downloadPath", "./testdata/city_test.mmdb")
 
-	// The original fetcher works here because the file exists at the
-	// path and it assumes it is correct.
-	fetcher, err := NewGeoDBFetcher(c, logger.NewLogger())
-	require.Nil(t, err)
-
-	enricher, err := NewGeoEnricher(fetcher, c, logger.NewLogger(), stats.Default)
+	enricher, err := NewGeoEnricher(&GeoTestDBProvider{}, c, logger.NewLogger(), stats.Default)
 	require.Nil(t, err)
 
 	t.Run("it silently returns without enrichment if ip is empty", func(t *testing.T) {
@@ -82,7 +78,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			},
 		}
 		// enrichment doesn't happen at all on the context and event remains the same
-		err := enricher.Enrich("source-id", ip)
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(), ip)
 		require.Nil(t, err)
 		// require.Equal(t, nil, ip)
 		require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0"}}, ip.Batch[0])
@@ -92,10 +91,14 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	t.Run("it returns ErrInvalidIP in case ip address passed is malformed", func(t *testing.T) {
 		t.Parallel()
 
-		err := enricher.Enrich("source-id", &types.GatewayBatchRequest{
-			RequestIP: `invalid-ip`,
-			Batch:     nil,
-		})
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(),
+			&types.GatewayBatchRequest{
+				RequestIP: `invalid-ip`,
+				Batch:     nil,
+			})
 
 		require.NotNil(t, err)
 		require.ErrorIs(t, err, geolocation.ErrInvalidIP)
@@ -111,7 +114,11 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			},
 		}
 
-		err := enricher.Enrich("source-id", input)
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(),
+			input)
 		require.Nil(t, err)
 
 		for _, val := range input.Batch {
@@ -143,9 +150,12 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			},
 		}
 
-		err := enricher.Enrich("source-id", input)
-		require.Nil(t, err)
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(), input)
 
+		require.Nil(t, err)
 		for _, val := range input.Batch {
 			require.Equal(t,
 				types.SingularEventT{ // expected type with context
@@ -188,7 +198,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			},
 		}
 
-		err := enricher.Enrich("source-id", input)
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(), input)
 		require.Nil(t, err)
 
 		// in the first event, we dont have context section and hence
@@ -272,4 +285,25 @@ func TestMapUpstreamToGeolocation(t *testing.T) {
 		actual := extractGeolocationData(input)
 		require.Empty(t, *actual)
 	})
+}
+
+type SourceBuilder struct {
+	source *backendconfig.SourceT
+}
+
+func NewSourceBuilder(id string) *SourceBuilder {
+	return &SourceBuilder{
+		source: &backendconfig.SourceT{
+			ID: id,
+		},
+	}
+}
+
+func (sb *SourceBuilder) WithGeoEnrichment(enabled bool) *SourceBuilder {
+	sb.source.GeoEnrichment.Enabled = enabled
+	return sb
+}
+
+func (sb *SourceBuilder) Build() *backendconfig.SourceT {
+	return sb.source
 }

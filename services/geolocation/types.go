@@ -2,6 +2,7 @@ package geolocation
 
 type GeoFetcher interface {
 	Locate(ip string) (*GeoInfo, error)
+	Close() error
 }
 
 // The City struct corresponds to the data in the GeoIP2/GeoLite2 City

@@ -1066,7 +1066,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				enricher.NoOpGeoEnricher{},
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1095,7 +1095,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				enricher.NoOpGeoEnricher{},
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1129,7 +1129,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				enricher.NoOpGeoEnricher{},
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -2062,7 +2062,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				enricher.NoOpGeoEnricher{},
+				[]enricher.PipelineEnricher{},
 			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
@@ -2120,7 +2120,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
-				enricher.NoOpGeoEnricher{},
+				[]enricher.PipelineEnricher{},
 			)
 			defer processor.Shutdown()
 
@@ -3731,7 +3731,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.MockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
-		enricher.NoOpGeoEnricher{},
+		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
 }
