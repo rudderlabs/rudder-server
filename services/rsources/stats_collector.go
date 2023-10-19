@@ -34,11 +34,17 @@ type StatsCollector interface {
 	// be ready for capturing JobStatus statistics
 	BeginProcessing(jobs []*jobsdb.JobT)
 
-	// JobStatusesUpdated captures outgoing job statistics.
+	// CollectStats captures outgoing job statistics.
 	// A call to BeginProcessing must precede a call to this method,
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
-	JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT)
+	CollectStats(jobStatuses []*jobsdb.JobStatusT)
+
+	// CollectFailedRecords captured `recordId`s for the jobs that were aborted.
+	// A call to BeginProcessing must precede a call to this method,
+	// so that all necessary indices can be created, since a JobStatus
+	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
+	CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT)
 }
 
 // FailedJobsStatsCollector collects stats for failed jobs
@@ -61,7 +67,6 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
 func NewDroppedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
 	return &statsCollector{
-		skipFailedRecords:     true,
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
@@ -82,7 +87,6 @@ func (sk statKey) String() string {
 var _ StatsCollector = (*statsCollector)(nil)
 
 type statsCollector struct {
-	skipFailedRecords     bool
 	processing            bool
 	jobService            JobService
 	jobIdsToStatKeyIndex  map[int64]statKey
@@ -127,7 +131,7 @@ func (r *statsCollector) JobsDropped(jobs []*jobsdb.JobT) {
 			JobState: jobsdb.Aborted.State,
 		})
 	}
-	r.JobStatusesUpdated(jobStatuses)
+	r.CollectStats(jobStatuses)
 }
 
 func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string) {
@@ -139,7 +143,7 @@ func (r *statsCollector) BeginProcessing(jobs []*jobsdb.JobT) {
 	r.processing = true
 }
 
-func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
+func (r *statsCollector) CollectStats(jobStatuses []*jobsdb.JobStatusT) {
 	if !r.processing {
 		panic(fmt.Errorf("cannot update job statuses without having previously called BeginProcessing"))
 	}
@@ -157,7 +161,25 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 					stats.Out++
 				case jobsdb.Aborted.State:
 					stats.Failed++
-					recordId := r.jobIdsToRecordIdIndex[jobStatus.JobID]
+				}
+			}
+		}
+	}
+}
+
+func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) {
+	if !r.processing {
+		panic(fmt.Errorf("cannot update job statuses without having previously called BeginProcessing"))
+	}
+
+	if len(r.jobIdsToRecordIdIndex) == 0 || len(r.jobIdsToStatKeyIndex) == 0 {
+		return
+	}
+	for i := range jobStatuses {
+		jobStatus := jobStatuses[i]
+		if statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]; statKeyOk {
+			if recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]; recordIdOK {
+				if jobStatus.JobState == jobsdb.Aborted.State {
 					if len(recordId) > 0 {
 						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], recordId)
 					}
@@ -169,7 +191,7 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 
 func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	if r.jobService == nil {
-		return fmt.Errorf("No JobService provided during initialization")
+		return fmt.Errorf("no JobService provided during initialization")
 	}
 	// sort the maps to avoid deadlocks
 	statKeys := r.orderedStatMapKeys()
@@ -251,9 +273,6 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				stats.In++
 			}
 			r.jobIdsToStatKeyIndex[job.JobID] = sk
-			if r.skipFailedRecords {
-				continue
-			}
 			if recordId != "" && recordId != "null" && recordId != `""` {
 				recordIdJson := json.RawMessage(recordId)
 				if json.Valid(recordIdJson) {

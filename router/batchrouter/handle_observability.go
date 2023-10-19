@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -186,8 +189,7 @@ func (brt *Handle) recordUploadStats(destination Connection, output UploadResult
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
-	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
-	if err == nil {
+	if receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt); err == nil {
 		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
 			"module":      "batch_router",
 			"destType":    brt.destType,
@@ -213,10 +215,23 @@ func (brt *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
-func (brt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+func (brt *Handle) updateRudderSourcesStats(
+	ctx context.Context,
+	tx jobsdb.UpdateSafeTx,
+	jobs []*jobsdb.JobT,
+	jobStatuses []*jobsdb.JobStatusT,
+) error {
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	rsourcesStats.CollectStats(jobStatuses)
+	rsourcesStats.CollectFailedRecords(
+		lo.Filter(
+			jobStatuses,
+			func(status *jobsdb.JobStatusT, _ int) bool {
+				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
+			},
+		),
+	)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)

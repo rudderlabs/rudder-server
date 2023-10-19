@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -625,7 +626,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -642,7 +643,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -663,7 +664,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 				c := config.New()
 				c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", []string{workspaceID})
@@ -719,7 +720,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, true)
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, true)
 
 				sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 				require.NoError(t, err)
@@ -766,7 +767,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false)
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
 				c := config.New()
 				c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
@@ -826,7 +827,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{
 				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
 			}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -849,7 +850,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -894,7 +895,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -921,7 +922,7 @@ func TestIntegration(t *testing.T) {
 			})
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, whutils.LoadFileTypeCsv, false, false)
+			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, false, false)
 
 			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
@@ -1023,7 +1024,6 @@ func newMockUploader(
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
-	loadFileType string,
 	canAppend bool,
 	dedupUseNewRecord bool,
 ) whutils.Uploader {
@@ -1035,14 +1035,14 @@ func newMockUploader(
 	mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
 	mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(dedupUseNewRecord).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options whutils.GetLoadFilesOptions) []whutils.LoadFile {
-			return slices.Clone(loadFiles)
+		func(ctx context.Context, options whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
+			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(loadFiles[0].Location, nil).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
-	mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
+	mockUploader.EXPECT().GetLoadFileType().Return(whutils.LoadFileTypeCsv).AnyTimes()
 
 	return mockUploader
 }

@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -52,15 +51,9 @@ var ErrorDetailReportsColumns = []string{
 	"error_message",
 }
 
-type destDetail struct {
-	DestinationDefinitionID string
-	DestType                string // destination definition name
-}
-
 type ErrorDetailReporter struct {
 	ctx                 context.Context
-	onceInit            sync.Once
-	init                chan struct{}
+	configSubscriber    *configSubscriber
 	reportingServiceURL string
 	syncersMu           sync.RWMutex
 	syncers             map[string]*types.SyncSource
@@ -76,11 +69,6 @@ type ErrorDetailReporter struct {
 
 	httpClient *http.Client
 
-	backendConfigMu           sync.RWMutex // protects the following
-	workspaceID               string
-	workspaceIDForSourceIDMap map[string]string
-	destinationIDMap          map[string]destDetail
-
 	errorDetailExtractor *ExtractorHandle
 
 	minReportedAtQueryTime      stats.Measurement
@@ -93,7 +81,10 @@ type errorDetails struct {
 	ErrorMessage string
 }
 
-func NewErrorDetailReporter(ctx context.Context) *ErrorDetailReporter {
+func NewErrorDetailReporter(
+	ctx context.Context,
+	configSubscriber *configSubscriber,
+) *ErrorDetailReporter {
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -120,58 +111,10 @@ func NewErrorDetailReporter(ctx context.Context) *ErrorDetailReporter {
 		instanceID: config.GetString("INSTANCE_ID", "1"),
 		region:     config.GetString("region", ""),
 
-		init:                      make(chan struct{}),
-		workspaceIDForSourceIDMap: make(map[string]string),
-		destinationIDMap:          make(map[string]destDetail),
-		syncers:                   make(map[string]*types.SyncSource),
-		errorDetailExtractor:      extractor,
-		maxOpenConnections:        maxOpenConnections,
-	}
-}
-
-func (edr *ErrorDetailReporter) backendConfigSubscriber(beConfigHandle backendconfig.BackendConfig) {
-	edr.log.Info("[Error Detail Reporting] Setting up reporting handler")
-	defer edr.onceInit.Do(func() {
-		close(edr.init)
-	})
-	if edr.ctx.Err() != nil {
-		return
-	}
-	ch := beConfigHandle.Subscribe(edr.ctx, backendconfig.TopicBackendConfig)
-
-	for c := range ch {
-		conf := c.Data.(map[string]backendconfig.ConfigT)
-		newWorkspaceIDForSourceIDMap := make(map[string]string)
-		newDestinationIDMap := make(map[string]destDetail)
-		newPIIReportingSettings := make(map[string]bool)
-		var newWorkspaceID string
-
-		for workspaceID, wConfig := range conf {
-			newWorkspaceID = workspaceID
-			for _, source := range wConfig.Sources {
-				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
-				// Reduce to destination detail based on destination-id
-				newDestinationIDMap = lo.Reduce(source.Destinations, func(agg map[string]destDetail, destination backendconfig.DestinationT, _ int) map[string]destDetail {
-					agg[destination.ID] = destDetail{
-						DestinationDefinitionID: destination.DestinationDefinition.ID,
-						DestType:                destination.DestinationDefinition.Name,
-					}
-					return agg
-				}, newDestinationIDMap)
-			}
-			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
-		}
-		if len(conf) > 1 {
-			newWorkspaceID = ""
-		}
-		edr.backendConfigMu.Lock()
-		edr.workspaceID = newWorkspaceID
-		edr.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		edr.destinationIDMap = newDestinationIDMap
-		edr.backendConfigMu.Unlock()
-		edr.onceInit.Do(func() {
-			close(edr.init)
-		})
+		configSubscriber:     configSubscriber,
+		syncers:              make(map[string]*types.SyncSource),
+		errorDetailExtractor: extractor,
+		maxOpenConnections:   maxOpenConnections,
 	}
 }
 
@@ -191,6 +134,10 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
+	if !config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
+		return func() {}
+	}
+
 	return func() {
 		edr.mainLoop(edr.ctx, c)
 	}
@@ -202,25 +149,24 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
-		return
+		return nil
 	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
-		_ = txn.Rollback()
 		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return
+		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		workspaceID := edr.getWorkspaceID(metric.ConnectionDetails.SourceID)
+		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
-		destinationDetail := edr.getDestDetail(metric.ConnectionDetails.DestinationID)
+		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
 		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
 		// extract error-message & error-code
@@ -231,9 +177,9 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *s
 			edr.instanceID,
 			metric.ConnectionDetails.SourceDefinitionId,
 			metric.ConnectionDetails.SourceID,
-			destinationDetail.DestinationDefinitionID,
+			destinationDetail.destinationDefinitionID,
 			metric.ConnectionDetails.DestinationID,
-			destinationDetail.DestType,
+			destinationDetail.destType,
 			metric.PUDetails.PU,
 			reportedAt,
 			metric.StatusDetail.Count,
@@ -244,15 +190,17 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *s
 		)
 		if err != nil {
 			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
-			return
+			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return
+		return fmt.Errorf("executing final statement: %v", err)
 	}
+
+	return nil
 }
 
 func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
@@ -280,18 +228,6 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	return dbHandle, nil
 }
 
-func (edr *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
-	edr.backendConfigMu.RLock()
-	defer edr.backendConfigMu.RUnlock()
-	return edr.workspaceIDForSourceIDMap[sourceID]
-}
-
-func (edr *ErrorDetailReporter) getDestDetail(destID string) destDetail {
-	edr.backendConfigMu.RLock()
-	defer edr.backendConfigMu.RUnlock()
-	return edr.destinationIDMap[destID]
-}
-
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
@@ -310,7 +246,7 @@ func (edr *ErrorDetailReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 
 func (edr *ErrorDetailReporter) getTags(label string) stats.Tags {
 	return stats.Tags{
-		"workspaceID": edr.workspaceID,
+		"workspaceID": edr.configSubscriber.WorkspaceID(),
 		"clientName":  label,
 		"instanceId":  edr.instanceID,
 	}
@@ -318,7 +254,8 @@ func (edr *ErrorDetailReporter) getTags(label string) stats.Tags {
 
 // Sending metrics to Reporting service --- STARTS
 func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
-	<-edr.init
+	edr.configSubscriber.Wait()
+
 	tags := edr.getTags(c.Label)
 
 	mainLoopTimer := stats.Default.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)

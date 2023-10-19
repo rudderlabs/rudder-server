@@ -3,19 +3,13 @@ package reporting
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -203,8 +197,8 @@ var _ = Describe("Reporting", func() {
 				},
 			},
 		}
-
-		reportHandle := NewDefaultReporter(context.Background(), logger.NOP)
+		configSubscriber := newConfigSubscriber(logger.NOP)
+		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber)
 
 		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 		Expect(aggregatedMetrics).To(Equal(expectedResponse))
@@ -228,72 +222,6 @@ func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
 	Expect(expectedMetric.StatusDetail.SampleEvent).To(Equal(actualMetric.StatusDetail.SampleEvent))
 	Expect(expectedMetric.StatusDetail.EventName).To(Equal(actualMetric.StatusDetail.EventName))
 	Expect(expectedMetric.StatusDetail.EventType).To(Equal(actualMetric.StatusDetail.EventType))
-}
-
-func TestReportingBasedOnConfigBackend(t *testing.T) {
-	RegisterTestingT(t)
-	ctrl := gomock.NewController(t)
-	config := mock_backendconfig.NewMockBackendConfig(ctrl)
-
-	configCh := make(chan pubsub.DataEvent)
-	config.EXPECT().Subscribe(
-		gomock.Any(),
-		gomock.Eq(backendconfig.TopicBackendConfig),
-	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		go func() {
-			<-ctx.Done()
-			close(configCh)
-		}()
-
-		return configCh
-	})
-
-	reporting := NewDefaultReporter(context.Background(), logger.NOP)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		reporting.backendConfigSubscriber(config)
-		wg.Done()
-	}()
-
-	defer func() {
-		close(configCh)
-		wg.Wait()
-	}()
-
-	configCh <- pubsub.DataEvent{
-		Data: map[string]backendconfig.ConfigT{
-			"testWorkspaceId-1": {
-				WorkspaceID: "testWorkspaceId-1",
-				Settings: backendconfig.Settings{
-					DataRetention: backendconfig.DataRetention{
-						DisableReportingPII: false,
-					},
-				},
-			},
-		},
-		Topic: string(backendconfig.TopicBackendConfig),
-	}
-
-	Expect(reporting.IsPIIReportingDisabled("testWorkspaceId-1")).To(BeFalse())
-
-	configCh <- pubsub.DataEvent{
-		Data: map[string]backendconfig.ConfigT{
-			"testWorkspaceId-1": {
-				WorkspaceID: "testWorkspaceId-1",
-				Settings: backendconfig.Settings{
-					DataRetention: backendconfig.DataRetention{
-						DisableReportingPII: true,
-					},
-				},
-			},
-		},
-		Topic: string(backendconfig.TopicBackendConfig),
-	}
-
-	Eventually(func() bool {
-		return reporting.IsPIIReportingDisabled("testWorkspaceId-1")
-	}).WithTimeout(time.Second).Should(BeTrue())
 }
 
 type getValTc struct {
@@ -584,7 +512,8 @@ func TestAggregationLogic(t *testing.T) {
 			},
 		},
 	}
-	ed := NewErrorDetailReporter(context.Background())
+	configSubscriber := newConfigSubscriber(logger.NOP)
+	ed := NewErrorDetailReporter(context.Background(), configSubscriber)
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{

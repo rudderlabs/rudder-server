@@ -12,9 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -283,7 +284,7 @@ func (job *UploadJob) generateUploadSchema() error {
 
 	marshalledSchema, err := json.Marshal(uploadSchema)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
@@ -1321,18 +1322,18 @@ func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (error
 
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716}] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings) {
+func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings, error) {
 	timings, err := repo.NewUploads(job.db).UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
-		job.logger.Error("error getting timing, scrapping them", err)
+		return nil, nil, err
 	}
 	timing := map[string]time.Time{status: job.now()}
 	timings = append(timings, timing)
 	marshalledTimings, err := json.Marshal(timings)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	return marshalledTimings, timings
+	return marshalledTimings, timings, nil
 }
 
 func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
@@ -1371,7 +1372,10 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	}()
 
 	// TODO: fetch upload model instead of just timings
-	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
+	marshalledTimings, timings, err := job.getNewTimings(statusOpts.Status)
+	if err != nil {
+		return
+	}
 	opts := []UploadColumn{
 		{Column: UploadStatusField, Value: statusOpts.Status},
 		{Column: UploadTimingsField, Value: marshalledTimings},
@@ -1393,16 +1397,25 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 		if err != nil {
 			return
 		}
+		defer func() {
+			if err != nil {
+				_ = txn.Rollback()
+			}
+		}()
+
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
 			return
 		}
 		if job.config.reportingEnabled {
-			job.reporting.Report(
+			err = job.reporting.Report(
 				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
 				txn.GetTx(),
 			)
+			if err != nil {
+				return
+			}
 		}
 		err = txn.Commit()
 		return
@@ -1586,10 +1599,16 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
-		return "", fmt.Errorf("unable to start transaction: %w", err)
+		return "", fmt.Errorf("starting transaction: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+		}
+	}()
+
 	if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
-		return "", fmt.Errorf("unable to change upload columns: %w", err)
+		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
 	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
@@ -1646,9 +1665,13 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		job.reporting.Report(reportingMetrics, txn.GetTx())
+		if err = job.reporting.Report(reportingMetrics, txn.GetTx()); err != nil {
+			return "", fmt.Errorf("reporting metrics: %w", err)
+		}
 	}
-	err = txn.Commit()
+	if err = txn.Commit(); err != nil {
+		return "", fmt.Errorf("committing transaction: %w", err)
+	}
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr
@@ -1773,7 +1796,7 @@ func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (
 	return true, nil
 }
 
-func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.GetLoadFilesOptions) (loadFiles []whutils.LoadFile) {
+func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.GetLoadFilesOptions) (loadFiles []whutils.LoadFile, err error) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1818,7 +1841,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 	job.logger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := job.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err))
+		return nil, fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1827,7 +1850,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 		var metadata json.RawMessage
 		err := rows.Scan(&location, &metadata)
 		if err != nil {
-			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			return nil, fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err)
 		}
 		loadFiles = append(loadFiles, whutils.LoadFile{
 			Location: location,
@@ -1835,13 +1858,16 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 		})
 	}
 	if err = rows.Err(); err != nil {
-		panic(fmt.Errorf("iterate query results: %s\nwith Error : %w", sqlStatement, err))
+		return nil, fmt.Errorf("iterate query results: %s\nwith Error : %w", sqlStatement, err)
 	}
 	return
 }
 
 func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName string) (location string, err error) {
-	locations := job.GetLoadFilesMetadata(ctx, whutils.GetLoadFilesOptions{Table: tableName, Limit: 1})
+	locations, err := job.GetLoadFilesMetadata(ctx, whutils.GetLoadFilesOptions{Table: tableName, Limit: 1})
+	if err != nil {
+		return "", fmt.Errorf("get load file metadata: %w", err)
+	}
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`no load file found for table:%s`, tableName)
 	}
@@ -2018,11 +2044,14 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 
 	// Refresh partitions if exists
 	for tableName := range job.upload.UploadSchema {
-		loadFiles := job.GetLoadFilesMetadata(job.ctx, whutils.GetLoadFilesOptions{
+		loadFiles, err := job.GetLoadFilesMetadata(job.ctx, whutils.GetLoadFilesOptions{
 			Table:   tableName,
 			StartID: loadFileStartID,
 			EndID:   loadFileEndID,
 		})
+		if err != nil {
+			return fmt.Errorf("get load files metadata: %w", err)
+		}
 		batches := lo.Chunk(loadFiles, job.config.refreshPartitionBatchSize)
 		for _, batch := range batches {
 			if err = repository.RefreshPartitions(job.ctx, tableName, batch); err != nil {
