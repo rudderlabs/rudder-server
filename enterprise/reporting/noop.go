@@ -15,3 +15,5 @@ func (*NOOP) Report(_ []*types.PUReportedMetric, _ *Tx) error {
 func (*NOOP) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	return func() {}
 }
+
+func (*NOOP) Stop() {}

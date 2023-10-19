@@ -65,6 +65,9 @@ type Reporting interface {
 
 	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
 	DatabaseSyncer(c SyncerConfig) ReportingSyncer
+
+	// Stop the reporting service
+	Stop()
 }
 
 type ReportingSyncer func()

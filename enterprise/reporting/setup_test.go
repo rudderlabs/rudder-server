@@ -121,12 +121,8 @@ func TestSetupForDelegates(t *testing.T) {
 					EnterpriseToken: "dummy-token",
 				}
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			med := NewReportingMediator(ctx, logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
-			defer func() {
-				cancel()
-				_ = med.g.Wait()
-			}()
+			med := NewReportingMediator(context.Background(), logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
+			defer med.Stop()
 			require.Len(t, med.reporters, tc.expectedDelegates)
 		})
 

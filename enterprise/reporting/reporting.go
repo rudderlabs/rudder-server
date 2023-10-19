@@ -46,6 +46,8 @@ const (
 
 type DefaultReporter struct {
 	ctx                 context.Context
+	cancel              context.CancelFunc
+	g                   *errgroup.Group
 	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
 	syncers             map[string]*types.SyncSource
@@ -85,8 +87,12 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 	return &DefaultReporter{
 		ctx:                                  ctx,
+		cancel:                               cancel,
+		g:                                    g,
 		log:                                  log,
 		configSubscriber:                     configSubscriber,
 		syncers:                              make(map[string]*types.SyncSource),
@@ -136,7 +142,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		return func() {}
 	}
 	return func() {
-		r.mainLoop(r.ctx, c)
+		r.g.Go(func() error {
+			r.mainLoop(r.ctx, c)
+			return nil
+		})
 	}
 }
 
@@ -601,4 +610,9 @@ func (r *DefaultReporter) getTags(label string) stats.Tags {
 		"instanceId":  r.instanceID,
 		"clientName":  label,
 	}
+}
+
+func (r *DefaultReporter) Stop() {
+	r.cancel()
+	_ = r.g.Wait()
 }

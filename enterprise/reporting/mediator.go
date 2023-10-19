@@ -20,14 +20,22 @@ type Mediator struct {
 
 	g         *errgroup.Group
 	ctx       context.Context
+	cancel    context.CancelFunc
 	reporters []types.Reporting
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
+
 	rm := &Mediator{
-		log: log,
+		log:    log,
+		g:      g,
+		ctx:    ctx,
+		cancel: cancel,
 	}
-	rm.g, rm.ctx = errgroup.WithContext(ctx)
+	rm.ctx, rm.cancel = context.WithCancel(ctx)
+	rm.g, rm.ctx = errgroup.WithContext(rm.ctx)
 
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	if enterpriseToken == "" || !reportingEnabled {
@@ -107,4 +115,9 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 		}
 		_ = rm.g.Wait()
 	}
+}
+
+func (rm *Mediator) Stop() {
+	rm.cancel()
+	_ = rm.g.Wait()
 }

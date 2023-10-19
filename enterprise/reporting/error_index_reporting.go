@@ -117,10 +117,11 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx)
 	return nil
 }
 
-// DatabaseSyncer returns a syncer that syncs the errorIndex jobsDB. Once the context is done, it stops the errorIndex jobsDB
-func (eir *ErrorIndexReporter) DatabaseSyncer(
-	types.SyncerConfig,
-) types.ReportingSyncer {
+func (eir *ErrorIndexReporter) DatabaseSyncer(types.SyncerConfig) types.ReportingSyncer {
 	return func() {
 	}
+}
+
+func (edr *ErrorIndexReporter) Stop() {
+	// No op
 }
