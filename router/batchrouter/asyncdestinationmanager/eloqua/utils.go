@@ -164,7 +164,6 @@ func generateErrorString(item RejectedItem) string {
 }
 
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
-
 	jobIDs := []int64{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
