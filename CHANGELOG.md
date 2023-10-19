@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.3](https://github.com/rudderlabs/rudder-server/compare/v1.15.2...v1.15.3) (2023-10-19)
+
+
+### Bug Fixes
+
+* corrupted rsources stats captured by processor for dropped jobs ([#3999](https://github.com/rudderlabs/rudder-server/issues/3999)) ([e7b829d](https://github.com/rudderlabs/rudder-server/commit/e7b829d0565dcba3b902208c30727c7a23a6c2e8))
+* update error parsing of eloqua ([#3996](https://github.com/rudderlabs/rudder-server/issues/3996)) ([978c292](https://github.com/rudderlabs/rudder-server/commit/978c292605b2cafa8b74408ff8cd1959b3b59503))
+
 ## [1.15.2](https://github.com/rudderlabs/rudder-server/compare/v1.15.1...v1.15.2) (2023-10-18)
 
 
