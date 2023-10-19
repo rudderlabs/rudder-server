@@ -2,7 +2,6 @@ package reporting
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -79,7 +79,7 @@ func NewErrorIndexReporter(
 }
 
 // Report reports the metrics to the errorIndex JobsDB
-func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.Tx) error {
+func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx) error {
 	failedAt := eir.now()
 
 	var jobs []*jobsdb.JobT
@@ -134,7 +134,9 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.
 		return nil
 	}
 
-	if err := eir.errIndexDB.Store(eir.ctx, jobs); err != nil {
+	if err := eir.errIndexDB.WithStoreSafeTxFromTx(eir.ctx, tx, func(tx jobsdb.StoreSafeTx) error {
+		return eir.errIndexDB.StoreInTx(eir.ctx, tx, jobs)
+	}); err != nil {
 		return fmt.Errorf("failed to store jobs: %v", err)
 	}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -263,10 +264,12 @@ func TestErrorIndexReporter(t *testing.T) {
 				defer func() {
 					eir.errIndexDB.TearDown()
 				}()
-
-				err = eir.Report(tc.reports, nil)
+				sqltx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
-
+				tx := &Tx{Tx: sqltx}
+				err = eir.Report(tc.reports, tx)
+				require.NoError(t, err)
+				require.NoError(t, tx.Commit())
 				jr, err := eir.errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					JobsLimit: 100,
 				})
@@ -328,9 +331,12 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 		defer eir.errIndexDB.TearDown()
-
-		err = eir.Report([]*types.PUReportedMetric{}, nil)
+		sqltx, err := postgresContainer.DB.Begin()
 		require.NoError(t, err)
+		tx := &Tx{Tx: sqltx}
+		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
 
 		syncerDone := make(chan struct{})
 		go func() {

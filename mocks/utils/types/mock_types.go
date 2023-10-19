@@ -5,11 +5,11 @@
 package mock_types
 
 import (
-	sql "database/sql"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
 	model "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	tx "github.com/rudderlabs/rudder-server/utils/tx"
 	types "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -88,7 +88,7 @@ func (mr *MockReportingMockRecorder) DatabaseSyncer(arg0 interface{}) *gomock.Ca
 }
 
 // Report mocks base method.
-func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) error {
+func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *tx.Tx) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Report", arg0, arg1)
 	ret0, _ := ret[0].(error)

@@ -45,6 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -2024,8 +2025,8 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *Tx) error) {
+				_ = f(&Tx{})
 			}).Return(nil).Times(0)
 
 			// One Store call is expected for all events

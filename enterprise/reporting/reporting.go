@@ -26,6 +26,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -512,7 +513,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
 	}

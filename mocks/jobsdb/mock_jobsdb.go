@@ -12,6 +12,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	uuid "github.com/google/uuid"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
+	tx "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 // MockJobsDB is a mock of JobsDB interface.
@@ -422,8 +423,22 @@ func (mr *MockJobsDBMockRecorder) WithStoreSafeTx(arg0, arg1 interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTx), arg0, arg1)
 }
 
+// WithStoreSafeTxFromTx mocks base method.
+func (m *MockJobsDB) WithStoreSafeTxFromTx(arg0 context.Context, arg1 *tx.Tx, arg2 func(jobsdb.StoreSafeTx) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WithStoreSafeTxFromTx", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// WithStoreSafeTxFromTx indicates an expected call of WithStoreSafeTxFromTx.
+func (mr *MockJobsDBMockRecorder) WithStoreSafeTxFromTx(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTxFromTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTxFromTx), arg0, arg1, arg2)
+}
+
 // WithTx mocks base method.
-func (m *MockJobsDB) WithTx(arg0 func(*jobsdb.Tx) error) error {
+func (m *MockJobsDB) WithTx(arg0 func(*tx.Tx) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WithTx", arg0)
 	ret0, _ := ret[0].(error)

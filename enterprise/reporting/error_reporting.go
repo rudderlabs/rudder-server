@@ -25,6 +25,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -149,7 +150,7 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return nil

@@ -2,13 +2,13 @@ package reporting
 
 import (
 	"context"
-	"database/sql"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -56,7 +56,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	return rm
 }
 
-func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	for _, reporter := range rm.reporters {
 		if err := reporter.Report(metrics, txn); err != nil {
 			return err
