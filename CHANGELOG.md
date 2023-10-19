@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.2](https://github.com/rudderlabs/rudder-server/compare/v1.15.1...v1.15.2) (2023-10-18)
+
+
+### Miscellaneous
+
+* advertise gzip support to transformer through X-Feature-Gzip-Support header ([#3990](https://github.com/rudderlabs/rudder-server/issues/3990)) ([bce584d](https://github.com/rudderlabs/rudder-server/commit/bce584dea5a139e63451af5447da07563465570b))
+
 ## [1.15.1](https://github.com/rudderlabs/rudder-server/compare/v1.15.0...v1.15.1) (2023-10-13)
 
 
