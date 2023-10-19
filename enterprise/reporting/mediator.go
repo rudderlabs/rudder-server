@@ -51,6 +51,16 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
 		errorIndexReporter := NewErrorIndexReporter(rm.ctx, config.Default, rm.log, configSubscriber)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
+
+		rm.g.Go(func() error {
+			// Once the context is done, it stops the errorIndex jobsDB
+			<-rm.ctx.Done()
+
+			rm.log.Infof("Stopping error index reporting")
+
+			errorIndexReporter.errIndexDB.Stop()
+			return nil
+		})
 	}
 
 	return rm

@@ -141,13 +141,9 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, _ *sql.
 	return nil
 }
 
-// DatabaseSyncer returns a syncer that syncs the errorIndex jobsDB. Once the context is done, it stops the errorIndex jobsDB
+// DatabaseSyncer no op for error index reporting
 func (eir *ErrorIndexReporter) DatabaseSyncer(
 	types.SyncerConfig,
 ) types.ReportingSyncer {
-	return func() {
-		<-eir.ctx.Done()
-
-		eir.errIndexDB.Stop()
-	}
+	return func() {}
 }
