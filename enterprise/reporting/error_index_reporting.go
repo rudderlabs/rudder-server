@@ -8,10 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -33,21 +31,15 @@ type ErrorIndexReporter struct {
 	ctx              context.Context
 	log              logger.Logger
 	configSubscriber *configSubscriber
-	errIndexDB       *jobsdb.Handle
+	errIndexDB       jobsdb.JobsDB
 	now              func() time.Time
-
-	config struct {
-		dsLimit              misc.ValueLoader[int]
-		skipMaintenanceError bool
-		jobRetention         time.Duration
-	}
 }
 
 func NewErrorIndexReporter(
 	ctx context.Context,
-	conf *config.Config,
 	log logger.Logger,
 	configSubscriber *configSubscriber,
+	errIndexDB jobsdb.JobsDB,
 ) *ErrorIndexReporter {
 	eir := &ErrorIndexReporter{
 		ctx:              ctx,
@@ -56,25 +48,7 @@ func NewErrorIndexReporter(
 		now:              time.Now,
 	}
 
-	eir.config.dsLimit = conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")
-	eir.config.skipMaintenanceError = conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)
-	eir.config.jobRetention = conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
-
-	eir.errIndexDB = jobsdb.NewForReadWrite(
-		"err_idx",
-		jobsdb.WithDSLimit(eir.config.dsLimit),
-		jobsdb.WithConfig(conf),
-		jobsdb.WithSkipMaintenanceErr(eir.config.skipMaintenanceError),
-		jobsdb.WithJobMaxAge(
-			func() time.Duration {
-				return eir.config.jobRetention
-			},
-		),
-	)
-	if err := eir.errIndexDB.Start(); err != nil {
-		panic(fmt.Sprintf("failed to start error index db: %v", err))
-	}
-
+	eir.errIndexDB = errIndexDB
 	return eir
 }
 
@@ -148,8 +122,5 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(
 	types.SyncerConfig,
 ) types.ReportingSyncer {
 	return func() {
-		<-eir.ctx.Done()
-
-		eir.errIndexDB.Stop()
 	}
 }

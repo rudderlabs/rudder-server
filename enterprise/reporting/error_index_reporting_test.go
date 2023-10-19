@@ -259,11 +259,12 @@ func TestErrorIndexReporter(t *testing.T) {
 					cs.Subscribe(ctx, mockBackendConfig)
 				}()
 
-				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
+				errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithConfig(c))
+				require.NoError(t, errIndexDB.Start())
+				defer errIndexDB.TearDown()
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, errIndexDB)
+
 				eir.now = failedAt
-				defer func() {
-					eir.errIndexDB.TearDown()
-				}()
 				sqltx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
 				tx := &Tx{Tx: sqltx}
@@ -303,11 +304,6 @@ func TestErrorIndexReporter(t *testing.T) {
 			})
 		}
 	})
-	t.Run("panic in case of not able to start errIndexDB", func(t *testing.T) {
-		require.Panics(t, func() {
-			_ = NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
-		})
-	})
 	t.Run("Graceful shutdown", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
@@ -329,8 +325,10 @@ func TestErrorIndexReporter(t *testing.T) {
 			cs.Subscribe(ctx, mockBackendConfig)
 		}()
 
-		eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
-		defer eir.errIndexDB.TearDown()
+		errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithConfig(c))
+		require.NoError(t, errIndexDB.Start())
+		defer errIndexDB.TearDown()
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, errIndexDB)
 		sqltx, err := postgresContainer.DB.Begin()
 		require.NoError(t, err)
 		tx := &Tx{Tx: sqltx}

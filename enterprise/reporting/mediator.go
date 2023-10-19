@@ -2,12 +2,15 @@ package reporting
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -49,8 +52,29 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 
 	// error index reporting implementation
 	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
-		errorIndexReporter := NewErrorIndexReporter(rm.ctx, config.Default, rm.log, configSubscriber)
+		conf := config.Default
+		errIndexDB := jobsdb.NewForReadWrite(
+			"err_idx",
+			jobsdb.WithDSLimit(conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")),
+			jobsdb.WithConfig(conf),
+			jobsdb.WithSkipMaintenanceErr(conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)),
+			jobsdb.WithJobMaxAge(
+				func() time.Duration {
+					return conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
+				},
+			),
+		)
+		if err := errIndexDB.Start(); err != nil {
+			panic(fmt.Sprintf("failed to start error index db: %v", err))
+		}
+		errorIndexReporter := NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, errIndexDB)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
+		rm.g.Go(func() error {
+			// Once the context is done, it stops the errorIndex jobsDB
+			<-rm.ctx.Done()
+			errIndexDB.Stop()
+			return nil
+		})
 	}
 
 	return rm

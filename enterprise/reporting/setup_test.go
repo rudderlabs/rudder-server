@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/stretchr/testify/require"
 
@@ -124,15 +123,11 @@ func TestSetupForDelegates(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			med := NewReportingMediator(ctx, logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
+			defer func() {
+				cancel()
+				_ = med.g.Wait()
+			}()
 			require.Len(t, med.reporters, tc.expectedDelegates)
-			// TODO: error index reporting jobsdb should start with the syncer
-			// so that we shouldn't need to start the database syncer here and end it just for cleanup
-			cancel()
-			syncer := med.DatabaseSyncer(types.SyncerConfig{
-				Label:    "test",
-				ConnInfo: postgresContainer.DBDsn,
-			})
-			syncer()
 		})
 
 	}
