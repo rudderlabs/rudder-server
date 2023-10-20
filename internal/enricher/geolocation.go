@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -75,10 +76,6 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 	defer func() {
 		errType := ""
 
-		if request.RequestIP == "" {
-			errType = ERR_EMPTY_IP
-		}
-
 		if err != nil {
 			errType = ERR_LOCATE_FAILED
 
@@ -96,10 +93,6 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			}).Increment()
 	}()
 
-	if request.RequestIP == "" {
-		return nil
-	}
-
 	defer e.stats.NewTaggedStat(
 		"proc_geo_enricher_request_latency",
 		stats.TimerType,
@@ -108,13 +101,6 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 		},
 	).RecordDuration()()
 
-	rawGeo, err = e.fetcher.Locate(request.RequestIP)
-	if err != nil {
-		return fmt.Errorf("enriching request with geolocation: %w", err)
-	}
-
-	geoData := extractGeolocationData(rawGeo)
-
 	for _, event := range request.Batch {
 		// if the context section is missing on the event
 		// set it with default as map[string]interface{}
@@ -122,17 +108,40 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			event["context"] = map[string]interface{}{}
 		}
 
-		if context, ok := event["context"].(map[string]interface{}); ok {
-			// if the `geo` key already present fire a stat for observability
-			if _, ok := context["geo"]; ok {
-				continue
-			}
-			// update the geo section
-			context["geo"] = geoData
+		context, ok := event["context"].(map[string]interface{})
+		if !ok {
+			continue
 		}
+
+		// if the `geo` key already present on the event, continue
+		if _, ok := context["geo"]; ok {
+			continue
+		}
+
+		var contextIP string
+		if val, ok := context["ip"]; ok {
+			contextIP, _ = val.(string)
+		}
+
+		rawGeo, err = e.fetcher.Locate(getFirstValidIP(contextIP, request.RequestIP))
+		if err != nil {
+			return fmt.Errorf("enriching request with geolocation: %w", err)
+		}
+
+		// update the geo section
+		context["geo"] = extractGeolocationData(rawGeo)
 	}
 
 	return nil
+}
+
+func getFirstValidIP(contextIP, requestIP string) net.IP {
+
+	if parsedIP := net.ParseIP(contextIP); parsedIP != nil {
+		return parsedIP
+	}
+
+	return net.ParseIP(requestIP)
 }
 
 func (e *geoEnricher) Close() error {

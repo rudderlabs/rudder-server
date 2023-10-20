@@ -34,8 +34,7 @@ func NewMaxmindDBReader(dbLoc string) (*maxmindDBReader, error) {
 	return &maxmindDBReader{reader}, nil
 }
 
-func (f *maxmindDBReader) Locate(ip string) (*GeoInfo, error) {
-	parsedIP := net.ParseIP(ip)
+func (f *maxmindDBReader) Locate(parsedIP net.IP) (*GeoInfo, error) {
 	if parsedIP == nil {
 		return nil, ErrInvalidIP
 	}

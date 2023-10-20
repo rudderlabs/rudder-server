@@ -327,6 +327,81 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			"context": 1.23,
 		}, input.Batch[1])
 	})
+
+	t.Run("it gives preference to valid context ip over request ip when adding geolocation", func(t *testing.T) {
+		t.Parallel()
+
+		input := &types.GatewayBatchRequest{
+			RequestIP: `2.125.160.216`,
+			Batch: []types.SingularEventT{
+				{
+					"anonymousId": "a1",
+					"properties": map[string]interface{}{
+						"userId": "u1",
+					},
+					"context": map[string]interface{}{
+						"ip": "81.2.69.142",
+					},
+				},
+				{
+					"anonymousId": "a2",
+					"properties": map[string]interface{}{
+						"userId": "u2",
+					},
+					"context": map[string]interface{}{
+						"ip": "invalid",
+					},
+				},
+			},
+		}
+
+		err := enricher.Enrich(
+			NewSourceBuilder("source-id").
+				WithGeoEnrichment(true).
+				Build(), input)
+		require.Nil(t, err)
+
+		// Here the context ip is valid and hence lookup
+		// will happen on it.
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a1",
+			"properties": map[string]interface{}{
+				"userId": "u1",
+			},
+			"context": map[string]interface{}{
+				"geo": &Geolocation{
+					City:     "London",
+					Country:  "GB",
+					Postal:   "",
+					Region:   "England",
+					Location: "51.514200,-0.093100",
+					Timezone: "Europe/London",
+				},
+				"ip": "81.2.69.142",
+			},
+		}, input.Batch[0])
+
+		// Here the context ip passed is invalid and hence lookup
+		// will happen on the requestIP
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a2",
+			"properties": map[string]interface{}{
+				"userId": "u2",
+			},
+			"context": map[string]interface{}{
+				"geo": &Geolocation{
+					City:     "Boxford",
+					Country:  "GB",
+					Postal:   "OX1",
+					Region:   "England",
+					Location: "51.750000,-1.250000",
+					Timezone: "Europe/London",
+				},
+				"ip": "invalid",
+			},
+		}, input.Batch[1])
+
+	})
 }
 
 func TestMapUpstreamToGeolocation(t *testing.T) {
