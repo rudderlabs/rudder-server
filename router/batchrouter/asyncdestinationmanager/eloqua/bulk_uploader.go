@@ -51,6 +51,8 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		return b.createAsyncUploadErrorOutput("got error while fetching fields. ", err, destination.ID, asyncDestStruct)
 	}
 
+	uniqueKeys := getUniqueKeys(eloquaFields)
+	b.uniqueKeys = uniqueKeys
 	uploadJobInfo := JobInfo{
 		fileSizeLimit: b.fileSizeLimit,
 		importingJobs: asyncDestStruct.ImportingJobIDs,
@@ -227,7 +229,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 			DynamicPart:   UploadStatsInput.WarningJobURLs,
 			Authorization: b.authorization,
 		}
-		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service, b.jobToCSVMap)
+		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b)
 		if err != nil {
 			b.logger.Error("Error while parsing rejected data", err)
 			return common.GetUploadStatsResponse{

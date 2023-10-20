@@ -2573,10 +2573,13 @@ func (proc *Handle) transformSrcDest(
 	}
 }
 
-func (proc *Handle) saveDroppedJobs(failedJobs []*jobsdb.JobT, tx *jobsdb.Tx) error {
-	if len(failedJobs) > 0 {
+func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *jobsdb.Tx) error {
+	if len(droppedJobs) > 0 {
+		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
+			droppedJobs[i].JobID = int64(i)
+		}
 		rsourcesStats := rsources.NewDroppedJobsCollector(proc.rsourcesService)
-		rsourcesStats.JobsDropped(failedJobs)
+		rsourcesStats.JobsDropped(droppedJobs)
 		return rsourcesStats.Publish(context.TODO(), tx.Tx)
 	}
 	return nil
