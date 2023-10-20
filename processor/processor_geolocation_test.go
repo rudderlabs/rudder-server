@@ -130,6 +130,10 @@ func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, 
 	writeKey := "writekey-1"
 
 	gatewayUrl, db, cancel, wg := s.startAll(t, writeKey)
+	defer func() {
+		cancel()
+		_ = wg.Wait()
+	}()
 	require.NoError(t, s.sendEvent(gatewayUrl, "writekey-1"))
 
 	s.requireJobsCount(t, db, "gw", "succeeded", 1)
@@ -137,8 +141,7 @@ func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, 
 	var payload json.RawMessage
 	require.NoError(t, db.QueryRow("SELECT event_payload FROM unionjobsdb('rt',1)").Scan(&payload))
 	verification(t, payload)
-	cancel()
-	_ = wg.Wait()
+
 }
 
 func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUrl string, db *sql.DB, cancel context.CancelFunc, wg *errgroup.Group) {
