@@ -141,7 +141,6 @@ func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, 
 	var payload json.RawMessage
 	require.NoError(t, db.QueryRow("SELECT event_payload FROM unionjobsdb('rt',1)").Scan(&payload))
 	verification(t, payload)
-
 }
 
 func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUrl string, db *sql.DB, cancel context.CancelFunc, wg *errgroup.Group) {
