@@ -227,12 +227,14 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start admin server
-	g.Go(func() error {
-		if err := admin.StartServer(ctx); err != nil {
-			return fmt.Errorf("admin server routine: %w", err)
-		}
-		return nil
-	})
+	if config.GetBool("AdminServer.enabled", true) {
+		g.Go(func() error {
+			if err := admin.StartServer(ctx); err != nil {
+				return fmt.Errorf("admin server routine: %w", err)
+			}
+			return nil
+		})
+	}
 
 	if config.GetBool("Profiler.Enabled", true) {
 		g.Go(func() error {
