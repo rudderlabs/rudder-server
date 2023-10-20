@@ -55,7 +55,6 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
-	Deleted               bool
 }
 
 type SourceT struct {

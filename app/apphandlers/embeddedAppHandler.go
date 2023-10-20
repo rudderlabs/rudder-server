@@ -378,6 +378,8 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	enrichers := make([]enricher.PipelineEnricher, 0)
 
 	if conf.GetBool("GeoEnrichment.enabled", false) {
+		log.Infof("Setting up the geolocation pipeline enricher")
+
 		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
 		if err != nil {
 			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
