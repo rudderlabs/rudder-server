@@ -144,9 +144,10 @@ func (e *geoEnricher) Close() error {
 
 func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger) (string, error) {
 	var (
-		dbKey  = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
-		bucket = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
+		dbKey   = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
+		bucket  = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
+		region  = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
+		timeout = conf.GetInt("Geolocation.db.download.timeout", 100)
 	)
 
 	log.Infof("downloading new geolocation db from key: %s", dbKey)
@@ -172,17 +173,16 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 		return "", fmt.Errorf("creating a temporary file: %w", err)
 	}
 
-	// Make sure we close and remove the file
 	defer func() {
 		f.Close()
-		os.Remove(fmt.Sprintf("%s/%s", baseDIR, f.Name()))
+		os.Remove(f.Name())
 	}()
 
 	manager, err := filemanager.NewS3Manager(map[string]interface{}{
 		"bucketName": bucket,
 		"region":     region,
 	}, log, func() time.Duration {
-		return 100 * time.Second
+		return time.Duration(timeout) * time.Second
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating a new s3 manager client: %w", err)
