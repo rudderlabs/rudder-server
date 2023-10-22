@@ -375,7 +375,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 }
 
 func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
-	enrichers := make([]enricher.PipelineEnricher, 0)
+	var enrichers []enricher.PipelineEnricher
 
 	if conf.GetBool("GeoEnrichment.enabled", false) {
 		log.Infof("Setting up the geolocation pipeline enricher")

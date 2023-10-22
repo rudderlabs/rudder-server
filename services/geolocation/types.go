@@ -1,9 +1,7 @@
 package geolocation
 
-import "net"
-
 type GeoFetcher interface {
-	Locate(net.IP) (*GeoInfo, error)
+	Locate(string) (GeoInfo, error)
 	Close() error
 }
 

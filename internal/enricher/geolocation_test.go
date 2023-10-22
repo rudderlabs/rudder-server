@@ -1,7 +1,6 @@
 package enricher
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -14,12 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
-
-type GeoTestDBProvider struct{}
-
-func (p *GeoTestDBProvider) GetDB(ctx context.Context, key, downloadPath string) error {
-	return nil
-}
 
 func TestGeolocationEnrichment_Setup(t *testing.T) {
 	var (
@@ -61,7 +54,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 	enricher, err := NewGeoEnricher(c, logger.NewLogger(), stats.Default)
 	require.Nil(t, err)
 
-	t.Run("it returns silently without enrichment if ip is empty", func(t *testing.T) {
+	t.Run("it performs empty enrichment if ip is empty or invalid", func(t *testing.T) {
 		t.Parallel()
 
 		ip := &types.GatewayBatchRequest{
@@ -71,38 +64,23 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0"}},
 			},
 		}
-		// enrichment doesn't happen at all on the context and event remains the same
+		// Empty enrichment happens if the requestIP is empty / invalid
 		err := enricher.Enrich(
 			NewSourceBuilder("source-id").
 				WithGeoEnrichment(true).
 				Build(), ip)
 		require.Nil(t, err)
 		// require.Equal(t, nil, ip)
-		require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0"}}, ip.Batch[0])
-		require.Equal(t, types.SingularEventT{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0"}}, ip.Batch[1])
-	})
-
-	t.Run("it returns ErrInvalidIP in case ip address passed is malformed", func(t *testing.T) {
-		t.Parallel()
-
-		err := enricher.Enrich(
-			NewSourceBuilder("source-id").
-				WithGeoEnrichment(true).
-				Build(),
-			&types.GatewayBatchRequest{
-				RequestIP: `invalid-ip`,
-				Batch:     nil,
-			})
-
-		require.NotNil(t, err)
-		require.ErrorIs(t, err, geolocation.ErrInvalidIP)
+		require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[0])
+		require.Equal(t, types.SingularEventT{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[1])
 	})
 
 	t.Run("it adds empty geolocation if the ipaddress is not found in database", func(t *testing.T) {
 		t.Parallel()
 
+		inexistentIP := `22.125.160.216`
 		input := &types.GatewayBatchRequest{
-			RequestIP: `22.125.160.216`,
+			RequestIP: inexistentIP,
 			Batch: []types.SingularEventT{
 				{"userId": "u1", "context": map[string]interface{}{"version": "0.1.0"}},
 			},
@@ -121,14 +99,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					"userId": "u1",
 					"context": map[string]interface{}{
 						"version": "0.1.0",
-						"geo": &Geolocation{
-							City:     "",
-							Country:  "",
-							Postal:   "",
-							Region:   "",
-							Location: "",
-							Timezone: "",
-						},
+						"geo":     Geolocation{IP: inexistentIP},
 					},
 				},
 				val, // actual value which was augmented in the batch
@@ -156,7 +127,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					"userId": "u1",
 					"context": map[string]interface{}{
 						"version": "0.1.0",
-						"geo": &Geolocation{
+						"geo": Geolocation{
+							IP:       "2.125.160.216",
 							City:     "Boxford",
 							Country:  "GB",
 							Postal:   "OX1",
@@ -171,7 +143,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		}
 	})
 
-	t.Run("it doesn't add geolocation for valid ipaddress if source is null or flag for enrichment not enabled", func(t *testing.T) {
+	t.Run("it doesn't add geolocation for valid ipaddress if flag for enrichment not enabled", func(t *testing.T) {
 		t.Parallel()
 		input := &types.GatewayBatchRequest{
 			RequestIP: `2.125.160.216`,
@@ -181,11 +153,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					"properties": map[string]interface{}{
 						"userId": "u1",
 					},
-				},
-				{
-					"anonymousId": "a2",
 					"context": map[string]interface{}{
-						"version": "0.1.0",
+						"appVersion": "0.1.0",
 					},
 				},
 			},
@@ -193,30 +162,25 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 
 		err := enricher.Enrich(
 			NewSourceBuilder("source-id").
-				WithGeoEnrichment(false).
+				WithGeoEnrichment(false). // flag for enrichment is `false`
 				Build(),
 			input,
 		)
 		require.Nil(t, err)
 
-		// in the first event, we dont have context section and hence
-		// no updates to it
+		// no updates to the entity given we have disabled the flag
 		require.Equal(t, types.SingularEventT{
 			"anonymousId": "a1",
 			"properties": map[string]interface{}{
 				"userId": "u1",
 			},
-		}, input.Batch[0])
-
-		require.Equal(t, types.SingularEventT{
-			"anonymousId": "a2",
 			"context": map[string]interface{}{
-				"version": "0.1.0",
+				"appVersion": "0.1.0",
 			},
-		}, input.Batch[1])
+		}, input.Batch[0])
 	})
 
-	t.Run("it adds geolocation if the ipaddress is found and context section on event is empty", func(t *testing.T) {
+	t.Run("it adds geolocation even if context section on event is empty", func(t *testing.T) {
 		t.Parallel()
 
 		input := &types.GatewayBatchRequest{
@@ -226,12 +190,6 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					"anonymousId": "a1",
 					"properties": map[string]interface{}{
 						"userId": "u1",
-					},
-				},
-				{
-					"anonymousId": "a2",
-					"context": map[string]interface{}{
-						"version": "0.1.0",
 					},
 				},
 			},
@@ -251,7 +209,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				"userId": "u1",
 			},
 			"context": map[string]interface{}{
-				"geo": &Geolocation{
+				"geo": Geolocation{
+					IP:       "2.125.160.216",
 					City:     "Boxford",
 					Country:  "GB",
 					Postal:   "OX1",
@@ -261,21 +220,6 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				},
 			},
 		}, input.Batch[0])
-
-		require.Equal(t, types.SingularEventT{
-			"anonymousId": "a2",
-			"context": map[string]interface{}{
-				"version": "0.1.0",
-				"geo": &Geolocation{
-					City:     "Boxford",
-					Country:  "GB",
-					Postal:   "OX1",
-					Region:   "England",
-					Location: "51.750000,-1.250000",
-					Timezone: "Europe/London",
-				},
-			},
-		}, input.Batch[1])
 	})
 
 	t.Run("it doesn't add geo information if context is not a map or `geo` key already present in it", func(t *testing.T) {
@@ -290,7 +234,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 						"userId": "u1",
 					},
 					"context": map[string]interface{}{
-						"geo": "some previous information",
+						"geo": "some previous information", // geo key already present
 					},
 				},
 				{
@@ -328,12 +272,21 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 		}, input.Batch[1])
 	})
 
-	t.Run("it gives preference to valid context ip over request ip when adding geolocation", func(t *testing.T) {
+	t.Run("it gives preference to context ip if present and non blank over request ip when adding geolocation", func(t *testing.T) {
 		t.Parallel()
 
 		input := &types.GatewayBatchRequest{
 			RequestIP: `2.125.160.216`,
 			Batch: []types.SingularEventT{
+				{
+					"anonymousId": "a2",
+					"properties": map[string]interface{}{
+						"userId": "u2",
+					},
+					"context": map[string]interface{}{
+						"ip": "invalid",
+					},
+				},
 				{
 					"anonymousId": "a1",
 					"properties": map[string]interface{}{
@@ -344,12 +297,12 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					},
 				},
 				{
-					"anonymousId": "a2",
+					"anonymousId": "a3",
 					"properties": map[string]interface{}{
-						"userId": "u2",
+						"userId": "u3",
 					},
 					"context": map[string]interface{}{
-						"ip": "invalid",
+						"ip": "",
 					},
 				},
 			},
@@ -361,6 +314,19 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Build(), input)
 		require.Nil(t, err)
 
+		// here the context.ip is present and invalid but the
+		// lookup happens on this ip only as non-blank
+		require.Equal(t, types.SingularEventT{
+			"anonymousId": "a2",
+			"properties": map[string]interface{}{
+				"userId": "u2",
+			},
+			"context": map[string]interface{}{
+				"geo": Geolocation{IP: "invalid"},
+				"ip":  "invalid",
+			},
+		}, input.Batch[0])
+
 		// Here the context ip is valid and hence lookup
 		// will happen on it.
 		require.Equal(t, types.SingularEventT{
@@ -369,7 +335,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				"userId": "u1",
 			},
 			"context": map[string]interface{}{
-				"geo": &Geolocation{
+				"geo": Geolocation{
+					IP:       "81.2.69.142",
 					City:     "London",
 					Country:  "GB",
 					Postal:   "",
@@ -379,17 +346,18 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				},
 				"ip": "81.2.69.142",
 			},
-		}, input.Batch[0])
+		}, input.Batch[1])
 
-		// Here the context ip passed is invalid and hence lookup
-		// will happen on the requestIP
+		// In this one, requestIP is fallback as there is
+		// context.ip but blank.
 		require.Equal(t, types.SingularEventT{
-			"anonymousId": "a2",
+			"anonymousId": "a3",
 			"properties": map[string]interface{}{
-				"userId": "u2",
+				"userId": "u3",
 			},
 			"context": map[string]interface{}{
-				"geo": &Geolocation{
+				"geo": Geolocation{
+					IP:       "2.125.160.216",
 					City:     "Boxford",
 					Country:  "GB",
 					Postal:   "OX1",
@@ -397,27 +365,21 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					Location: "51.750000,-1.250000",
 					Timezone: "Europe/London",
 				},
-				"ip": "invalid",
+				// `context.ip` even though present is blank
+				// and hence ip is picked up from request_ip
+				"ip": "",
 			},
-		}, input.Batch[1])
-
+		}, input.Batch[2])
 	})
 }
 
 func TestMapUpstreamToGeolocation(t *testing.T) {
-	t.Run("it returns the output as nil when input is nil", func(t *testing.T) {
-		t.Parallel()
-
-		data := extractGeolocationData(nil)
-		require.Nil(t, data)
-	})
-
 	t.Run("it returns the extracted fields when input contains all the information", func(t *testing.T) {
 		t.Parallel()
 
 		latitude, longitude := float64(0.0002), float64(1.876)
 
-		input := &geolocation.GeoInfo{
+		input := geolocation.GeoInfo{
 			City: geolocation.City{
 				Names: map[string]string{
 					"en": "Gurugram",
@@ -439,24 +401,58 @@ func TestMapUpstreamToGeolocation(t *testing.T) {
 			},
 		}
 
-		actual := extractGeolocationData(input)
+		actual := extractGeolocationData("1.1.1.1", input)
 		require.Equal(t, Geolocation{
+			IP:       "1.1.1.1",
 			City:     "Gurugram",
 			Region:   "Gurgaon",
 			Postal:   "122002",
 			Location: fmt.Sprintf("%f,%f", latitude, longitude),
 			Timezone: "Asia/Kolkata",
 			Country:  "IN",
-		}, *actual)
+		}, actual)
 	})
 
 	t.Run("it returns fields with empty data in case the parent fields are missing", func(t *testing.T) {
 		t.Parallel()
 
-		input := &geolocation.GeoInfo{}
-		actual := extractGeolocationData(input)
-		require.Empty(t, *actual)
+		input := geolocation.GeoInfo{}
+		actual := extractGeolocationData("1.1.1.1", input)
+		require.Equal(t, Geolocation{
+			IP:       "1.1.1.1",
+			City:     "",
+			Region:   "",
+			Postal:   "",
+			Location: "",
+			Timezone: "",
+			Country:  "",
+		}, actual)
 	})
+}
+
+func TestFirstNonBlankValue(t *testing.T) {
+	inputs := []struct {
+		input          []string
+		expectedOutput string
+	}{
+		{
+			input:          []string{"", "first-non-blank", "second-non-blank"},
+			expectedOutput: "first-non-blank",
+		},
+		{
+			input:          []string{"", ""},
+			expectedOutput: "",
+		},
+		{
+			input:          nil,
+			expectedOutput: "",
+		},
+	}
+
+	for _, ip := range inputs {
+		actual := firstNonBlankValue(ip.input...)
+		require.Equal(t, ip.expectedOutput, actual)
+	}
 }
 
 type SourceBuilder struct {

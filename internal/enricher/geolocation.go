@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ const (
 )
 
 type Geolocation struct {
+	IP       string `json:"ip"`
 	City     string `json:"city"`
 	Country  string `json:"country"`
 	Region   string `json:"region"`
@@ -40,7 +40,7 @@ type geoEnricher struct {
 }
 
 func NewGeoEnricher(conf *config.Config, log logger.Logger, statClient stats.Stats) (PipelineEnricher, error) {
-	log.Infof("Setting up new geo enricher")
+	log.Infof("Setting up new event geo enricher")
 
 	dbPath, err := downloadMaxmindDB(context.Background(), conf, log)
 	if err != nil {
@@ -66,41 +66,18 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 	if !source.GeoEnrichment.Enabled {
 		return nil
 	}
+
 	e.logger.Debugw("received a call to enrich gateway events for source", "sourceID", source.ID)
-
-	var (
-		rawGeo *geolocation.GeoInfo
-		err    error
-	)
-
-	defer func() {
-		errType := ""
-
-		if err != nil {
-			errType = ERR_LOCATE_FAILED
-
-			if errors.Is(err, geolocation.ErrInvalidIP) {
-				errType = ERR_INVALID_IP
-			}
-		}
-
-		e.stats.NewTaggedStat(
-			"proc_geo_enricher_request",
-			stats.CountType,
-			stats.Tags{
-				"sourceID": source.ID,
-				"error":    errType,
-			}).Increment()
-	}()
-
 	defer e.stats.NewTaggedStat(
 		"proc_geo_enricher_request_latency",
 		stats.TimerType,
 		stats.Tags{
-			"sourceID": source.ID,
+			"sourceId":    source.ID,
+			"workspaceId": source.WorkspaceID,
 		},
 	).RecordDuration()()
 
+	var enrichErrs []error
 	for _, event := range request.Batch {
 		// if the context section is missing on the event
 		// set it with default as map[string]interface{}
@@ -118,30 +95,58 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			continue
 		}
 
-		var contextIP string
-		if val, ok := context["ip"]; ok {
-			contextIP, _ = val.(string)
-		}
+		contextIP, _ := context["ip"].(string)
+		ip := firstNonBlankValue(contextIP, request.RequestIP) // ip could still be blank given both are blanks
 
-		rawGeo, err = e.fetcher.Locate(getFirstValidIP(contextIP, request.RequestIP))
+		errType := ""
+		rawGeo, err := e.fetcher.Locate(ip)
 		if err != nil {
-			return fmt.Errorf("enriching request with geolocation: %w", err)
+			if errors.Is(err, geolocation.ErrInvalidIP) {
+				// `emptyIP` even though it's invalid is treated differently
+				// to get better stats about how many non-empty values are coming in which are invalid.
+				if ip == "" {
+					errType = ERR_EMPTY_IP
+				} else {
+					errType = ERR_INVALID_IP
+				}
+			} else {
+				// empty / invalidIP's are not terminal errors but
+				// any error except that mean the database failed for lookup
+				errType = ERR_LOCATE_FAILED
+				enrichErrs = append(enrichErrs, fmt.Errorf("locating geolocation for ip: %w", err))
+			}
 		}
 
-		// update the geo section
-		context["geo"] = extractGeolocationData(rawGeo)
+		e.stats.NewTaggedStat(
+			"proc_geo_enricher_request",
+			stats.CountType,
+			stats.Tags{
+				"sourceId":    source.ID,
+				"workspaceId": source.WorkspaceID,
+				"error":       errType,
+			}).Increment()
+
+		// Set the empty data on the context nonetheless
+		context["geo"] = extractGeolocationData(ip, rawGeo)
 	}
 
-	return nil
+	return errors.Join(enrichErrs...)
 }
 
-func getFirstValidIP(contextIP, requestIP string) net.IP {
-
-	if parsedIP := net.ParseIP(contextIP); parsedIP != nil {
-		return parsedIP
+// firstNonBlankValue iterates over the array and returns first
+// non blank aka non empty value from the list
+func firstNonBlankValue(vals ...string) string {
+	if len(vals) == 0 {
+		return ""
 	}
 
-	return net.ParseIP(requestIP)
+	for _, val := range vals {
+		if val != "" {
+			return val
+		}
+	}
+	// return end most value
+	return vals[len(vals)-1]
 }
 
 func (e *geoEnricher) Close() error {
@@ -151,6 +156,8 @@ func (e *geoEnricher) Close() error {
 	return nil
 }
 
+// downloadMaxmindDB downloads database file from upstream s3 and stores it in
+// a specified location
 func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger) (string, error) {
 	var (
 		dbKey   = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
@@ -215,11 +222,9 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 	return fullpath, nil
 }
 
-func extractGeolocationData(geoCity *geolocation.GeoInfo) *Geolocation {
-	if geoCity == nil {
-		return nil
-	}
-	toReturn := &Geolocation{
+func extractGeolocationData(ip string, geoCity geolocation.GeoInfo) Geolocation {
+	toReturn := Geolocation{
+		IP:       ip,
 		City:     geoCity.City.Names["en"],
 		Country:  geoCity.Country.ISOCode,
 		Postal:   geoCity.Postal.Code,

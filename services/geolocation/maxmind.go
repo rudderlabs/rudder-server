@@ -31,20 +31,23 @@ func NewMaxmindDBReader(dbLoc string) (*maxmindDBReader, error) {
 
 		return nil, fmt.Errorf("opening maxmind reader from location: %w", err)
 	}
+
 	return &maxmindDBReader{reader}, nil
 }
 
-func (f *maxmindDBReader) Locate(parsedIP net.IP) (*GeoInfo, error) {
+func (f *maxmindDBReader) Locate(ip string) (GeoInfo, error) {
+	parsedIP := net.ParseIP(ip)
+
 	if parsedIP == nil {
-		return nil, ErrInvalidIP
+		return GeoInfo{}, ErrInvalidIP
 	}
 
-	lookup := GeoInfo{}
-	if err := f.Lookup(parsedIP, &lookup); err != nil {
-		return nil, fmt.Errorf("reading geolocation for ip: %w", err)
+	info := GeoInfo{}
+	if err := f.Lookup(parsedIP, &info); err != nil {
+		return GeoInfo{}, fmt.Errorf("reading geolocation for ip: %w", err)
 	}
 
-	return &lookup, nil
+	return info, nil
 }
 
 func (f *maxmindDBReader) Close() error {

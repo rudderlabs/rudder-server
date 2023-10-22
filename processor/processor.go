@@ -143,7 +143,6 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
-		geoEnrichmentEnabled      bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -617,7 +616,6 @@ func (proc *Handle) loadConfig() {
 	// EventSchemas feature. false by default
 	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
-	proc.config.geoEnrichmentEnabled = config.GetBoolVar(false, "GeoEnrichment.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -1512,7 +1510,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 
 		for _, enricher := range proc.enrichers {
-			_ = enricher.Enrich(source, &gatewayBatchEvent)
+			if err := enricher.Enrich(source, &gatewayBatchEvent); err != nil {
+				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
+			}
 		}
 
 		// Iterate through all the events in the batch
