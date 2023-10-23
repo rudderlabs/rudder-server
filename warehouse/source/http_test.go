@@ -13,11 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
 	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -30,17 +28,84 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPHandlers(t *testing.T) {
+func TestValidatePayload(t *testing.T) {
+	testCases := []struct {
+		name          string
+		payload       insertJobRequest
+		expectedError error
+	}{
+		{
+			name: "invalid source",
+			payload: insertJobRequest{
+				JobRunID:      "job_run_id",
+				TaskRunID:     "task_run_id",
+				SourceID:      "",
+				DestinationID: "destination_id",
+				WorkspaceID:   "workspace_id",
+			},
+			expectedError: errors.New("source_id is required"),
+		},
+		{
+			name: "invalid destination",
+			payload: insertJobRequest{
+				JobRunID:      "job_run_id",
+				TaskRunID:     "task_run_id",
+				SourceID:      "source_id",
+				DestinationID: "",
+				WorkspaceID:   "workspace_id",
+			},
+			expectedError: errors.New("destination_id is required"),
+		},
+		{
+			name: "invalid task run",
+			payload: insertJobRequest{
+				JobRunID:      "job_run_id",
+				TaskRunID:     "",
+				SourceID:      "source_id",
+				DestinationID: "destination_id",
+				WorkspaceID:   "workspace_id",
+			},
+			expectedError: errors.New("task_run_id is required"),
+		},
+		{
+			name: "invalid job run",
+			payload: insertJobRequest{
+				JobRunID:      "",
+				TaskRunID:     "task_run_id",
+				SourceID:      "source_id",
+				DestinationID: "destination_id",
+				WorkspaceID:   "workspace_id",
+			},
+			expectedError: errors.New("job_run_id is required"),
+		},
+		{
+			name: "valid payload",
+			payload: insertJobRequest{
+				JobRunID:      "job_run_id",
+				TaskRunID:     "task_run_id",
+				SourceID:      "source_id",
+				DestinationID: "destination_id",
+				WorkspaceID:   "workspace_id",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expectedError, validatePayload(&tc.payload))
+		})
+	}
+}
+
+func TestManager_InsertJobHandler(t *testing.T) {
 	const (
-		workspaceID         = "test_workspace_id"
-		sourceID            = "test_source_id"
-		destinationID       = "test_destination_id"
-		workspaceIdentifier = "test_workspace-identifier"
-		namespace           = "test_namespace"
-		destinationType     = "test_destination_type"
-		sourceTaskRunID     = "test_source_task_run_id"
-		sourceJobID         = "test_source_job_id"
-		sourceJobRunID      = "test_source_job_run_id"
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		destinationID   = "test_destination_id"
+		namespace       = "test_namespace"
+		destinationType = "test_destination_type"
+		sourceTaskRunID = "test_source_task_run_id"
+		sourceJobID     = "test_source_job_id"
+		sourceJobRunID  = "test_source_job_run_id"
 	)
 
 	pool, err := dockertest.NewPool("")
@@ -48,7 +113,6 @@ func TestHTTPHandlers(t *testing.T) {
 
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
-
 	t.Log("db:", pgResource.DBDsn)
 
 	err = (&migrator.Migrator{
@@ -57,13 +121,7 @@ func TestHTTPHandlers(t *testing.T) {
 	}).Migrate("warehouse")
 	require.NoError(t, err)
 
-	db := sqlmiddleware.New(pgResource.DB)
-
-	ctx := context.Background()
-
-	n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
-	err = n.Setup(ctx, pgResource.DBDsn)
-	require.NoError(t, err)
+	db, ctx := sqlmiddleware.New(pgResource.DB), context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
 
@@ -128,103 +186,32 @@ func TestHTTPHandlers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	t.Run("validate payload", func(t *testing.T) {
-		testCases := []struct {
-			name          string
-			payload       insertJobRequest
-			expectedError error
-		}{
-			{
-				name: "invalid source",
-				payload: insertJobRequest{
-					JobRunID:      "job_run_id",
-					TaskRunID:     "task_run_id",
-					SourceID:      "",
-					DestinationID: "destination_id",
-					WorkspaceID:   "workspace_id",
-				},
-				expectedError: errors.New("source_id is required"),
-			},
-			{
-				name: "invalid destination",
-				payload: insertJobRequest{
-					JobRunID:      "job_run_id",
-					TaskRunID:     "task_run_id",
-					SourceID:      "source_id",
-					DestinationID: "",
-					WorkspaceID:   "workspace_id",
-				},
-				expectedError: errors.New("destination_id is required"),
-			},
-			{
-				name: "invalid task run",
-				payload: insertJobRequest{
-					JobRunID:      "job_run_id",
-					TaskRunID:     "",
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-					WorkspaceID:   "workspace_id",
-				},
-				expectedError: errors.New("task_run_id is required"),
-			},
-			{
-				name: "invalid job run",
-				payload: insertJobRequest{
-					JobRunID:      "",
-					TaskRunID:     "task_run_id",
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-					WorkspaceID:   "workspace_id",
-				},
-				expectedError: errors.New("job_run_id is required"),
-			},
-			{
-				name: "valid payload",
-				payload: insertJobRequest{
-					JobRunID:      "job_run_id",
-					TaskRunID:     "task_run_id",
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-					WorkspaceID:   "workspace_id",
-				},
-			},
-		}
-		for _, tc := range testCases {
-			tc := tc
+	t.Run("invalid payload", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
+		resp := httptest.NewRecorder()
 
-			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, tc.expectedError, validatePayload(&tc.payload))
-			})
-		}
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.InsertJobHandler(resp, req)
+		require.Equal(t, http.StatusBadRequest, resp.Code)
+
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "invalid JSON in request body\n", string(b))
 	})
+	t.Run("invalid request", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
+		resp := httptest.NewRecorder()
 
-	t.Run("InsertJobHandler", func(t *testing.T) {
-		t.Run("invalid payload", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
-			resp := httptest.NewRecorder()
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.InsertJobHandler(resp, req)
+		require.Equal(t, http.StatusBadRequest, resp.Code)
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.InsertJobHandler(resp, req)
-			require.Equal(t, http.StatusBadRequest, resp.Code)
-
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, "invalid JSON in request body\n", string(b))
-		})
-		t.Run("invalid request", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
-			resp := httptest.NewRecorder()
-
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.InsertJobHandler(resp, req)
-			require.Equal(t, http.StatusBadRequest, resp.Code)
-
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, "invalid payload: source_id is required\n", string(b))
-		})
-		t.Run("success", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "invalid payload: source_id is required\n", string(b))
+	})
+	t.Run("success", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
@@ -233,53 +220,151 @@ func TestHTTPHandlers(t *testing.T) {
                   "async_job_type": "deletebyjobrunid"
 				}
 			`)))
-			resp := httptest.NewRecorder()
+		resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.InsertJobHandler(resp, req)
-			require.Equal(t, http.StatusOK, resp.Code)
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.InsertJobHandler(resp, req)
+		require.Equal(t, http.StatusOK, resp.Code)
 
-			var insertResponse insertJobResponse
-			err = json.NewDecoder(resp.Body).Decode(&insertResponse)
-			require.NoError(t, err)
-			require.Nil(t, insertResponse.Err)
-			require.Len(t, insertResponse.JobIds, 5)
-		})
+		var insertResponse insertJobResponse
+		err = json.NewDecoder(resp.Body).Decode(&insertResponse)
+		require.NoError(t, err)
+		require.Nil(t, insertResponse.Err)
+		require.Len(t, insertResponse.JobIds, 5)
 	})
+}
 
-	t.Run("StatusJobHandler", func(t *testing.T) {
-		t.Run("invalid payload", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
-			resp := httptest.NewRecorder()
+func TestManager_StatusJobHandler(t *testing.T) {
+	const (
+		workspaceID   = "test_workspace_id"
+		sourceID      = "test_source_id"
+		destinationID = "test_destination_id"
+	)
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.StatusJobHandler(resp, req)
-			require.Equal(t, http.StatusBadRequest, resp.Code)
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, "invalid request: source_id is required\n", string(b))
+	pgResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	t.Log("db:", pgResource.DBDsn)
+
+	err = (&migrator.Migrator{
+		Handle:          pgResource.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse")
+	require.NoError(t, err)
+
+	db, ctx := sqlmiddleware.New(pgResource.DB), context.Background()
+
+	now := time.Now().Truncate(time.Second).UTC()
+
+	sourceRepo := repo.NewSource(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	createSourceJob := func(jobRunID, taskRunID, tableName string) []int64 {
+		metadata := fmt.Sprintf(`{"job_run_id":"%s","task_run_id":"%s","jobtype":"%s","start_time":"%s"}`,
+			jobRunID,
+			taskRunID,
+			model.SourceJobTypeDeleteByJobRunID,
+			now.Format(time.RFC3339),
+		)
+
+		ids, err := sourceRepo.Insert(ctx, []model.SourceJob{
+			{
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+				WorkspaceID:   workspaceID,
+				TableName:     tableName,
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+				Metadata:      []byte(metadata),
+			},
 		})
-		t.Run("success", func(t *testing.T) {
-			qp := url.Values{}
-			qp.Add("task_run_id", sourceTaskRunID)
-			qp.Add("job_run_id", sourceJobRunID)
-			qp.Add("source_id", sourceID)
-			qp.Add("destination_id", destinationID)
-			qp.Add("workspace_id", workspaceID)
+		require.NoError(t, err)
 
-			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
-			resp := httptest.NewRecorder()
+		return ids
+	}
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
-			jobsManager.StatusJobHandler(resp, req)
-			require.Equal(t, http.StatusOK, resp.Code)
+	t.Run("invalid payload", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
+		resp := httptest.NewRecorder()
 
-			var statusResponse jobStatusResponse
-			err = json.NewDecoder(resp.Body).Decode(&statusResponse)
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.StatusJobHandler(resp, req)
+		require.Equal(t, http.StatusBadRequest, resp.Code)
+
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "invalid request: source_id is required\n", string(b))
+	})
+	t.Run("status waiting", func(t *testing.T) {
+		_ = createSourceJob("test_source_job_run_id_1", "test_source_task_run_id_1", "test_table_1")
+
+		qp := url.Values{}
+		qp.Add("task_run_id", "test_source_task_run_id_1")
+		qp.Add("job_run_id", "test_source_job_run_id_1")
+		qp.Add("source_id", sourceID)
+		qp.Add("destination_id", destinationID)
+		qp.Add("workspace_id", workspaceID)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
+		resp := httptest.NewRecorder()
+
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.StatusJobHandler(resp, req)
+		require.Equal(t, http.StatusOK, resp.Code)
+
+		var statusResponse jobStatusResponse
+		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
+		require.NoError(t, err)
+		require.Equal(t, statusResponse.Status, model.SourceJobStatusWaiting)
+		require.Empty(t, statusResponse.Err)
+	})
+	t.Run("status aborted", func(t *testing.T) {
+		ids := createSourceJob("test_source_job_run_id_2", "test_source_task_run_id_2", "test_table2")
+
+		for _, id := range ids {
+			err := sourceRepo.OnUpdateFailure(ctx, id, errors.New("test error"), -1)
 			require.NoError(t, err)
-			require.Equal(t, statusResponse.Status, model.SourceJobStatusExecuting)
-			require.Empty(t, statusResponse.Err)
-		})
+		}
+
+		qp := url.Values{}
+		qp.Add("task_run_id", "test_source_task_run_id_2")
+		qp.Add("job_run_id", "test_source_job_run_id_2")
+		qp.Add("source_id", sourceID)
+		qp.Add("destination_id", destinationID)
+		qp.Add("workspace_id", workspaceID)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
+		resp := httptest.NewRecorder()
+
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.StatusJobHandler(resp, req)
+		require.Equal(t, http.StatusOK, resp.Code)
+
+		var statusResponse jobStatusResponse
+		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
+		require.NoError(t, err)
+		require.Equal(t, statusResponse.Status, model.SourceJobStatusAborted)
+		require.Equal(t, statusResponse.Err, errors.New("test error").Error())
+	})
+	t.Run("job not found", func(t *testing.T) {
+		qp := url.Values{}
+		qp.Add("task_run_id", "unknown_task_run_id")
+		qp.Add("job_run_id", "unknown_job_run_id")
+		qp.Add("source_id", sourceID)
+		qp.Add("destination_id", destinationID)
+		qp.Add("workspace_id", workspaceID)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
+		resp := httptest.NewRecorder()
+
+		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager.StatusJobHandler(resp, req)
+		require.Equal(t, http.StatusBadRequest, resp.Code)
+
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "sources job not found\n", string(b))
 	})
 }

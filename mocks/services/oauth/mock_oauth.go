@@ -8,7 +8,6 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 )
 
@@ -35,19 +34,19 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 	return m.recorder
 }
 
-// DisableDestination mocks base method.
-func (m *MockAuthorizer) DisableDestination(arg0 *backendconfig.DestinationT, arg1, arg2 string) (int, string) {
+// AuthStatusToggle mocks base method.
+func (m *MockAuthorizer) AuthStatusToggle(arg0 *oauth.AuthStatusToggleParams) (int, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DisableDestination", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "AuthStatusToggle", arg0)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
-// DisableDestination indicates an expected call of DisableDestination.
-func (mr *MockAuthorizerMockRecorder) DisableDestination(arg0, arg1, arg2 interface{}) *gomock.Call {
+// AuthStatusToggle indicates an expected call of AuthStatusToggle.
+func (mr *MockAuthorizerMockRecorder) AuthStatusToggle(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableDestination", reflect.TypeOf((*MockAuthorizer)(nil).DisableDestination), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthStatusToggle", reflect.TypeOf((*MockAuthorizer)(nil).AuthStatusToggle), arg0)
 }
 
 // FetchToken mocks base method.

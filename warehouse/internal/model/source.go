@@ -8,7 +8,7 @@ import (
 type SourceJobType = string
 
 const (
-	DeleteByJobRunID SourceJobType = "deletebyjobrunid"
+	SourceJobTypeDeleteByJobRunID SourceJobType = "deletebyjobrunid"
 )
 
 type SourceJobStatus = string
@@ -16,9 +16,9 @@ type SourceJobStatus = string
 const (
 	SourceJobStatusWaiting   SourceJobStatus = "waiting"
 	SourceJobStatusExecuting SourceJobStatus = "executing"
-	SourceJobStatusSucceeded SourceJobStatus = "succeeded"
-	SourceJobStatusAborted   SourceJobStatus = "aborted"
 	SourceJobStatusFailed    SourceJobStatus = "failed"
+	SourceJobStatusAborted   SourceJobStatus = "aborted"
+	SourceJobStatusSucceeded SourceJobStatus = "succeeded"
 )
 
 type SourceJob struct {

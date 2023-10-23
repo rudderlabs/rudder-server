@@ -255,27 +255,23 @@ func TestErrorIndexReporter(t *testing.T) {
 				subscribeDone := make(chan struct{})
 				go func() {
 					defer close(subscribeDone)
-
 					cs.Subscribe(ctx, mockBackendConfig)
 				}()
 
 				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
 				eir.now = failedAt
-				defer eir.errIndexDB.TearDown()
+				defer func() {
+					eir.errIndexDB.TearDown()
+				}()
 
 				err = eir.Report(tc.reports, nil)
 				require.NoError(t, err)
 
-				errIndexDB := jobsdb.NewForRead(errorIndex, jobsdb.WithConfig(c))
-				err = errIndexDB.Start()
-				require.NoError(t, err)
-				defer errIndexDB.TearDown()
-
-				jr, err := errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+				jr, err := eir.errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					JobsLimit: 100,
 				})
 				require.NoError(t, err)
-
+				require.Equal(t, len(tc.expectedPayload), len(jr.Jobs))
 				for i, job := range jr.Jobs {
 					var eventPayload payload
 					err := json.Unmarshal(job.EventPayload, &eventPayload)
@@ -299,17 +295,14 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, params["source_id"], sourceID)
 					require.Equal(t, params["workspaceId"], workspaceID)
 				}
-
 				cancel()
-
 				<-subscribeDone
 			})
 		}
 	})
 	t.Run("panic in case of not able to start errIndexDB", func(t *testing.T) {
 		require.Panics(t, func() {
-			eir := NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
-			defer eir.errIndexDB.TearDown()
+			_ = NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
 		})
 	})
 	t.Run("Graceful shutdown", func(t *testing.T) {
