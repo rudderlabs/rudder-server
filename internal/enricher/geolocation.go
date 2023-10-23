@@ -218,6 +218,11 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 			err)
 	}
 
+	// before renaming, we need to sync data to the disk
+	if err := f.Sync(); err != nil {
+		return "", fmt.Errorf("syncing file to disk: %w", err)
+	}
+
 	// Finally move the downloaded file from previous temp location to new location
 	err = os.Rename(f.Name(), fullpath)
 	if err != nil {
