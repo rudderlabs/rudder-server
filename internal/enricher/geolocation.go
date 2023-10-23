@@ -73,6 +73,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 		stats.TimerType,
 		stats.Tags{
 			"sourceId":    source.ID,
+			"sourceType":  source.SourceDefinition.Type,
 			"workspaceId": source.WorkspaceID,
 		},
 	).RecordDuration()()
@@ -85,6 +86,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			event["context"] = map[string]interface{}{}
 		}
 
+		// if the context is other than map[string]interface{}, continue
 		context, ok := event["context"].(map[string]interface{})
 		if !ok {
 			continue
@@ -123,6 +125,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			stats.Tags{
 				"sourceId":    source.ID,
 				"workspaceId": source.WorkspaceID,
+				"sourceType":  source.SourceDefinition.Type,
 				"error":       errType,
 			}).Increment()
 
@@ -150,6 +153,8 @@ func firstNonBlankValue(vals ...string) string {
 }
 
 func (e *geoEnricher) Close() error {
+	e.logger.Info("closing the geolocation enricher")
+
 	if err := e.fetcher.Close(); err != nil {
 		return fmt.Errorf("closing the geo enricher: %w", err)
 	}
