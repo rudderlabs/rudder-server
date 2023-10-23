@@ -375,7 +375,6 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			}, input.Batch[2])
 		})
 	})
-
 }
 
 func TestMapUpstreamToGeolocation(t *testing.T) {
