@@ -1,17 +1,22 @@
 package enricher
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -457,6 +462,62 @@ func TestFirstNonBlankValue(t *testing.T) {
 		actual := firstNonBlankValue(ip.input...)
 		require.Equal(t, ip.expectedOutput, actual)
 	}
+}
+
+func TestDownloadMaxmindDB_success(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	minio, err := destination.SetupMINIO(pool, t)
+	require.NoError(t, err)
+
+	minioManager, err := filemanager.New(
+		&filemanager.Settings{
+			Provider: "MINIO",
+			Config: map[string]interface{}{
+				"bucketName":      minio.BucketName,
+				"endPoint":        minio.Endpoint,
+				"accessKeyID":     minio.AccessKey,
+				"secretAccessKey": minio.SecretKey,
+				"useSSL":          false,
+			},
+			Logger: nil,
+			Conf:   nil,
+		})
+	require.NoError(t, err)
+
+	inputLoc := "./testdata/minio/file.txt"
+
+	tf, err := os.Open(inputLoc)
+	require.NoError(t, err)
+
+	uploaded, err := minioManager.Upload(context.Background(), tf)
+	require.NoError(t, err)
+
+	// Once the upload has happened, close the file uploaded
+	require.NoError(t, tf.Close())
+
+	// Now we can move onto downloading the database from maxmind
+	conf := config.New()
+	conf.Set("Geolocation.db.key", uploaded.ObjectName)
+	conf.Set("Geolocation.db.bucket", minio.BucketName)
+	conf.Set("Geolocation.db.storage.endpoint", minio.Endpoint)
+	conf.Set("Geolocation.db.storage.provider", "MINIO")
+	conf.Set("Geolocation.db.storage.accessKey", minio.AccessKey)
+	conf.Set("Geolocation.db.storage.secretAccessKey", minio.SecretKey)
+
+	conf.Set("RUDDER_TMPDIR", "./testdata")
+
+	path, err := downloadMaxmindDB(context.Background(), conf, logger.Default.NewLogger())
+	require.NoError(t, err)
+
+	// the contents of the file should match completely
+	downloadedByt, _ := os.ReadFile(path)
+	uploadedByt, _ := os.ReadFile(inputLoc)
+
+	require.Equal(t, uploadedByt, downloadedByt)
+	// Finally clean the downloaded file
+	require.NoError(t, os.Remove(path))
 }
 
 type SourceBuilder struct {

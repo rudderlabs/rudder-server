@@ -17,7 +17,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
-	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -372,20 +371,4 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	})
 
 	return g.Wait()
-}
-
-func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
-	var enrichers []enricher.PipelineEnricher
-
-	if conf.GetBool("GeoEnrichment.enabled", false) {
-		log.Infof("Setting up the geolocation pipeline enricher")
-
-		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
-		if err != nil {
-			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
-		}
-		enrichers = append(enrichers, geoEnricher)
-	}
-
-	return enrichers, nil
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -165,27 +164,28 @@ func (e *geoEnricher) Close() error {
 // a specified location
 func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger) (string, error) {
 	var (
-		dbKey   = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
-		bucket  = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region  = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
-		timeout = conf.GetInt("Geolocation.db.download.timeout", 100)
+		dbKey           = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
+		bucket          = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
+		region          = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
+		endpoint        = conf.GetString("Geolocation.db.storage.endpoint", "")
+		provider        = conf.GetString("Geolocation.db.storage.provider", "S3")
+		accessKeyID     = conf.GetString("Geolocation.db.storage.accessKey", "")
+		secretAccessKey = conf.GetString("Geolocation.db.storage.secretAccessKey", "")
 	)
 
-	log.Infof("downloading new geolocation db from key: %s", dbKey)
 	var (
-		tmpDirPath = strings.TrimSuffix(conf.GetString("RUDDER_TMPDIR", "."), "/")
-		baseDIR    = fmt.Sprintf("%s/geolocation", tmpDirPath)
-		fullpath   = fmt.Sprintf("%s/%s", baseDIR, dbKey)
+		baseDIR      = fmt.Sprintf("%s/geolocation", strings.TrimSuffix(conf.GetString("RUDDER_TMPDIR", "."), "/"))
+		downloadPath = fmt.Sprintf("%s/%s", baseDIR, dbKey)
 	)
 
 	// If the filepath exists return
-	_, err := os.Stat(fullpath)
-	if err == nil {
-		return fullpath, nil
+	if _, err := os.Stat(downloadPath); err != nil {
+		return downloadPath, nil
 	}
 
-	err = os.MkdirAll(baseDIR, os.ModePerm)
-	if err != nil {
+	log.Infof("downloading new geolocation db from key: %s", dbKey)
+
+	if err := os.MkdirAll(baseDIR, os.ModePerm); err != nil {
 		return "", fmt.Errorf("creating directory for storing db: %w", err)
 	}
 
@@ -199,11 +199,18 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 		os.Remove(f.Name())
 	}()
 
-	manager, err := filemanager.NewS3Manager(map[string]interface{}{
-		"bucketName": bucket,
-		"region":     region,
-	}, log, func() time.Duration {
-		return time.Duration(timeout) * time.Second
+	fileMamangerConf := map[string]interface{}{
+		"bucketName":      bucket,
+		"region":          region,
+		"endPoint":        endpoint,
+		"accessKeyID":     accessKeyID,
+		"secretAccessKey": secretAccessKey,
+	}
+
+	manager, err := filemanager.New(&filemanager.Settings{
+		Provider: provider,
+		Config:   fileMamangerConf,
+		Conf:     conf,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating a new s3 manager client: %w", err)
@@ -224,12 +231,11 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 	}
 
 	// Finally move the downloaded file from previous temp location to new location
-	err = os.Rename(f.Name(), fullpath)
-	if err != nil {
+	if err := os.Rename(f.Name(), downloadPath); err != nil {
 		return "", fmt.Errorf("renaming file: %w", err)
 	}
 
-	return fullpath, nil
+	return downloadPath, nil
 }
 
 func extractGeolocationData(ip string, geoCity geolocation.GeoInfo) Geolocation {
