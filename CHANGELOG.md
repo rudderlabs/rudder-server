@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.4](https://github.com/rudderlabs/rudder-server/compare/v1.15.3...v1.15.4) (2023-10-23)
+
+
+### Bug Fixes
+
+* invalid memory address or nil pointer dereference in googlecloudfunction ([#4003](https://github.com/rudderlabs/rudder-server/issues/4003)) ([ccb6068](https://github.com/rudderlabs/rudder-server/commit/ccb606876b4b487bf6eb33a489e6aee6aba5fb89))
+
 ## [1.15.3](https://github.com/rudderlabs/rudder-server/compare/v1.15.2...v1.15.3) (2023-10-19)
 
 
