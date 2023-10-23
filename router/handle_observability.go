@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
@@ -84,10 +87,23 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 	}
 }
 
-func (rt *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+func (rt *Handle) updateRudderSourcesStats(
+	ctx context.Context,
+	tx jobsdb.UpdateSafeTx,
+	jobs []*jobsdb.JobT,
+	jobStatuses []*jobsdb.JobStatusT,
+) error {
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
-	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	rsourcesStats.CollectStats(jobStatuses)
+	rsourcesStats.CollectFailedRecords(
+		lo.Filter(
+			jobStatuses,
+			func(status *jobsdb.JobStatusT, _ int) bool {
+				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
+			},
+		),
+	)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)

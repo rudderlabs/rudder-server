@@ -7,9 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/golang/mock/gomock"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -23,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -751,5 +756,42 @@ func TestTransformer(t *testing.T) {
 
 			require.Equal(t, GetVersion(), "1.34.0")
 		})
+	})
+}
+
+func TestLongRunningTransformation(t *testing.T) {
+	fileName := t.TempDir() + "out.log"
+	f, err := os.Create(fileName)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	ctrl := gomock.NewController(t)
+
+	t.Run("context cancels before timeout", func(t *testing.T) {
+		mockLogger := mock_logger.NewMockLogger(ctrl)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		trackLongRunningTransformation(ctx, "stage", time.Microsecond, mockLogger)
+	})
+
+	t.Run("log stmt", func(t *testing.T) {
+		mockLogger := mock_logger.NewMockLogger(ctrl)
+		var fired atomic.Bool
+		mockLogger.EXPECT().Errorw(gomock.Any(), gomock.Any()).Do(func(msg string, keysAndValues ...interface{}) {
+			require.Equal(t, "Long running transformation detected", msg)
+			require.Len(t, keysAndValues, 4)
+			require.Equal(t, "stage", keysAndValues[0])
+			require.Equal(t, "stage", keysAndValues[1])
+			require.Equal(t, "duration", keysAndValues[2])
+			_, err := time.ParseDuration(keysAndValues[3].(string))
+			require.NoError(t, err)
+			fired.Store(true)
+		}).MinTimes(1)
+		ctx, cancel := context.WithCancel(context.Background())
+		go trackLongRunningTransformation(ctx, "stage", time.Millisecond, mockLogger)
+		for !fired.Load() {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
 	})
 }

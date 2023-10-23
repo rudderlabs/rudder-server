@@ -1097,5 +1097,5 @@ func getDB(conn string, maxOpenConns int) *sql.DB {
 }
 
 func randomString() string {
-	return strings.ToLower(rand.String(10))
+	return rand.UniqueString(10)
 }
