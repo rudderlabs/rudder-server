@@ -237,7 +237,7 @@ type Uploader interface {
 	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
 	GetTableSchemaInUpload(tableName string) model.TableSchema
-	GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) []LoadFile
+	GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) ([]LoadFile, error)
 	GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error)
 	GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool

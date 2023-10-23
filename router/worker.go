@@ -105,7 +105,7 @@ func (w *worker) workLoop() {
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     strconv.Itoa(routerutils.DRAIN_ERROR_CODE),
+					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
 					Parameters:    routerutils.EmptyPayload,
 					JobParameters: job.Parameters,
 					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
@@ -762,8 +762,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
-		t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt)
-		if err == nil {
+		if t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
 	}

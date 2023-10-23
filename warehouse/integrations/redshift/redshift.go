@@ -351,12 +351,16 @@ func (rs *Redshift) createSchema(ctx context.Context) (err error) {
 }
 
 func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (string, error) {
-	loadFiles := warehouseutils.GetS3Locations(rs.Uploader.GetLoadFilesMetadata(
+	metadata, err := rs.Uploader.GetLoadFilesMetadata(
 		ctx,
 		warehouseutils.GetLoadFilesOptions{
 			Table: tableName,
 		},
-	))
+	)
+	if err != nil {
+		return "", err
+	}
+	loadFiles := warehouseutils.GetS3Locations(metadata)
 
 	entries := lo.Map(loadFiles, func(loadFile warehouseutils.LoadFile, index int) s3ManifestEntry {
 		manifestEntry := s3ManifestEntry{
@@ -1035,7 +1039,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) bool {
+func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
 	sqlStatement := `
 		SELECT
 		  table_name
@@ -1052,7 +1056,7 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) bool {
 	)
 	if err != nil {
 		rs.logger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1069,15 +1073,12 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) bool {
 		panic(fmt.Errorf("iterate result from query: %s\nwith Error : %w", sqlStatement, err))
 	}
 	rs.logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
 			rs.logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 func (rs *Redshift) CreateSchema(ctx context.Context) (err error) {

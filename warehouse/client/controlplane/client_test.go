@@ -66,7 +66,7 @@ func TestFetchSSHKeys(t *testing.T) {
 				require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 				w.WriteHeader(tc.responseCode)
-				w.Write([]byte(tc.responseBody))
+				_, _ = w.Write([]byte(tc.responseBody))
 			}))
 
 			defer svc.Close()
