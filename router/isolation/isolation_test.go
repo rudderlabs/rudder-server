@@ -12,7 +12,6 @@ import (
 )
 
 func TestIsolationStrategy(t *testing.T) {
-
 	t.Run("none", func(r *testing.T) {
 		strategy, err := isolation.GetStrategy(isolation.ModeNone, "", func(_ string) bool { return true })
 		require.NoError(t, err)
