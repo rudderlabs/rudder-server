@@ -56,7 +56,7 @@ func main() {
 			Name:  "server-status",
 			Usage: "Shows rudder server status.",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
@@ -79,8 +79,8 @@ func main() {
 			Name:  "server-config",
 			Usage: "Gets server configuration",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name: "jsonpath, j",
+				&cli.StringFlag{
+					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
 					`,
@@ -102,14 +102,14 @@ func main() {
 			Name:  "routing-config",
 			Usage: "Gets current routing configuration from the server",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
 					`,
 					Aliases: []string{"j"},
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "only-processor-enabled",
 					Usage: "Pass this flag with value true to filter config for processor enabled destinations",
 				},
@@ -128,7 +128,7 @@ func main() {
 			Name:  "trigger-wh-upload",
 			Usage: "Start warehouse uploads without any delay irrepective of configured sync schedule",
 			Flags: []cli.Flag{
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "off, o",
 					Usage: `Use this to turn off explicit warehouse upload triggers. Warehouse uploads will continue to be done as per schedule in control plane.`,
 				},
@@ -144,22 +144,22 @@ func main() {
 			Name:  "wh-query",
 			Usage: "Query underlying warehouse",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "dest",
 					Usage:   `Specify destination ID to query underlying warehouse`,
 					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "source",
 					Usage:   `Specify source ID to query underlying warehouse`,
 					Aliases: []string{"src"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "sql",
 					Usage:   `Specify SQL statement to query underlying warehouse`,
 					Aliases: []string{"s"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "file",
 					Usage:   `Specify SQL file to query underlying warehouse`,
 					Aliases: []string{"f"},
@@ -174,7 +174,7 @@ func main() {
 			Name:  "wh-test",
 			Usage: "Test underlying warehouse",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "dest",
 					Usage:   `Specify destination ID to test underlying warehouse`,
 					Aliases: []string{"d"},
@@ -206,17 +206,17 @@ func main() {
 			Name:  "ds-status",
 			Usage: "Get broader level ds table status",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "dsnum",
 					Usage:   `Specify the ds table num`,
 					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "format",
 					Usage:   `Specify output format, json for json string, table for formatted table`,
 					Aliases: []string{"f"},
@@ -243,7 +243,7 @@ func main() {
 			Name:  "ds-list",
 			Usage: "Get List of DS Tables",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
@@ -258,12 +258,12 @@ func main() {
 			Name:  "job-by-id",
 			Usage: "Get Job by ID",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "jobid",
 					Usage:   `Specify the jobid`,
 					Aliases: []string{"j"},
@@ -278,22 +278,22 @@ func main() {
 			Name:  "jobs-status",
 			Usage: "Get Statuses of Jobs in DS Tables grouped by SrcId, DestID, CustomVal",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "dsnum",
 					Usage:   `Specify the ds table num`,
 					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "numds",
 					Usage:   `Number of Jobs in the first n DS`,
 					Aliases: []string{"n"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "format",
 					Usage:   `Specify output format, json for json string, table for formatted table`,
 					Aliases: []string{"f"},
@@ -308,17 +308,17 @@ func main() {
 			Name:  "get-failed",
 			Usage: "Get Last 5 Failed Jobs in DS Tables",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "dsnum",
 					Usage:   `Specify the ds table num`,
 					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "destType",
 					Usage:   `Specify the destination type`,
 					Aliases: []string{"dt"},
