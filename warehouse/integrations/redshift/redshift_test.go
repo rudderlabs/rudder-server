@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"golang.org/x/exp/slices"
+
+	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -983,8 +984,8 @@ func newMockUploader(
 	mockUploader := mockuploader.NewMockUploader(ctrl)
 	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-			return slices.Clone(loadFiles)
+		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()

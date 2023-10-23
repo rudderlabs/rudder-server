@@ -373,7 +373,7 @@ ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
 	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
+	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry, filtered, failed, aborted, migrating, migrated, wont_migrate
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`

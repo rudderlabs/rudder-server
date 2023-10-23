@@ -582,7 +582,7 @@ func TestSlaveWorker(t *testing.T) {
 				DestinationID: destinationID,
 				TableName:     "test_table_name",
 				WorkspaceID:   workspaceID,
-				JobType:       model.DeleteByJobRunID,
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
 				Metadata:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 			}
 
@@ -614,7 +614,7 @@ func TestSlaveWorker(t *testing.T) {
 			err = json.Unmarshal(response.Payload, &asyncResult)
 			require.NoError(t, err)
 
-			require.Equal(t, "1", asyncResult.ID)
+			require.Equal(t, int64(1), asyncResult.ID)
 			require.True(t, asyncResult.Result)
 
 			<-claimedJobDone
@@ -658,21 +658,21 @@ func TestSlaveWorker(t *testing.T) {
 				},
 				{
 					name:          "invalid parameters",
-					jobType:       model.DeleteByJobRunID,
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
 					expectedError: errors.New("invalid Parameters"),
 				},
 				{
 					name:          "invalid source id",
 					sourceID:      "invalid_source_id",
 					destinationID: destinationID,
-					jobType:       model.DeleteByJobRunID,
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
 					expectedError: errors.New("invalid Source Id"),
 				},
 				{
 					name:          "invalid destination id",
 					sourceID:      sourceID,
 					destinationID: "invalid_destination_id",
-					jobType:       model.DeleteByJobRunID,
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
 					expectedError: errors.New("invalid Destination Id"),
 				},
 			}

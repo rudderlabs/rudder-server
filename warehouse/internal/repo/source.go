@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -98,7 +100,6 @@ func (repo *Source) Insert(
 	if err = txn.Commit(); err != nil {
 		return nil, fmt.Errorf(`committing: %w`, err)
 	}
-
 	return ids, nil
 }
 
@@ -148,18 +149,16 @@ func (repo *Source) GetToProcess(
 	var sourceJobs []model.SourceJob
 	for rows.Next() {
 		var sourceJob model.SourceJob
-		err := repo.scanSourceJob(rows.Scan, &sourceJob)
+		err := scanSourceJob(rows.Scan, &sourceJob)
 		if err != nil {
-			return nil, fmt.Errorf("scanning: %w", err)
+			return nil, err
 		}
-
 		sourceJobs = append(sourceJobs, sourceJob)
 	}
-
 	return sourceJobs, nil
 }
 
-func (repo *Source) scanSourceJob(
+func scanSourceJob(
 	scan scanFn,
 	sourceJob *model.SourceJob,
 ) error {
@@ -188,7 +187,7 @@ func (repo *Source) scanSourceJob(
 	}
 	if jobTypeRaw.Valid {
 		switch jobTypeRaw.String {
-		case model.DeleteByJobRunID:
+		case model.SourceJobTypeDeleteByJobRunID:
 			sourceJob.JobType = jobTypeRaw.String
 		default:
 			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
@@ -223,7 +222,7 @@ func (repo *Source) GetByJobRunTaskRun(
 	)
 
 	var sourceJob model.SourceJob
-	err := repo.scanSourceJob(row.Scan, &sourceJob)
+	err := scanSourceJob(row.Scan, &sourceJob)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrSourcesJobNotFound
 	}
@@ -260,7 +259,6 @@ func (repo *Source) OnUpdateSuccess(
 	if rowsAffected == 0 {
 		return model.ErrSourcesJobNotFound
 	}
-
 	return nil
 }
 
@@ -292,7 +290,7 @@ func (repo *Source) OnUpdateFailure(
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("on update success: %w", err)
+		return fmt.Errorf("on update failed: %w", err)
 	}
 	rowsAffected, err := r.RowsAffected()
 	if err != nil {
@@ -301,6 +299,35 @@ func (repo *Source) OnUpdateFailure(
 	if rowsAffected == 0 {
 		return model.ErrSourcesJobNotFound
 	}
+	return nil
+}
 
+func (repo *Source) MarkExecuting(
+	ctx context.Context,
+	ids []int64,
+) error {
+	r, err := repo.db.ExecContext(ctx, `
+		UPDATE
+			`+sourceJobTableName+`
+		SET
+			status = $1,
+			updated_at = $2
+		WHERE
+			id = ANY($3);
+`,
+		model.SourceJobStatusExecuting,
+		repo.now(),
+		pq.Array(ids),
+	)
+	if err != nil {
+		return fmt.Errorf("marking executing: %w", err)
+	}
+	rowsAffected, err := r.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return model.ErrSourcesJobNotFound
+	}
 	return nil
 }

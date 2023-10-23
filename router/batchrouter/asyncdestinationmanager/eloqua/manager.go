@@ -44,13 +44,14 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 
 func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, eloqua EloquaService) *EloquaBulkUploader {
 	return &EloquaBulkUploader{
-		destName:      destinationName,
-		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
-		authorization: authorization,
-		baseEndpoint:  baseEndpoint,
-		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
-		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
-		service:       eloqua,
-		jobToCSVMap:   map[int64]int64{},
+		destName:          destinationName,
+		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
+		authorization:     authorization,
+		baseEndpoint:      baseEndpoint,
+		fileSizeLimit:     common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
+		eventsLimit:       common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
+		successStatusCode: common.GetBatchRouterConfigStringMap("SuccessStatusCode", destinationName, []string{"ELQ-00040"}),
+		service:           eloqua,
+		jobToCSVMap:       map[int64]int64{},
 	}
 }

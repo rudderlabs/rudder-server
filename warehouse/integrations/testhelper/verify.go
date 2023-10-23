@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -313,7 +315,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		if err = json.NewDecoder(res.Body).Decode(&jr); err != nil {
 			return false
 		}
-		return jr.Status == "succeeded"
+		return jr.Status == model.SourceJobStatusSucceeded
 	}
 	require.Eventuallyf(t, operation, WaitFor10Minute, SourceJobQueryFrequency,
 		"Failed to get source job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s: %v",

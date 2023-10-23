@@ -565,8 +565,8 @@ func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string
 	return "", nil
 }
 
-func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return nil
+func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+	return nil, nil
 }
 
 func (*dummyUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {

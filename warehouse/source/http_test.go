@@ -13,11 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
 	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -32,15 +30,14 @@ import (
 
 func TestHTTPHandlers(t *testing.T) {
 	const (
-		workspaceID         = "test_workspace_id"
-		sourceID            = "test_source_id"
-		destinationID       = "test_destination_id"
-		workspaceIdentifier = "test_workspace-identifier"
-		namespace           = "test_namespace"
-		destinationType     = "test_destination_type"
-		sourceTaskRunID     = "test_source_task_run_id"
-		sourceJobID         = "test_source_job_id"
-		sourceJobRunID      = "test_source_job_run_id"
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		destinationID   = "test_destination_id"
+		namespace       = "test_namespace"
+		destinationType = "test_destination_type"
+		sourceTaskRunID = "test_source_task_run_id"
+		sourceJobID     = "test_source_job_id"
+		sourceJobRunID  = "test_source_job_run_id"
 	)
 
 	pool, err := dockertest.NewPool("")
@@ -60,10 +57,6 @@ func TestHTTPHandlers(t *testing.T) {
 	db := sqlmiddleware.New(pgResource.DB)
 
 	ctx := context.Background()
-
-	n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
-	err = n.Setup(ctx, pgResource.DBDsn)
-	require.NoError(t, err)
 
 	now := time.Now().Truncate(time.Second).UTC()
 
@@ -203,7 +196,7 @@ func TestHTTPHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
+			jobsManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -215,7 +208,7 @@ func TestHTTPHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
+			jobsManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -224,6 +217,7 @@ func TestHTTPHandlers(t *testing.T) {
 			require.Equal(t, "invalid payload: source_id is required\n", string(b))
 		})
 		t.Run("success", func(t *testing.T) {
+			// TODO: Check in sources code whether the job type is being sent correctly
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
@@ -235,7 +229,7 @@ func TestHTTPHandlers(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
+			jobsManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -252,7 +246,7 @@ func TestHTTPHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
+			jobsManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -271,14 +265,14 @@ func TestHTTPHandlers(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 			resp := httptest.NewRecorder()
 
-			jobsManager := New(config.New(), logger.NOP, db, n)
+			jobsManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			var statusResponse jobStatusResponse
 			err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 			require.NoError(t, err)
-			require.Equal(t, statusResponse.Status, model.SourceJobStatusExecuting)
+			require.Equal(t, statusResponse.Status, model.SourceJobStatusWaiting)
 			require.Empty(t, statusResponse.Err)
 		})
 	})

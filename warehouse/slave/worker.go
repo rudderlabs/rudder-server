@@ -493,7 +493,7 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (s
 	}
 
 	switch sourceJob.JobType {
-	case model.DeleteByJobRunID:
+	case model.SourceJobTypeDeleteByJobRunID:
 		err = integrationsManager.DeleteBy(ctx, []string{sourceJob.TableName}, warehouseutils.DeleteByParams{
 			SourceId:  sourceJob.SourceID,
 			TaskRunId: metadata.TaskRunId,
