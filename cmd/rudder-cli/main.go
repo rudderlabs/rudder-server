@@ -26,7 +26,7 @@ func main() {
 	app.Version = "0.1.1"
 	app.Description = "A command line interface to your Rudder"
 
-	app.Commands = []cli.Command{
+	app.Commands = []*cli.Command{
 		{
 			Name:  "status",
 			Usage: "Display status of depending services",
@@ -333,17 +333,17 @@ func main() {
 			Name:  "job-status",
 			Usage: "Get Statuses of the given Job ID",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "type",
 					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
 					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "jobid",
 					Usage:   `Specify the jobid`,
 					Aliases: []string{"j"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "format",
 					Usage:   `Specify output format, json for json string, table for formatted table`,
 					Aliases: []string{"f"},
@@ -358,13 +358,13 @@ func main() {
 			Name:  "logging",
 			Usage: "Set log level for module. It will affect the module and it's children",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "module",
 					Usage: `Specify module to set log level examples: router, router.GA
 		Use "root" to set server wide logging level`,
 					Aliases: []string{"m"},
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:    "level",
 					Usage:   `Valid log levels are EVENT, DEBUG, INFO, WARN, ERROR, FATAL`,
 					Aliases: []string{"l"},
@@ -417,11 +417,11 @@ func main() {
 	}
 
 	app.Before = func(c *cli.Context) error {
-		if c.GlobalString("server-dir") != "" {
-			os.Setenv(config.RudderEnvFilePathKey, c.GlobalString("server-dir"))
+		if c.String("server-dir") != "" {
+			os.Setenv(config.RudderEnvFilePathKey, c.String("server-dir"))
 		}
-		if c.GlobalString("env-file") != "" {
-			os.Setenv(config.RudderEnvFilePathKey, c.GlobalString("env-file"))
+		if c.String("env-file") != "" {
+			os.Setenv(config.RudderEnvFilePathKey, c.String("env-file"))
 		}
 		return nil
 	}
