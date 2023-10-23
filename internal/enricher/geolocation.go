@@ -179,7 +179,7 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 	)
 
 	// If the filepath exists return
-	if _, err := os.Stat(downloadPath); err != nil {
+	if _, err := os.Stat(downloadPath); err == nil {
 		return downloadPath, nil
 	}
 
@@ -216,8 +216,7 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 		return "", fmt.Errorf("creating a new s3 manager client: %w", err)
 	}
 
-	err = manager.Download(ctx, f, dbKey)
-	if err != nil {
+	if err := manager.Download(ctx, f, dbKey); err != nil {
 		return "", fmt.Errorf("downloading file with key: %s from bucket: %s and region: %s, err: %w",
 			dbKey,
 			bucket,

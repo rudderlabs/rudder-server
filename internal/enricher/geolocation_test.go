@@ -479,7 +479,6 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 				"endPoint":        minio.Endpoint,
 				"accessKeyID":     minio.AccessKey,
 				"secretAccessKey": minio.SecretKey,
-				"useSSL":          false,
 			},
 			Logger: nil,
 			Conf:   nil,
