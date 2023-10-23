@@ -93,7 +93,12 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 		}
 		var values []string
 		for _, field := range fields {
-			values = append(values, data.Message.Data[field].(string))
+			val, ok := data.Message.Data[field].(string)
+			if !ok || val == "null" {
+				values = append(values, "")
+			} else {
+				values = append(values, val)
+			}
 		}
 		fileInfo, err := csvFile.Stat()
 		if err != nil {
@@ -158,12 +163,12 @@ func generateErrorString(item RejectedItem) string {
 	return item.StatusCode + " : " + item.Message + " " + invalidItems
 }
 
-func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service EloquaService, jobToCSVMap map[int64]int64) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 	}
-	rejectResponse, err := service.CheckRejectedData(data)
+	rejectResponse, err := eloqua.service.CheckRejectedData(data)
 	if err != nil {
 		return nil, err
 	}
@@ -179,14 +184,19 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 			offset = i * 1000
 			data.Offset = offset
 			if offset != 0 {
-				rejectResponse, err = service.CheckRejectedData(data)
+				rejectResponse, err = eloqua.service.CheckRejectedData(data)
 				if err != nil {
 					return nil, err
 				}
 			}
 			for _, val := range rejectResponse.Items {
-				failedJobIDs = append(failedJobIDs, jobToCSVMap[val.RecordIndex])
-				failedReasons[jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
+				uniqueInvalidFields := lo.Intersect(eloqua.uniqueKeys, val.InvalidFields)
+				successStatusCode := lo.Intersect(eloqua.successStatusCode, []string{val.StatusCode})
+				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
+					continue
+				}
+				failedJobIDs = append(failedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
+				failedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
 			}
 		}
 	}
@@ -213,4 +223,14 @@ func parseFailedData(syncId string, importingList []*jobsdb.JobT) *common.EventS
 		SucceededKeys: []int64{},
 	}
 	return &eventStatMeta
+}
+
+func getUniqueKeys(eloquaFields *Fields) []string {
+	uniqueKeys := []string{}
+	for _, item := range eloquaFields.Items {
+		if item.HasUniquenessConstraint {
+			uniqueKeys = append(uniqueKeys, item.InternalName)
+		}
+	}
+	return uniqueKeys
 }

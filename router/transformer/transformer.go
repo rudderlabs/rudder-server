@@ -126,6 +126,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.15.4](https://github.com/rudderlabs/rudder-server/compare/v1.15.3...v1.15.4) (2023-10-23)
+
+
+### Bug Fixes
+
+* invalid memory address or nil pointer dereference in googlecloudfunction ([#4003](https://github.com/rudderlabs/rudder-server/issues/4003)) ([ccb6068](https://github.com/rudderlabs/rudder-server/commit/ccb606876b4b487bf6eb33a489e6aee6aba5fb89))
+
+## [1.15.3](https://github.com/rudderlabs/rudder-server/compare/v1.15.2...v1.15.3) (2023-10-19)
+
+
+### Bug Fixes
+
+* corrupted rsources stats captured by processor for dropped jobs ([#3999](https://github.com/rudderlabs/rudder-server/issues/3999)) ([e7b829d](https://github.com/rudderlabs/rudder-server/commit/e7b829d0565dcba3b902208c30727c7a23a6c2e8))
+* update error parsing of eloqua ([#3996](https://github.com/rudderlabs/rudder-server/issues/3996)) ([978c292](https://github.com/rudderlabs/rudder-server/commit/978c292605b2cafa8b74408ff8cd1959b3b59503))
+
+## [1.15.2](https://github.com/rudderlabs/rudder-server/compare/v1.15.1...v1.15.2) (2023-10-18)
+
+
+### Miscellaneous
+
+* advertise gzip support to transformer through X-Feature-Gzip-Support header ([#3990](https://github.com/rudderlabs/rudder-server/issues/3990)) ([bce584d](https://github.com/rudderlabs/rudder-server/commit/bce584dea5a139e63451af5447da07563465570b))
+
 ## [1.15.1](https://github.com/rudderlabs/rudder-server/compare/v1.15.0...v1.15.1) (2023-10-13)
 
 
