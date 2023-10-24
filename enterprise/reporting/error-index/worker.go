@@ -28,7 +28,7 @@ import (
 
 type jobPayload struct {
 	job     *jobsdb.JobT
-	payload payload
+	payload *payload
 }
 
 type worker struct {
@@ -219,7 +219,7 @@ func aggregatedJobPayloads(jobs []*jobsdb.JobT) (map[string][]jobPayload, error)
 		aggregateKey := p.FailedAt.Format("2006-01-02/15")
 		jobPayloadsMap[aggregateKey] = append(jobPayloadsMap[aggregateKey], jobPayload{
 			job:     job,
-			payload: p,
+			payload: &p,
 		})
 	}
 	return jobPayloadsMap, nil
@@ -256,7 +256,7 @@ func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []
 	}()
 
 	payloads := lo.Map(jobPayloads, func(item jobPayload, index int) payload {
-		return item.payload
+		return *item.payload
 	})
 	if err = w.write(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)
