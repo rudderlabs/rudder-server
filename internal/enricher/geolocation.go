@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -97,7 +99,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 		}
 
 		contextIP, _ := context["ip"].(string)
-		ip := firstNonBlankValue(contextIP, request.RequestIP) // ip could still be blank given both are blanks
+		ip, _ := lo.Find([]string{contextIP, request.RequestIP}, func(v string) bool { return v != "" })
 
 		errType := ""
 		rawGeo, err := e.fetcher.Locate(ip)
@@ -135,22 +137,6 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 	return errors.Join(enrichErrs...)
 }
 
-// firstNonBlankValue iterates over the array and returns first
-// non blank aka non empty value from the list
-func firstNonBlankValue(vals ...string) string {
-	if len(vals) == 0 {
-		return ""
-	}
-
-	for _, val := range vals {
-		if val != "" {
-			return val
-		}
-	}
-	// return end most value
-	return vals[len(vals)-1]
-}
-
 func (e *geoEnricher) Close() error {
 	e.logger.Info("closing the geolocation enricher")
 
@@ -161,21 +147,22 @@ func (e *geoEnricher) Close() error {
 }
 
 // downloadMaxmindDB downloads database file from upstream s3 and stores it in
-// a specified location
+// a specified location. Download is skipped if the file already exists in the expected path.
 func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger) (string, error) {
 	var (
-		dbKey           = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
-		bucket          = conf.GetString("Geolocation.db.bucket", "rudderstack-geolocation")
-		region          = conf.GetString("Geolocation.db.bucket.region", "us-east-1")
-		endpoint        = conf.GetString("Geolocation.db.storage.endpoint", "")
-		provider        = conf.GetString("Geolocation.db.storage.provider", "S3")
-		accessKeyID     = conf.GetString("Geolocation.db.storage.accessKey", "")
-		secretAccessKey = conf.GetString("Geolocation.db.storage.secretAccessKey", "")
+		dbKey            = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
+		bucket           = conf.GetString("Geolocation.db.storage.bucket", "rudderstack-geolocation")
+		region           = conf.GetString("Geolocation.db.storage.region", "us-east-1")
+		endpoint         = conf.GetString("Geolocation.db.storage.endpoint", "")
+		accessKeyID      = conf.GetString("Geolocation.db.storage.accessKey", "")
+		secretAccessKey  = conf.GetString("Geolocation.db.storage.secretAccessKey", "")
+		s3ForcePathStyle = conf.GetBool("Geolocation.db.storage.s3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("Geolocation.db.storage.disableSSL", false)
 	)
 
 	var (
-		baseDIR      = fmt.Sprintf("%s/geolocation", strings.TrimSuffix(conf.GetString("RUDDER_TMPDIR", "."), "/"))
-		downloadPath = fmt.Sprintf("%s/%s", baseDIR, dbKey)
+		baseDIR      = path.Join(conf.GetString("RUDDER_TMPDIR", "."), "geolocation")
+		downloadPath = path.Join(baseDIR, dbKey)
 	)
 
 	// If the filepath exists return
@@ -195,22 +182,22 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 	}
 
 	defer func() {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 	}()
 
-	fileMamangerConf := map[string]interface{}{
-		"bucketName":      bucket,
-		"region":          region,
-		"endPoint":        endpoint,
-		"accessKeyID":     accessKeyID,
-		"secretAccessKey": secretAccessKey,
-	}
-
 	manager, err := filemanager.New(&filemanager.Settings{
-		Provider: provider,
-		Config:   fileMamangerConf,
-		Conf:     conf,
+		Provider: "S3",
+		Config: map[string]interface{}{
+			"bucketName":       bucket,
+			"region":           region,
+			"endpoint":         endpoint,
+			"accessKeyID":      accessKeyID,
+			"secretAccessKey":  secretAccessKey,
+			"s3ForcePathStyle": s3ForcePathStyle,
+			"disableSSL":       disableSSL,
+		},
+		Conf: conf,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating a new s3 manager client: %w", err)

@@ -439,31 +439,6 @@ func TestMapUpstreamToGeolocation(t *testing.T) {
 	})
 }
 
-func TestFirstNonBlankValue(t *testing.T) {
-	inputs := []struct {
-		input          []string
-		expectedOutput string
-	}{
-		{
-			input:          []string{"", "first-non-blank", "second-non-blank"},
-			expectedOutput: "first-non-blank",
-		},
-		{
-			input:          []string{"", ""},
-			expectedOutput: "",
-		},
-		{
-			input:          nil,
-			expectedOutput: "",
-		},
-	}
-
-	for _, ip := range inputs {
-		actual := firstNonBlankValue(ip.input...)
-		require.Equal(t, ip.expectedOutput, actual)
-	}
-}
-
 func TestDownloadMaxmindDB_success(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -499,13 +474,14 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	// Now we can move onto downloading the database from maxmind
 	conf := config.New()
 	conf.Set("Geolocation.db.key", uploaded.ObjectName)
-	conf.Set("Geolocation.db.bucket", minio.BucketName)
+	conf.Set("Geolocation.db.storage.bucket", minio.BucketName)
 	conf.Set("Geolocation.db.storage.endpoint", minio.Endpoint)
-	conf.Set("Geolocation.db.storage.provider", "MINIO")
 	conf.Set("Geolocation.db.storage.accessKey", minio.AccessKey)
 	conf.Set("Geolocation.db.storage.secretAccessKey", minio.SecretKey)
+	conf.Set("Geolocation.db.storage.s3ForcePathStyle", true)
+	conf.Set("Geolocation.db.storage.disableSSL", true)
 
-	conf.Set("RUDDER_TMPDIR", "./testdata")
+	conf.Set("RUDDER_TMPDIR", t.TempDir())
 
 	path, err := downloadMaxmindDB(context.Background(), conf, logger.Default.NewLogger())
 	require.NoError(t, err)

@@ -217,6 +217,10 @@ func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, pos
 	config.Set("Profiler.Enabled", false)
 	config.Set("Router.toAbortDestinationIDs", "destination-1")
 	config.Set("Gateway.enableSuppressUserFeature", false)
+	config.Set("Router.readSleep", "10ms")
+	config.Set("Processor.pingerSleep", "10ms")
+	config.Set("Processor.readLoopSleep", "10ms")
+	config.Set("Processor.maxLoopSleep", "10ms")
 	config.Set("AdminServer.enabled", false)
 
 	if s.geolocationFeatureEnabled {
