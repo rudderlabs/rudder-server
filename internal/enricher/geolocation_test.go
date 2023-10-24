@@ -260,7 +260,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
 					Build(), input)
-			require.Nil(t, err)
+			require.NotNil(t, err)
 
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a1",

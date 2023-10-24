@@ -87,9 +87,10 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 			event["context"] = map[string]interface{}{}
 		}
 
-		// if the context is other than map[string]interface{}, continue
+		// if the context is other than map[string]interface{}, add error and continue
 		context, ok := event["context"].(map[string]interface{})
 		if !ok {
+			enrichErrs = append(enrichErrs, fmt.Errorf("event on source: %s doesn't have a valid context section", source.ID))
 			continue
 		}
 
