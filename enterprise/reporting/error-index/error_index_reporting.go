@@ -57,7 +57,7 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configFetcher
 		ctx:          ctx,
 		cancel:       cancel,
 		g:            g,
-		log:          log,
+		log:          log.Child("error-index-reporter"),
 		conf:         conf,
 		statsFactory: statsFactory,
 
@@ -190,18 +190,27 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.Handle) error {
 	eir.log.Infow("Starting main loop for error index reporting")
 
-	provider := eir.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-	bucket := eir.conf.GetString("ErrorIndex.Storage.Bucket", "rudder-failed-messages")
-	fm, err := filemanager.New(&filemanager.Settings{
-		Provider: provider,
-		Config: filemanager.GetProviderConfigFromEnv(
-			filemanager.ProviderConfigOpts{
-				Bucket:   bucket,
-				Config:   eir.conf,
-				Provider: provider,
-			},
-		),
-		Conf: eir.conf,
+	var (
+		bucket           = eir.conf.GetString("ErrorIndex.storage.Bucket", "rudder-failed-messages")
+		region           = eir.conf.GetString("ErrorIndex.storage.Region", "us-east-1")
+		endpoint         = eir.conf.GetString("ErrorIndex.storage.Endpoint", "")
+		accessKeyID      = eir.conf.GetString("ErrorIndex.storage.AccessKey", "")
+		secretAccessKey  = eir.conf.GetString("ErrorIndex.storage.SecretAccessKey", "")
+		s3ForcePathStyle = eir.conf.GetBool("ErrorIndex.storage.S3ForcePathStyle", false)
+		disableSSL       = eir.conf.GetBool("ErrorIndex.storage.DisableSSL", false)
+	)
+
+	s3Config := map[string]interface{}{
+		"bucketName":       bucket,
+		"region":           region,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"secretAccessKey":  secretAccessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+	}
+	fm, err := filemanager.NewS3Manager(s3Config, eir.log, func() time.Duration {
+		return eir.conf.GetDuration("ErrorIndex.FileManager.Timeout", 120, time.Second)
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)

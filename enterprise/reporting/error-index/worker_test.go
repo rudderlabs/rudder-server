@@ -108,7 +108,7 @@ func TestWorkerWriter(t *testing.T) {
 			}
 		})
 
-		t.Run("filters with duckDB", func(t *testing.T) {
+		t.Run("filters", func(t *testing.T) {
 			tmpDir := t.TempDir()
 			filePath := path.Join(tmpDir, "payloads.parquet")
 			t.Cleanup(func() {
@@ -125,29 +125,29 @@ func TestWorkerWriter(t *testing.T) {
 
 			require.NoError(t, w.write(fw, eventPayloads))
 
-			duckDB, err := sql.Open("duckdb", "")
+			db, err := sql.Open("duckdb", "")
 			require.NoError(t, err)
-			defer func() { _ = duckDB.Close() }()
+			defer func() { _ = db.Close() }()
 
-			_, err = duckDB.Exec(`INSTALL parquet;LOAD parquet;`)
+			_, err = db.Exec(`INSTALL parquet; LOAD parquet;`)
 			require.NoError(t, err)
 
 			t.Run("count all", func(t *testing.T) {
 				var count int64
-				err = duckDB.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s');", filePath)).Scan(&count)
+				err = db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s');", filePath)).Scan(&count)
 				require.NoError(t, err)
 				require.EqualValues(t, len(eventPayloads), count)
 			})
 			t.Run("count for sourceId, destinationId", func(t *testing.T) {
 				var count int64
-				err = duckDB.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s') WHERE source_id = $1 AND destination_id = $2;", filePath), "sourceId3", "destinationId3").Scan(&count)
+				err = db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s') WHERE source_id = $1 AND destination_id = $2;", filePath), "sourceId3", "destinationId3").Scan(&count)
 				require.NoError(t, err)
 				require.EqualValues(t, 10, count)
 			})
 			t.Run("select all", func(t *testing.T) {
 				var expectedPayloads []payload
 
-				rows, err := duckDB.QueryContext(ctx, fmt.Sprintf("SELECT * FROM read_parquet('%s') ORDER BY failed_at ASC;", filePath))
+				rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT * FROM read_parquet('%s') ORDER BY failed_at ASC;", filePath))
 				require.NoError(t, err)
 				defer func() { _ = rows.Close() }()
 
@@ -261,7 +261,7 @@ func TestWorkerWriter(t *testing.T) {
 				lastFailedAt.Unix(),
 				instanceID,
 			)
-			expectedPayloads := dataFromDuckDB(t, ctx, minioResource, filePath)
+			expectedPayloads := failedMessages(t, ctx, minioResource, filePath)
 			require.Len(t, expectedPayloads, len(jobsList))
 			require.EqualValues(t, eventPayloads, expectedPayloads)
 
@@ -340,7 +340,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			for i := 0; i < count; i++ {
 				failedAt := failedAt.Add(time.Duration(i) * time.Hour)
-				expectedPayloads := dataFromDuckDB(t, ctx, minioResource, fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+				expectedPayloads := failedMessages(t, ctx, minioResource, fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
 					minioResource.BucketName,
 					w.sourceID,
 					failedAt.Format("2006-01-02"),
@@ -430,7 +430,7 @@ func TestWorkerWriter(t *testing.T) {
 			defer w.Stop()
 			require.True(t, w.Work())
 
-			expectedPayloads := dataFromDuckDB(t, ctx, minioResource, fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+			expectedPayloads := failedMessages(t, ctx, minioResource, fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
 				minioResource.BucketName,
 				w.sourceID,
 				failedAt.Format("2006-01-02"),
@@ -454,7 +454,7 @@ func TestWorkerWriter(t *testing.T) {
 			}
 			require.EqualValues(t, []payload{piiPayload}, expectedPayloads)
 		})
-		t.Run("limits not reached without crossing upload frequency", func(t *testing.T) {
+		t.Run("limits reached but few left without crossing upload frequency", func(t *testing.T) {
 			receivedAt, failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC), time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
@@ -534,25 +534,14 @@ func TestWorkerWriter(t *testing.T) {
 	})
 }
 
-func dataFromDuckDB(t testing.TB, ctx context.Context, mr *destination.MINIOResource, filePath string) []payload {
+func failedMessages(t testing.TB, ctx context.Context, mr *destination.MINIOResource, filePath string) []payload {
 	t.Helper()
 
-	duckDB, err := sql.Open("duckdb", "")
+	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
-	defer func() { _ = duckDB.Close() }()
+	defer func() { _ = db.Close() }()
 
-	_, err = duckDB.Exec(fmt.Sprintf(`
-		INSTALL parquet;
-		LOAD parquet;
-		INSTALL httpfs;
-		LOAD httpfs;
-		SET s3_region='%s';
-		SET s3_endpoint='%s';
-		SET s3_access_key_id='%s';
-		SET s3_secret_access_key='%s';
-		set s3_use_ssl= false;
-		set s3_url_style='path';
-	`,
+	_, err = db.Exec(fmt.Sprintf(`INSTALL parquet; LOAD parquet; INSTALL httpfs; LOAD httpfs;SET s3_region='%s';SET s3_endpoint='%s';SET s3_access_key_id='%s';SET s3_secret_access_key='%s';SET s3_use_ssl= false;SET s3_url_style='path';`,
 		mr.SiteRegion,
 		mr.Endpoint,
 		mr.AccessKey,
@@ -560,7 +549,7 @@ func dataFromDuckDB(t testing.TB, ctx context.Context, mr *destination.MINIOReso
 	))
 	require.NoError(t, err)
 
-	rows, err := duckDB.QueryContext(ctx, fmt.Sprintf("SELECT * FROM read_parquet('%s') ORDER BY failed_at ASC;", filePath))
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT * FROM read_parquet('%s') ORDER BY failed_at ASC;", filePath))
 	require.NoError(t, err)
 	defer func() { _ = rows.Close() }()
 
@@ -625,7 +614,7 @@ func BenchmarkFileFormat(b *testing.B) {
 		err := c.WriteAll(records)
 		require.NoError(b, err)
 
-		b.Log("csv size:", buf.Len()) // csv size: 160MB
+		b.Log("csv size:", buf.Len()) // csv size: 150MB
 	})
 	b.Run("json", func(b *testing.B) {
 		var records []payload
@@ -652,7 +641,7 @@ func BenchmarkFileFormat(b *testing.B) {
 			require.NoError(b, e.Encode(record))
 		}
 
-		b.Log("json size:", buf.Len()) // json size: 333MB
+		b.Log("json size:", buf.Len()) // json size: 310MB
 	})
 	b.Run("parquet", func(b *testing.B) {
 		var records []payload
@@ -681,13 +670,13 @@ func BenchmarkFileFormat(b *testing.B) {
 
 		require.NoError(b, w.write(buf, records))
 
-		b.Log("parquet size:", buf.Len())
+		b.Log("parquet size:", buf.Len()) // parquet size: 18.67MB
 
-		// parquet size: 13.74MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED], No sorting) // Check with @atzoum
-		// parquet size: 21.71MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
-		// parquet size: 21.71MB (rowGroupSizeInMB=1024, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
-		// parquet size: 21.71MB (rowGroupSizeInMB=128, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
-		// parquet size: 23.52MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY])
-		// parquet size: 25.98MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[])
+		// parquet size: 10.39MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED], No sorting)
+		// parquet size: 18.67MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 18.67MB (rowGroupSizeInMB=1024, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 18.67MB (rowGroupSizeInMB=128, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY,DELTA_BINARY_PACKED])
+		// parquet size: 21.27MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[RLE_DICTIONARY])
+		// parquet size: 22.65MB (rowGroupSizeInMB=512, pageSizeInKB=8, compression=snappy, encoding=[])
 	})
 }

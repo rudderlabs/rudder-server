@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -145,7 +146,7 @@ func (w *worker) Work() (worked bool) {
 
 	statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
 	if err != nil {
-		w.log.Errorw("failed to upload jobs", "error", err)
+		w.log.Warnw("failed to upload jobs", "error", err)
 		return
 	}
 	w.lastUploadTime = w.now()
@@ -232,27 +233,27 @@ func transformPayloadsForPII(jobPayloads []jobPayload) {
 }
 
 func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []jobPayload) ([]*jobsdb.JobStatusT, error) {
-	tmpDirPath, err := os.MkdirTemp("", "")
+	minFailedAt := lo.MinBy(jobPayloads, func(a, b jobPayload) bool { return a.payload.FailedAt.Before(b.payload.FailedAt) }).payload.FailedAt
+	maxFailedAt := lo.MaxBy(jobPayloads, func(a, b jobPayload) bool { return a.payload.FailedAt.After(b.payload.FailedAt) }).payload.FailedAt
+
+	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	failedAtFirst := lo.MinBy(jobPayloads, func(a, b jobPayload) bool {
-		return a.payload.FailedAt.Before(b.payload.FailedAt)
-	}).payload.FailedAt
-	failedAtLast := lo.MaxBy(jobPayloads, func(a, b jobPayload) bool {
-		return a.payload.FailedAt.After(b.payload.FailedAt)
-	}).payload.FailedAt
+	filePath := path.Join(tmpDirPath, w.sourceID, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
 
-	fileName := fmt.Sprintf("%d_%d_%s.parquet", failedAtFirst.Unix(), failedAtLast.Unix(), w.config.instanceID)
-	filePath := path.Join(tmpDirPath, fileName)
+	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+	if err != nil {
+		return nil, fmt.Errorf("creating directory: %w", err)
+	}
 
 	f, err := os.Create(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating file: %w", err)
 	}
 	defer func() {
-		misc.RemoveFilePaths(filePath)
+		_ = os.Remove(f.Name())
 	}()
 
 	payloads := lo.Map(jobPayloads, func(item jobPayload, index int) payload {
@@ -265,16 +266,12 @@ func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []
 		return nil, fmt.Errorf("closing file: %w", err)
 	}
 
-	f, err = os.Open(filePath)
+	f, err = os.Open(f.Name())
 	if err != nil {
 		return nil, fmt.Errorf("opening file: %w", err)
 	}
 
-	prefixes := []string{
-		w.sourceID,
-		failedAtFirst.Format("2006-01-02"),
-		strconv.Itoa(failedAtFirst.Hour()),
-	}
+	prefixes := []string{w.sourceID, minFailedAt.Format("2006-01-02"), strconv.Itoa(minFailedAt.Hour())}
 	output, err := w.uploader.Upload(ctx, f, prefixes...)
 	if err != nil {
 		return nil, fmt.Errorf("uploading file to object storage: %w", err)

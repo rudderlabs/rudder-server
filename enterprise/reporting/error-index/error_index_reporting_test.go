@@ -284,38 +284,6 @@ func TestErrorIndexReporter(t *testing.T) {
 			})
 		}
 	})
-	t.Run("graceful shutdown", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		c := config.New()
-
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		cf := newMockConfigFetcher()
-		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
-
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
-		defer eir.Stop()
-		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
-
-		sqltx, err := postgresContainer.DB.Begin()
-		require.NoError(t, err)
-		tx := &Tx{Tx: sqltx}
-		err = eir.Report([]*types.PUReportedMetric{}, tx)
-		require.NoError(t, err)
-		require.NoError(t, tx.Commit())
-
-		syncerDone := make(chan struct{})
-		go func() {
-			defer close(syncerDone)
-			syncer()
-		}()
-
-		cancel()
-		<-syncerDone
-	})
 
 	t.Run("graceful shutdown", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
@@ -347,7 +315,6 @@ func TestErrorIndexReporter(t *testing.T) {
 		}()
 
 		cancel()
-
 		<-syncerDone
 	})
 
@@ -556,12 +523,12 @@ func TestErrorIndexReporter(t *testing.T) {
 		}
 
 		c := config.New()
-		c.Set("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-		c.Set("ErrorIndex.Storage.Bucket", minioResource.BucketName)
-		c.Set("MINIO_ENDPOINT", minioResource.Endpoint)
-		c.Set("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
-		c.Set("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
-		c.Set("MINIO_SSL", "false")
+		c.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
+		c.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
+		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKey)
+		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.SecretKey)
+		c.Set("ErrorIndex.storage.S3ForcePathStyle", true)
+		c.Set("ErrorIndex.storage.DisableSSL", true)
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
