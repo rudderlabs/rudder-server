@@ -89,7 +89,7 @@ func TestNewProduceWithBadServer(t *testing.T) {
 	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
 	assert.Equal(t, http.StatusBadRequest, statusCode)
 	assert.Equal(t, "Failure", responseStatus)
-	assert.Contains(t, responseMessage, "no such host")
+	assert.Contains(t, responseMessage, "Function call was not executed")
 }
 
 func TestNewProduceWithInvalidData(t *testing.T) {
