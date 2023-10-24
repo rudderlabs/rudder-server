@@ -1,6 +1,7 @@
 package enricher
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -460,16 +461,16 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 		})
 	require.NoError(t, err)
 
-	inputLoc := "./testdata/minio/file.txt"
+	uploadPath := "./testdata/minio/file.txt"
 
-	tf, err := os.Open(inputLoc)
+	f, err := os.Open(uploadPath)
 	require.NoError(t, err)
 
-	uploaded, err := minioManager.Upload(context.Background(), tf)
+	uploaded, err := minioManager.Upload(context.Background(), f)
 	require.NoError(t, err)
 
 	// Once the upload has happened, close the file uploaded
-	require.NoError(t, tf.Close())
+	require.NoError(t, f.Close())
 
 	// Now we can move onto downloading the database from maxmind
 	conf := config.New()
@@ -483,16 +484,11 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 
 	conf.Set("RUDDER_TMPDIR", t.TempDir())
 
-	path, err := downloadMaxmindDB(context.Background(), conf, logger.Default.NewLogger())
+	downloadPath, err := downloadMaxmindDB(context.Background(), conf, logger.Default.NewLogger())
 	require.NoError(t, err)
 
-	// the contents of the file should match completely
-	downloadedByt, _ := os.ReadFile(path)
-	uploadedByt, _ := os.ReadFile(inputLoc)
-
-	require.Equal(t, uploadedByt, downloadedByt)
-	// Finally clean the downloaded file
-	require.NoError(t, os.Remove(path))
+	equalFiles(t, downloadPath, uploadPath)
+	require.NoError(t, os.Remove(downloadPath)) // Clean the downloaded file
 }
 
 type SourceBuilder struct {
@@ -514,4 +510,16 @@ func (sb *SourceBuilder) WithGeoEnrichment(enabled bool) *SourceBuilder {
 
 func (sb *SourceBuilder) Build() *backendconfig.SourceT {
 	return sb.source
+}
+
+// equalFiles check if the content of files is equal
+func equalFiles(t *testing.T, filepath1, filepath2 string) {
+	// the contents of the file should match completely
+	byt1, err := os.ReadFile(filepath1)
+	require.NoError(t, err)
+
+	byt2, err := os.ReadFile(filepath2)
+	require.NoError(t, err)
+
+	require.True(t, bytes.Equal(byt1, byt2))
 }
