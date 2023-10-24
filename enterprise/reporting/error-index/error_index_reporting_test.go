@@ -284,6 +284,217 @@ func TestErrorIndexReporter(t *testing.T) {
 			})
 		}
 	})
+	t.Run("graceful shutdown", func(t *testing.T) {
+		postgresContainer, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		c := config.New()
+
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		cf := newMockConfigFetcher()
+		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+		defer eir.Stop()
+		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+
+		sqltx, err := postgresContainer.DB.Begin()
+		require.NoError(t, err)
+		tx := &Tx{Tx: sqltx}
+		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+
+		syncerDone := make(chan struct{})
+		go func() {
+			defer close(syncerDone)
+			syncer()
+		}()
+
+		cancel()
+		<-syncerDone
+	})
+
+	t.Run("graceful shutdown", func(t *testing.T) {
+		postgresContainer, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		c := config.New()
+
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		cf := newMockConfigFetcher()
+		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+		defer eir.Stop()
+		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+
+		sqltx, err := postgresContainer.DB.Begin()
+		require.NoError(t, err)
+		tx := &Tx{Tx: sqltx}
+		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+
+		syncerDone := make(chan struct{})
+		go func() {
+			defer close(syncerDone)
+			syncer()
+		}()
+
+		cancel()
+
+		<-syncerDone
+	})
+
+	t.Run("using 1 syncer", func(t *testing.T) {
+		t.Run("wrong transaction", func(t *testing.T) {
+			pg1, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+			pg2, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			c := config.New()
+
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			cf := newMockConfigFetcher()
+			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+			defer eir.Stop()
+			_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+
+			sqltx, err := pg2.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.Error(t, err)
+			require.Error(t, tx.Commit())
+		})
+	})
+
+	t.Run("using 2 syncers", func(t *testing.T) {
+		pg1, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		pg2, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		pg3, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		c := config.New()
+
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		cf := newMockConfigFetcher()
+		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+		defer eir.Stop()
+		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg2.DBDsn})
+
+		t.Run("correct transaction", func(t *testing.T) {
+			sqltx, err := pg1.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.NoError(t, err)
+			require.NoError(t, tx.Commit())
+		})
+		t.Run("wrong transaction", func(t *testing.T) {
+			sqltx, err := pg3.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.Error(t, err)
+			require.NoError(t, tx.Commit())
+		})
+	})
 
 	t.Run("syncers", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
@@ -403,184 +614,5 @@ func TestErrorIndexReporter(t *testing.T) {
 		cancel()
 
 		<-syncerDone
-	})
-
-	t.Run("graceful shutdown", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		c := config.New()
-
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		cf := newMockConfigFetcher()
-		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
-
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
-		defer eir.Stop()
-		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
-
-		sqltx, err := postgresContainer.DB.Begin()
-		require.NoError(t, err)
-		tx := &Tx{Tx: sqltx}
-		err = eir.Report([]*types.PUReportedMetric{}, tx)
-		require.NoError(t, err)
-		require.NoError(t, tx.Commit())
-
-		syncerDone := make(chan struct{})
-		go func() {
-			defer close(syncerDone)
-			syncer()
-		}()
-
-		cancel()
-
-		<-syncerDone
-	})
-
-	t.Run("using 1 syncer", func(t *testing.T) {
-		t.Run("wrong transaction", func(t *testing.T) {
-			pg1, err := resource.SetupPostgres(pool, t)
-			require.NoError(t, err)
-			pg2, err := resource.SetupPostgres(pool, t)
-			require.NoError(t, err)
-
-			c := config.New()
-
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			cf := newMockConfigFetcher()
-			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
-
-			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
-			defer eir.Stop()
-			_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
-
-			sqltx, err := pg2.DB.Begin()
-			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
-			err = eir.Report([]*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
-					StatusDetail: &types.StatusDetail{
-						EventName: eventName,
-						EventType: eventType,
-						FailedMessages: []*types.FailedMessage{
-							{
-								MessageID:  messageID + "1",
-								ReceivedAt: receivedAt.Add(1 * time.Hour),
-							},
-							{
-								MessageID:  messageID + "2",
-								ReceivedAt: receivedAt.Add(2 * time.Hour),
-							},
-						},
-					},
-				},
-			}, tx)
-			require.Error(t, err)
-			require.Error(t, tx.Commit())
-		})
-	})
-
-	t.Run("using 2 syncers", func(t *testing.T) {
-		pg1, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-		pg2, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-		pg3, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		c := config.New()
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		cf := newMockConfigFetcher()
-		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
-
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
-		defer eir.Stop()
-
-		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
-		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg2.DBDsn})
-
-		t.Run("correct transaction", func(t *testing.T) {
-			sqltx, err := pg1.DB.Begin()
-			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
-			err = eir.Report([]*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
-					StatusDetail: &types.StatusDetail{
-						EventName: eventName,
-						EventType: eventType,
-						FailedMessages: []*types.FailedMessage{
-							{
-								MessageID:  messageID + "1",
-								ReceivedAt: receivedAt.Add(1 * time.Hour),
-							},
-							{
-								MessageID:  messageID + "2",
-								ReceivedAt: receivedAt.Add(2 * time.Hour),
-							},
-						},
-					},
-				},
-			}, tx)
-			require.NoError(t, err)
-			require.NoError(t, tx.Commit())
-		})
-		t.Run("wrong transaction", func(t *testing.T) {
-			sqltx, err := pg3.DB.Begin()
-			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
-			err = eir.Report([]*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         sourceID,
-						DestinationID:    destinationID,
-						TransformationID: transformationID,
-						TrackingPlanID:   trackingPlanID,
-					},
-					PUDetails: types.PUDetails{
-						PU: reportedBy,
-					},
-					StatusDetail: &types.StatusDetail{
-						EventName: eventName,
-						EventType: eventType,
-						FailedMessages: []*types.FailedMessage{
-							{
-								MessageID:  messageID + "1",
-								ReceivedAt: receivedAt.Add(1 * time.Hour),
-							},
-							{
-								MessageID:  messageID + "2",
-								ReceivedAt: receivedAt.Add(2 * time.Hour),
-							},
-						},
-					},
-				},
-			}, tx)
-			require.Error(t, err)
-			require.NoError(t, tx.Commit())
-		})
 	})
 }

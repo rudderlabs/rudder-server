@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -679,12 +677,12 @@ func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unpa
 	return nil
 }
 
-func logRows(t *testing.T, db *sql.DB, query string) { // nolint:unparam
-	rows, err := db.Query(query) // nolint:rowserrcheck
-	defer func() { _ = rows.Close() }()
-	if err != nil {
-		var b strings.Builder
-		_ = sqlutil.PrintRowsToTable(rows, &b)
-		t.Log(b.String())
-	}
-}
+//func logRows(t *testing.T, db *sql.DB, query string) { // nolint:unparam
+//	rows, err := db.Query(query) // nolint:rowserrcheck
+//	defer func() { _ = rows.Close() }()
+//	if err != nil {
+//		var b strings.Builder
+//		_ = sqlutil.PrintRowsToTable(rows, &b)
+//		t.Log(b.String())
+//	}
+//}

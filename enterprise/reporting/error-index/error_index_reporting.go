@@ -138,7 +138,7 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx)
 	if err := db.WithStoreSafeTxFromTx(eir.ctx, tx, func(tx jobsdb.StoreSafeTx) error {
 		return db.StoreInTx(eir.ctx, tx, jobs)
 	}); err != nil {
-		return fmt.Errorf("failed to store jobs: %v", err)
+		return fmt.Errorf("failed to store jobs: %w", err)
 	}
 
 	return nil
@@ -254,7 +254,6 @@ func (eir *ErrorIndexReporter) Stop() {
 	eir.dbsMu.RLock()
 	for _, db := range eir.dbs {
 		db.Handle.Stop()
-		db.Handle.Close()
 	}
 	eir.dbsMu.RUnlock()
 

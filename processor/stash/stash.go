@@ -69,7 +69,7 @@ func (st *HandleT) Setup(
 	st.config.errDBReadBatchSize = config.GetReloadableIntVar(1000, 1, "Processor.errDBReadBatchSize")
 	st.config.noOfErrStashWorkers = config.GetReloadableIntVar(2, 1, "Processor.noOfErrStashWorkers")
 	st.config.maxFailedCountForErrJob = config.GetReloadableIntVar(3, 1, "Processor.maxFailedCountForErrJob")
-	st.config.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Processor.stashP	ayloadLimit")
+	st.config.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Processor.stashPayloadLimit")
 	st.config.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 	st.config.jobdDBQueryRequestTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	st.config.jobsDBCommandTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
