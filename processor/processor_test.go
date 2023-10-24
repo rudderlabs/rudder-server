@@ -39,6 +39,7 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -1160,6 +1161,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -1189,6 +1191,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -1223,6 +1226,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2272,7 +2276,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2286,6 +2289,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				getMockTransformerService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2312,7 +2316,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Consistently(func() bool {
 				select {
-				case <-processor.config.asyncInit.Wait():
+				case <-processor.transformerFeaturesService.Wait():
 					return true
 				default:
 					return false
@@ -2330,7 +2334,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2344,6 +2347,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -4010,6 +4014,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,
+		transformerFeaturesService.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
@@ -4365,4 +4370,22 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+}
+
+func getMockTransformerService() transformerFeaturesService.FeaturesService {
+	return &mockTransformerService{}
+}
+
+type mockTransformerService struct{}
+
+func (*mockTransformerService) SourceTransformerVersion() string {
+	return "random-version"
+}
+
+func (*mockTransformerService) Wait() chan struct{} {
+	return make(chan struct{})
+}
+
+func (*mockTransformerService) RouterTransform(destType string) bool {
+	return false
 }
