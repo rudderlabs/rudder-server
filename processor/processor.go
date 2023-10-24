@@ -47,6 +47,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
@@ -2131,7 +2132,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			}
 
 			if proc.isReportingEnabled() {
-				if err = proc.reporting.Report(in.reportMetrics, tx.SqlTx()); err != nil {
+				if err = proc.reporting.Report(in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
@@ -2573,7 +2574,7 @@ func (proc *Handle) transformSrcDest(
 	}
 }
 
-func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *jobsdb.Tx) error {
+func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 	if len(droppedJobs) > 0 {
 		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
 			droppedJobs[i].JobID = int64(i)

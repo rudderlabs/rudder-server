@@ -107,6 +107,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
+	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default)})
 	g.Go(misc.WithBugsnag(func() error {
 		syncer()
