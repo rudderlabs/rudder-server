@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -243,31 +244,28 @@ func TestErrorIndexReporter(t *testing.T) {
 				require.NoError(t, err)
 
 				c := config.New()
-				c.Set("DB.port", postgresContainer.Port)
-				c.Set("DB.user", postgresContainer.User)
-				c.Set("DB.name", postgresContainer.Database)
-				c.Set("DB.password", postgresContainer.Password)
-
 				ctx, cancel := context.WithCancel(ctx)
-
 				cs := newConfigSubscriber(logger.NOP)
-
 				subscribeDone := make(chan struct{})
 				go func() {
 					defer close(subscribeDone)
 					cs.Subscribe(ctx, mockBackendConfig)
 				}()
 
-				eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
+				_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+				defer eir.Stop()
+
 				eir.now = failedAt
-				defer func() {
-					eir.errIndexDB.TearDown()
-				}()
-
-				err = eir.Report(tc.reports, nil)
+				sqltx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
-
-				jr, err := eir.errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+				tx := &Tx{Tx: sqltx}
+				err = eir.Report(tc.reports, tx)
+				require.NoError(t, err)
+				require.NoError(t, tx.Commit())
+				db, err := eir.resolveJobsDB(tx)
+				require.NoError(t, err)
+				jr, err := db.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					JobsLimit: 100,
 				})
 				require.NoError(t, err)
@@ -300,49 +298,191 @@ func TestErrorIndexReporter(t *testing.T) {
 			})
 		}
 	})
-	t.Run("panic in case of not able to start errIndexDB", func(t *testing.T) {
-		require.Panics(t, func() {
-			_ = NewErrorIndexReporter(ctx, config.New(), logger.NOP, newConfigSubscriber(logger.NOP))
-		})
-	})
-	t.Run("Graceful shutdown", func(t *testing.T) {
+	t.Run("graceful shutdown", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
-		c.Set("DB.port", postgresContainer.Port)
-		c.Set("DB.user", postgresContainer.User)
-		c.Set("DB.name", postgresContainer.Database)
-		c.Set("DB.password", postgresContainer.Password)
-
 		ctx, cancel := context.WithCancel(ctx)
-
 		cs := newConfigSubscriber(logger.NOP)
-
 		subscribeDone := make(chan struct{})
 		go func() {
 			defer close(subscribeDone)
-
 			cs.Subscribe(ctx, mockBackendConfig)
 		}()
 
-		eir := NewErrorIndexReporter(ctx, c, logger.NOP, cs)
-		defer eir.errIndexDB.TearDown()
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
+		defer eir.Stop()
+		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
 
-		err = eir.Report([]*types.PUReportedMetric{}, nil)
+		sqltx, err := postgresContainer.DB.Begin()
 		require.NoError(t, err)
+		tx := &Tx{Tx: sqltx}
+		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
 
 		syncerDone := make(chan struct{})
 		go func() {
 			defer close(syncerDone)
-
-			syncer := eir.DatabaseSyncer(types.SyncerConfig{})
 			syncer()
 		}()
 
 		cancel()
-
 		<-subscribeDone
 		<-syncerDone
+	})
+
+	t.Run("using 1 syncer", func(t *testing.T) {
+		t.Run("wrong transaction", func(t *testing.T) {
+			pg1, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+			pg2, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			c := config.New()
+			ctx, cancel := context.WithCancel(ctx)
+			cs := newConfigSubscriber(logger.NOP)
+			subscribeDone := make(chan struct{})
+			go func() {
+				defer close(subscribeDone)
+				cs.Subscribe(ctx, mockBackendConfig)
+			}()
+
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
+			defer eir.Stop()
+			_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+
+			sqltx, err := pg2.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.Error(t, err)
+			require.Error(t, tx.Commit())
+
+			cancel()
+			<-subscribeDone
+		})
+	})
+
+	t.Run("using 2 syncers", func(t *testing.T) {
+		pg1, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		pg2, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		pg3, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		c := config.New()
+		ctx, cancel := context.WithCancel(ctx)
+		cs := newConfigSubscriber(logger.NOP)
+		subscribeDone := make(chan struct{})
+		go func() {
+			defer close(subscribeDone)
+			cs.Subscribe(ctx, mockBackendConfig)
+		}()
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
+		defer eir.Stop()
+		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg2.DBDsn})
+
+		t.Run("correct transaction", func(t *testing.T) {
+			sqltx, err := pg1.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.NoError(t, err)
+			require.NoError(t, tx.Commit())
+		})
+		t.Run("wrong transaction", func(t *testing.T) {
+			sqltx, err := pg3.DB.Begin()
+			require.NoError(t, err)
+			tx := &Tx{Tx: sqltx}
+			err = eir.Report([]*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         sourceID,
+						DestinationID:    destinationID,
+						TransformationID: transformationID,
+						TrackingPlanID:   trackingPlanID,
+					},
+					PUDetails: types.PUDetails{
+						PU: reportedBy,
+					},
+					StatusDetail: &types.StatusDetail{
+						EventName: eventName,
+						EventType: eventType,
+						FailedMessages: []*types.FailedMessage{
+							{
+								MessageID:  messageID + "1",
+								ReceivedAt: receivedAt.Add(1 * time.Hour),
+							},
+							{
+								MessageID:  messageID + "2",
+								ReceivedAt: receivedAt.Add(2 * time.Hour),
+							},
+						},
+					},
+				},
+			}, tx)
+			require.Error(t, err)
+			require.NoError(t, tx.Commit())
+		})
+
+		cancel()
+		<-subscribeDone
 	})
 }

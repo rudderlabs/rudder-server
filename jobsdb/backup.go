@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 func (jd *Handle) isBackupEnabled() bool {

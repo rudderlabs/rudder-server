@@ -8,8 +8,10 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-var ErrReceivingChannelClosed = errors.New("receiving channel closed")
-var ErrProcessingTimedOut = errors.New("processing timed out")
+var (
+	ErrReceivingChannelClosed = errors.New("receiving channel closed")
+	ErrProcessingTimedOut     = errors.New("processing timed out")
+)
 
 type insertJobRequest struct {
 	SourceID      string `json:"source_id"`

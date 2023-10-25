@@ -341,6 +341,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	if !mode.IsStandAloneSlave(a.config.mode) {
 		a.reporting = a.app.Features().Reporting.Setup(gCtx, a.bcConfig)
+		defer a.reporting.Stop()
 		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString(), Label: types.WarehouseReportingLabel})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			syncer()

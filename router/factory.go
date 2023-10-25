@@ -1,8 +1,6 @@
 package router
 
 import (
-	"database/sql"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -11,6 +9,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -48,5 +47,5 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 }
 
 type reporter interface {
-	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) error
+	Report(metrics []*utilTypes.PUReportedMetric, txn *Tx) error
 }

@@ -905,7 +905,8 @@ func TestHTTPApi(t *testing.T) {
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
 				  "job_run_id": "test_source_job_run_id",
-				  "task_run_id": "test_source_task_run_id"
+				  "task_run_id": "test_source_task_run_id",
+				  "async_job_type": "deletebyjobrunid"
 				}
 			`)))
 				require.NoError(t, err)

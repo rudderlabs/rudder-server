@@ -142,7 +142,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
 					if brt.reporting != nil && brt.reportingEnabled {
-						if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+						if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
 							return fmt.Errorf("reporting metrics: %w", err)
 						}
 					}

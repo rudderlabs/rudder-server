@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 func TestBackupTable(t *testing.T) {

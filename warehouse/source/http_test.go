@@ -18,9 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -111,17 +108,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	t.Log("db:", pgResource.DBDsn)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
-	db, ctx := sqlmiddleware.New(pgResource.DB), context.Background()
+	db, ctx := setupDB(t, pool), context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
 
@@ -236,25 +223,17 @@ func TestManager_InsertJobHandler(t *testing.T) {
 
 func TestManager_StatusJobHandler(t *testing.T) {
 	const (
-		workspaceID   = "test_workspace_id"
-		sourceID      = "test_source_id"
-		destinationID = "test_destination_id"
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		destinationID   = "test_destination_id"
+		sourceJobID     = "test_source_job_id"
+		sourceTaskRunID = "test_source_task_run_id"
 	)
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	t.Log("db:", pgResource.DBDsn)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
-	db, ctx := sqlmiddleware.New(pgResource.DB), context.Background()
+	db, ctx := setupDB(t, pool), context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
 
@@ -298,11 +277,11 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		require.Equal(t, "invalid request: source_id is required\n", string(b))
 	})
 	t.Run("status waiting", func(t *testing.T) {
-		_ = createSourceJob("test_source_job_run_id_1", "test_source_task_run_id_1", "test_table_1")
+		_ = createSourceJob(sourceJobID+"-1", sourceTaskRunID+"-1", "test_table-1")
 
 		qp := url.Values{}
-		qp.Add("task_run_id", "test_source_task_run_id_1")
-		qp.Add("job_run_id", "test_source_job_run_id_1")
+		qp.Add("task_run_id", sourceTaskRunID+"-1")
+		qp.Add("job_run_id", sourceJobID+"-1")
 		qp.Add("source_id", sourceID)
 		qp.Add("destination_id", destinationID)
 		qp.Add("workspace_id", workspaceID)
@@ -321,7 +300,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		require.Empty(t, statusResponse.Err)
 	})
 	t.Run("status aborted", func(t *testing.T) {
-		ids := createSourceJob("test_source_job_run_id_2", "test_source_task_run_id_2", "test_table2")
+		ids := createSourceJob(sourceJobID+"-2", sourceTaskRunID+"-2", "test_table-2")
 
 		for _, id := range ids {
 			err := sourceRepo.OnUpdateFailure(ctx, id, errors.New("test error"), -1)
@@ -329,8 +308,8 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		}
 
 		qp := url.Values{}
-		qp.Add("task_run_id", "test_source_task_run_id_2")
-		qp.Add("job_run_id", "test_source_job_run_id_2")
+		qp.Add("task_run_id", sourceTaskRunID+"-2")
+		qp.Add("job_run_id", sourceJobID+"-2")
 		qp.Add("source_id", sourceID)
 		qp.Add("destination_id", destinationID)
 		qp.Add("workspace_id", workspaceID)
@@ -350,8 +329,8 @@ func TestManager_StatusJobHandler(t *testing.T) {
 	})
 	t.Run("job not found", func(t *testing.T) {
 		qp := url.Values{}
-		qp.Add("task_run_id", "unknown_task_run_id")
-		qp.Add("job_run_id", "unknown_job_run_id")
+		qp.Add("task_run_id", sourceTaskRunID+"-unknown")
+		qp.Add("job_run_id", sourceJobID+"-unknown")
 		qp.Add("source_id", sourceID)
 		qp.Add("destination_id", destinationID)
 		qp.Add("workspace_id", workspaceID)

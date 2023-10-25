@@ -8,7 +8,7 @@ import (
 
 	"github.com/lensesio/tableprinter"
 	_ "github.com/lib/pq"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 
 	"github.com/rudderlabs/rudder-server/cmd/rudder-cli/client"
 )

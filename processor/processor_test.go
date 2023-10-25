@@ -13,17 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -31,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
@@ -39,12 +35,15 @@ import (
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -1067,6 +1066,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1095,6 +1095,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1128,6 +1129,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -2024,8 +2026,8 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *Tx) error) {
+				_ = f(&Tx{})
 			}).Return(nil).Times(0)
 
 			// One Store call is expected for all events
@@ -2060,6 +2062,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
@@ -2117,6 +2120,7 @@ var _ = Describe("Processor", Ordered, func() {
 				c.MockRsourcesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			defer processor.Shutdown()
 
@@ -3727,6 +3731,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.MockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
 }

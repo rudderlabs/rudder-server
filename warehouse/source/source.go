@@ -70,6 +70,8 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) process(ctx context.Context) error {
+	m.logger.Infow("starting source jobs processing")
+
 	for {
 		pendingJobs, err := m.sourceRepo.GetToProcess(ctx, m.config.maxBatchSizeToProcess)
 		if err != nil {
@@ -85,6 +87,7 @@ func (m *Manager) process(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
+			m.logger.Infow("source jobs processing stopped due to context cancelled")
 			return nil
 		case <-m.trigger.processingSleepInterval():
 		}

@@ -46,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -99,29 +100,6 @@ type GetQueryParams struct {
 	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	PayloadSizeLimit int64
-}
-
-// Tx is a wrapper around sql.Tx that supports registering and executing
-// post-commit actions, a.k.a. success listeners.
-type Tx struct {
-	*sql.Tx
-	successListeners []func()
-}
-
-// AddSuccessListener registers a listener to be executed after the transaction has been committed successfully.
-func (tx *Tx) AddSuccessListener(listener func()) {
-	tx.successListeners = append(tx.successListeners, listener)
-}
-
-// Commit commits the transaction and executes all listeners.
-func (tx *Tx) Commit() error {
-	err := tx.Tx.Commit()
-	if err == nil {
-		for _, successListener := range tx.successListeners {
-			successListener()
-		}
-	}
-	return err
 }
 
 // StoreSafeTx sealed interface
@@ -236,6 +214,9 @@ type JobsDB interface {
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
 	WithStoreSafeTx(context.Context, func(tx StoreSafeTx) error) error
+
+	// WithStoreSafeTxFromTx prepares a store-safe environment for an existing transaction.
+	WithStoreSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx StoreSafeTx) error) error
 
 	// Store stores the provided jobs to the database
 	Store(ctx context.Context, jobList []*JobT) error
@@ -1737,6 +1718,12 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
 	return jd.inStoreSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
+	})
+}
+
+func (jd *Handle) WithStoreSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx StoreSafeTx) error) error {
+	return jd.inStoreSafeCtx(ctx, func() error {
+		return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix})
 	})
 }
 
