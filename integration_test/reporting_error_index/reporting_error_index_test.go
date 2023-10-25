@@ -708,12 +708,12 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *resource.
 	config.Set("Profiler.Enabled", false)
 	config.Set("Gateway.enableSuppressUserFeature", false)
 
-	config.Set("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-	config.Set("ErrorIndex.Storage.Bucket", minioResource.BucketName)
-	config.Set("MINIO_ENDPOINT", minioResource.Endpoint)
-	config.Set("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
-	config.Set("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
-	config.Set("MINIO_USE_SSL", "false")
+	config.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
+	config.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
+	config.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKey)
+	config.Set("ErrorIndex.storage.SecretAccessKey", minioResource.SecretKey)
+	config.Set("ErrorIndex.storage.S3ForcePathStyle", true)
+	config.Set("ErrorIndex.storage.DisableSSL", true)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -728,7 +728,7 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *resource.
 	return
 }
 
-func requireJobsCount(t *testing.T, db *sql.DB, queue, state string, expectedCount int) {
+func requireJobsCount(t *testing.T, db *sql.DB, queue, state string, expectedCount int) { // nolint: unparam
 	t.Helper()
 
 	require.Eventually(t, func() bool {
@@ -743,7 +743,7 @@ func requireJobsCount(t *testing.T, db *sql.DB, queue, state string, expectedCou
 	)
 }
 
-func requireMessagesCount(t *testing.T, ctx context.Context, mr *destination.MINIOResource, expectedCount int) {
+func requireMessagesCount(t *testing.T, ctx context.Context, mr *destination.MINIOResource, expectedCount int) { // nolint: unparam
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -769,7 +769,7 @@ func requireMessagesCount(t *testing.T, ctx context.Context, mr *destination.MIN
 	)
 }
 
-func sendEvents(num int, eventType, writeKey, url string) error {
+func sendEvents(num int, eventType, writeKey, url string) error { // nolint: unparam
 	for i := 0; i < num; i++ {
 		payload := []byte(fmt.Sprintf(`
 			{
