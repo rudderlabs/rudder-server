@@ -35,6 +35,42 @@ func (c *networkContext) Finish() {
 	c.mockCtrl.Finish()
 }
 
+func TestSendPostWithFormData(t *testing.T) {
+	t.Run("should send form data when payload is valid", func(rt *testing.T) {
+		alias := []string{"test1", "test2"}
+		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			r.ParseForm()
+			formData := (map[string][]string)(r.Form)
+			require.Equal(rt, "test", r.Form.Get("name"))
+			require.Equal(rt, alias, formData["alias"])
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("success"))
+		}))
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.URL = testServer.URL
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"FORM": map[string]interface{}{
+				"name":  "test",
+				"alias": alias,
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(rt, resp.StatusCode, http.StatusOK)
+		require.Equal(rt, string(resp.ResponseBody), "success")
+	})
+}
+
 func TestSendPostWithGzipData(t *testing.T) {
 	t.Run("should send Gzip data when payload is valid", func(r *testing.T) {
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

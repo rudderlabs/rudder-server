@@ -124,8 +124,16 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
-					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+					switch v := val.(type) {
+					case []string:
+						for _, listItem := range v {
+							formValues.Add(key, listItem)
+						}
+					default:
+						formValues.Add(key, fmt.Sprint(val))
+					}
 				}
+				headers["Content-Type"] = "application/x-www-form-urlencoded"
 				payload = strings.NewReader(formValues.Encode())
 			case "GZIP":
 				strValue, ok := bodyValue["payload"].(string)
