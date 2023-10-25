@@ -133,7 +133,7 @@ func terminalErrorFunction(ctx context.Context, g *errgroup.Group) func(error) {
 func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
 	var enrichers []enricher.PipelineEnricher
 
-	if conf.GetBool("Processor.GeoEnrichment.enabled", false) {
+	if conf.GetBool("GeoEnrichment.enabled", false) {
 		log.Infof("Setting up the geolocation pipeline enricher")
 
 		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
