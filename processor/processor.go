@@ -30,6 +30,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -83,6 +84,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
+	enrichers                 []enricher.PipelineEnricher
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
@@ -352,7 +354,11 @@ func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
-	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+	fileuploader fileuploader.Provider,
+	rsourcesService rsources.JobService,
+	destDebugger destinationdebugger.DestinationDebugger,
+	transDebugger transformationdebugger.TransformationDebugger,
+	enrichers []enricher.PipelineEnricher,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -373,6 +379,7 @@ func (proc *Handle) Setup(
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
+	proc.enrichers = enrichers
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -1483,14 +1490,35 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
+		newStatus := jobsdb.JobStatusT{
+			JobID:         batchEvent.JobID,
+			JobState:      jobsdb.Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
+			JobParameters: batchEvent.Parameters,
+			WorkspaceId:   batchEvent.WorkspaceId,
+		}
+		statusList = append(statusList, &newStatus)
+
+		source, err := proc.getSourceBySourceID(sourceId)
+		if err != nil {
+			continue
+		}
+
+		for _, enricher := range proc.enrichers {
+			if err := enricher.Enrich(source, &gatewayBatchEvent); err != nil {
+				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
+			}
+		}
+
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			source, sourceError := proc.getSourceBySourceID(sourceId)
-			if sourceError != nil {
-				proc.logger.Errorf("Dropping Job since Source not found for sourceId %q: %v", sourceId, sourceError)
-				continue
-			}
+
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
 				if err != nil {
@@ -1628,20 +1656,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 		}
 
-		// Mark the batch event as processed
-		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.Succeeded.State,
-			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "200",
-			ErrorResponse: []byte(`{"success":"OK"}`),
-			Parameters:    []byte(`{}`),
-			JobParameters: batchEvent.Parameters,
-			WorkspaceId:   batchEvent.WorkspaceId,
-		}
-		statusList = append(statusList, &newStatus)
 	}
 
 	g, groupCtx := errgroup.WithContext(context.Background())
