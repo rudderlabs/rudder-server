@@ -43,7 +43,8 @@ func TestSendPostWithFormData(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			r.ParseForm()
+			err := r.ParseForm()
+			require.NoError(rt, err)
 			formData := (map[string][]string)(r.Form)
 			require.Equal(rt, "test", r.Form.Get("name"))
 			require.Equal(rt, alias, formData["alias"])
