@@ -31,7 +31,7 @@ func NewAPI(logger logger.Logger, fullBackup, latestBackup model.File) *API {
 
 func (api *API) Handler(ctx context.Context) http.Handler {
 	srvMux := chi.NewMux()
-	srvMux.Use(chiware.StatMiddleware(ctx, srvMux, stats.Default, "suppression_backup_service"))
+	srvMux.Use(chiware.StatMiddleware(ctx, stats.Default, "suppression_backup_service"))
 	srvMux.Use(middleware.Compress(gzip.BestSpeed))
 	srvMux.HandleFunc("/health", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusOK)

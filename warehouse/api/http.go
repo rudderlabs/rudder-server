@@ -129,7 +129,7 @@ func NewApi(
 func (a *Api) Start(ctx context.Context) error {
 	srvMux := chi.NewRouter()
 	srvMux.Use(
-		chiware.StatMiddleware(ctx, srvMux, a.statsFactory, "warehouse"),
+		chiware.StatMiddleware(ctx, a.statsFactory, "warehouse"),
 	)
 
 	if mode.IsStandAlone(a.mode) {
