@@ -363,7 +363,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		gw.rsourcesService,
 		gw.logger.Child("rsources"))
 	srvMux.Use(
-		chiware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		chiware.StatMiddleware(ctx, stats.Default, component),
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
