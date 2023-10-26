@@ -66,3 +66,9 @@ func (b *SourceBuilder) WithTrackingPlan(id string, version int) *SourceBuilder 
 	b.v.DgSourceTrackingPlanConfig.TrackingPlan.Version = version
 	return b
 }
+
+// WithGeoenrichmentEnabled enables geoenrichment for the source
+func (b *SourceBuilder) WithGeoenrichmentEnabled(enabled bool) *SourceBuilder {
+	b.v.GeoEnrichment.Enabled = enabled
+	return b
+}

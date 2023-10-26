@@ -8,14 +8,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
-
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -43,6 +41,7 @@ type LifecycleManager struct {
 	rsourcesService  rsources.JobService
 	destDebugger     destinationdebugger.DestinationDebugger
 	transDebugger    transformationdebugger.TransformationDebugger
+	enrichers        []enricher.PipelineEnricher
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -54,8 +53,21 @@ func (proc *LifecycleManager) Start() error {
 	}
 
 	proc.Handle.Setup(
-		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.readErrDB, proc.writeErrDB, proc.esDB, proc.arcDB,
-		proc.ReportingI, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.BackendConfig,
+		proc.gatewayDB,
+		proc.routerDB,
+		proc.batchRouterDB,
+		proc.readErrDB,
+		proc.writeErrDB,
+		proc.esDB,
+		proc.arcDB,
+		proc.ReportingI,
+		proc.transientSources,
+		proc.fileuploader,
+		proc.rsourcesService,
+		proc.destDebugger,
+		proc.transDebugger,
+		proc.enrichers,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -94,6 +106,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+	enrichers []enricher.PipelineEnricher,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -114,6 +127,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, er
 		rsourcesService:  rsourcesService,
 		destDebugger:     destDebugger,
 		transDebugger:    transDebugger,
+		enrichers:        enrichers,
 	}
 	for _, opt := range opts {
 		opt(proc)
