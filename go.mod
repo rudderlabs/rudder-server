@@ -75,7 +75,7 @@ require (
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/oschwald/maxminddb-golang v1.11.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
-	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16
+	github.com/prometheus/client_model v0.5.0
 	github.com/redis/go-redis/v9 v9.1.0
 	github.com/rs/cors v1.10.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
