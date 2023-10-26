@@ -136,17 +136,17 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 
 	// Make the request using the client
 	resp, err := producer.httpClient.Do(req)
-	if err != nil && os.IsTimeout(err) {
-		return http.StatusAccepted, "Success", "[GoogleCloudFunction] :: Function is called"
-	}
 
 	var responseBody []byte
-
 	if err == nil {
 		defer func() { httputil.CloseResponse(resp) }()
 		responseBody, err = io.ReadAll(resp.Body)
 	}
+
 	if err != nil {
+		if os.IsTimeout(err) {
+			return http.StatusAccepted, "Success", "[GoogleCloudFunction] :: Function is called"
+		}
 		responseMessage = err.Error()
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage

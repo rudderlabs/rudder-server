@@ -10,9 +10,11 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -126,4 +128,20 @@ func terminalErrorFunction(ctx context.Context, g *errgroup.Group) func(error) {
 		}
 	})
 	return cancel
+}
+
+func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
+	var enrichers []enricher.PipelineEnricher
+
+	if conf.GetBool("GeoEnrichment.enabled", false) {
+		log.Infof("Setting up the geolocation pipeline enricher")
+
+		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
+		if err != nil {
+			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
+		}
+		enrichers = append(enrichers, geoEnricher)
+	}
+
+	return enrichers, nil
 }

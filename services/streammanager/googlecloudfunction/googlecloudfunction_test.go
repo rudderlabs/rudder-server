@@ -78,6 +78,20 @@ func TestConfigGenerateToken(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func TestNewProduceWithBadServer(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_googlecloudfunction.NewMockGoogleCloudFunctionClient(ctrl)
+	conf := &Config{
+		RequireAuthentication: false,
+		FunctionUrl:           "http://rudderstack-non-existing-server:54321",
+	}
+	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
+	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	assert.Equal(t, "Failure", responseStatus)
+	assert.Contains(t, responseMessage, "Function call was not executed")
+}
+
 func TestNewProduceWithInvalidData(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
