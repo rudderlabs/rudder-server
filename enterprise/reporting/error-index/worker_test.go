@@ -23,7 +23,6 @@ import (
 	"github.com/xitongsys/parquet-go-source/buffer"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
-	ptypes "github.com/xitongsys/parquet-go/types"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -66,8 +65,8 @@ func TestWorkerWriter(t *testing.T) {
 				FailedStage:      "failedStage" + strconv.Itoa(i),
 				EventType:        "eventType" + strconv.Itoa(i),
 				EventName:        "eventName" + strconv.Itoa(i),
-				ReceivedAt:       receivedAt.Add(time.Duration(i) * time.Second),
-				FailedAt:         failedAt.Add(time.Duration(i) * time.Second),
+				ReceivedAt:       receivedAt.Add(time.Duration(i) * time.Second).UnixMilli(),
+				FailedAt:         failedAt.Add(time.Duration(i) * time.Second).UnixMilli(),
 			})
 		}
 
@@ -81,14 +80,14 @@ func TestWorkerWriter(t *testing.T) {
 
 			require.NoError(t, w.write(buf, eventPayloads))
 
-			pr, err := reader.NewParquetReader(buffer.NewBufferFileFromBytes(buf.Bytes()), new(payloadParquet), 8)
+			pr, err := reader.NewParquetReader(buffer.NewBufferFileFromBytes(buf.Bytes()), new(payload), 8)
 			require.NoError(t, err)
 			require.EqualValues(t, len(eventPayloads), pr.GetNumRows())
 
 			factor := 10
 
 			for i := 0; i < int(pr.GetNumRows())/factor; i++ {
-				expectedPayloads := make([]payloadParquet, factor)
+				expectedPayloads := make([]payload, factor)
 
 				err = pr.Read(&expectedPayloads)
 				require.NoError(t, err)
@@ -102,8 +101,8 @@ func TestWorkerWriter(t *testing.T) {
 					require.Equal(t, eventPayloads[i*factor+j].FailedStage, expectedPayload.FailedStage)
 					require.Equal(t, eventPayloads[i*factor+j].EventType, expectedPayload.EventType)
 					require.Equal(t, eventPayloads[i*factor+j].EventName, expectedPayload.EventName)
-					require.EqualValues(t, eventPayloads[i*factor+j].ReceivedAt.UTC(), ptypes.TIMESTAMP_MICROSToTime(expectedPayload.ReceivedAt, true).UTC())
-					require.EqualValues(t, eventPayloads[i*factor+j].FailedAt.UTC(), ptypes.TIMESTAMP_MICROSToTime(expectedPayload.FailedAt, true).UTC())
+					require.EqualValues(t, eventPayloads[i*factor+j].ReceivedAt, expectedPayload.ReceivedAt)
+					require.EqualValues(t, eventPayloads[i*factor+j].FailedAt, expectedPayload.FailedAt)
 				}
 			}
 		})
@@ -174,8 +173,8 @@ func TestWorkerWriter(t *testing.T) {
 					require.Equal(t, expectedPayloads[i].FailedStage, expectedPayload.FailedStage)
 					require.Equal(t, expectedPayloads[i].EventType, expectedPayload.EventType)
 					require.Equal(t, expectedPayloads[i].EventName, expectedPayload.EventName)
-					require.EqualValues(t, expectedPayloads[i].ReceivedAt.UTC(), expectedPayload.ReceivedAt.UTC())
-					require.EqualValues(t, expectedPayloads[i].FailedAt.UTC(), expectedPayload.FailedAt.UTC())
+					require.EqualValues(t, expectedPayloads[i].ReceivedAt, expectedPayload.ReceivedAt)
+					require.EqualValues(t, expectedPayloads[i].FailedAt, expectedPayload.FailedAt)
 				}
 			})
 		})
@@ -221,7 +220,6 @@ func TestWorkerWriter(t *testing.T) {
 
 			cs := newMockConfigFetcher()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
-			cs.addPIIReportingSettings(workspaceID, false)
 
 			statsStore := memstats.New()
 
@@ -319,7 +317,6 @@ func TestWorkerWriter(t *testing.T) {
 
 			cs := newMockConfigFetcher()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
-			cs.addPIIReportingSettings(workspaceID, false)
 
 			statsStore := memstats.New()
 
@@ -379,81 +376,6 @@ func TestWorkerWriter(t *testing.T) {
 				require.EqualValues(t, string(item.LastJobStatus.ErrorResponse), fmt.Sprintf(`{"location": "%s"}`, strings.Replace(filePath, "s3://", fmt.Sprintf("http://%s/", minioResource.Endpoint), 1)))
 			})
 		})
-		t.Run("transformations for pii", func(t *testing.T) {
-			receivedAt, failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC), time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
-
-			postgresContainer, err := resource.SetupPostgres(pool, t)
-			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
-			require.NoError(t, err)
-
-			c := config.New()
-			c.Set("INSTANCE_ID", instanceID)
-
-			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c))
-			require.NoError(t, errIndexDB.Start())
-			defer errIndexDB.TearDown()
-
-			eventPayload := prepareEventPayload(1, sourceID, receivedAt, failedAt)
-
-			epJSON, err := json.Marshal(eventPayload)
-			require.NoError(t, err)
-
-			require.NoError(t, errIndexDB.Store(ctx, []*jobsdb.JobT{
-				{
-					UUID:         uuid.New(),
-					Parameters:   []byte(`{"source_id":"` + sourceID + `","workspaceId":"` + workspaceID + `"}`),
-					EventPayload: epJSON,
-					EventCount:   1,
-					WorkspaceId:  workspaceID,
-				},
-			}))
-
-			cs := newMockConfigFetcher()
-			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
-			cs.addPIIReportingSettings(workspaceID, true)
-
-			statsStore := memstats.New()
-
-			fm, err := filemanager.New(&filemanager.Settings{
-				Provider: warehouseutils.MINIO,
-				Config: map[string]any{
-					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
-					"endPoint":        minioResource.Endpoint,
-				},
-			})
-			require.NoError(t, err)
-
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm)
-			defer w.Stop()
-			require.True(t, w.Work())
-
-			expectedPayloads := failedMessages(t, ctx, minioResource, fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
-				minioResource.BucketName,
-				w.sourceID,
-				failedAt.Format("2006-01-02"),
-				strconv.Itoa(failedAt.Hour()),
-				failedAt.Unix(),
-				failedAt.Unix(),
-				instanceID,
-			))
-
-			piiPayload := payload{
-				MessageID:        eventPayload.MessageID,
-				SourceID:         eventPayload.SourceID,
-				DestinationID:    eventPayload.DestinationID,
-				TransformationID: eventPayload.TransformationID,
-				TrackingPlanID:   eventPayload.TrackingPlanID,
-				FailedStage:      eventPayload.FailedStage,
-				EventType:        eventPayload.EventType,
-				EventName:        "",
-				ReceivedAt:       eventPayload.ReceivedAt,
-				FailedAt:         eventPayload.FailedAt,
-			}
-			require.EqualValues(t, []payload{piiPayload}, expectedPayloads)
-		})
 		t.Run("limits reached but few left without crossing upload frequency", func(t *testing.T) {
 			receivedAt, failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC), time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
@@ -497,7 +419,6 @@ func TestWorkerWriter(t *testing.T) {
 
 			cs := newMockConfigFetcher()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
-			cs.addPIIReportingSettings(workspaceID, false)
 
 			statsStore := memstats.New()
 
@@ -579,8 +500,8 @@ func prepareEventPayload(i int, sourceID string, receivedAt, failedAt time.Time)
 		FailedStage:      "failed-stage-" + strconv.Itoa(i),
 		EventType:        "event-type-" + strconv.Itoa(i),
 		EventName:        "event-name-" + strconv.Itoa(i),
-		ReceivedAt:       receivedAt,
-		FailedAt:         failedAt,
+		ReceivedAt:       receivedAt.UnixMilli(),
+		FailedAt:         failedAt.UnixMilli(),
 	}
 }
 
@@ -629,8 +550,8 @@ func BenchmarkFileFormat(b *testing.B) {
 				FailedStage:      "failedStage" + strconv.Itoa(i%10),
 				EventType:        "eventType" + strconv.Itoa(i%10),
 				EventName:        "eventName" + strconv.Itoa(i%10),
-				ReceivedAt:       now.Add(time.Duration(i) * time.Second),
-				FailedAt:         now.Add(time.Duration(i) * time.Second),
+				ReceivedAt:       now.Add(time.Duration(i) * time.Second).UnixMilli(),
+				FailedAt:         now.Add(time.Duration(i) * time.Second).UnixMilli(),
 			})
 		}
 
@@ -656,8 +577,8 @@ func BenchmarkFileFormat(b *testing.B) {
 				FailedStage:      "failedStage" + strconv.Itoa(i%10),
 				EventType:        "eventType" + strconv.Itoa(i%10),
 				EventName:        "eventName" + strconv.Itoa(i%10),
-				ReceivedAt:       now.Add(time.Duration(i) * time.Second),
-				FailedAt:         now.Add(time.Duration(i) * time.Second),
+				ReceivedAt:       now.Add(time.Duration(i) * time.Second).UnixMilli(),
+				FailedAt:         now.Add(time.Duration(i) * time.Second).UnixMilli(),
 			})
 		}
 

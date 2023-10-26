@@ -7,12 +7,14 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -27,9 +29,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type jobPayload struct {
-	job     *jobsdb.JobT
-	payload *payload
+type jobWithPayload struct {
+	*jobsdb.JobT
+
+	payload payload
 }
 
 type worker struct {
@@ -187,66 +190,62 @@ func (w *worker) fetchJobs() (jobsdb.JobsResult, error) {
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb.JobStatusT, error) {
 	defer w.limiter.upload.Begin(w.sourceID)()
 
-	jobPayloadsMap, err := aggregatedJobPayloads(jobs)
-	if err != nil {
-		return nil, fmt.Errorf("aggregating job payloads: %w", err)
-	}
-
-	if w.configFetcher.IsPIIReportingDisabled(w.workspaceID) {
-		for _, jobPayloads := range jobPayloadsMap {
-			transformPayloadsForPII(jobPayloads)
+	jobWithPayloadsMap := make(map[string][]jobWithPayload)
+	for _, job := range jobs {
+		var p payload
+		if err := json.Unmarshal(job.EventPayload, &p); err != nil {
+			return nil, fmt.Errorf("unmarshalling payload: %w", err)
 		}
+
+		key := p.AggregateKey()
+		jobWithPayloadsMap[key] = append(jobWithPayloadsMap[key], jobWithPayload{JobT: job, payload: p})
 	}
 
-	var statusList []*jobsdb.JobStatusT
-	for _, jobPayloads := range jobPayloadsMap {
-		jobStatusList, err := w.uploadAggregatedJobPayloads(ctx, jobPayloads)
+	statusList := make([]*jobsdb.JobStatusT, 0, len(jobs))
+	for _, jobWithPayloads := range jobWithPayloadsMap {
+		uploadFile, err := w.uploadAggregatedJobPayloads(ctx, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) payload {
+			return item.payload
+		}))
 		if err != nil {
 			return nil, fmt.Errorf("uploading aggregated payloads: %w", err)
 		}
-		statusList = append(statusList, jobStatusList...)
+
+		fmt.Println("uploadFile: ", uploadFile.Location)
+
+		statusList = append(statusList, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) *jobsdb.JobStatusT {
+			return &jobsdb.JobStatusT{
+				JobID:         item.JobT.JobID,
+				JobState:      jobsdb.Succeeded.State,
+				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
+				Parameters:    []byte(`{}`),
+				AttemptNum:    item.JobT.LastJobStatus.AttemptNum + 1,
+				ExecTime:      w.now(),
+				RetryTime:     w.now(),
+			}
+		})...)
 	}
 	return statusList, nil
 }
 
-func aggregatedJobPayloads(jobs []*jobsdb.JobT) (map[string][]jobPayload, error) {
-	jobPayloadsMap := make(map[string][]jobPayload)
-	for _, job := range jobs {
-		var p payload
-		if err := json.Unmarshal(job.EventPayload, &p); err != nil {
-			return nil, fmt.Errorf("unmarshalling payload: %v", err)
-		}
-
-		aggregateKey := p.FailedAt.Format("2006-01-02/15")
-		jobPayloadsMap[aggregateKey] = append(jobPayloadsMap[aggregateKey], jobPayload{
-			job:     job,
-			payload: &p,
-		})
-	}
-	return jobPayloadsMap, nil
-}
-
-func transformPayloadsForPII(jobPayloads []jobPayload) {
-	lo.ForEach(jobPayloads, func(jp jobPayload, index int) {
-		jobPayloads[index].payload.EventName = ""
+func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, payloads []payload) (*filemanager.UploadedFile, error) {
+	slices.SortFunc(payloads, func(i, j payload) int {
+		return i.FailedTime().Compare(j.FailedTime())
 	})
-}
-
-func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []jobPayload) ([]*jobsdb.JobStatusT, error) {
-	minFailedAt := lo.MinBy(jobPayloads, func(a, b jobPayload) bool { return a.payload.FailedAt.Before(b.payload.FailedAt) }).payload.FailedAt
-	maxFailedAt := lo.MaxBy(jobPayloads, func(a, b jobPayload) bool { return a.payload.FailedAt.After(b.payload.FailedAt) }).payload.FailedAt
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	filePath := path.Join(tmpDirPath, w.sourceID, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
-
-	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+	dir, err := os.MkdirTemp(tmpDirPath, "*")
 	if err != nil {
-		return nil, fmt.Errorf("creating directory: %w", err)
+		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
+
+	minFailedAt := payloads[0].FailedTime()
+	maxFailedAt := payloads[len(payloads)-1].FailedTime()
+
+	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
 
 	f, err := os.Create(filePath)
 	if err != nil {
@@ -256,9 +255,6 @@ func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []
 		_ = os.Remove(f.Name())
 	}()
 
-	payloads := lo.Map(jobPayloads, func(item jobPayload, index int) payload {
-		return *item.payload
-	})
 	if err = w.write(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)
 	}
@@ -272,50 +268,30 @@ func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, jobPayloads []
 	}
 
 	prefixes := []string{w.sourceID, minFailedAt.Format("2006-01-02"), strconv.Itoa(minFailedAt.Hour())}
-	output, err := w.uploader.Upload(ctx, f, prefixes...)
+	uploadOutput, err := w.uploader.Upload(ctx, f, prefixes...)
 	if err != nil {
 		return nil, fmt.Errorf("uploading file to object storage: %w", err)
 	}
-
-	jobSatusList := lo.Map(jobPayloads, func(item jobPayload, index int) *jobsdb.JobStatusT {
-		return &jobsdb.JobStatusT{
-			JobID:         item.job.JobID,
-			JobState:      jobsdb.Succeeded.State,
-			ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, output.Location)),
-			Parameters:    []byte(`{}`),
-			AttemptNum:    item.job.LastJobStatus.AttemptNum + 1,
-			ExecTime:      w.now(),
-			RetryTime:     w.now(),
-		}
-	})
-	return jobSatusList, nil
+	return &uploadOutput, nil
 }
 
 // write writes the payloads to the parquet writer. Sorts the payloads to achieve better encoding.
 func (w *worker) write(wr io.Writer, payloads []payload) error {
-	pw, err := writer.NewParquetWriterFromWriter(wr, new(payloadParquet), w.config.parquetParallelWriters.Load())
+	pw, err := writer.NewParquetWriterFromWriter(wr, new(payload), w.config.parquetParallelWriters.Load())
 	if err != nil {
 		return fmt.Errorf("creating parquet writer: %v", err)
 	}
 
-	pw.RowGroupSize = w.config.parquetRowGroupSize.Load() * bytesize.MB
-	pw.PageSize = w.config.parquetPageSize.Load() * bytesize.KB
+	pw.RowGroupSize = w.config.parquetRowGroupSize.Load()
+	pw.PageSize = w.config.parquetPageSize.Load()
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
 
-	sortKey := func(p payload) string {
-		keys := []string{
-			p.DestinationID, p.TransformationID, p.TrackingPlanID,
-			p.FailedStage, p.EventType, p.EventName,
-		}
-		return strings.Join(keys, "::")
-	}
-
 	sort.Slice(payloads, func(i, j int) bool {
-		return sortKey(payloads[i]) < sortKey(payloads[j])
+		return payloads[i].FailedAt > payloads[j].FailedAt
 	})
 
-	for _, p := range payloads {
-		if err = pw.Write(p.toParquet()); err != nil {
+	for _, payload := range payloads {
+		if err = pw.Write(payload); err != nil {
 			return fmt.Errorf("writing to parquet writer: %v", err)
 		}
 	}
@@ -350,7 +326,6 @@ func (w *worker) markJobsStatus(statusList []*jobsdb.JobStatusT) error {
 		"state":       jobsdb.Succeeded.State,
 	}
 	w.statsFactory.NewTaggedStat("erridx_processed_jobs", stats.CountType, tags).Count(len(statusList))
-
 	return nil
 }
 

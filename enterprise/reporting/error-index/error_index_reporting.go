@@ -30,7 +30,6 @@ type ErrorIndexReporter struct {
 	log           logger.Logger
 	conf          *config.Config
 	configFetcher configFetcher
-	uploader      uploader
 	now           func() time.Time
 	dbsMu         sync.RWMutex
 	dbs           map[string]*handleWithSqlDB
@@ -98,9 +97,10 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx)
 				FailedStage:      metric.PUDetails.PU,
 				EventName:        metric.StatusDetail.EventName,
 				EventType:        metric.StatusDetail.EventType,
-				ReceivedAt:       failedMessage.ReceivedAt,
-				FailedAt:         failedAt,
 			}
+			payload.SetReceivedAt(failedMessage.ReceivedAt)
+			payload.SetFailedAt(failedAt)
+
 			payloadJSON, err := json.Marshal(payload)
 			if err != nil {
 				return fmt.Errorf("unable to marshal payload: %v", err)
@@ -177,11 +177,15 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 	}
 
 	if !eir.conf.GetBool("Reporting.errorIndexReporting.syncer.enabled", true) {
-		return func() {}
+		return func() {
+			<-eir.ctx.Done()
+			errIndexDB.Stop()
+		}
 	}
 
 	return func() {
 		eir.g.Go(func() error {
+			defer errIndexDB.Stop()
 			return eir.mainLoop(eir.ctx, errIndexDB)
 		})
 	}
@@ -191,23 +195,25 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 	eir.log.Infow("Starting main loop for error index reporting")
 
 	var (
-		bucket           = eir.conf.GetString("ErrorIndex.storage.Bucket", "rudder-failed-messages")
-		region           = eir.conf.GetString("ErrorIndex.storage.Region", "us-east-1")
-		endpoint         = eir.conf.GetString("ErrorIndex.storage.Endpoint", "")
-		accessKeyID      = eir.conf.GetString("ErrorIndex.storage.AccessKey", "")
-		secretAccessKey  = eir.conf.GetString("ErrorIndex.storage.SecretAccessKey", "")
-		s3ForcePathStyle = eir.conf.GetBool("ErrorIndex.storage.S3ForcePathStyle", false)
-		disableSSL       = eir.conf.GetBool("ErrorIndex.storage.DisableSSL", false)
+		bucket           = eir.conf.GetStringVar("rudder-failed-messages", "ErrorIndex.storage.Bucket")
+		regionHint       = eir.conf.GetStringVar("us-east-1", "ErrorIndex.storage.RegionHint", "AWS_S3_REGION_HINT")
+		endpoint         = eir.conf.GetStringVar("", "ErrorIndex.storage.Endpoint")
+		accessKeyID      = eir.conf.GetStringVar("", "ErrorIndex.storage.AccessKey", "AWS_ACCESS_KEY_ID")
+		secretAccessKey  = eir.conf.GetStringVar("", "ErrorIndex.storage.SecretAccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = eir.conf.GetBoolVar(false, "ErrorIndex.storage.S3ForcePathStyle")
+		disableSSL       = eir.conf.GetBoolVar(false, "ErrorIndex.storage.DisableSSL")
+		enableSSE        = eir.conf.GetBoolVar(false, "ErrorIndex.storage.EnableSSE", "AWS_ENABLE_SSE")
 	)
 
 	s3Config := map[string]interface{}{
 		"bucketName":       bucket,
-		"region":           region,
+		"regionHint":       regionHint,
 		"endpoint":         endpoint,
 		"accessKeyID":      accessKeyID,
 		"secretAccessKey":  secretAccessKey,
 		"s3ForcePathStyle": s3ForcePathStyle,
 		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
 	}
 	fm, err := filemanager.NewS3Manager(s3Config, eir.log, func() time.Duration {
 		return eir.conf.GetDuration("ErrorIndex.FileManager.Timeout", 120, time.Second)
@@ -260,12 +266,6 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 }
 
 func (eir *ErrorIndexReporter) Stop() {
-	eir.dbsMu.RLock()
-	for _, db := range eir.dbs {
-		db.Handle.Stop()
-	}
-	eir.dbsMu.RUnlock()
-
 	eir.cancel()
 	_ = eir.g.Wait()
 }
