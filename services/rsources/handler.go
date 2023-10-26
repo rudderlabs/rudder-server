@@ -34,7 +34,7 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
-	filters, filterParams := sqlFilters(jobRunId, filter, "")
+	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
 		`SELECT 
@@ -140,48 +140,92 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	return nil
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error) {
 	if sh.config.SkipFailedRecordsCollection {
 		return JobFailedRecords{ID: jobRunId}, ErrOperationNotSupported
 	}
-	filters, filterParams := sqlFilters(jobRunId, filter, "k")
+	// first find the list of ids (postgres query planner uses an inefficient plan if there is one id with millions of records and a few ids with a few records)
+	ids, err := func() ([]string, error) {
+		var ids []string
+		filters, params := sqlFilters(jobRunId, filter)
+		rows, err := sh.readDB().QueryContext(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return ids, nil
+	}()
+	if err != nil {
+		return JobFailedRecords{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
+	}
 
+	filters := "WHERE r.id = ANY($1)"
+	params := []interface{}{pq.Array(ids)}
+	var limit string
+	if paging.Size > 0 {
+		if nextPageToken, err := NextPageTokenFromString(paging.NextPageToken); err == nil {
+			filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
+			params = append(params, nextPageToken.ID, nextPageToken.RecordID)
+			limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
+		}
+	}
 	sqlStatement := fmt.Sprintf(
 		`SELECT
 			k.task_run_id,
 			k.source_id,
 			k.destination_id,
+			r.id,
 			r.record_id 
-		FROM "rsources_failed_keys_v2" k 
-		JOIN "rsources_failed_keys_v2_records" r ON r.id = k.id %s 
-		ORDER BY r.id, r.record_id ASC`,
-		filters)
+		FROM "rsources_failed_keys_v2_records" r 
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s 
+		ORDER BY r.id, r.record_id ASC %[2]s`,
+		filters, limit)
 
 	failedRecordsMap := map[JobTargetKey]FailedRecords{}
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
+	var nextPageToken NextPageToken
+	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
 	if err != nil {
 		return JobFailedRecords{ID: jobRunId}, err
 	}
 	defer func() { _ = rows.Close() }()
+	var queryResultSize int
 	for rows.Next() {
 		var key JobTargetKey
-		var record string
 		err := rows.Scan(
 			&key.TaskRunID,
 			&key.SourceID,
 			&key.DestinationID,
-			&record,
+			&nextPageToken.ID,
+			&nextPageToken.RecordID,
 		)
 		if err != nil {
 			return JobFailedRecords{ID: jobRunId}, err
 		}
-		failedRecordsMap[key] = append(failedRecordsMap[key], json.RawMessage(record))
+		failedRecordsMap[key] = append(failedRecordsMap[key], json.RawMessage(nextPageToken.RecordID))
+		queryResultSize++
 	}
 	if err := rows.Err(); err != nil {
 		return JobFailedRecords{ID: jobRunId}, err
 	}
 
-	return failedRecordsFromQueryResult(jobRunId, failedRecordsMap), nil
+	res := failedRecordsFromQueryResult(jobRunId, failedRecordsMap)
+	if limit != "" && queryResultSize == paging.Size {
+		res.Paging = &PagingInfo{
+			Size:          paging.Size,
+			NextPageToken: nextPageToken.String(),
+		}
+	}
+	return res, nil
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
@@ -201,7 +245,7 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 		return err
 	}
 
-	filters, filterParams := sqlFilters(jobRunId, filter, "")
+	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_stats" %s`, filters), filterParams...); err != nil {
 		_ = tx.Rollback()
@@ -536,7 +580,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
 		}
 	}
-	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION %s REFRESH PUBLICATION`, subscriptionName)); err != nil {
+	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION "%s" REFRESH PUBLICATION`, subscriptionName)); err != nil {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
 	}
 
@@ -551,22 +595,18 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	return nil
 }
 
-func sqlFilters(jobRunId string, filter JobFilter, alias string) (fragment string, params []interface{}) {
+func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []interface{}) {
 	var filterParams []interface{}
-	var prefix string
-	if alias != "" {
-		prefix = alias + "."
-	}
-	filters := fmt.Sprintf(`WHERE %sjob_run_id = $1`, prefix)
+	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
 
 	if len(filter.TaskRunID) > 0 {
-		filters += fmt.Sprintf(` AND %stask_run_id  = ANY ($%d)`, prefix, len(filterParams)+1)
+		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
 		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
 	}
 
 	if len(filter.SourceID) > 0 {
-		filters += fmt.Sprintf(` AND %ssource_id = ANY ($%d)`, prefix, len(filterParams)+1)
+		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
 		filterParams = append(filterParams, pq.Array(filter.SourceID))
 	}
 	return filters, filterParams
