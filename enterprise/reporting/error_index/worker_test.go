@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/exp/slices"
+	"github.com/minio/minio-go/v7"
 
-	"github.com/minio/minio-go"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
@@ -36,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -169,7 +168,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -221,8 +220,8 @@ func TestWorkerWriter(t *testing.T) {
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
 			})
@@ -294,7 +293,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -346,8 +345,8 @@ func TestWorkerWriter(t *testing.T) {
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
 			})
@@ -406,7 +405,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			eventsLimit := 24
@@ -462,8 +461,8 @@ func TestWorkerWriter(t *testing.T) {
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
 			})
@@ -491,7 +490,7 @@ func TestWorkerWriter(t *testing.T) {
 	})
 }
 
-func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *destination.MINIOResource, filePath, query string) []payload {
+func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *resource.MinioResource, filePath, query string) []payload {
 	t.Helper()
 
 	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, minio.SelectObjectOptions{
@@ -547,17 +546,17 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *des
 	return payloads
 }
 
-func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *destination.MINIOResource, query string) []payload {
+func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *resource.MinioResource, query string) []payload {
 	t.Helper()
 
 	db := duckDB(t)
 
 	if mr != nil {
 		_, err := db.Exec(fmt.Sprintf(`INSTALL httpfs; LOAD httpfs;SET s3_region='%s';SET s3_endpoint='%s';SET s3_access_key_id='%s';SET s3_secret_access_key='%s';SET s3_use_ssl= false;SET s3_url_style='path';`,
-			mr.SiteRegion,
+			mr.Region,
 			mr.Endpoint,
-			mr.AccessKey,
-			mr.SecretKey,
+			mr.AccessKeyID,
+			mr.AccessKeySecret,
 		))
 		require.NoError(t, err)
 	}

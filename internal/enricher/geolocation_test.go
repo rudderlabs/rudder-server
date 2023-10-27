@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -17,7 +19,6 @@ import (
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -444,7 +445,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minio, err := destination.SetupMINIO(pool, t)
+	minio, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 
 	minioManager, err := filemanager.New(
@@ -453,8 +454,8 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 			Config: map[string]interface{}{
 				"bucketName":      minio.BucketName,
 				"endPoint":        minio.Endpoint,
-				"accessKeyID":     minio.AccessKey,
-				"secretAccessKey": minio.SecretKey,
+				"accessKeyID":     minio.AccessKeyID,
+				"secretAccessKey": minio.AccessKeySecret,
 			},
 			Logger: nil,
 			Conf:   nil,
@@ -477,8 +478,8 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	conf.Set("Geolocation.db.key", uploaded.ObjectName)
 	conf.Set("Geolocation.db.storage.bucket", minio.BucketName)
 	conf.Set("Geolocation.db.storage.endpoint", minio.Endpoint)
-	conf.Set("Geolocation.db.storage.accessKey", minio.AccessKey)
-	conf.Set("Geolocation.db.storage.secretAccessKey", minio.SecretKey)
+	conf.Set("Geolocation.db.storage.accessKey", minio.AccessKeyID)
+	conf.Set("Geolocation.db.storage.secretAccessKey", minio.AccessKeySecret)
 	conf.Set("Geolocation.db.storage.s3ForcePathStyle", true)
 	conf.Set("Geolocation.db.storage.disableSSL", true)
 

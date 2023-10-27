@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -77,7 +76,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -106,10 +105,10 @@ func TestReportingErrorIndex(t *testing.T) {
 		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 		requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-			{"source_id", "source-1"},
-			{"tracking_plan_id", "trackingplan-1"},
-			{"failed_stage", "tracking_plan_validator"},
-			{"event_type", "identify"},
+			{A: "source_id", B: "source-1"},
+			{A: "tracking_plan_id", B: "trackingplan-1"},
+			{A: "failed_stage", B: "tracking_plan_validator"},
+			{A: "event_type", B: "identify"},
 		}...)
 
 		cancel()
@@ -151,7 +150,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -180,11 +179,11 @@ func TestReportingErrorIndex(t *testing.T) {
 		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 		requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-			{"source_id", "source-1"},
-			{"destination_id", "destination-1"},
-			{"transformation_id", "transformation-1"},
-			{"failed_stage", "user_transformer"},
-			{"event_type", "identify"},
+			{A: "source_id", B: "source-1"},
+			{A: "destination_id", B: "destination-1"},
+			{A: "transformation_id", B: "transformation-1"},
+			{A: "failed_stage", B: "user_transformer"},
+			{A: "event_type", B: "identify"},
 		}...)
 
 		cancel()
@@ -223,7 +222,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -252,9 +251,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "event_filter"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "event_filter"},
 			}...)
 
 			cancel()
@@ -296,7 +295,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -325,9 +324,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "event_filter"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "event_filter"},
 			}...)
 
 			cancel()
@@ -368,7 +367,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -397,10 +396,10 @@ func TestReportingErrorIndex(t *testing.T) {
 		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 		requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-			{"source_id", "source-1"},
-			{"destination_id", "destination-1"},
-			{"failed_stage", "dest_transformer"},
-			{"event_type", "identify"},
+			{A: "source_id", B: "source-1"},
+			{A: "destination_id", B: "destination-1"},
+			{A: "failed_stage", B: "dest_transformer"},
+			{A: "event_type", B: "identify"},
 		}...)
 
 		cancel()
@@ -446,7 +445,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -476,10 +475,10 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "rt", jobsdb.Aborted.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "router"},
-				{"event_type", "identify"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "router"},
+				{A: "event_type", B: "identify"},
 			}...)
 
 			cancel()
@@ -521,7 +520,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -553,10 +552,10 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Aborted.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "batch_router"},
-				{"event_type", "identify"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "batch_router"},
+				{A: "event_type", B: "identify"},
 			}...)
 
 			cancel()
@@ -596,7 +595,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -629,10 +628,10 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Aborted.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "batch_router"},
-				{"event_type", "identify"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "batch_router"},
+				{A: "event_type", B: "identify"},
 			}...)
 
 			cancel()
@@ -648,7 +647,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			postgresContainer, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			bcServer := backendconfigtest.NewBuilder().
@@ -663,8 +662,8 @@ func TestReportingErrorIndex(t *testing.T) {
 										WithID("destination-1").
 										WithConfigOption("bucketProvider", "MINIO").
 										WithConfigOption("bucketName", minioResource.BucketName).
-										WithConfigOption("accessKeyID", minioResource.AccessKey).
-										WithConfigOption("secretAccessKey", minioResource.SecretKey).
+										WithConfigOption("accessKeyID", minioResource.AccessKeyID).
+										WithConfigOption("secretAccessKey", minioResource.AccessKeySecret).
 										WithConfigOption("endPoint", minioResource.Endpoint).
 										Build()).
 								Build()).
@@ -711,10 +710,10 @@ func TestReportingErrorIndex(t *testing.T) {
 			requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Aborted.State, eventsCount)
 			requireJobsCount(t, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, eventsCount)
 			requireMessagesCount(t, ctx, minioResource, eventsCount, []lo.Tuple2[string, string]{
-				{"source_id", "source-1"},
-				{"destination_id", "destination-1"},
-				{"failed_stage", "batch_router"},
-				{"event_type", "identify"},
+				{A: "source_id", B: "source-1"},
+				{A: "destination_id", B: "destination-1"},
+				{A: "failed_stage", B: "batch_router"},
+				{A: "event_type", B: "identify"},
 			}...)
 
 			cancel()
@@ -727,7 +726,7 @@ func runRudderServer(
 	ctx context.Context,
 	port int,
 	postgresContainer *resource.PostgresResource,
-	minioResource *destination.MINIOResource,
+	minioResource *resource.MinioResource,
 	cbURL, transformerURL, tmpDir string,
 ) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
@@ -762,8 +761,8 @@ func runRudderServer(
 
 	config.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
 	config.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
-	config.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKey)
-	config.Set("ErrorIndex.storage.SecretAccessKey", minioResource.SecretKey)
+	config.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)
+	config.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
 	config.Set("ErrorIndex.storage.S3ForcePathStyle", true)
 	config.Set("ErrorIndex.storage.DisableSSL", true)
 
@@ -780,12 +779,13 @@ func runRudderServer(
 	return
 }
 
+// nolint: unparam
 func requireJobsCount(
 	t *testing.T,
 	db *sql.DB,
 	queue, state string,
 	expectedCount int,
-) { // nolint: unparam
+) {
 	t.Helper()
 
 	require.Eventually(t, func() bool {
@@ -800,30 +800,31 @@ func requireJobsCount(
 	)
 }
 
+// nolint: unparam
 func requireMessagesCount(
 	t *testing.T,
 	ctx context.Context,
-	mr *destination.MINIOResource,
+	mr *resource.MinioResource,
 	expectedCount int,
 	filters ...lo.Tuple2[string, string],
-) { // nolint: unparam
+) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
 
 	_, err = db.Exec(fmt.Sprintf(`INSTALL parquet; LOAD parquet; INSTALL httpfs; LOAD httpfs;SET s3_region='%s';SET s3_endpoint='%s';SET s3_access_key_id='%s';SET s3_secret_access_key='%s';SET s3_use_ssl= false;SET s3_url_style='path';`,
-		mr.SiteRegion,
+		mr.Region,
 		mr.Endpoint,
-		mr.AccessKey,
-		mr.SecretKey,
+		mr.AccessKeyID,
+		mr.AccessKeySecret,
 	))
 	require.NoError(t, err)
 
 	query := fmt.Sprintf("SELECT count(*) FROM read_parquet('%s') WHERE 1 = 1", fmt.Sprintf("s3://%s/**/**/**/*.parquet", mr.BucketName))
-	for _, filter := range filters {
-		query += fmt.Sprintf(" AND %s = '%s'", filter.A, filter.B)
-	}
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, string], _ int) string {
+		return fmt.Sprintf(" AND %s = '%s'", t.A, t.B)
+	}), "")
 
 	require.Eventually(t, func() bool {
 		var messagesCount int
@@ -837,11 +838,12 @@ func requireMessagesCount(
 	)
 }
 
+// nolint: unparam
 func sendEvents(
 	num int,
 	eventType, writeKey,
 	url string,
-) error { // nolint: unparam
+) error {
 	for i := 0; i < num; i++ {
 		payload := []byte(fmt.Sprintf(`
 			{

@@ -53,9 +53,9 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.16.2
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.8.9
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/hashicorp/go-retryablehttp v0.7.4
-	github.com/hashicorp/golang-lru/v2 v2.0.6
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/yamux v0.1.1
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jeremywohl/flatten v1.0.1
@@ -66,7 +66,6 @@ require (
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.5.1
-	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v7 v7.0.63
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
@@ -86,7 +85,7 @@ require (
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/segmentio/ksuid v1.0.4
-	github.com/snowflakedb/gosnowflake v1.6.24
+	github.com/snowflakedb/gosnowflake v1.6.25
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.5.1
@@ -177,7 +176,6 @@ require (
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -227,7 +225,6 @@ require (
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/patternmatcher v0.5.0 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
