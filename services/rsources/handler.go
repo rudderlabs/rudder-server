@@ -147,6 +147,14 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	if sh.config.SkipFailedRecordsCollection {
 		return JobFailedRecords{ID: jobRunId}, ErrOperationNotSupported
 	}
+	var nextPageToken NextPageToken
+	var err error
+	if paging.Size > 0 {
+		if nextPageToken, err = NextPageTokenFromString(paging.NextPageToken); err != nil {
+			return JobFailedRecords{ID: jobRunId}, ErrInvalidPaginationToken
+		}
+	}
+
 	// first find the list of ids (postgres query planner uses an inefficient plan if there is one id with millions of records and a few ids with a few records)
 	ids, err := func() ([]string, error) {
 		var ids []string
@@ -176,13 +184,9 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	params := []interface{}{pq.Array(ids)}
 	var limit string
 	if paging.Size > 0 {
-		if nextPageToken, err := NextPageTokenFromString(paging.NextPageToken); err == nil {
-			filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
-			params = append(params, nextPageToken.ID, nextPageToken.RecordID)
-			limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
-		} else {
-			return JobFailedRecords{ID: jobRunId}, ErrInvalidPaginationToken
-		}
+		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
+		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
+		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
 	}
 	sqlStatement := fmt.Sprintf(
 		`SELECT
@@ -197,7 +201,6 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		filters, limit)
 
 	failedRecordsMap := map[JobTargetKey]FailedRecords{}
-	var nextPageToken NextPageToken
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
 	if err != nil {
 		return JobFailedRecords{ID: jobRunId}, err
