@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -16,21 +19,23 @@ import (
 )
 
 func TestValidate(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	validations.Init()
 
 	var (
-		provider  = "MINIO"
-		namespace = "test_namespace"
-		sslmode   = "disable"
+		provider = "MINIO"
+		sslMode  = "disable"
 	)
 
 	ctx := context.Background()
 
 	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	minioResource, err := destination.SetupMINIO(pool, t)
 	require.NoError(t, err)
 
 	t.Run("invalid path", func(t *testing.T) {
@@ -148,8 +153,7 @@ func TestValidate(t *testing.T) {
 		t.Run("empty step", func(t *testing.T) {
 			t.Parallel()
 
-			tr := setup(t, pool)
-			pgResource, minioResource := tr.pgResource, tr.minioResource
+			namespace := "es_test_namespace"
 
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
@@ -164,7 +168,7 @@ func TestValidate(t *testing.T) {
 						"database":        pgResource.Database,
 						"user":            pgResource.User,
 						"password":        pgResource.Password,
-						"sslMode":         sslmode,
+						"sslMode":         sslMode,
 						"namespace":       namespace,
 						"bucketProvider":  provider,
 						"bucketName":      minioResource.BucketName,
@@ -182,8 +186,7 @@ func TestValidate(t *testing.T) {
 		t.Run("steps in order", func(t *testing.T) {
 			t.Parallel()
 
-			tr := setup(t, pool)
-			pgResource, minioResource := tr.pgResource, tr.minioResource
+			namespace := "sio_test_namespace"
 
 			testCases := []struct {
 				name     string
@@ -238,7 +241,7 @@ func TestValidate(t *testing.T) {
 							"database":        pgResource.Database,
 							"user":            pgResource.User,
 							"password":        pgResource.Password,
-							"sslMode":         sslmode,
+							"sslMode":         sslMode,
 							"namespace":       namespace,
 							"bucketProvider":  provider,
 							"bucketName":      minioResource.BucketName,
