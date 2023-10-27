@@ -101,7 +101,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.9
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
-	go.uber.org/goleak v1.2.1
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.14.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/oauth2 v0.13.0
@@ -263,7 +263,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	github.com/trinodb/trino-go-client v0.312.0
+	github.com/trinodb/trino-go-client v0.313.0
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
