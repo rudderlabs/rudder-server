@@ -8,6 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -35,6 +39,15 @@ type ErrorIndexReporter struct {
 	dbs              map[string]*handleWithSqlDB
 
 	trigger func() <-chan time.Time
+
+	limiterGroup sync.WaitGroup
+	limiter      struct {
+		fetch  kitsync.Limiter
+		upload kitsync.Limiter
+		update kitsync.Limiter
+	}
+
+	concurrency misc.ValueLoader[int]
 
 	statsFactory stats.Stats
 	stats        struct {
@@ -64,6 +77,29 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscri
 		now:              time.Now,
 		dbs:              map[string]*handleWithSqlDB{},
 	}
+
+	eir.concurrency = conf.GetReloadableIntVar(10, 1, "Reporting.errorIndexReporting.concurrency")
+
+	eir.limiterGroup = sync.WaitGroup{}
+	eir.limiter.fetch = kitsync.NewLimiter(
+		eir.ctx, &eir.limiterGroup, "erridx_fetch",
+		eir.concurrency.Load(),
+		eir.statsFactory,
+	)
+	eir.limiter.upload = kitsync.NewLimiter(
+		eir.ctx, &eir.limiterGroup, "erridx_upload",
+		eir.concurrency.Load(),
+		eir.statsFactory,
+	)
+	eir.limiter.update = kitsync.NewLimiter(
+		eir.ctx, &eir.limiterGroup, "erridx_update",
+		eir.concurrency.Load(),
+		eir.statsFactory,
+	)
+	g.Go(func() error {
+		eir.limiterGroup.Wait()
+		return nil
+	})
 
 	eir.trigger = func() <-chan time.Time {
 		return time.After(conf.GetDuration("Reporting.errorIndexReporting.SleepDuration", 30, time.Second))
@@ -233,6 +269,9 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 				errIndexDB,
 				eir.configSubscriber,
 				fm,
+				eir.limiter.fetch,
+				eir.limiter.upload,
+				eir.limiter.update,
 			)
 		},
 		eir.log,

@@ -9,7 +9,6 @@ import (
 	"path"
 	"sort"
 	"strconv"
-	"sync"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -45,8 +44,7 @@ type worker struct {
 		cancel context.CancelFunc
 	}
 
-	limiterGroup sync.WaitGroup
-	limiter      struct {
+	limiter struct {
 		fetch  kitsync.Limiter
 		upload kitsync.Limiter
 		update kitsync.Limiter
@@ -58,7 +56,6 @@ type worker struct {
 	config struct {
 		parquetParallelWriters, parquetRowGroupSize, parquetPageSize misc.ValueLoader[int64]
 		bucketName, instanceID                                       string
-		concurrency                                                  misc.ValueLoader[int]
 		payloadLimit, eventsLimit                                    misc.ValueLoader[int64]
 		minWorkerSleep, uploadFrequency, jobsDBCommandTimeout        time.Duration
 		jobsDBMaxRetries                                             misc.ValueLoader[int]
@@ -74,6 +71,7 @@ func newWorker(
 	jobsDB jobsdb.JobsDB,
 	configFetcher configSubscriber,
 	uploader uploader,
+	fetchLimiter, uploadLimiter, updateLimiter kitsync.Limiter,
 ) *worker {
 	workspaceID := configFetcher.WorkspaceIDFromSource(sourceID)
 
@@ -94,7 +92,6 @@ func newWorker(
 	w.config.parquetPageSize = conf.GetReloadableInt64Var(8*bytesize.KB, 1, "Reporting.errorIndexReporting.parquetPageSizeInKB")
 	w.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	w.config.bucketName = conf.GetString("ErrorIndex.Storage.Bucket", "rudder-failed-messages")
-	w.config.concurrency = conf.GetReloadableIntVar(10, 1, "Reporting.errorIndexReporting.concurrency")
 	w.config.payloadLimit = conf.GetReloadableInt64Var(1*bytesize.GB, 1, "Reporting.errorIndexReporting.payloadLimit")
 	w.config.eventsLimit = conf.GetReloadableInt64Var(100000, 1, "Reporting.errorIndexReporting.eventsLimit")
 	w.config.minWorkerSleep = conf.GetDuration("Reporting.errorIndexReporting.minWorkerSleep", 1, time.Minute)
@@ -102,22 +99,9 @@ func newWorker(
 	w.config.jobsDBCommandTimeout = conf.GetDurationVar(10, time.Minute, "JobsDB.CommandRequestTimeout", "Reporting.errorIndexReporting.CommandRequestTimeout")
 	w.config.jobsDBMaxRetries = conf.GetReloadableIntVar(3, 1, "JobsDB.MaxRetries", "Reporting.errorIndexReporting.MaxRetries")
 
-	w.limiterGroup = sync.WaitGroup{}
-	w.limiter.fetch = kitsync.NewLimiter(
-		w.lifecycle.ctx, &w.limiterGroup, "erridx_fetch",
-		w.config.concurrency.Load(),
-		w.statsFactory,
-	)
-	w.limiter.upload = kitsync.NewLimiter(
-		w.lifecycle.ctx, &w.limiterGroup, "erridx_upload",
-		w.config.concurrency.Load(),
-		w.statsFactory,
-	)
-	w.limiter.update = kitsync.NewLimiter(
-		w.lifecycle.ctx, &w.limiterGroup, "erridx_update",
-		w.config.concurrency.Load(),
-		w.statsFactory,
-	)
+	w.limiter.fetch = fetchLimiter
+	w.limiter.upload = uploadLimiter
+	w.limiter.update = updateLimiter
 	return w
 }
 
@@ -331,5 +315,4 @@ func (w *worker) SleepDurations() (time.Duration, time.Duration) {
 
 func (w *worker) Stop() {
 	w.lifecycle.cancel()
-	w.limiterGroup.Wait()
 }

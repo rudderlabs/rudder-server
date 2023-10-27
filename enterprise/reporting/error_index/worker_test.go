@@ -12,8 +12,11 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/minio/minio-go/v7"
 
@@ -227,7 +230,17 @@ func TestWorkerWriter(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			limiterGroup := sync.WaitGroup{}
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			defer func() {
+				cancel()
+				limiterGroup.Wait()
+			}()
+
+			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
 
 			require.True(t, w.Work())
@@ -268,9 +281,10 @@ func TestWorkerWriter(t *testing.T) {
 			s3SelectQuery := fmt.Sprint("SELECT message_id, source_id, destination_id, transformation_id, tracking_plan_id, failed_stage, event_type, event_name, received_at, failed_at FROM S3Object")
 			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, s3SelectPath, s3SelectQuery)
 			slices.SortFunc(failedMessagesUsing3Select, func(a, b payload) int {
-				return b.FailedAtTime().Compare(a.FailedAtTime())
+				return a.FailedAtTime().Compare(b.FailedAtTime())
 			})
 			require.Equal(t, len(failedMessages), len(failedMessagesUsing3Select))
+			require.Equal(t, failedMessages, failedMessagesUsing3Select)
 
 			jr, err := errIndexDB.GetSucceeded(ctx, jobsdb.GetQueryParams{
 				ParameterFilters: []jobsdb.ParameterFilterT{
@@ -352,7 +366,17 @@ func TestWorkerWriter(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			limiterGroup := sync.WaitGroup{}
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			defer func() {
+				cancel()
+				limiterGroup.Wait()
+			}()
+
+			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
 
 			require.True(t, w.Work())
@@ -468,7 +492,17 @@ func TestWorkerWriter(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			limiterGroup := sync.WaitGroup{}
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			defer func() {
+				cancel()
+				limiterGroup.Wait()
+			}()
+
+			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
 
 			for i := 0; i < count/eventsLimit; i++ {
@@ -531,15 +565,14 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *res
 			EventType:        r[6],
 			EventName:        r[7],
 		}
-		t.Log("record", r)
 
 		receivedAt, err := strconv.Atoi(r[8])
 		require.NoError(t, err)
-		p.SetReceivedAt(time.Unix(int64(receivedAt), 0))
-
 		failedAt, err := strconv.Atoi(r[9])
 		require.NoError(t, err)
-		p.SetFailedAt(time.Unix(int64(failedAt), 0))
+
+		p.SetReceivedAt(time.UnixMicro(int64(receivedAt)))
+		p.SetFailedAt(time.UnixMicro(int64(failedAt)))
 
 		payloads = append(payloads, p)
 	}
