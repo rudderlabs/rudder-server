@@ -18,26 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
-//nolint:unparam
-func sourcesJobs(
-	sourceID, destinationID, workspaceID string,
-	jobType string, metadata json.RawMessage,
-	count int,
-) []model.SourceJob {
-	sourcesJobs := make([]model.SourceJob, 0, count)
-	for i := 0; i < count; i++ {
-		sourcesJobs = append(sourcesJobs, model.SourceJob{
-			SourceID:      sourceID,
-			DestinationID: destinationID,
-			TableName:     "table-" + strconv.Itoa(i),
-			WorkspaceID:   workspaceID,
-			Metadata:      metadata,
-			JobType:       jobType,
-		})
-	}
-	return sourcesJobs
-}
-
 func TestSource_Insert(t *testing.T) {
 	const (
 		sourceId      = "test_source_id"
@@ -53,10 +33,16 @@ func TestSource_Insert(t *testing.T) {
 	}))
 
 	t.Run("success", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"key": "value"}`), 10),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(10, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"key": "value"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 10)
 	})
@@ -64,10 +50,16 @@ func TestSource_Insert(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"key": "value"}`), 1),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"key": "value"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.ErrorIs(t, err, context.Canceled)
 		require.Nil(t, ids)
 	})
@@ -88,9 +80,16 @@ func TestSource_Reset(t *testing.T) {
 	}))
 
 	t.Run("success", func(t *testing.T) {
-		ids, err := repoSource.Insert(ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"key": "value"}`), 10),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(10, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"key": "value"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 10)
 
@@ -153,10 +152,16 @@ func TestSource_GetToProcess(t *testing.T) {
 		require.Zero(t, jobs)
 	})
 	t.Run("few to process", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"key": "value"}`), 25),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(25, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"key": "value"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 25)
 
@@ -221,10 +226,16 @@ func TestSource_GetByJobRunTaskRun(t *testing.T) {
 	}))
 
 	t.Run("source job available", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
 
@@ -277,10 +288,16 @@ func TestSource_OnUpdateSuccess(t *testing.T) {
 	}))
 
 	t.Run("source job found", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
 
@@ -336,10 +353,16 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 	}))
 
 	t.Run("source job found", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
 
@@ -418,10 +441,16 @@ func TestSource_MarkExecuting(t *testing.T) {
 	}))
 
 	t.Run("source job found", func(t *testing.T) {
-		ids, err := repoSource.Insert(
-			ctx,
-			sourcesJobs(sourceId, destinationId, workspaceId, model.SourceJobTypeDeleteByJobRunID, json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`), 1),
-		)
+		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
+			return model.SourceJob{
+				SourceID:      sourceId,
+				DestinationID: destinationId,
+				TableName:     "table-" + strconv.Itoa(i),
+				WorkspaceID:   workspaceId,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+			}
+		}))
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
 

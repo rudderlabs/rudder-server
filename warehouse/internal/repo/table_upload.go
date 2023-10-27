@@ -114,19 +114,10 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 	}
 	defer func() { _ = rows.Close() }()
 
-	var tableUploads []model.TableUpload
-	for rows.Next() {
-		var tableUpload model.TableUpload
-		err := scanTableUpload(rows.Scan, &tableUpload)
-		if err != nil {
-			return nil, fmt.Errorf("parsing rows: %w", err)
-		}
-		tableUploads = append(tableUploads, tableUpload)
+	tableUploads, err := scanTableUploads(rows)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rows: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return tableUploads, nil
 }
 
@@ -150,6 +141,22 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 	}
 
 	return tableUpload, err
+}
+
+func scanTableUploads(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
+	var tableUploads []model.TableUpload
+	for rows.Next() {
+		var tableUpload model.TableUpload
+		err := scanTableUpload(rows.Scan, &tableUpload)
+		if err != nil {
+			return nil, fmt.Errorf("parsing rows: %w", err)
+		}
+		tableUploads = append(tableUploads, tableUpload)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tableUploads, nil
 }
 
 func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
@@ -435,18 +442,9 @@ func (repo *TableUploads) GetByJobRunTaskRun(
 	}
 	defer func() { _ = rows.Close() }()
 
-	var tableUploads []model.TableUpload
-	for rows.Next() {
-		var tableUpload model.TableUpload
-		err := scanTableUpload(rows.Scan, &tableUpload)
-		if err != nil {
-			return nil, err
-		}
-		tableUploads = append(tableUploads, tableUpload)
+	tableUploads, err := scanTableUploads(rows)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rows: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return tableUploads, nil
 }

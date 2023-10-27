@@ -102,7 +102,7 @@ func TestSource(t *testing.T) {
 		publishResponse <- response
 		close(publishResponse)
 
-		m := New(config.Default, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(config.New(), logger.NOP, db, newMockPublisher(publishResponse, nil))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -122,7 +122,7 @@ func TestSource(t *testing.T) {
 
 		sourceJobs := createSourceJob(sr, sourceJobRunID, sourceTaskRunID, "test_table")
 
-		m := New(config.Default, logger.NOP, db, newMockPublisher(nil, errors.New("test error")))
+		m := New(config.New(), logger.NOP, db, newMockPublisher(nil, errors.New("test error")))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -151,7 +151,7 @@ func TestSource(t *testing.T) {
 		publishResponse <- response
 		close(publishResponse)
 
-		m := New(config.Default, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(config.New(), logger.NOP, db, newMockPublisher(publishResponse, nil))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)

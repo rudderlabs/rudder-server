@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -54,21 +53,21 @@ func TestSlaveWorker(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minioResource, err := destination.SetupMINIO(pool, t)
+	minioResource, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 
 	destConf := map[string]interface{}{
 		"bucketName":       minioResource.BucketName,
-		"accessKeyID":      minioResource.AccessKey,
-		"accessKey":        minioResource.AccessKey,
-		"secretAccessKey":  minioResource.SecretKey,
+		"accessKeyID":      minioResource.AccessKeyID,
+		"accessKey":        minioResource.AccessKeyID,
+		"secretAccessKey":  minioResource.AccessKeySecret,
 		"endPoint":         minioResource.Endpoint,
 		"forcePathStyle":   true,
 		"s3ForcePathStyle": true,
 		"disableSSL":       true,
-		"region":           minioResource.SiteRegion,
+		"region":           minioResource.Region,
 		"enableSSE":        false,
 		"bucketProvider":   "MINIO",
 	}
@@ -517,14 +516,14 @@ func TestSlaveWorker(t *testing.T) {
 											"syncFrequency":    "30",
 											"useRudderStorage": false,
 											"bucketName":       minioResource.BucketName,
-											"accessKeyID":      minioResource.AccessKey,
-											"accessKey":        minioResource.AccessKey,
-											"secretAccessKey":  minioResource.SecretKey,
+											"accessKeyID":      minioResource.AccessKeyID,
+											"accessKey":        minioResource.AccessKeyID,
+											"secretAccessKey":  minioResource.AccessKeySecret,
 											"endPoint":         minioResource.Endpoint,
 											"forcePathStyle":   true,
 											"s3ForcePathStyle": true,
 											"disableSSL":       true,
-											"region":           minioResource.SiteRegion,
+											"region":           minioResource.Region,
 											"enableSSE":        false,
 											"bucketProvider":   "MINIO",
 										},

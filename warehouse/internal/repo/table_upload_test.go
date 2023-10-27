@@ -416,7 +416,7 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repooTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+	repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -445,11 +445,11 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 
 	tables := []string{"table1", "table2", "table3"}
 
-	err = repooTableUpload.Insert(ctx, uploadID, tables)
+	err = repoTableUpload.Insert(ctx, uploadID, tables)
 	require.NoError(t, err)
 
 	t.Run("known", func(t *testing.T) {
-		tableUploads, err := repooTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, jobRunID, taskRunID)
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, jobRunID, taskRunID)
 		require.NoError(t, err)
 		require.Len(t, tableUploads, len(tables))
 		require.Equal(t, tables, lo.Map(tableUploads, func(item model.TableUpload, index int) string {
@@ -457,12 +457,12 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 		}))
 	})
 	t.Run("unknown", func(t *testing.T) {
-		tableUploads, err := repooTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, "some-other-job-run-id", "some-other-task-run-id")
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, "some-other-job-run-id", "some-other-task-run-id")
 		require.NoError(t, err)
 		require.Empty(t, tableUploads)
 	})
 	t.Run("cancelled context", func(t *testing.T) {
-		tableUploads, err := repooTableUpload.GetByJobRunTaskRun(cancelledCtx, sourceID, destinationID, jobRunID, taskRunID)
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(cancelledCtx, sourceID, destinationID, jobRunID, taskRunID)
 		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, tableUploads)
 	})

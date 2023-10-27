@@ -188,7 +188,7 @@ func TestHTTPApi(t *testing.T) {
 	require.NoError(t, err)
 
 	sourcesManager := source.New(
-		config.Default,
+		c,
 		logger.NOP,
 		db,
 		n,

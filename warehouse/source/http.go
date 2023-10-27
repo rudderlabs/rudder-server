@@ -6,17 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+	"regexp"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/samber/lo"
 )
+
+// emptyRegex matches empty strings
+var emptyRegex = regexp.MustCompile(`^\s*$`)
 
 // InsertJobHandler adds a job to the warehouse_jobs table
 func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
@@ -35,64 +34,7 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tableUploads, err := m.tableUploadsRepo.GetByJobRunTaskRun(
-		r.Context(),
-		payload.SourceID,
-		payload.DestinationID,
-		payload.JobRunID,
-		payload.TaskRunID,
-	)
-	if err != nil {
-		if errors.Is(r.Context().Err(), context.Canceled) {
-			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
-			return
-		}
-		m.logger.Errorw("extracting tableNames for inserting source job", lf.Error, err.Error())
-		http.Error(w, "can't extract tableNames", http.StatusInternalServerError)
-		return
-	}
-
-	tableNames := lo.Map(tableUploads, func(item model.TableUpload, index int) string {
-		return item.TableName
-	})
-	tableNames = lo.Filter(lo.Uniq(tableNames), func(tableName string, i int) bool {
-		switch strings.ToLower(tableName) {
-		case "rudder_discards", "rudder_identity_mappings", "rudder_identity_merge_rules":
-			return false
-		default:
-			return true
-		}
-	})
-
-	type metadata struct {
-		JobRunID  string `json:"job_run_id"`
-		TaskRunID string `json:"task_run_id"`
-		JobType   string `json:"jobtype"`
-		StartTime string `json:"start_time"`
-	}
-
-	metadataJson, err := json.Marshal(metadata{
-		JobRunID:  payload.JobRunID,
-		TaskRunID: payload.TaskRunID,
-		StartTime: payload.StartTime,
-		JobType:   string(notifier.JobTypeAsync),
-	})
-	if err != nil {
-		m.logger.Errorw("marshalling metadata for inserting source job", lf.Error, err.Error())
-		http.Error(w, "can't marshall metadata", http.StatusInternalServerError)
-		return
-	}
-
-	jobIds, err := m.sourceRepo.Insert(r.Context(), lo.Map(tableNames, func(item string, index int) model.SourceJob {
-		return model.SourceJob{
-			SourceID:      payload.SourceID,
-			DestinationID: payload.DestinationID,
-			WorkspaceID:   payload.WorkspaceID,
-			TableName:     item,
-			JobType:       payload.JobType,
-			Metadata:      metadataJson,
-		}
-	}))
+	jobIds, err := m.InsertJobs(r.Context(), payload)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -141,7 +83,7 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, model.ErrSourcesJobNotFound) {
-			http.Error(w, model.ErrSourcesJobNotFound.Error(), http.StatusBadRequest)
+			http.Error(w, model.ErrSourcesJobNotFound.Error(), http.StatusNotFound)
 			return
 		}
 		m.logger.Warnw("unable to get source job status", lf.Error, err.Error())
@@ -174,13 +116,13 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 
 func validatePayload(payload *insertJobRequest) error {
 	switch true {
-	case payload.SourceID == "":
+	case emptyRegex.MatchString(payload.SourceID):
 		return errors.New("source_id is required")
-	case payload.DestinationID == "":
+	case emptyRegex.MatchString(payload.DestinationID):
 		return errors.New("destination_id is required")
-	case payload.JobRunID == "":
+	case emptyRegex.MatchString(payload.JobRunID):
 		return errors.New("job_run_id is required")
-	case payload.TaskRunID == "":
+	case emptyRegex.MatchString(payload.TaskRunID):
 		return errors.New("task_run_id is required")
 	default:
 		return nil

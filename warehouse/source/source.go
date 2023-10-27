@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -67,6 +68,61 @@ func (m *Manager) Run(ctx context.Context) error {
 		return fmt.Errorf("processing source jobs with error %w", err)
 	}
 	return nil
+}
+
+func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]int64, error) {
+	tableUploads, err := m.tableUploadsRepo.GetByJobRunTaskRun(
+		ctx,
+		payload.SourceID,
+		payload.DestinationID,
+		payload.JobRunID,
+		payload.TaskRunID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting table uploads: %w", err)
+	}
+
+	tableNames := lo.Map(tableUploads, func(item model.TableUpload, index int) string {
+		return item.TableName
+	})
+	tableNames = lo.Filter(lo.Uniq(tableNames), func(tableName string, i int) bool {
+		switch strings.ToLower(tableName) {
+		case whutils.DiscardsTable, whutils.IdentityMappingsTable, whutils.IdentityMergeRulesTable:
+			return false
+		default:
+			return true
+		}
+	})
+
+	type metadata struct {
+		JobRunID  string `json:"job_run_id"`
+		TaskRunID string `json:"task_run_id"`
+		JobType   string `json:"jobtype"`
+		StartTime string `json:"start_time"`
+	}
+	metadataJson, err := json.Marshal(metadata{
+		JobRunID:  payload.JobRunID,
+		TaskRunID: payload.TaskRunID,
+		StartTime: payload.StartTime,
+		JobType:   string(notifier.JobTypeAsync),
+	})
+	if err != nil {
+		return nil, err
+	}
+	jobIds, err := m.sourceRepo.Insert(ctx, lo.Map(tableNames, func(item string, index int) model.SourceJob {
+		return model.SourceJob{
+			SourceID:      payload.SourceID,
+			DestinationID: payload.DestinationID,
+			WorkspaceID:   payload.WorkspaceID,
+			TableName:     item,
+			JobType:       payload.JobType,
+			Metadata:      metadataJson,
+		}
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("inserting source jobs: %w", err)
+	}
+	return jobIds, nil
 }
 
 func (m *Manager) process(ctx context.Context) error {

@@ -9,13 +9,13 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
-	sourceJobTableName = warehouseutils.WarehouseAsyncJobTable
+	sourceJobTableName = whutils.WarehouseAsyncJobTable
 	sourceJobColumns   = `
 		id,
 		source_id,
@@ -34,7 +34,7 @@ const (
 
 type Source repo
 
-func NewSource(db *sqlmiddleware.DB, opts ...Opt) *Source {
+func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 	r := &Source{
 		db:  db,
 		now: timeutil.Now,
@@ -45,11 +45,8 @@ func NewSource(db *sqlmiddleware.DB, opts ...Opt) *Source {
 	return r
 }
 
-func (repo *Source) Insert(
-	ctx context.Context,
-	sourceJobs []model.SourceJob,
-) ([]int64, error) {
-	txn, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
+func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]int64, error) {
+	txn, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, fmt.Errorf(`begin transaction: %w`, err)
 	}
@@ -84,8 +81,8 @@ func (repo *Source) Insert(
 			sourceJob.DestinationID,
 			sourceJob.TableName,
 			model.SourceJobStatusWaiting,
-			repo.now(),
-			repo.now(),
+			s.now(),
+			s.now(),
 			sourceJob.JobType,
 			sourceJob.WorkspaceID,
 			sourceJob.Metadata,
@@ -103,10 +100,8 @@ func (repo *Source) Insert(
 	return ids, nil
 }
 
-func (repo *Source) Reset(
-	ctx context.Context,
-) error {
-	_, err := repo.db.ExecContext(ctx, `
+func (s *Source) Reset(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -124,11 +119,8 @@ func (repo *Source) Reset(
 	return nil
 }
 
-func (repo *Source) GetToProcess(
-	ctx context.Context,
-	limit int64,
-) ([]model.SourceJob, error) {
-	rows, err := repo.db.QueryContext(ctx, `
+func (s *Source) GetToProcess(ctx context.Context, limit int64) ([]model.SourceJob, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			`+sourceJobColumns+`
 		FROM
@@ -146,6 +138,14 @@ func (repo *Source) GetToProcess(
 	}
 	defer func() { _ = rows.Close() }()
 
+	sourceJobs, err := scanSourceJobs(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scanning: %w", err)
+	}
+	return sourceJobs, nil
+}
+
+func scanSourceJobs(rows *sqlmw.Rows) ([]model.SourceJob, error) {
 	var sourceJobs []model.SourceJob
 	for rows.Next() {
 		var sourceJob model.SourceJob
@@ -161,10 +161,7 @@ func (repo *Source) GetToProcess(
 	return sourceJobs, nil
 }
 
-func scanSourceJob(
-	scan scanFn,
-	sourceJob *model.SourceJob,
-) error {
+func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 	var errorRaw sql.NullString
 	var jobTypeRaw sql.NullString
 
@@ -205,12 +202,12 @@ func scanSourceJob(
 	return nil
 }
 
-func (repo *Source) GetByJobRunTaskRun(
+func (s *Source) GetByJobRunTaskRun(
 	ctx context.Context,
 	jobRunID string,
 	taskRunID string,
 ) (*model.SourceJob, error) {
-	row := repo.db.QueryRowContext(ctx, `
+	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			`+sourceJobColumns+`
 		FROM
@@ -235,11 +232,8 @@ func (repo *Source) GetByJobRunTaskRun(
 	return &sourceJob, nil
 }
 
-func (repo *Source) OnUpdateSuccess(
-	ctx context.Context,
-	id int64,
-) error {
-	r, err := repo.db.ExecContext(ctx, `
+func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
+	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -249,7 +243,7 @@ func (repo *Source) OnUpdateSuccess(
 			id = $3;
 `,
 		model.SourceJobStatusSucceeded,
-		repo.now(),
+		s.now(),
 		id,
 	)
 	if err != nil {
@@ -265,13 +259,13 @@ func (repo *Source) OnUpdateSuccess(
 	return nil
 }
 
-func (repo *Source) OnUpdateFailure(
+func (s *Source) OnUpdateFailure(
 	ctx context.Context,
 	id int64,
 	error error,
 	maxAttempt int,
 ) error {
-	r, err := repo.db.ExecContext(ctx, `
+	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -288,7 +282,7 @@ func (repo *Source) OnUpdateFailure(
 		maxAttempt,
 		model.SourceJobStatusAborted,
 		model.SourceJobStatusFailed,
-		repo.now(),
+		s.now(),
 		error.Error(),
 		id,
 	)
@@ -305,11 +299,8 @@ func (repo *Source) OnUpdateFailure(
 	return nil
 }
 
-func (repo *Source) MarkExecuting(
-	ctx context.Context,
-	ids []int64,
-) error {
-	r, err := repo.db.ExecContext(ctx, `
+func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
+	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -319,11 +310,11 @@ func (repo *Source) MarkExecuting(
 			id = ANY($3);
 `,
 		model.SourceJobStatusExecuting,
-		repo.now(),
+		s.now(),
 		pq.Array(ids),
 	)
 	if err != nil {
-		return fmt.Errorf("marking executing: %w", err)
+		return fmt.Errorf("query: %w", err)
 	}
 	rowsAffected, err := r.RowsAffected()
 	if err != nil {

@@ -32,11 +32,23 @@ func TestValidatePayload(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "invalid source",
+			name: "invalid source (empty string)",
 			payload: insertJobRequest{
 				JobRunID:      "job_run_id",
 				TaskRunID:     "task_run_id",
 				SourceID:      "",
+				DestinationID: "destination_id",
+				WorkspaceID:   "workspace_id",
+			},
+			expectedError: errors.New("source_id is required"),
+		},
+
+		{
+			name: "invalid source (empty string with spaces)",
+			payload: insertJobRequest{
+				JobRunID:      "job_run_id",
+				TaskRunID:     "task_run_id",
+				SourceID:      "   ",
 				DestinationID: "destination_id",
 				WorkspaceID:   "workspace_id",
 			},
@@ -218,6 +230,9 @@ func TestManager_InsertJobHandler(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, insertResponse.Err)
 		require.Len(t, insertResponse.JobIds, 5)
+	})
+	t.Run("exclude tables", func(t *testing.T) {
+		// discards, merge rules and mapping tables should be excluded
 	})
 }
 
