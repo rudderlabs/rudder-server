@@ -116,7 +116,7 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		httpStatus := http.StatusInternalServerError
-		if errors.Is(err, rsources.ErrOperationNotSupported) {
+		if errors.Is(err, rsources.ErrOperationNotSupported) || errors.Is(err, rsources.ErrInvalidPaginationToken) {
 			httpStatus = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), httpStatus)

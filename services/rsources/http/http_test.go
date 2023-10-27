@@ -315,6 +315,20 @@ func TestGetFailedRecords(t *testing.T) {
 			failedRecordsError: errors.New("failed to get failed records"),
 			respBody:           failedRecordsRespBody,
 		},
+		{
+			name:                 "get failed records with invalid pagination token",
+			jobID:                "123",
+			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: http.StatusBadRequest,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecords:      rsources.JobFailedRecords{ID: "123"},
+			failedRecordsError: rsources.ErrInvalidPaginationToken,
+			respBody:           rsources.ErrInvalidPaginationToken.Error() + "\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -22,6 +22,9 @@ const defaultRetentionPeriodInHours = 3 * 24
 // ErrOperationNotSupported sentinel error indicating an unsupported operation
 var ErrOperationNotSupported = errors.New("rsources: operation not supported")
 
+// ErrInvalidPaginationToken sentinel error indicating an invalid pagination token
+var ErrInvalidPaginationToken = errors.New("rsources: invalid pagination token")
+
 // In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
@@ -177,6 +180,8 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
 			params = append(params, nextPageToken.ID, nextPageToken.RecordID)
 			limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
+		} else {
+			return JobFailedRecords{ID: jobRunId}, ErrInvalidPaginationToken
 		}
 	}
 	sqlStatement := fmt.Sprintf(

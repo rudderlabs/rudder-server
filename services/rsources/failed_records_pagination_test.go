@@ -36,6 +36,37 @@ func TestFailedRecordsPerformanceTest(t *testing.T) {
 	})
 }
 
+func TestFailedRecords(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	service, err := NewJobService(JobServiceConfig{
+		LocalHostname: postgresContainer.Host,
+		MaxPoolSize:   1,
+		LocalConn:     postgresContainer.DBDsn,
+		Log:           logger.NOP,
+	})
+	require.NoError(t, err)
+	// Create 2 different job run ids with 10 records each
+	_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) SELECT id::text, id::text, '1', '1', '1' FROM generate_series(1, 2) as id`)
+	require.NoError(t, err)
+	_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2_records (id, record_id) SELECT k.id, to_json('"'||s.id||'"') from rsources_failed_keys_v2 k CROSS JOIN (SELECT id::text FROM generate_series(1, 10) as id) s`)
+	require.NoError(t, err)
+
+	t.Run("no result", func(t *testing.T) {
+		r, err := service.GetFailedRecords(context.Background(), "3", JobFilter{}, PagingInfo{})
+		require.NoError(t, err)
+		require.Len(t, r.Tasks, 0)
+	})
+	t.Run("invalid pagination token", func(t *testing.T) {
+		_, err := service.GetFailedRecords(context.Background(), "1", JobFilter{}, PagingInfo{Size: 1, NextPageToken: "invalid"})
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrInvalidPaginationToken)
+	})
+}
+
 func BenchmarkFailedRecordsPerformanceTest(b *testing.B) {
 	b.Run("10Mil records no pagination", func(b *testing.B) {
 		d := RunFailedRecordsPerformanceTest(b, 10_000_000, 0)
