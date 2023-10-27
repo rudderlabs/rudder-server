@@ -54,15 +54,16 @@ func TestSendPostWithFormData(t *testing.T) {
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
-		var structData integrations.PostParametersT
-		structData.RequestMethod = "POST"
-		structData.Type = "REST"
-		structData.URL = testServer.URL
-		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"FORM": map[string]interface{}{
-				"name":  "test",
-				"alias": alias,
+		structData := integrations.PostParametersT{
+			RequestMethod: http.MethodPost,
+			Type:          "REST",
+			URL:           testServer.URL,
+			UserID:        "anon_id",
+			Body: map[string]interface{}{
+				"FORM": map[string]interface{}{
+					"name":  "test",
+					"alias": alias,
+				},
 			},
 		}
 
