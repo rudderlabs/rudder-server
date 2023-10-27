@@ -27,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
@@ -35,7 +34,7 @@ func TestBackupTable(t *testing.T) {
 	var (
 		tc                       backupTestCase
 		prefix                   = "some-prefix"
-		minioResource            *destination.MINIOResource
+		minioResource            *resource.MinioResource
 		goldenFileJobsFileName   = "testdata/backupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/backupStatus.json.gz"
 	)
@@ -49,7 +48,7 @@ func TestBackupTable(t *testing.T) {
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
 
-	minioResource, err = destination.SetupMINIO(pool, cleanup)
+	minioResource, err = resource.SetupMinio(pool, cleanup)
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution
@@ -69,8 +68,8 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 
 		t.Setenv("MINIO_ENDPOINT", minioResource.Endpoint)
-		t.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
-		t.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
+		t.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKeyID)
+		t.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.AccessKeySecret)
 		t.Setenv("MINIO_SSL", "false")
 
 		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
@@ -109,8 +108,8 @@ func TestBackupTable(t *testing.T) {
 			"bucketName":      minioResource.BucketName,
 			"prefix":          prefix,
 			"endPoint":        minioResource.Endpoint,
-			"accessKeyID":     minioResource.AccessKey,
-			"secretAccessKey": minioResource.SecretKey,
+			"accessKeyID":     minioResource.AccessKeyID,
+			"secretAccessKey": minioResource.AccessKeySecret,
 			"useSSL":          false,
 		},
 	})
@@ -130,8 +129,8 @@ func TestBackupTable(t *testing.T) {
 					"bucketName":      minioResource.BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource.Endpoint,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"useSSL":          false,
 				},
 			})
@@ -183,7 +182,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	var (
 		tc                       backupTestCase
 		prefix                   = "some-prefix"
-		minioResource            []*destination.MINIOResource
+		minioResource            []*resource.MinioResource
 		goldenFileJobsFileName   = "testdata/MultiWorkspaceBackupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/MultiWorkspaceBackupStatus.json.gz"
 		uniqueWorkspaces         = 3
@@ -198,9 +197,9 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
 
-	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
+	minioResource = make([]*resource.MinioResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
+		minioResource[i], err = resource.SetupMinio(pool, cleanup)
 		require.NoError(t, err)
 	}
 
@@ -250,8 +249,8 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 					"bucketName":      minioResource[0].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[0].Endpoint,
-					"accessKeyID":     minioResource[0].AccessKey,
-					"secretAccessKey": minioResource[0].SecretKey,
+					"accessKeyID":     minioResource[0].AccessKeyID,
+					"secretAccessKey": minioResource[0].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -268,8 +267,8 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 					"bucketName":      minioResource[1].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[1].Endpoint,
-					"accessKeyID":     minioResource[1].AccessKey,
-					"secretAccessKey": minioResource[1].SecretKey,
+					"accessKeyID":     minioResource[1].AccessKeyID,
+					"secretAccessKey": minioResource[1].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -286,8 +285,8 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 					"bucketName":      minioResource[2].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[2].Endpoint,
-					"accessKeyID":     minioResource[2].AccessKey,
-					"secretAccessKey": minioResource[2].SecretKey,
+					"accessKeyID":     minioResource[2].AccessKeyID,
+					"secretAccessKey": minioResource[2].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{

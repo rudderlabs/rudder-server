@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -155,21 +156,21 @@ func TestSlaveJob(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		ctx := context.Background()
 
 		conf := map[string]interface{}{
 			"bucketName":       minioResource.BucketName,
-			"accessKeyID":      minioResource.AccessKey,
-			"accessKey":        minioResource.AccessKey,
-			"secretAccessKey":  minioResource.SecretKey,
+			"accessKeyID":      minioResource.AccessKeyID,
+			"accessKey":        minioResource.AccessKeyID,
+			"secretAccessKey":  minioResource.AccessKeySecret,
 			"endPoint":         minioResource.Endpoint,
 			"forcePathStyle":   true,
 			"s3ForcePathStyle": true,
 			"disableSSL":       true,
-			"region":           minioResource.SiteRegion,
+			"region":           minioResource.Region,
 			"enableSSE":        false,
 			"bucketProvider":   provider,
 		}
@@ -449,19 +450,19 @@ func TestSlaveJob(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				minioResource, err := destination.SetupMINIO(pool, t)
+				minioResource, err := resource.SetupMinio(pool, t)
 				require.NoError(t, err)
 
 				conf := map[string]any{
 					"bucketName":       minioResource.BucketName,
-					"accessKeyID":      minioResource.AccessKey,
-					"accessKey":        minioResource.AccessKey,
-					"secretAccessKey":  minioResource.SecretKey,
+					"accessKeyID":      minioResource.AccessKeyID,
+					"accessKey":        minioResource.AccessKeyID,
+					"secretAccessKey":  minioResource.AccessKeySecret,
 					"endPoint":         minioResource.Endpoint,
 					"forcePathStyle":   true,
 					"s3ForcePathStyle": true,
 					"disableSSL":       true,
-					"region":           minioResource.SiteRegion,
+					"region":           minioResource.Region,
 					"enableSSE":        false,
 					"bucketProvider":   provider,
 				}
@@ -538,9 +539,9 @@ func TestSlaveJob(t *testing.T) {
 					require.EqualValues(t, time.Second, store.Get("load_file_upload_time", jr.buildTags()).LastDuration())
 				}
 
-				outputPathRegex := fmt.Sprintf(`http://localhost:%s/testbucket/%s/test.*/%s/.*/load.dump`, minioResource.Port, loadObjectFolder, sourceID)
+				outputPathRegex := fmt.Sprintf(`http://%s/%s/%s/test.*/%s/.*/load.dump`, minioResource.Endpoint, minioResource.BucketName, loadObjectFolder, sourceID)
 				if slices.Contains(warehouseutils.TimeWindowDestinations, destType) {
-					outputPathRegex = fmt.Sprintf(`http://localhost:%s/testbucket/rudder-datalake/%s/test.*/2006/01/02/15/load.dump`, minioResource.Port, namespace)
+					outputPathRegex = fmt.Sprintf(`http://%s/%s/rudder-datalake/%s/test.*/2006/01/02/15/load.dump`, minioResource.Endpoint, minioResource.BucketName, namespace)
 				}
 
 				for _, f := range loadFile {

@@ -29,13 +29,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 func TestJobsArchival(t *testing.T) {
 	var (
 		prefix        = trand.String(10)
-		minioResource []*destination.MINIOResource
+		minioResource []*resource.MinioResource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
 		seedJobsFileName    = "testdata/MultiWorkspaceBackupJobs.json.gz"
@@ -61,9 +60,9 @@ func TestJobsArchival(t *testing.T) {
 	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
 	require.NoError(t, jd.Start())
 
-	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
+	minioResource = make([]*resource.MinioResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, t)
+		minioResource[i], err = resource.SetupMinio(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 
@@ -80,8 +79,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[0].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[0].Endpoint,
-					"accessKeyID":     minioResource[0].AccessKey,
-					"secretAccessKey": minioResource[0].SecretKey,
+					"accessKeyID":     minioResource[0].AccessKeyID,
+					"secretAccessKey": minioResource[0].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -98,8 +97,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[1].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[1].Endpoint,
-					"accessKeyID":     minioResource[1].AccessKey,
-					"secretAccessKey": minioResource[1].SecretKey,
+					"accessKeyID":     minioResource[1].AccessKeyID,
+					"secretAccessKey": minioResource[1].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -116,8 +115,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[2].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[2].Endpoint,
-					"accessKeyID":     minioResource[2].AccessKey,
-					"secretAccessKey": minioResource[2].SecretKey,
+					"accessKeyID":     minioResource[2].AccessKeyID,
+					"secretAccessKey": minioResource[2].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
