@@ -60,15 +60,11 @@ func (rt *Handle) Setup(
 
 	rt.drainer = routerutils.NewDrainer(
 		config,
-		func(destinationID string) (bool, string) {
+		func(destinationID string) (*routerutils.DestinationWithSources, bool) {
 			rt.destinationsMapMu.RLock()
 			defer rt.destinationsMapMu.RUnlock()
-			if dest, ok := rt.destinationsMap[destinationID]; !ok {
-				return true, routerutils.DestNotFoundInConfig
-			} else if !dest.Destination.Enabled {
-				return true, routerutils.DestDisabled
-			}
-			return false, ""
+			dest, destFound := rt.destinationsMap[destinationID]
+			return dest, destFound
 		})
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()

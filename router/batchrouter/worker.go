@@ -3,12 +3,13 @@ package batchrouter
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -72,11 +73,8 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
-			var params routerutils.JobParameters
-			_ = json.Unmarshal(job.Parameters, &params)
 			if drain, reason := brt.drainer.Drain(
 				job,
-				params,
 			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -107,7 +105,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					drainStatsbyDest[destWithSources.Destination.ID].Reasons = append(drainStatsbyDest[destWithSources.Destination.ID].Reasons, reason)
 				}
 			} else {
-				sourceID := params.SourceID
+				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 				if _, ok := jobsBySource[sourceID]; !ok {
 					jobsBySource[sourceID] = []*jobsdb.JobT{}
 				}

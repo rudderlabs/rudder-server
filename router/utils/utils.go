@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -24,10 +25,10 @@ const (
 	// custom destination manager
 	ERROR_AT_CUST = "custom"
 
-	DestNotFoundInConfig = "destination is not available in the config"
-	DestDisabled         = "destination is disabled"
-	DestAbort            = "destination configured to abort"
-	JobRunIDCancelled    = "cancelled jobRunID"
+	DrainReasonDestNotFound      = "destination is not available in the config"
+	DrainReasonDestDisabled      = "destination is disabled"
+	DrainReasonDestAbort         = "destination configured to abort"
+	DrainReasonJobRunIDCancelled = "cancelled jobRunID"
 )
 
 type DestinationWithSources struct {
@@ -104,24 +105,23 @@ func IsNotEmptyString(s string) bool {
 type Drainer interface {
 	Drain(
 		job *jobsdb.JobT,
-		jobParams JobParameters,
 	) (bool, string)
 }
 
 func NewDrainer(
 	conf *config.Config,
-	destDrainFunc func(string) (bool, string),
+	destDrainFunc func(string) (*DestinationWithSources, bool),
 ) Drainer {
 	return &drainer{
 		destinationIDs: conf.GetReloadableStringSliceVar(
-			[]string{},
+			nil,
 			"Router.toAbortDestinationIDs",
 		),
 		jobRunIDs: conf.GetReloadableStringSliceVar(
-			[]string{},
+			nil,
 			"RSources.toAbortJobRunIDs",
 		),
-		destDrainFunc: destDrainFunc,
+		destinationResolver: destDrainFunc,
 	}
 }
 
@@ -129,30 +129,33 @@ type drainer struct {
 	destinationIDs misc.ValueLoader[[]string]
 	jobRunIDs      misc.ValueLoader[[]string]
 
-	destDrainFunc func(string) (bool, string)
+	destinationResolver func(string) (*DestinationWithSources, bool)
 }
 
 func (d *drainer) Drain(
 	job *jobsdb.JobT,
-	jobParams JobParameters,
 ) (bool, string) {
 	createdAt := job.CreatedAt
+	var jobParams JobParameters
+	_ = json.Unmarshal(job.Parameters, &jobParams)
 	destID := jobParams.DestinationID
 	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
 		return true, "job expired"
 	}
 
-	if destDrain, destDrainReason := d.destDrainFunc(destID); destDrain {
-		return true, destDrainReason
+	if destination, ok := d.destinationResolver(destID); !ok {
+		return true, DrainReasonDestNotFound
+	} else if !destination.Destination.Enabled {
+		return true, DrainReasonDestDisabled
 	}
 
 	if slices.Contains(d.destinationIDs.Load(), destID) {
-		return true, DestAbort
+		return true, DrainReasonDestAbort
 	}
 
 	if jobParams.SourceJobRunID != "" &&
 		slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
-		return true, JobRunIDCancelled
+		return true, DrainReasonJobRunIDCancelled
 	}
 
 	return false, ""

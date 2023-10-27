@@ -90,7 +90,6 @@ func (w *worker) workLoop() {
 			}
 			abort, abortReason := w.rt.drainer.Drain(
 				job,
-				parameters,
 			)
 			abortTag := abortReason
 			if !abort {

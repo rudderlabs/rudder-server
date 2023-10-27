@@ -97,15 +97,11 @@ func (brt *Handle) Setup(
 	brt.setupReloadableVars()
 	brt.drainer = routerutils.NewDrainer(
 		conf,
-		func(destinationID string) (bool, string) {
+		func(destinationID string) (*routerutils.DestinationWithSources, bool) {
 			brt.configSubscriberMu.RLock()
 			defer brt.configSubscriberMu.RUnlock()
-			if dest, destFound := brt.destinationsMap[destinationID]; !destFound {
-				return true, routerutils.DestNotFoundInConfig
-			} else if !dest.Destination.Enabled {
-				return true, routerutils.DestDisabled
-			}
-			return false, ""
+			dest, destFound := brt.destinationsMap[destinationID]
+			return dest, destFound
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())

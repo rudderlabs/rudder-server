@@ -1084,7 +1084,7 @@ var _ = Describe("router", func() {
 						statuses[0],
 						jobsdb.Aborted.State,
 						routerutils.DRAIN_ERROR_CODE,
-						`{"reason": "`+routerutils.DestNotFoundInConfig+`"}`,
+						`{"reason": "`+routerutils.DrainReasonDestNotFound+`"}`,
 						3,
 					)
 				}).Return(nil)
