@@ -5,11 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -35,7 +34,7 @@ func TestValidate(t *testing.T) {
 
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
-	minioResource, err := destination.SetupMINIO(pool, t)
+	minioResource, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 
 	t.Run("invalid path", func(t *testing.T) {
@@ -172,8 +171,8 @@ func TestValidate(t *testing.T) {
 						"namespace":       namespace,
 						"bucketProvider":  provider,
 						"bucketName":      minioResource.BucketName,
-						"accessKeyID":     minioResource.AccessKey,
-						"secretAccessKey": minioResource.SecretKey,
+						"accessKeyID":     minioResource.AccessKeyID,
+						"secretAccessKey": minioResource.AccessKeySecret,
 						"endPoint":        minioResource.Endpoint,
 					},
 				},
@@ -245,8 +244,8 @@ func TestValidate(t *testing.T) {
 							"namespace":       namespace,
 							"bucketProvider":  provider,
 							"bucketName":      minioResource.BucketName,
-							"accessKeyID":     minioResource.AccessKey,
-							"secretAccessKey": minioResource.SecretKey,
+							"accessKeyID":     minioResource.AccessKeyID,
+							"secretAccessKey": minioResource.AccessKeySecret,
 							"endPoint":        minioResource.Endpoint,
 						},
 					},

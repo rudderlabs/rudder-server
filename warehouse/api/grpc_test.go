@@ -38,7 +38,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -69,7 +68,7 @@ func TestGRPC(t *testing.T) {
 	t.Run("endpoints", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -834,8 +833,8 @@ func TestGRPC(t *testing.T) {
 								"namespace":       "test_namespace",
 								"bucketProvider":  "MINIO",
 								"bucketName":      minioResource.BucketName,
-								"accessKeyID":     minioResource.AccessKey,
-								"secretAccessKey": minioResource.SecretKey,
+								"accessKeyID":     minioResource.AccessKeyID,
+								"secretAccessKey": minioResource.AccessKeySecret,
 								"endPoint":        minioResource.Endpoint,
 							},
 						},
@@ -961,7 +960,7 @@ func TestGRPC(t *testing.T) {
 							Fields: map[string]*structpb.Value{
 								"region": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SiteRegion,
+										StringValue: minioResource.Region,
 									},
 								},
 								"bucketName": {
@@ -971,12 +970,12 @@ func TestGRPC(t *testing.T) {
 								},
 								"secretAccessKey": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SecretKey,
+										StringValue: minioResource.AccessKeySecret,
 									},
 								},
 								"accessKeyID": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.AccessKey,
+										StringValue: minioResource.AccessKeyID,
 									},
 								},
 								"endPoint": {
@@ -1017,7 +1016,7 @@ func TestGRPC(t *testing.T) {
 							Fields: map[string]*structpb.Value{
 								"region": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SiteRegion,
+										StringValue: minioResource.Region,
 									},
 								},
 								"bucketName": {

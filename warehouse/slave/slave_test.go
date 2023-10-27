@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
@@ -28,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
@@ -57,21 +58,21 @@ func TestSlave(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minioResource, err := destination.SetupMINIO(pool, t)
+	minioResource, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	destConf := map[string]interface{}{
 		"bucketName":       minioResource.BucketName,
-		"accessKeyID":      minioResource.AccessKey,
-		"accessKey":        minioResource.AccessKey,
-		"secretAccessKey":  minioResource.SecretKey,
+		"accessKeyID":      minioResource.AccessKeyID,
+		"accessKey":        minioResource.AccessKeyID,
+		"secretAccessKey":  minioResource.AccessKeySecret,
 		"endPoint":         minioResource.Endpoint,
 		"forcePathStyle":   true,
 		"s3ForcePathStyle": true,
 		"disableSSL":       true,
-		"region":           minioResource.SiteRegion,
+		"region":           minioResource.Region,
 		"enableSSE":        false,
 		"bucketProvider":   "MINIO",
 	}

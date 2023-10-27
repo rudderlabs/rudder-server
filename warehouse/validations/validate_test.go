@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/minio/minio-go/v7"
+
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -13,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -39,10 +40,12 @@ func TestValidator(t *testing.T) {
 
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
-	minioResource, err := destination.SetupMINIO(pool, t)
+	minioResource, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 
-	err = minioResource.Client.MakeBucket(bucket, "us-east-1")
+	err = minioResource.Client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{
+		Region: "us-east-1",
+	})
 	require.NoError(t, err)
 
 	t.Run("Object Storage", func(t *testing.T) {
@@ -61,8 +64,8 @@ func TestValidator(t *testing.T) {
 					"password":        pgResource.Password,
 					"bucketProvider":  provider,
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
 			})
@@ -78,8 +81,8 @@ func TestValidator(t *testing.T) {
 				Config: map[string]interface{}{
 					"region":           region,
 					"bucketName":       bucket,
-					"accessKeyID":      minioResource.AccessKey,
-					"accessKey":        minioResource.SecretKey,
+					"accessKeyID":      minioResource.AccessKeyID,
+					"accessKey":        minioResource.AccessKeySecret,
 					"endPoint":         minioResource.Endpoint,
 					"enableSSE":        false,
 					"s3ForcePathStyle": true,
@@ -126,8 +129,8 @@ func TestValidator(t *testing.T) {
 					"sslMode":         sslMode,
 					"bucketProvider":  provider,
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				}
 
@@ -200,8 +203,8 @@ func TestValidator(t *testing.T) {
 					"namespace":       namespace,
 					"bucketProvider":  provider,
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				}
 
@@ -305,8 +308,8 @@ func TestValidator(t *testing.T) {
 					"namespace":       namespace,
 					"bucketProvider":  provider,
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				}
 
@@ -359,8 +362,8 @@ func TestValidator(t *testing.T) {
 				"namespace":       namespace,
 				"bucketProvider":  provider,
 				"bucketName":      minioResource.BucketName,
-				"accessKeyID":     minioResource.AccessKey,
-				"secretAccessKey": minioResource.SecretKey,
+				"accessKeyID":     minioResource.AccessKeyID,
+				"secretAccessKey": minioResource.AccessKeySecret,
 				"endPoint":        minioResource.Endpoint,
 			},
 		})
@@ -459,8 +462,8 @@ func TestValidator(t *testing.T) {
 					"namespace":       namespace,
 					"bucketProvider":  provider,
 					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				}
 
