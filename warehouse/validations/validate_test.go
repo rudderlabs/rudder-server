@@ -49,8 +49,6 @@ func TestValidator(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Object Storage", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("Non Datalakes", func(t *testing.T) {
 			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -97,8 +95,6 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Connections", func(t *testing.T) {
-		t.Parallel()
-
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
@@ -156,8 +152,6 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Create Schema", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			namespace           = "cs_test_namespace"
 			password            = "cs_test_password"
@@ -230,8 +224,6 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Create And Alter Table", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			namespace                    = "cat_test_namespace"
 			password                     = "cat_test_password"
@@ -338,8 +330,6 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
-		t.Parallel()
-
 		namespace := "fs_test_namespace"
 
 		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
@@ -372,8 +362,6 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Load table", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			namespace                    = "lt_test_namespace"
 			password                     = "lt_test_password"
