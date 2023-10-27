@@ -5,15 +5,23 @@ import (
 	"os"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
+
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 )
 
-type configFetcher interface {
+type configSubscriber interface {
 	WorkspaceIDFromSource(sourceID string) string
 }
 
 type uploader interface {
 	Upload(context.Context, *os.File, ...string) (filemanager.UploadedFile, error)
+}
+
+type jobWithPayload struct {
+	*jobsdb.JobT
+
+	payload payload
 }
 
 type payload struct {
@@ -30,17 +38,17 @@ type payload struct {
 }
 
 func (p *payload) SetReceivedAt(t time.Time) {
-	p.ReceivedAt = t.UnixMicro()
+	p.ReceivedAt = t.UTC().UnixMicro()
 }
 
 func (p *payload) SetFailedAt(t time.Time) {
-	p.FailedAt = t.UnixMicro()
+	p.FailedAt = t.UTC().UnixMicro()
 }
 
-func (p *payload) FailedTime() time.Time {
+func (p *payload) FailedAtTime() time.Time {
 	return time.UnixMicro(p.FailedAt).UTC()
 }
 
 func (p *payload) AggregateKey() string {
-	return p.FailedTime().Format("2006-01-02/15")
+	return p.FailedAtTime().Format("2006-01-02/15")
 }

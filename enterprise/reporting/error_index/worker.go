@@ -29,12 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type jobWithPayload struct {
-	*jobsdb.JobT
-
-	payload payload
-}
-
 type worker struct {
 	sourceID    string
 	workspaceID string
@@ -42,9 +36,9 @@ type worker struct {
 	log          logger.Logger
 	statsFactory stats.Stats
 
-	jobsDB        jobsdb.JobsDB
-	configFetcher configFetcher
-	uploader      uploader
+	jobsDB           jobsdb.JobsDB
+	configSubscriber configSubscriber
+	uploader         uploader
 
 	lifecycle struct {
 		ctx    context.Context
@@ -78,20 +72,20 @@ func newWorker(
 	log logger.Logger,
 	statsFactory stats.Stats,
 	jobsDB jobsdb.JobsDB,
-	configFetcher configFetcher,
+	configFetcher configSubscriber,
 	uploader uploader,
 ) *worker {
 	workspaceID := configFetcher.WorkspaceIDFromSource(sourceID)
 
 	w := &worker{
-		sourceID:      sourceID,
-		workspaceID:   workspaceID,
-		log:           log.Child("worker").With("workspaceID", workspaceID).With("sourceID", sourceID),
-		statsFactory:  statsFactory,
-		jobsDB:        jobsDB,
-		configFetcher: configFetcher,
-		uploader:      uploader,
-		now:           time.Now,
+		sourceID:         sourceID,
+		workspaceID:      workspaceID,
+		log:              log.Child("worker").With("workspaceID", workspaceID).With("sourceID", sourceID),
+		statsFactory:     statsFactory,
+		jobsDB:           jobsDB,
+		configSubscriber: configFetcher,
+		uploader:         uploader,
+		now:              time.Now,
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 
@@ -127,11 +121,12 @@ func newWorker(
 	return w
 }
 
-// Work does the following:
-// 1. Fetches job results. If no jobs are fetched, returns.
-// 2. Checks if job limits are not reached and upload frequency is not met; returns.
-// 3. Upload jobs to object storage.
-// 4. Updates job status in jobsDB.
+// Work fetches and processes job results:
+// 1. Fetches job results.
+// 2. If no jobs are fetched, returns.
+// 3. If job limits are not reached and upload frequency is not met, returns.
+// 4. Uploads jobs to object storage.
+// 5. Updates job status in the jobsDB.
 func (w *worker) Work() (worked bool) {
 	jobResult, err := w.fetchJobs()
 	if err != nil && w.lifecycle.ctx.Err() != nil {
@@ -203,14 +198,12 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 
 	statusList := make([]*jobsdb.JobStatusT, 0, len(jobs))
 	for _, jobWithPayloads := range jobWithPayloadsMap {
-		uploadFile, err := w.uploadAggregatedJobPayloads(ctx, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) payload {
+		uploadFile, err := w.uploadPayloads(ctx, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) payload {
 			return item.payload
 		}))
 		if err != nil {
 			return nil, fmt.Errorf("uploading aggregated payloads: %w", err)
 		}
-
-		fmt.Println("uploadFile: ", uploadFile.Location)
 
 		statusList = append(statusList, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) *jobsdb.JobStatusT {
 			return &jobsdb.JobStatusT{
@@ -227,9 +220,9 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 	return statusList, nil
 }
 
-func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, payloads []payload) (*filemanager.UploadedFile, error) {
+func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filemanager.UploadedFile, error) {
 	slices.SortFunc(payloads, func(i, j payload) int {
-		return i.FailedTime().Compare(j.FailedTime())
+		return i.FailedAtTime().Compare(j.FailedAtTime())
 	})
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -242,8 +235,8 @@ func (w *worker) uploadAggregatedJobPayloads(ctx context.Context, payloads []pay
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	minFailedAt := payloads[0].FailedTime()
-	maxFailedAt := payloads[len(payloads)-1].FailedTime()
+	minFailedAt := payloads[0].FailedAtTime()
+	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
 	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
 

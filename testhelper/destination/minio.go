@@ -42,6 +42,7 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 			"MINIO_ACCESS_KEY=" + accessKey,
 			"MINIO_SECRET_KEY=" + secretKey,
 			"MINIO_SITE_REGION=" + region,
+			"MINIO_API_SELECT_PARQUET=on",
 		},
 	}
 

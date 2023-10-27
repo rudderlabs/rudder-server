@@ -24,15 +24,15 @@ import (
 )
 
 type ErrorIndexReporter struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	g             *errgroup.Group
-	log           logger.Logger
-	conf          *config.Config
-	configFetcher configFetcher
-	now           func() time.Time
-	dbsMu         sync.RWMutex
-	dbs           map[string]*handleWithSqlDB
+	ctx              context.Context
+	cancel           context.CancelFunc
+	g                *errgroup.Group
+	log              logger.Logger
+	conf             *config.Config
+	configSubscriber configSubscriber
+	now              func() time.Time
+	dbsMu            sync.RWMutex
+	dbs              map[string]*handleWithSqlDB
 
 	trigger func() <-chan time.Time
 
@@ -48,7 +48,7 @@ type handleWithSqlDB struct {
 	sqlDB *sql.DB
 }
 
-func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configFetcher configFetcher, conf *config.Config, statsFactory stats.Stats) *ErrorIndexReporter {
+func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscriber configSubscriber, conf *config.Config, statsFactory stats.Stats) *ErrorIndexReporter {
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -60,9 +60,9 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configFetcher
 		conf:         conf,
 		statsFactory: statsFactory,
 
-		configFetcher: configFetcher,
-		now:           time.Now,
-		dbs:           map[string]*handleWithSqlDB{},
+		configSubscriber: configSubscriber,
+		now:              time.Now,
+		dbs:              map[string]*handleWithSqlDB{},
 	}
 
 	eir.trigger = func() <-chan time.Time {
@@ -86,7 +86,7 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx)
 		}
 
 		for _, failedMessage := range metric.StatusDetail.FailedMessages {
-			workspaceID := eir.configFetcher.WorkspaceIDFromSource(metric.SourceID)
+			workspaceID := eir.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 
 			payload := payload{
 				MessageID:        failedMessage.MessageID,
@@ -216,7 +216,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		"enableSSE":        enableSSE,
 	}
 	fm, err := filemanager.NewS3Manager(s3Config, eir.log, func() time.Duration {
-		return eir.conf.GetDuration("ErrorIndex.FileManager.Timeout", 120, time.Second)
+		return eir.conf.GetDuration("ErrorIndex.Uploader.Timeout", 120, time.Second)
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
@@ -231,7 +231,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 				eir.log,
 				eir.statsFactory,
 				errIndexDB,
-				eir.configFetcher,
+				eir.configSubscriber,
 				fm,
 			)
 		},

@@ -5,7 +5,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error-index"
+	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
 
 	"golang.org/x/sync/errgroup"
 
