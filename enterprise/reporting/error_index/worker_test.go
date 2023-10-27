@@ -88,7 +88,7 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			require.NoError(t, w.write(buf, payloads))
+			require.NoError(t, w.encodeToParquet(buf, payloads))
 
 			pr, err := reader.NewParquetReader(buffer.NewBufferFileFromBytes(buf.Bytes()), new(payload), 8)
 			require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			require.NoError(t, w.write(fw, payloads))
+			require.NoError(t, w.encodeToParquet(fw, payloads))
 
 			t.Run("count all", func(t *testing.T) {
 				var count int64
@@ -681,7 +681,7 @@ func BenchmarkFileFormat(b *testing.B) {
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024))
 
-		require.NoError(b, w.write(buf, records))
+		require.NoError(b, w.encodeToParquet(buf, records))
 
 		b.Log("parquet size:", buf.Len()) // parquet size: 13.8 MB
 	})

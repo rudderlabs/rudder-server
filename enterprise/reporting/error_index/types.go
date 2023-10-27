@@ -3,6 +3,7 @@ package error_index
 import (
 	"context"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -49,6 +50,12 @@ func (p *payload) FailedAtTime() time.Time {
 	return time.UnixMicro(p.FailedAt).UTC()
 }
 
-func (p *payload) AggregateKey() string {
-	return p.FailedAtTime().Format("2006-01-02/15")
+func (p *payload) SortingKey() string {
+	const sep = "_"
+	return strconv.FormatInt(p.FailedAt, 10) + sep +
+		p.DestinationID + sep +
+		p.EventType + sep +
+		p.EventName + sep +
+		p.TransformationID + sep +
+		p.TrackingPlanID
 }

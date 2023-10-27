@@ -8,10 +8,9 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-
 	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/stretchr/testify/require"
 
@@ -481,7 +480,7 @@ func TestErrorIndexReporter(t *testing.T) {
 	t.Run("sync data", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		reports := []*types.PUReportedMetric{
@@ -540,8 +539,8 @@ func TestErrorIndexReporter(t *testing.T) {
 		c := config.New()
 		c.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
 		c.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
-		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKey)
-		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.SecretKey)
+		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)
+		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
 		c.Set("ErrorIndex.storage.S3ForcePathStyle", true)
 		c.Set("ErrorIndex.storage.DisableSSL", true)
 

@@ -192,7 +192,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 			return nil, fmt.Errorf("unmarshalling payload: %w", err)
 		}
 
-		key := p.AggregateKey()
+		key := p.FailedAtTime().Format("2006-01-02/15")
 		jobWithPayloadsMap[key] = append(jobWithPayloadsMap[key], jobWithPayload{JobT: job, payload: p})
 	}
 
@@ -248,7 +248,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		_ = os.Remove(f.Name())
 	}()
 
-	if err = w.write(f, payloads); err != nil {
+	if err = w.encodeToParquet(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)
 	}
 	if err = f.Close(); err != nil {
@@ -268,8 +268,8 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	return &uploadOutput, nil
 }
 
-// write writes the payloads to the parquet writer. Sorts the payloads to achieve better encoding.
-func (w *worker) write(wr io.Writer, payloads []payload) error {
+// encodeToParquet writes the payloads to the writer using parquet encoding. It sorts the payloads to achieve better encoding.
+func (w *worker) encodeToParquet(wr io.Writer, payloads []payload) error {
 	pw, err := writer.NewParquetWriterFromWriter(wr, new(payload), w.config.parquetParallelWriters.Load())
 	if err != nil {
 		return fmt.Errorf("creating parquet writer: %v", err)
