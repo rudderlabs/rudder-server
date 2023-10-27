@@ -3,6 +3,7 @@ package rsources
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,9 +75,38 @@ type DestinationStatus struct {
 	Stats     Stats  `json:"stats"`
 }
 
+type PagingInfo struct {
+	Size          int    `json:"size"`
+	NextPageToken string `json:"next"`
+}
+
+func NextPageTokenFromString(v string) (NextPageToken, error) {
+	var npt NextPageToken
+	if v == "" {
+		return npt, nil
+	}
+	s, err := base64.URLEncoding.DecodeString(v)
+	if err != nil {
+		return npt, err
+	}
+	err = json.Unmarshal(s, &npt)
+	return npt, err
+}
+
+type NextPageToken struct {
+	ID       string `json:"id"`
+	RecordID string `json:"record_id"`
+}
+
+func (npt *NextPageToken) String() string {
+	s, _ := json.Marshal(npt)
+	return base64.URLEncoding.EncodeToString(s)
+}
+
 type JobFailedRecords struct {
-	ID    string              `json:"id"`
-	Tasks []TaskFailedRecords `json:"tasks"`
+	ID     string              `json:"id"`
+	Tasks  []TaskFailedRecords `json:"tasks"`
+	Paging *PagingInfo         `json:"paging,omitempty"`
 }
 
 type TaskFailedRecords struct {
@@ -133,7 +163,7 @@ type JobService interface {
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
 
 	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
-	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error)
+	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
@@ -200,7 +230,7 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 	return nil
 }
 
-func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter) (JobFailedRecords, error) {
+func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecords, error) {
 	return JobFailedRecords{}, nil
 }
 
