@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/cenkalti/backoff/v4"
@@ -69,6 +71,7 @@ type App struct {
 	sourcesManager     *jobs.AsyncJobWh
 	admin              *whadmin.Admin
 	triggerStore       *sync.Map
+	validator          validations.Validator
 
 	appName string
 
@@ -185,6 +188,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.tenantManager,
 		a.bcManager,
 		a.triggerStore,
+		a.validator,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot create grpc server: %w", err)
@@ -207,6 +211,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.bcManager,
 		&router.StartUploadAlways,
 		a.logger,
+		a.validator,
 	)
 
 	return nil
@@ -483,6 +488,7 @@ func (a *App) onConfigDataEvent(
 					a.bcManager,
 					a.encodingFactory,
 					a.triggerStore,
+					a.validator,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)

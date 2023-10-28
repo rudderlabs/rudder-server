@@ -42,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 var (
@@ -336,7 +335,6 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	validations.Init()
 	eventschema.Init()
 	eventschema.Init2()
 	kafka.Init()

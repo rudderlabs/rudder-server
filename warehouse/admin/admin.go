@@ -31,9 +31,10 @@ type ConfigurationTestOutput struct {
 }
 
 type Admin struct {
-	csf    connectionSourcesFetcher
-	suas   startUploadAlwaysSetter
-	logger logger.Logger
+	csf       connectionSourcesFetcher
+	suas      startUploadAlwaysSetter
+	logger    logger.Logger
+	validator validations.Validator
 }
 
 type connectionSourcesFetcher interface {
@@ -48,11 +49,13 @@ func New(
 	csf connectionSourcesFetcher,
 	suas startUploadAlwaysSetter,
 	logger logger.Logger,
+	validator validations.Validator,
 ) *Admin {
 	return &Admin{
-		csf:    csf,
-		suas:   suas,
-		logger: logger.Child("admin"),
+		csf:       csf,
+		suas:      suas,
+		logger:    logger.Child("admin"),
+		validator: validator,
 	}
 }
 
@@ -131,8 +134,7 @@ func (a *Admin) ConfigurationTest(s ConfigurationTestInput, reply *Configuration
 
 	a.logger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
-	destinationValidator := validations.NewDestinationValidator()
-	res := destinationValidator.Validate(context.TODO(), &warehouse.Destination)
+	res := a.validator.Validate(context.TODO(), &warehouse.Destination, "")
 
 	reply.Valid = res.Success
 	reply.Error = res.Error

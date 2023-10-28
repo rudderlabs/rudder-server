@@ -13,6 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -333,7 +339,8 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
 	require.NoError(t, WithConstantRetries(func() error {
-		response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
+		validator := validations.NewValidator(config.New(), logger.NOP, stats.Default, filemanager.New, encoding.NewFactory(config.New()))
+		response := validator.Validate(context.Background(), &destination, "")
 		if !response.Success {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s",
 				destination.DestinationDefinition.Name, response.Error,

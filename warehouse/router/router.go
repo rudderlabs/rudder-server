@@ -134,6 +134,7 @@ func New(
 	bcManager *bcm.BackendConfigManager,
 	encodingFactory *encoding.Factory,
 	triggerStore *sync.Map,
+	validator validations.Validator,
 ) (*Router, error) {
 	r := &Router{}
 
@@ -164,12 +165,12 @@ func New(
 	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
 	r.uploadJobFactory = UploadJobFactory{
-		reporting:            reporting,
-		conf:                 r.conf,
-		logger:               r.logger,
-		statsFactory:         r.statsFactory,
-		db:                   r.db,
-		destinationValidator: validations.NewDestinationValidator(),
+		reporting:    reporting,
+		conf:         r.conf,
+		logger:       r.logger,
+		statsFactory: r.statsFactory,
+		db:           r.db,
+		validator:    validator,
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,

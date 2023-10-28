@@ -45,11 +45,9 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestGRPC(t *testing.T) {
-	validations.Init()
 	misc.Init()
 
 	const (

@@ -62,6 +62,7 @@ type GRPC struct {
 	stagingRepo        *repo.StagingFiles
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
+	validator          validations.Validator
 	fileManagerFactory filemanager.Factory
 
 	config struct {
@@ -84,6 +85,7 @@ func NewGRPCServer(
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
 	triggerStore *sync.Map,
+	validator validations.Validator,
 ) (*GRPC, error) {
 	g := &GRPC{
 		logger:             logger.Child("grpc"),
@@ -94,6 +96,7 @@ func NewGRPCServer(
 		tableUploadsRepo:   repo.NewTableUploads(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
+		validator:          validator,
 	}
 
 	g.config.region = conf.GetString("region", "")
@@ -587,24 +590,24 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to fetch ssh keys: %v", err)
 		}
 	}
-
-	res, err := validations.Validate(ctx, &model.ValidationRequest{
-		Path:        req.Path,
-		Step:        req.Step,
-		Destination: &reqModel.Destination,
-	})
+	var response json.RawMessage
+	switch req.Path {
+	case "steps":
+		response, err = json.Marshal(g.validator.Steps(&reqModel.Destination))
+	case "validate":
+		response, err = json.Marshal(g.validator.Validate(ctx, &reqModel.Destination, req.Step))
+	default:
+		return &proto.WHValidationResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid path: %s", req.Path)
+	}
 	if err != nil {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to validate: %v", err)
 	}
-	if res.Error != "" {
-		return &proto.WHValidationResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to validate: %v", res.Error)
-	}
 
 	// TODO: We can get rid of the Error field in the response. Since it requires compatibility on the cp router side, leaving it as it is for now.
 	return &proto.WHValidationResponse{
-		Data: res.Data,
+		Data: string(response),
 	}, nil
 }
 
@@ -721,7 +724,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return invalidDestinationCredErr{Base: err, Operation: "list"}
 	}
 
-	tempFilePath, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
+	tempFilePath, err := g.validator.CreateTempLoadFile(&backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: request.Type,
 		},

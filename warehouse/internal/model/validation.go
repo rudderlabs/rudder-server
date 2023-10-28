@@ -17,11 +17,6 @@ type ValidationRequest struct {
 	Destination *backendconfig.DestinationT
 }
 
-type ValidationResponse struct {
-	Error string
-	Data  string
-}
-
 type Step struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
