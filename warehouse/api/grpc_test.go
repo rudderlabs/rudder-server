@@ -149,7 +149,7 @@ func TestGRPC(t *testing.T) {
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
 		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats.Default)
-		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
+		grpcServer, err := newGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
 		tcpPort, err := kithelper.GetFreePort()

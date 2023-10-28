@@ -62,7 +62,6 @@ type App struct {
 	controlPlaneClient *controlplane.Client
 	bcManager          *bcm.BackendConfigManager
 	api                *api.Api
-	grpcServer         *api.GRPC
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
@@ -178,19 +177,7 @@ func (a *App) Setup(ctx context.Context) error {
 	)
 	jobs.WithConfig(a.sourcesManager, a.conf)
 
-	a.grpcServer, err = api.NewGRPCServer(
-		a.conf,
-		a.logger,
-		a.db,
-		a.tenantManager,
-		a.bcManager,
-		a.triggerStore,
-	)
-	if err != nil {
-		return fmt.Errorf("cannot create grpc server: %w", err)
-	}
-
-	a.api = api.NewApi(
+	a.api, err = api.New(
 		a.config.mode,
 		a.conf,
 		a.logger,
@@ -203,6 +190,10 @@ func (a *App) Setup(ctx context.Context) error {
 		a.sourcesManager,
 		a.triggerStore,
 	)
+	if err != nil {
+		return fmt.Errorf("setting up api: %w", err)
+	}
+
 	a.admin = whadmin.New(
 		a.bcManager,
 		&router.StartUploadAlways,
@@ -328,12 +319,12 @@ func (a *App) Run(ctx context.Context) error {
 
 		if mode.IsMaster(a.config.mode) {
 			g.Go(func() error {
-				a.grpcServer.Start(gCtx)
+				a.api.StartGRPCServer(gCtx)
 				return nil
 			})
 		}
 		g.Go(func() error {
-			return a.api.Start(gCtx)
+			return a.api.StartHTTPServer(gCtx)
 		})
 
 		return g.Wait()
@@ -405,7 +396,7 @@ func (a *App) Run(ctx context.Context) error {
 			return nil
 		}))
 		g.Go(func() error {
-			a.grpcServer.Start(gCtx)
+			a.api.StartGRPCServer(gCtx)
 			return nil
 		})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -414,7 +405,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	g.Go(func() error {
-		return a.api.Start(gCtx)
+		return a.api.StartHTTPServer(gCtx)
 	})
 	g.Go(func() error {
 		<-gCtx.Done()

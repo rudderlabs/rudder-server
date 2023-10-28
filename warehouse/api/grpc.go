@@ -49,7 +49,7 @@ const (
 	noSuchSync              = "No such sync exist"
 )
 
-type GRPC struct {
+type grpcServer struct {
 	proto.UnimplementedWarehouseServer
 
 	logger             logger.Logger
@@ -77,15 +77,15 @@ type GRPC struct {
 	}
 }
 
-func NewGRPCServer(
+func newGRPCServer(
 	conf *config.Config,
 	logger logger.Logger,
 	db *sqlmw.DB,
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
 	triggerStore *sync.Map,
-) (*GRPC, error) {
-	g := &GRPC{
+) (*grpcServer, error) {
+	g := &grpcServer{
 		logger:             logger.Child("grpc"),
 		tenantManager:      tenantManager,
 		bcManager:          bcManager,
@@ -141,7 +141,7 @@ func NewGRPCServer(
 	return g, nil
 }
 
-func (g *GRPC) Start(ctx context.Context) {
+func (g *grpcServer) start(ctx context.Context) {
 	configCh := g.tenantManager.WatchConfig(ctx)
 
 	for {
@@ -157,7 +157,7 @@ func (g *GRPC) Start(ctx context.Context) {
 	}
 }
 
-func (g *GRPC) processData(configData map[string]backendconfig.ConfigT) {
+func (g *grpcServer) processData(configData map[string]backendconfig.ConfigT) {
 	// Only 1 connection flag is enough, since they are all the same in multi-workspace environments
 	for _, wConfig := range configData {
 		connectionFlags := wConfig.ConnectionFlags
@@ -168,11 +168,11 @@ func (g *GRPC) processData(configData map[string]backendconfig.ConfigT) {
 	}
 }
 
-func (*GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+func (*grpcServer) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
 	return wrapperspb.Bool(true), nil
 }
 
-func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
+func (g *grpcServer) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	g.logger.Infow(
 		"Getting warehouse uploads",
 		lf.WorkspaceID, request.WorkspaceId,
@@ -254,7 +254,7 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 	return response, nil
 }
 
-func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
+func (g *grpcServer) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	g.logger.Infow("Getting warehouse upload",
 		lf.WorkspaceID, request.WorkspaceId,
 		lf.UploadJobID, request.UploadId,
@@ -329,7 +329,7 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 	}, nil
 }
 
-func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (g *grpcServer) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
 	g.logger.Infow("Triggering warehouse uploads",
 		lf.WorkspaceID, request.WorkspaceId,
 		lf.SourceID, request.SourceId,
@@ -402,7 +402,7 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 	}, nil
 }
 
-func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (g *grpcServer) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	g.logger.Infow("Triggering warehouse upload",
 		lf.WorkspaceID, request.WorkspaceId,
 		lf.UploadJobID, request.UploadId,
@@ -452,7 +452,7 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}, nil
 }
 
-func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+func (g *grpcServer) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	g.logger.Infow("Retrying warehouse syncs",
 		lf.WorkspaceID, req.WorkspaceId,
 		lf.SourceID, req.SourceId,
@@ -506,7 +506,7 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 	}, nil
 }
 
-func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+func (g *grpcServer) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	g.logger.Infow("Count syncs to retry",
 		lf.WorkspaceID, req.WorkspaceId,
 		lf.SourceID, req.SourceId,
@@ -557,7 +557,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 	}, nil
 }
 
-func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+func (g *grpcServer) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	g.logger.Infow("Validating destination", "Role", req.Role, "Path", req.Path, "Step", req.Step)
 
 	var (
@@ -608,7 +608,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 	}, nil
 }
 
-func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
+func (g *grpcServer) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
 	if !warehouseutils.ReadAsBool("useSSH", config) {
 		return nil
 	}
@@ -642,7 +642,7 @@ func (err invalidDestinationCredErr) Error() string {
 	return fmt.Sprintf("Invalid destination creds, failed for operation: %s with err: \n%s", err.Operation, err.Base.Error())
 }
 
-func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+func (g *grpcServer) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
 
 	byt, err := json.Marshal(request)
@@ -702,7 +702,7 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 	return false
 }
 
-func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
+func (g *grpcServer) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
 	settings := &filemanager.Settings{
 		Provider: request.Type,
 		Config:   request.Config,
@@ -799,7 +799,7 @@ func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap m
 	}
 }
 
-func (g *GRPC) RetrieveFailedBatches(
+func (g *grpcServer) RetrieveFailedBatches(
 	ctx context.Context,
 	req *proto.RetrieveFailedBatchesRequest,
 ) (*proto.RetrieveFailedBatchesResponse, error) {
@@ -870,7 +870,7 @@ func (g *GRPC) RetrieveFailedBatches(
 	return &proto.RetrieveFailedBatchesResponse{FailedBatches: failedBatches}, nil
 }
 
-func (g *GRPC) RetryFailedBatches(
+func (g *grpcServer) RetryFailedBatches(
 	ctx context.Context,
 	req *proto.RetryFailedBatchesRequest,
 ) (*proto.RetryFailedBatchesResponse, error) {

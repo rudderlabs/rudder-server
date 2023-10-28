@@ -66,7 +66,7 @@ type triggerUploadRequest struct {
 	DestinationID string `json:"destination_id"`
 }
 
-type Api struct {
+type httpServer struct {
 	mode          string
 	logger        logger.Logger
 	statsFactory  stats.Stats
@@ -90,7 +90,7 @@ type Api struct {
 	}
 }
 
-func NewApi(
+func newhttpServer(
 	mode string,
 	conf *config.Config,
 	log logger.Logger,
@@ -102,8 +102,8 @@ func NewApi(
 	bcManager *bcm.BackendConfigManager,
 	asyncManager *jobs.AsyncJobWh,
 	triggerStore *sync.Map,
-) *Api {
-	a := &Api{
+) *httpServer {
+	a := &httpServer{
 		mode:          mode,
 		logger:        log.Child("api"),
 		db:            db,
@@ -126,7 +126,7 @@ func NewApi(
 	return a
 }
 
-func (a *Api) Start(ctx context.Context) error {
+func (a *httpServer) start(ctx context.Context) error {
 	srvMux := chi.NewRouter()
 	srvMux.Use(
 		chiware.StatMiddleware(ctx, a.statsFactory, "warehouse"),
@@ -153,7 +153,7 @@ func (a *Api) Start(ctx context.Context) error {
 	return kithttputil.ListenAndServe(ctx, srv)
 }
 
-func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
+func (a *httpServer) addMasterEndpoints(ctx context.Context, r chi.Router) {
 	a.logger.Infow("waiting for BackendConfig before starting on " + strconv.Itoa(a.config.webPort))
 
 	a.bcConfig.WaitForConfig(ctx)
@@ -185,7 +185,7 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 	})
 }
 
-func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (a *httpServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService, notifierService string
 
 	ctx, cancel := context.WithTimeout(r.Context(), a.config.healthTimeout)
@@ -241,7 +241,7 @@ func checkHealth(ctx context.Context, db *sql.DB) bool {
 }
 
 // pendingEventsHandler check whether there are any pending staging files or uploads for the given source id
-func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+func (a *httpServer) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload pendingEventsRequest
@@ -357,7 +357,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resBody)
 }
 
-func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
+func (a *httpServer) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload triggerUploadRequest
@@ -403,7 +403,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
+func (a *httpServer) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload fetchTablesRequest
@@ -436,7 +436,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resBody)
 }
 
-func (a *Api) logMiddleware(delegate http.HandlerFunc) http.HandlerFunc {
+func (a *httpServer) logMiddleware(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a.logger.LogRequest(r)
 		delegate.ServeHTTP(w, r)
