@@ -58,7 +58,9 @@ type Router struct {
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
-	triggerStore *sync.Map
+
+	triggerStore             *sync.Map
+	createUploadAlwaysLoader createUploadAlwaysLoader
 
 	isEnabled atomic.Bool
 
@@ -78,6 +80,9 @@ type Router struct {
 
 	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
+
+	scheduledTimesCache     map[string][]int
+	scheduledTimesCacheLock sync.RWMutex
 
 	activeWorkerCount atomic.Int32
 	now               func() time.Time
@@ -134,6 +139,7 @@ func New(
 	bcManager *bcm.BackendConfigManager,
 	encodingFactory *encoding.Factory,
 	triggerStore *sync.Map,
+	createUploadAlwaysLoader createUploadAlwaysLoader,
 ) (*Router, error) {
 	r := &Router{}
 
@@ -155,6 +161,8 @@ func New(
 	r.now = time.Now
 	r.triggerStore = triggerStore
 	r.createJobMarkerMap = make(map[string]time.Time)
+	r.createUploadAlwaysLoader = createUploadAlwaysLoader
+	r.scheduledTimesCache = make(map[string][]int)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err

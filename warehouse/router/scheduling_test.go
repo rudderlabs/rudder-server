@@ -91,7 +91,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, tc.expectedPrevScheduledTime, prevScheduledTime(tc.syncFrequency, tc.syncStartAt, tc.currTime))
+				r := Router{}
+				require.Equal(t, tc.expectedPrevScheduledTime, r.prevScheduledTime(tc.syncFrequency, tc.syncStartAt, tc.currTime))
 			})
 		}
 	})
@@ -119,7 +120,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				start, end := excludeWindowStartEndTimes(tc.excludeWindow)
+				r := Router{}
+				start, end := r.excludeWindowStartEndTimes(tc.excludeWindow)
 				require.Equal(t, tc.expectedStart, start)
 				require.Equal(t, tc.expectedEnd, end)
 			})

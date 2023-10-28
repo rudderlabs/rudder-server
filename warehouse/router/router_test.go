@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,6 +98,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
+		startUploadAlwaysLoader := &atomic.Bool{}
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
@@ -129,6 +131,7 @@ func TestRouter(t *testing.T) {
 			backendConfigManager,
 			ef,
 			triggerStore,
+			startUploadAlwaysLoader,
 		)
 		require.NoError(t, err)
 

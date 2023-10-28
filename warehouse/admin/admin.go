@@ -32,7 +32,7 @@ type ConfigurationTestOutput struct {
 
 type Admin struct {
 	csf    connectionSourcesFetcher
-	suas   startUploadAlwaysSetter
+	cuas   createUploadAlwaysSetter
 	logger logger.Logger
 }
 
@@ -40,25 +40,25 @@ type connectionSourcesFetcher interface {
 	ConnectionSourcesMap(destID string) (map[string]model.Warehouse, bool)
 }
 
-type startUploadAlwaysSetter interface {
+type createUploadAlwaysSetter interface {
 	Store(bool)
 }
 
 func New(
 	csf connectionSourcesFetcher,
-	suas startUploadAlwaysSetter,
+	cuas createUploadAlwaysSetter,
 	logger logger.Logger,
 ) *Admin {
 	return &Admin{
 		csf:    csf,
-		suas:   suas,
+		cuas:   cuas,
 		logger: logger.Child("admin"),
 	}
 }
 
 // TriggerUpload sets uploads to start without delay
 func (a *Admin) TriggerUpload(off bool, reply *string) error {
-	a.suas.Store(!off)
+	a.cuas.Store(!off)
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
 	} else {
