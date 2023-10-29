@@ -5,7 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/tidwall/gjson"
 
@@ -30,8 +34,7 @@ var syncStatusMap = map[string]string{
 
 const (
 	uploadsTableName = warehouseutils.WarehouseUploadsTable
-
-	uploadColumns = `
+	uploadColumns    = `
 		id,
 		status,
 		schema,
@@ -53,6 +56,20 @@ const (
 		first_event_at,
 		last_event_at
 	`
+)
+
+var (
+	UploadFieldStatus          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"status", v} }
+	UploadFieldStartLoadFileID UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"start_load_file_id", v} }
+	UploadFieldEndLoadFileID   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"end_load_file_id", v} }
+	UploadFieldUpdatedAt       UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"updated_at", v} }
+	UploadFieldTimings         UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"timings", v} }
+	UploadFieldSchema          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"schema", v} }
+	UploadFieldLastExecAt      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"last_exec_at", v} }
+	UploadFieldInProgress      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"in_progress", v} }
+	UploadFieldMetadata        UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"metadata", v} }
+	UploadFieldError           UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error", v} }
+	UploadFieldErrorCategory   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error_category", v} }
 )
 
 type Uploads repo
@@ -1295,4 +1312,43 @@ func (uploads *Uploads) RetryFailedBatches(
 	}
 
 	return r.RowsAffected()
+}
+
+func (uploads *Uploads) WithTx(f func(tx *sqlmiddleware.Tx) error) error {
+	return (*repo)(uploads).WithTx(f)
+}
+
+func (uploads *Uploads) Update(ctx context.Context, id int64, fields []UpdateKeyValue) error {
+	return uploads.update(ctx, uploads.db.ExecContext, id, fields)
+}
+
+func (uploads *Uploads) UpdateWithTx(ctx context.Context, tx *sqlmiddleware.Tx, id int64, fields []UpdateKeyValue) error {
+	return uploads.update(ctx, tx.ExecContext, id, fields)
+}
+
+func (uploads *Uploads) update(
+	ctx context.Context,
+	exec func(context.Context, string, ...interface{}) (sql.Result, error),
+	id int64,
+	fields []UpdateKeyValue,
+) error {
+	if len(fields) == 0 {
+		return fmt.Errorf("no fields to update")
+	}
+
+	filters := strings.Join(lo.Map(fields, func(item UpdateKeyValue, index int) string {
+		return fmt.Sprintf(" %s = $%d ", item.key(), index+1)
+	}), ", ")
+	filtersArgs := lo.Map(fields, func(item UpdateKeyValue, index int) interface{} {
+		return item.value()
+	})
+
+	query := `UPDATE ` + uploadsTableName + ` SET ` + filters + ` WHERE id = $` + strconv.Itoa(len(filtersArgs)+1)
+	filtersArgs = append(filtersArgs, id)
+
+	_, err := exec(ctx, query, filtersArgs...)
+	if err != nil {
+		return fmt.Errorf("updating uploads: %w", err)
+	}
+	return nil
 }

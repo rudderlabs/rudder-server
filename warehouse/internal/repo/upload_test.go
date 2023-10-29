@@ -3,6 +3,7 @@ package repo_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -2502,5 +2503,159 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			require.NoError(t, err)
 			require.Zero(t, retries)
 		})
+	})
+}
+
+func TestUploads_Update(t *testing.T) {
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+		workspaceID     = "workspace_id"
+	)
+	var (
+		updatedStatus          = "updated_status"
+		updatedStartLoadFileID = int64(101)
+		updatedEndLoadFileID   = int64(1001)
+		updatedUpdatedAt       = now.Add(time.Hour)
+		updatedTimings         = json.RawMessage(`[{"generating_upload_schema":"2023-10-29T20:06:45.146042463Z"},{"generated_upload_schema":"2023-10-29T20:06:45.156733475Z"}]`)
+		updatedSchema          = json.RawMessage(`{"tracks":{"id":"string","received_at":"datetime"}}`)
+		updatedlastExecAt      = now.Add(time.Hour)
+		updatedMetadata        = json.RawMessage(`{"retried":true,"priority":50,"nextRetryTime":"2023-10-29T20:06:25.492432247Z","load_file_type":"csv"}`)
+		updatedError           = json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`)
+		updatedErrorCategory   = model.PermissionError
+	)
+
+	prepareUpload := func(t *testing.T) int64 {
+		t.Helper()
+
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		stagingFiles := []*model.StagingFile{
+			{
+				ID: stagingID,
+			},
+		}
+
+		uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			UploadSchema:    model.Schema{},
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+			Priority:        100,
+		}, stagingFiles)
+		require.NoError(t, err)
+
+		return uploadID
+	}
+
+	fieldsToUpdate := []repo.UpdateKeyValue{
+		repo.UploadFieldStatus(updatedStatus),
+		repo.UploadFieldStartLoadFileID(updatedStartLoadFileID),
+		repo.UploadFieldEndLoadFileID(updatedEndLoadFileID),
+		repo.UploadFieldUpdatedAt(updatedUpdatedAt),
+		repo.UploadFieldTimings(updatedTimings),
+		repo.UploadFieldSchema(updatedSchema),
+		repo.UploadFieldLastExecAt(updatedlastExecAt),
+		repo.UploadFieldInProgress(true),
+		repo.UploadFieldMetadata(updatedMetadata),
+		repo.UploadFieldError(updatedError),
+		repo.UploadFieldErrorCategory(updatedErrorCategory),
+	}
+
+	compare := func(t *testing.T, id int64) {
+		t.Helper()
+
+		op, err := repoUpload.Get(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, updatedStatus, op.Status)
+		require.Equal(t, updatedStartLoadFileID, op.LoadFileStartID)
+		require.Equal(t, updatedEndLoadFileID, op.LoadFileEndID)
+		require.JSONEq(t, string(updatedError), string(op.Error))
+		require.True(t, op.Retried)
+		require.Equal(t, 50, op.Priority)
+
+		var timings model.Timings
+		err = json.Unmarshal(updatedTimings, &timings)
+		require.NoError(t, err)
+		require.Equal(t, timings, op.Timings)
+
+		var schema model.Schema
+		err = json.Unmarshal(updatedSchema, &schema)
+		require.NoError(t, err)
+		require.Equal(t, schema, op.UploadSchema)
+
+		var metadata repo.UploadMetadata
+		err = json.Unmarshal(updatedMetadata, &metadata)
+		require.NoError(t, err)
+		require.Equal(t, metadata.Retried, op.Retried)
+		require.Equal(t, metadata.Priority, op.Priority)
+		require.Equal(t, metadata.NextRetryTime, op.NextRetryTime)
+		require.Equal(t, metadata.LoadFileType, op.LoadFileType)
+	}
+
+	t.Run("empty fields", func(t *testing.T) {
+		id := prepareUpload(t)
+
+		err := repoUpload.Update(ctx, id, nil)
+		require.Error(t, err)
+	})
+	t.Run("succeeded", func(t *testing.T) {
+		id := prepareUpload(t)
+
+		err := repoUpload.Update(ctx, id, fieldsToUpdate)
+		require.NoError(t, err)
+
+		compare(t, id)
+	})
+	t.Run("withTx succeeded", func(t *testing.T) {
+		id := prepareUpload(t)
+
+		err := repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+			return repoUpload.UpdateWithTx(ctx, tx, id, fieldsToUpdate)
+		})
+		require.NoError(t, err)
+
+		compare(t, id)
+	})
+	t.Run("withTx failed", func(t *testing.T) {
+		id := prepareUpload(t)
+
+		err := repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+			require.NoError(t, repoUpload.UpdateWithTx(ctx, tx, id, fieldsToUpdate))
+			return errors.New("test error")
+		})
+		require.Error(t, err)
+
+		op, err := repoUpload.Get(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, model.Waiting, op.Status)
+		require.False(t, op.Retried)
+		require.Equal(t, 100, op.Priority)
+	})
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		err := repoUpload.Update(ctx, -1, fieldsToUpdate)
+		require.ErrorIs(t, err, context.Canceled)
+
+		err = repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+			return repoUpload.UpdateWithTx(ctx, tx, -1, fieldsToUpdate)
+		})
+		require.ErrorIs(t, err, context.Canceled)
 	})
 }
