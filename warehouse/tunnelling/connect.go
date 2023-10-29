@@ -22,30 +22,44 @@ const (
 )
 
 type (
-	Type   string
-	Config map[string]interface{}
+	Config     map[string]interface{}
+	TunnelInfo struct {
+		Config Config
+	}
 )
 
-type TunnelInfo struct {
-	Config Config
+func Connect(dsn string, config Config) (*sql.DB, error) {
+	tunnelConfig, err := extractTunnelConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("reading ssh tunnel config: %w", err)
+	}
+
+	encodedDSN, err := tunnelConfig.EncodeWithDSN(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("encoding with dsn: %w", err)
+	}
+
+	db, err := sql.Open("sql+ssh", encodedDSN)
+	if err != nil {
+		return nil, fmt.Errorf("opening warehouse connection sql+ssh driver: %w", err)
+	}
+	return db, nil
 }
 
-func ReadSSHTunnelConfig(config Config) (conf *stunnel.Config, err error) {
+func extractTunnelConfig(config Config) (*stunnel.Config, error) {
 	var user, host, port, privateKey *string
+	var err error
 
-	if user, err = ReadString(sshUser, config); err != nil {
+	if user, err = readString(sshUser, config); err != nil {
 		return nil, err
 	}
-
-	if host, err = ReadString(sshHost, config); err != nil {
+	if host, err = readString(sshHost, config); err != nil {
 		return nil, err
 	}
-
-	if port, err = ReadString(sshPort, config); err != nil {
+	if port, err = readString(sshPort, config); err != nil {
 		return nil, err
 	}
-
-	if privateKey, err = ReadString(sshPrivateKey, config); err != nil {
+	if privateKey, err = readString(sshPrivateKey, config); err != nil {
 		return nil, err
 	}
 
@@ -62,7 +76,7 @@ func ReadSSHTunnelConfig(config Config) (conf *stunnel.Config, err error) {
 	}, nil
 }
 
-func ReadString(key string, config Config) (*string, error) {
+func readString(key string, config Config) (*string, error) {
 	val, ok := config[key]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrMissingKey, key)
@@ -72,22 +86,5 @@ func ReadString(key string, config Config) (*string, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: %s expected string", ErrUnexpectedType, key)
 	}
-
 	return &resp, nil
-}
-
-func SQLConnectThroughTunnel(dsn string, tunnelConfig Config) (*sql.DB, error) {
-	conf, err := ReadSSHTunnelConfig(tunnelConfig)
-	if err != nil {
-		return nil, fmt.Errorf("reading ssh tunnel config: %w", err)
-	}
-	encodedDSN, err := conf.EncodeWithDSN(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("encoding with dsn: %w", err)
-	}
-	db, err := sql.Open("sql+ssh", encodedDSN)
-	if err != nil {
-		return nil, fmt.Errorf("opening warehouse connection sql+ssh driver: %w", err)
-	}
-	return db, nil
 }

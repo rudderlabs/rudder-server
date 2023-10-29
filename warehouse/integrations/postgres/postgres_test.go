@@ -325,7 +325,7 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
+		db, err := tunnelling.Connect(dsn, tunnelInfo.Config)
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 

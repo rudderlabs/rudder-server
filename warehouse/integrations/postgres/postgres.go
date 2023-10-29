@@ -223,7 +223,7 @@ func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
 
 	if cred.tunnelInfo != nil {
 
-		db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.tunnelInfo.Config)
+		db, err = tunnelling.Connect(dsn.String(), cred.tunnelInfo.Config)
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}

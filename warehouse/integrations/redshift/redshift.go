@@ -1003,7 +1003,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	)
 
 	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config); err != nil {
+		if db, err = tunnelling.Connect(dsn.String(), cred.TunnelInfo.Config); err != nil {
 			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
 		}
 	} else {
