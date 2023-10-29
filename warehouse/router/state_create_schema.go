@@ -1,0 +1,12 @@
+package router
+
+import "github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
+func (job *UploadJob) createRemoteSchema(whManager manager.Manager) error {
+	if job.schemaHandle.IsWarehouseSchemaEmpty() {
+		if err := whManager.CreateSchema(job.ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
