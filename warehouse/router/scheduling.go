@@ -20,7 +20,7 @@ type createUploadAlwaysLoader interface {
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
 func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
-	if r.createUploadAlwaysLoader.Load() {
+	if r.createUploadAlways.Load() {
 		return true, nil
 	}
 
@@ -38,7 +38,7 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 
 	// gets exclude window start time and end time
 	excludeWindow := whutils.GetConfigValueAsMap(whutils.ExcludeWindow, warehouse.Destination.Config)
-	excludeWindowStartTime, excludeWindowEndTime := r.excludeWindowStartEndTimes(excludeWindow)
+	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
 
 	if checkCurrentTimeExistsInExcludeWindow(r.now().UTC(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false, fmt.Errorf("exclude window: current time exists in exclude window")
@@ -67,7 +67,7 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	return false, fmt.Errorf("before scheduled time")
 }
 
-func (r *Router) excludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+func excludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
 
 	if st, ok := excludeWindow[whutils.ExcludeWindowStartTime].(string); ok {

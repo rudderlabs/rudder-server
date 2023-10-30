@@ -120,8 +120,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				r := Router{}
-				start, end := r.excludeWindowStartEndTimes(tc.excludeWindow)
+				start, end := excludeWindowStartEndTimes(tc.excludeWindow)
 				require.Equal(t, tc.expectedStart, start)
 				require.Equal(t, tc.expectedEnd, end)
 			})

@@ -184,6 +184,7 @@ func (a *App) Setup(ctx context.Context) error {
 	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
 		a.logger,
+		a.statsFactory,
 		a.db,
 		a.tenantManager,
 		a.bcManager,

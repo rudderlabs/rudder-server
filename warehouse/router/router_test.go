@@ -98,7 +98,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
-		startUploadAlwaysLoader := &atomic.Bool{}
+		createUploadAlways := &atomic.Bool{}
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
@@ -131,7 +131,7 @@ func TestRouter(t *testing.T) {
 			backendConfigManager,
 			ef,
 			triggerStore,
-			startUploadAlwaysLoader,
+			createUploadAlways,
 		)
 		require.NoError(t, err)
 

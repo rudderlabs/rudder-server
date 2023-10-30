@@ -31,9 +31,9 @@ type ConfigurationTestOutput struct {
 }
 
 type Admin struct {
-	csf    connectionSourcesFetcher
-	cuas   createUploadAlwaysSetter
-	logger logger.Logger
+	connectionSources  connectionSourcesFetcher
+	createUploadAlways createUploadAlwaysSetter
+	logger             logger.Logger
 }
 
 type connectionSourcesFetcher interface {
@@ -45,20 +45,20 @@ type createUploadAlwaysSetter interface {
 }
 
 func New(
-	csf connectionSourcesFetcher,
-	cuas createUploadAlwaysSetter,
+	connectionSources connectionSourcesFetcher,
+	createUploadAlways createUploadAlwaysSetter,
 	logger logger.Logger,
 ) *Admin {
 	return &Admin{
-		csf:    csf,
-		cuas:   cuas,
-		logger: logger.Child("admin"),
+		connectionSources:  connectionSources,
+		createUploadAlways: createUploadAlways,
+		logger:             logger.Child("admin"),
 	}
 }
 
 // TriggerUpload sets uploads to start without delay
 func (a *Admin) TriggerUpload(off bool, reply *string) error {
-	a.cuas.Store(!off)
+	a.createUploadAlways.Store(!off)
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
 	} else {
@@ -73,7 +73,7 @@ func (a *Admin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	srcMap, ok := a.csf.ConnectionSourcesMap(s.DestID)
+	srcMap, ok := a.connectionSources.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
 	}
@@ -119,7 +119,7 @@ func (a *Admin) ConfigurationTest(s ConfigurationTestInput, reply *Configuration
 	}
 
 	var warehouse model.Warehouse
-	srcMap, ok := a.csf.ConnectionSourcesMap(s.DestID)
+	srcMap, ok := a.connectionSources.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
