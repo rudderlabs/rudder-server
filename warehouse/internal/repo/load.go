@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"database/sql"
 	jsonstd "encoding/json"
 	"fmt"
 
@@ -44,14 +43,14 @@ func NewLoadFiles(db *sqlmiddleware.DB, opts ...Opt) *LoadFiles {
 }
 
 // DeleteByStagingFiles deletes load files associated with stagingFileIDs.
-func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
+func (lf *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
 		WHERE
 		  staging_file_id = ANY($1);`
 
-	_, err := repo.db.ExecContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
+	_, err := lf.db.ExecContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return fmt.Errorf(`deleting load files: %w`, err)
 	}
@@ -60,58 +59,47 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 }
 
 // Insert loadFiles into the database.
-func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
-	// Using transactions for bulk copying
-	txn, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return
-	}
-
-	stmt, err := txn.PrepareContext(
-		ctx,
-		pq.CopyIn(
-			"wh_load_files",
-			"staging_file_id",
-			"location",
-			"source_id",
-			"destination_id",
-			"destination_type",
-			"table_name",
-			"total_events",
-			"created_at",
-			"metadata",
-		),
-	)
-	if err != nil {
-		return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
-	}
-	defer func() { _ = stmt.Close() }()
-
-	for _, loadFile := range loadFiles {
-		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
-		_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
+func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
+	return (*repo)(lf).WithTx(func(tx *sqlmiddleware.Tx) error {
+		stmt, err := tx.PrepareContext(
+			ctx,
+			pq.CopyIn(
+				"wh_load_files",
+				"staging_file_id",
+				"location",
+				"source_id",
+				"destination_id",
+				"destination_type",
+				"table_name",
+				"total_events",
+				"created_at",
+				"metadata",
+			),
+		)
 		if err != nil {
-			_ = txn.Rollback()
-			return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
+			return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
 		}
-	}
+		defer func() { _ = stmt.Close() }()
 
-	_, err = stmt.ExecContext(ctx)
-	if err != nil {
-		_ = txn.Rollback()
-		return fmt.Errorf(`inserting load files: CopyIn final exec: %w`, err)
-	}
-	err = txn.Commit()
-	if err != nil {
-		return fmt.Errorf(`inserting load files: commit: %w`, err)
-	}
-	return
+		for _, loadFile := range loadFiles {
+			metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
+			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
+			if err != nil {
+				return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
+			}
+		}
+		_, err = stmt.ExecContext(ctx)
+		if err != nil {
+			return fmt.Errorf(`inserting load files: CopyIn final exec: %w`, err)
+		}
+		return nil
+	})
 }
 
 // GetByStagingFiles returns all load files matching the staging file ids.
 //
 //	Ordered by id ascending.
-func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	sqlStatement := `
 		WITH row_numbered_load_files as (
 		SELECT
@@ -136,7 +124,7 @@ func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []i
 		ORDER BY id ASC
 	`
 
-	rows, err := repo.db.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
+	rows, err := lf.db.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query staging ids: %w", err)
 	}
