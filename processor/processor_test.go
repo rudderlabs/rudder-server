@@ -2101,6 +2101,7 @@ var _ = Describe("Processor", Ordered, func() {
 				})
 
 			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), "job_run_id_1", gomock.Any(), rsources.Stats{Out: 1}).Times(1)
+			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), "job_run_id_1", gomock.Any(), rsources.Stats{In: 1, Failed: 1}).Times(1)
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -2113,8 +2114,10 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Return(nil).Times(0)
 
 			// One Store call is expected for all events
-			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
-				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
+			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(1))
+				})
 
 			config.Set("RSources.toAbortJobRunIDs", "job_run_id_1")
 			defer config.Reset()
@@ -2412,7 +2415,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, false)
+			response := ConvertToFilteredTransformerResponse(events, false, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
 			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
 			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
@@ -2664,7 +2667,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2737,7 +2740,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2800,7 +2803,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 		It("Should allow all events when supportedMessageTypes is not an array", func() {
@@ -2864,7 +2867,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2935,7 +2938,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3005,7 +3008,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3101,7 +3104,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3197,7 +3200,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3292,7 +3295,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3382,7 +3385,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3475,7 +3478,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3571,7 +3574,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 	})

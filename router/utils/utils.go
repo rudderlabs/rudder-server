@@ -29,6 +29,7 @@ const (
 	DrainReasonDestDisabled      = "destination is disabled"
 	DrainReasonDestAbort         = "destination configured to abort"
 	DrainReasonJobRunIDCancelled = "cancelled jobRunID"
+	DrainReasonJobExpired        = "job expired"
 )
 
 type DestinationWithSources struct {
@@ -140,7 +141,7 @@ func (d *drainer) Drain(
 	_ = json.Unmarshal(job.Parameters, &jobParams)
 	destID := jobParams.DestinationID
 	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
-		return true, "job expired"
+		return true, DrainReasonJobExpired
 	}
 
 	if destination, ok := d.destinationResolver(destID); !ok {

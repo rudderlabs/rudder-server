@@ -1589,18 +1589,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			if !proc.isDestinationAvailable(singularEvent, sourceId) {
 				continue
 			}
-			// check if jobRunId is cancelled
-			if commonMetadataFromSingularEvent.SourceJobRunID != "" &&
-				slices.Contains(
-					proc.drainConfig.jobRunIDs.Load(),
-					commonMetadataFromSingularEvent.SourceJobRunID,
-				) {
-				proc.logger.Debugf(
-					"cancelled jobRunID: %s",
-					commonMetadataFromSingularEvent.SourceJobRunID,
-				)
-				continue
-			}
 
 			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
 				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
@@ -2352,7 +2340,24 @@ func (proc *Handle) transformSrcDest(
 	s := time.Now()
 	eventFilterInCount := len(eventsToTransform)
 	proc.logger.Debug("Supported messages filtering input size", eventFilterInCount)
-	response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
+	response = ConvertToFilteredTransformerResponse(
+		eventsToTransform,
+		transformAt != "none",
+		func(event transformer.TransformerEvent) (bool, string) {
+			if event.Metadata.SourceJobRunID != "" &&
+				slices.Contains(
+					proc.drainConfig.jobRunIDs.Load(),
+					event.Metadata.SourceJobRunID,
+				) {
+				proc.logger.Debugf(
+					"cancelled jobRunID: %s",
+					event.Metadata.SourceJobRunID,
+				)
+				return true, "cancelled jobRunId"
+			}
+			return false, ""
+		},
+	)
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
@@ -2568,7 +2573,11 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 	return nil
 }
 
-func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent, filter bool) transformer.Response {
+func ConvertToFilteredTransformerResponse(
+	events []transformer.TransformerEvent,
+	filter bool,
+	drainFunc func(transformer.TransformerEvent) (bool, string),
+) transformer.Response {
 	var responses []transformer.TransformerResponse
 	var failedEvents []transformer.TransformerResponse
 
@@ -2582,6 +2591,20 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 	// filter unsupported message types
 	for i := range events {
 		event := &events[i]
+
+		// drain events
+		if drain, reason := drainFunc(*event); drain {
+			failedEvents = append(
+				failedEvents,
+				transformer.TransformerResponse{
+					Output:     event.Message,
+					StatusCode: types.DrainEventCode,
+					Metadata:   event.Metadata,
+					Error:      reason,
+				},
+			)
+			continue
+		}
 
 		if filter {
 			// filter unsupported message types
