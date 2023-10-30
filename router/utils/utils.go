@@ -1,10 +1,9 @@
 package utils
 
 import (
+	"slices"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/tidwall/sjson"
 

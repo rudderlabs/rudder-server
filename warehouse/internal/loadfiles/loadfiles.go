@@ -3,6 +3,7 @@ package loadfiles
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
