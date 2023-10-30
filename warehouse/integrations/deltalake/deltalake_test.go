@@ -7,12 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -19,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
