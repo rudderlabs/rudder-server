@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+
 	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -24,14 +26,12 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
-
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 

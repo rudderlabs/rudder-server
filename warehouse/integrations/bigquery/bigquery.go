@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/samber/lo"
 
 	"cloud.google.com/go/bigquery"
-	"golang.org/x/exp/slices"
 	bqService "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"

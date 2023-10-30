@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	stunnel "github.com/rudderlabs/sql-tunnels/driver/ssh"
 )
 
@@ -28,6 +30,18 @@ type (
 	}
 )
 
+// ExtractTunnelInfoFromDestinationConfig extracts TunnelInfo from destination config if tunnel is enabled for the destination.
+func ExtractTunnelInfoFromDestinationConfig(config Config) *TunnelInfo {
+	if tunnelEnabled := whutils.ReadAsBool("useSSH", config); !tunnelEnabled {
+		return nil
+	}
+
+	return &TunnelInfo{
+		Config: config,
+	}
+}
+
+// Connect establishes a database connection over an SSH tunnel.
 func Connect(dsn string, config Config) (*sql.DB, error) {
 	tunnelConfig, err := extractTunnelConfig(config)
 	if err != nil {

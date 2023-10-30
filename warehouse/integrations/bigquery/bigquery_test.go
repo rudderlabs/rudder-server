@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/golang/mock/gomock"
 

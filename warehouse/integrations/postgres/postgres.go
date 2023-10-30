@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -248,7 +249,7 @@ func (pg *Postgres) getConnectionCredentials() credentials {
 		sslMode:  sslMode,
 		sslDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.connectTimeout,
-		tunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(
+		tunnelInfo: tunnelling.ExtractTunnelInfoFromDestinationConfig(
 			pg.Warehouse.Destination.Config,
 		),
 	}
