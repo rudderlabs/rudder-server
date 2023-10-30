@@ -315,7 +315,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		if err = json.NewDecoder(res.Body).Decode(&jr); err != nil {
 			return false
 		}
-		return jr.Status == model.SourceJobStatusSucceeded
+		return jr.Status == model.SourceJobStatusSucceeded.String()
 	}
 	require.Eventuallyf(t, operation, WaitFor10Minute, SourceJobQueryFrequency,
 		"Failed to get source job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s: %v",

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -122,6 +123,7 @@ type Postgres struct {
 	LoadFileDownloader downloader.Downloader
 
 	config struct {
+		allowMerge                                bool
 		enableDeleteByJobs                        bool
 		numWorkersDownloadLoadFiles               int
 		slowQueryThreshold                        time.Duration
@@ -162,6 +164,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
+	pg.config.allowMerge = conf.GetBool("Warehouse.postgres.allowMerge", true)
 	pg.config.enableDeleteByJobs = conf.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	pg.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 	pg.config.slowQueryThreshold = conf.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
@@ -223,7 +226,7 @@ func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
 
 	if cred.tunnelInfo != nil {
 
-		db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.tunnelInfo.Config)
+		db, err = tunnelling.Connect(dsn.String(), cred.tunnelInfo.Config)
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
@@ -248,7 +251,7 @@ func (pg *Postgres) getConnectionCredentials() credentials {
 		sslMode:  sslMode,
 		sslDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.connectTimeout,
-		tunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(
+		tunnelInfo: tunnelling.ExtractTunnelInfoFromDestinationConfig(
 			pg.Warehouse.Destination.Config,
 		),
 	}

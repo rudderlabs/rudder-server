@@ -213,12 +213,16 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 
 		for _, job := range responses.Jobs {
 			var response notifierResponse
+			var jobStatus model.SourceJobStatus
 
 			if err = json.Unmarshal(job.Payload, &response); err != nil {
 				return fmt.Errorf("unmarshalling notifier response for source job %d: %w", job.ID, err)
 			}
+			if jobStatus, err = model.FromSourceJobStatus(string(job.Status)); err != nil {
+				return fmt.Errorf("invalid job status %s for source job %d: %w", job.Status, job.ID, err)
+			}
 			if pj, ok := pendingJobsMap[response.Id]; ok {
-				pj.Status = string(job.Status)
+				pj.Status = jobStatus
 				pj.Error = job.Error
 			}
 		}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
@@ -69,6 +70,7 @@ type App struct {
 	sourcesManager     *source.Manager
 	admin              *whadmin.Admin
 	triggerStore       *sync.Map
+	createUploadAlways *atomic.Bool
 
 	appName string
 
@@ -132,6 +134,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("setting up database: %w", err)
 	}
 
+	a.createUploadAlways = &atomic.Bool{}
 	a.triggerStore = &sync.Map{}
 	a.tenantManager = multitenant.New(
 		a.conf,
@@ -206,7 +209,7 @@ func (a *App) Setup(ctx context.Context) error {
 	)
 	a.admin = whadmin.New(
 		a.bcManager,
-		&router.StartUploadAlways,
+		a.createUploadAlways,
 		a.logger,
 	)
 
@@ -484,6 +487,7 @@ func (a *App) onConfigDataEvent(
 					a.bcManager,
 					a.encodingFactory,
 					a.triggerStore,
+					a.createUploadAlways,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)

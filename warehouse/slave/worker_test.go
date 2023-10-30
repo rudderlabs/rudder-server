@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
@@ -25,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -76,7 +77,7 @@ func TestSlaveWorker(t *testing.T) {
 		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
 		schemaMap := stagingSchema(t)
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *notifier.ClaimJobResponse)
@@ -86,15 +87,15 @@ func TestSlaveWorker(t *testing.T) {
 				subscribeCh: subscribeCh,
 			}
 
-			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newWorker(
-				config.Default,
+				config.New(),
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
-				constraints.New(config.Default),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -188,15 +189,15 @@ func TestSlaveWorker(t *testing.T) {
 				subscribeCh: subscribeCh,
 			}
 
-			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newWorker(
-				config.Default,
+				config.New(),
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
-				constraints.New(config.Default),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -317,15 +318,15 @@ func TestSlaveWorker(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.s3_datalake.columnCountLimit", 10)
 
-			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
-				constraints.New(config.Default),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -386,15 +387,15 @@ func TestSlaveWorker(t *testing.T) {
 				subscribeCh: subscribeCh,
 			}
 
-			tenantManager := multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
 
 			slaveWorker := newWorker(
-				config.Default,
+				config.New(),
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
-				bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default),
-				constraints.New(config.Default),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -539,9 +540,9 @@ func TestSlaveWorker(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		tenantManager := multitenant.New(config.Default, mockBackendConfig)
-		bcm := bcm.New(config.Default, nil, tenantManager, logger.NOP, stats.Default)
-		ef := encoding.NewFactory(config.Default)
+		tenantManager := multitenant.New(config.New(), mockBackendConfig)
+		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New())
+		ef := encoding.NewFactory(config.New())
 
 		setupCh := make(chan struct{})
 		go func() {
@@ -567,10 +568,10 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
 				bcm,
-				constraints.New(config.Default),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -633,10 +634,10 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				stats.Default,
+				memstats.New(),
 				slaveNotifier,
 				bcm,
-				constraints.New(config.Default),
+				constraints.New(config.New()),
 				ef,
 				workerIdx,
 			)
@@ -645,16 +646,9 @@ func TestSlaveWorker(t *testing.T) {
 				name          string
 				sourceID      string
 				destinationID string
-				jobType       string
+				jobType       model.SourceJobType
 				expectedError error
 			}{
-				{
-					name:          "invalid job type",
-					sourceID:      sourceID,
-					destinationID: destinationID,
-					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid sourceJob type"),
-				},
 				{
 					name:          "invalid parameters",
 					jobType:       model.SourceJobTypeDeleteByJobRunID,

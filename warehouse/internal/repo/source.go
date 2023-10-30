@@ -186,12 +186,11 @@ func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 		sourceJob.Error = errors.New(errorRaw.String)
 	}
 	if jobTypeRaw.Valid {
-		switch jobTypeRaw.String {
-		case model.SourceJobTypeDeleteByJobRunID.String():
-			sourceJob.JobType = model.SourceJobTypeDeleteByJobRunID
-		default:
-			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
+		jobType, err := model.FromSourceJobType(jobTypeRaw.String)
+		if err != nil {
+			return fmt.Errorf("scanning: %w", err)
 		}
+		sourceJob.JobType = jobType
 	} else {
 		return fmt.Errorf("scanning: job type is null")
 	}
