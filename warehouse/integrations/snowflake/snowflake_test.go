@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -26,7 +28,6 @@ import (
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -627,7 +628,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -644,7 +645,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -673,7 +674,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				)})
 
-				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				sf, err := snowflake.New(c, logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -721,7 +722,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, true)
 
-				sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -771,7 +772,7 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
 
-				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				sf, err := snowflake.New(c, logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -828,7 +829,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -851,7 +852,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -896,7 +897,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -923,7 +924,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -1004,7 +1005,7 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.snowflake.loadTableStrategy", tc.loadTableStrategy)
 
-			sf, err := snowflake.New(c, logger.NOP, stats.Default)
+			sf, err := snowflake.New(c, logger.NOP, memstats.New())
 			require.NoError(t, err)
 
 			mockCtrl := gomock.NewController(t)
