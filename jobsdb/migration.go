@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 // startMigrateDSLoop migrates jobs from src dataset (srcDS) to destination dataset (dest_ds)

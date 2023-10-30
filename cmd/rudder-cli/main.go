@@ -8,7 +8,7 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/tidwall/gjson"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 
 	"github.com/rudderlabs/rudder-server/cmd/rudder-cli/client"
 	"github.com/rudderlabs/rudder-server/cmd/rudder-cli/config"
@@ -26,7 +26,7 @@ func main() {
 	app.Version = "0.1.1"
 	app.Description = "A command line interface to your Rudder"
 
-	app.Commands = []cli.Command{
+	app.Commands = []*cli.Command{
 		{
 			Name:  "status",
 			Usage: "Display status of depending services",
@@ -56,11 +56,12 @@ func main() {
 			Name:  "server-status",
 			Usage: "Shows rudder server status.",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
 					`,
+					Aliases: []string{"j"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -78,11 +79,12 @@ func main() {
 			Name:  "server-config",
 			Usage: "Gets server configuration",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
 					`,
+					Aliases: []string{"j"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -100,13 +102,14 @@ func main() {
 			Name:  "routing-config",
 			Usage: "Gets current routing configuration from the server",
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name: "jsonpath",
 					Usage: `Json path to filter output, such as \"gateway.ack-count\" or \"server-mode\".
 	  	Refer https://github.com/tidwall/gjson/blob/master/SYNTAX.md for more info
 					`,
+					Aliases: []string{"j"},
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "only-processor-enabled",
 					Usage: "Pass this flag with value true to filter config for processor enabled destinations",
 				},
@@ -125,7 +128,7 @@ func main() {
 			Name:  "trigger-wh-upload",
 			Usage: "Start warehouse uploads without any delay irrepective of configured sync schedule",
 			Flags: []cli.Flag{
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "off, o",
 					Usage: `Use this to turn off explicit warehouse upload triggers. Warehouse uploads will continue to be done as per schedule in control plane.`,
 				},
@@ -141,21 +144,25 @@ func main() {
 			Name:  "wh-query",
 			Usage: "Query underlying warehouse",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "dest, d",
-					Usage: `Specify destination ID to query underlying warehouse`,
+				&cli.StringFlag{
+					Name:    "dest",
+					Usage:   `Specify destination ID to query underlying warehouse`,
+					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
-					Name:  "source, src",
-					Usage: `Specify source ID to query underlying warehouse`,
+				&cli.StringFlag{
+					Name:    "source",
+					Usage:   `Specify source ID to query underlying warehouse`,
+					Aliases: []string{"src"},
 				},
-				cli.StringFlag{
-					Name:  "sql, s",
-					Usage: `Specify SQL statement to query underlying warehouse`,
+				&cli.StringFlag{
+					Name:    "sql",
+					Usage:   `Specify SQL statement to query underlying warehouse`,
+					Aliases: []string{"s"},
 				},
-				cli.StringFlag{
-					Name:  "file, f",
-					Usage: `Specify SQL file to query underlying warehouse`,
+				&cli.StringFlag{
+					Name:    "file",
+					Usage:   `Specify SQL file to query underlying warehouse`,
+					Aliases: []string{"f"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -167,9 +174,10 @@ func main() {
 			Name:  "wh-test",
 			Usage: "Test underlying warehouse",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "dest, d",
-					Usage: `Specify destination ID to test underlying warehouse`,
+				&cli.StringFlag{
+					Name:    "dest",
+					Usage:   `Specify destination ID to test underlying warehouse`,
+					Aliases: []string{"d"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -198,17 +206,20 @@ func main() {
 			Name:  "ds-status",
 			Usage: "Get broader level ds table status",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
-					Name:  "dsnum, d",
-					Usage: `Specify the ds table num`,
+				&cli.StringFlag{
+					Name:    "dsnum",
+					Usage:   `Specify the ds table num`,
+					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
-					Name:  "format, f",
-					Usage: `Specify output format, json for json string, table for formatted table`,
+				&cli.StringFlag{
+					Name:    "format",
+					Usage:   `Specify output format, json for json string, table for formatted table`,
+					Aliases: []string{"f"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -232,9 +243,10 @@ func main() {
 			Name:  "ds-list",
 			Usage: "Get List of DS Tables",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -246,13 +258,15 @@ func main() {
 			Name:  "job-by-id",
 			Usage: "Get Job by ID",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
-					Name:  "jobid, d",
-					Usage: `Specify the jobid`,
+				&cli.StringFlag{
+					Name:    "jobid",
+					Usage:   `Specify the jobid`,
+					Aliases: []string{"j"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -264,21 +278,25 @@ func main() {
 			Name:  "jobs-status",
 			Usage: "Get Statuses of Jobs in DS Tables grouped by SrcId, DestID, CustomVal",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
-					Name:  "dsnum, d",
-					Usage: `Specify the ds table num`,
+				&cli.StringFlag{
+					Name:    "dsnum",
+					Usage:   `Specify the ds table num`,
+					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
-					Name:  "numds, n",
-					Usage: `Number of Jobs in the first n DS`,
+				&cli.StringFlag{
+					Name:    "numds",
+					Usage:   `Number of Jobs in the first n DS`,
+					Aliases: []string{"n"},
 				},
-				cli.StringFlag{
-					Name:  "format, f",
-					Usage: `Specify output format, json for json string, table for formatted table`,
+				&cli.StringFlag{
+					Name:    "format",
+					Usage:   `Specify output format, json for json string, table for formatted table`,
+					Aliases: []string{"f"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -290,17 +308,20 @@ func main() {
 			Name:  "get-failed",
 			Usage: "Get Last 5 Failed Jobs in DS Tables",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
-					Name:  "dsnum, d",
-					Usage: `Specify the ds table num`,
+				&cli.StringFlag{
+					Name:    "dsnum",
+					Usage:   `Specify the ds table num`,
+					Aliases: []string{"d"},
 				},
-				cli.StringFlag{
-					Name:  "destType, dt",
-					Usage: `Specify the destination type`,
+				&cli.StringFlag{
+					Name:    "destType",
+					Usage:   `Specify the destination type`,
+					Aliases: []string{"dt"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -312,17 +333,20 @@ func main() {
 			Name:  "job-status",
 			Usage: "Get Statuses of the given Job ID",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "type, t",
-					Usage: `Specify ds type, one of rt, brt, gw, proc_error`,
+				&cli.StringFlag{
+					Name:    "type",
+					Usage:   `Specify ds type, one of rt, brt, gw, proc_error`,
+					Aliases: []string{"t"},
 				},
-				cli.StringFlag{
-					Name:  "jobid, d",
-					Usage: `Specify the jobid`,
+				&cli.StringFlag{
+					Name:    "jobid",
+					Usage:   `Specify the jobid`,
+					Aliases: []string{"j"},
 				},
-				cli.StringFlag{
-					Name:  "format, f",
-					Usage: `Specify output format, json for json string, table for formatted table`,
+				&cli.StringFlag{
+					Name:    "format",
+					Usage:   `Specify output format, json for json string, table for formatted table`,
+					Aliases: []string{"f"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -334,14 +358,16 @@ func main() {
 			Name:  "logging",
 			Usage: "Set log level for module. It will affect the module and it's children",
 			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name: "module, m",
+				&cli.StringFlag{
+					Name: "module",
 					Usage: `Specify module to set log level examples: router, router.GA
 		Use "root" to set server wide logging level`,
+					Aliases: []string{"m"},
 				},
-				cli.StringFlag{
-					Name:  "level, l",
-					Usage: `Valid log levels are EVENT, DEBUG, INFO, WARN, ERROR, FATAL`,
+				&cli.StringFlag{
+					Name:    "level",
+					Usage:   `Valid log levels are EVENT, DEBUG, INFO, WARN, ERROR, FATAL`,
+					Aliases: []string{"l"},
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -376,24 +402,26 @@ func main() {
 
 	// Global Flags
 	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:   "server-dir",
-			Usage:  "Set your Server Directory, Default is ",
-			EnvVar: config.RudderServerPathKey,
+		&cli.StringFlag{
+			Name:    "server-dir",
+			Usage:   "Set your Server Directory, Default is ",
+			EnvVars: []string{"config.RudderServerPathKey"},
+			Aliases: []string{"s"},
 		},
-		cli.StringFlag{
-			Name:   "env-file",
-			Usage:  "Set your Env file name, Default is ",
-			EnvVar: config.RudderEnvFilePathKey,
+		&cli.StringFlag{
+			Name:    "env-file",
+			Usage:   "Set your Env file name, Default is ",
+			EnvVars: []string{"config.RudderEnvFilePathKey"},
+			Aliases: []string{"e"},
 		},
 	}
 
 	app.Before = func(c *cli.Context) error {
-		if c.GlobalString("server-dir") != "" {
-			os.Setenv(config.RudderEnvFilePathKey, c.GlobalString("server-dir"))
+		if c.String("server-dir") != "" {
+			os.Setenv(config.RudderEnvFilePathKey, c.String("server-dir"))
 		}
-		if c.GlobalString("env-file") != "" {
-			os.Setenv(config.RudderEnvFilePathKey, c.GlobalString("env-file"))
+		if c.String("env-file") != "" {
+			os.Setenv(config.RudderEnvFilePathKey, c.String("env-file"))
 		}
 		return nil
 	}

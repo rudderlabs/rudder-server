@@ -95,11 +95,12 @@ func (mr *MockUploaderMockRecorder) GetLoadFileType() *gomock.Call {
 }
 
 // GetLoadFilesMetadata mocks base method.
-func (m *MockUploader) GetLoadFilesMetadata(arg0 context.Context, arg1 warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (m *MockUploader) GetLoadFilesMetadata(arg0 context.Context, arg1 warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetLoadFilesMetadata", arg0, arg1)
 	ret0, _ := ret[0].([]warehouseutils.LoadFile)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetLoadFilesMetadata indicates an expected call of GetLoadFilesMetadata.

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -16,8 +17,6 @@ import (
 	"github.com/golang/mock/gomock"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -771,7 +770,7 @@ func TestLongRunningTransformation(t *testing.T) {
 		mockLogger := mock_logger.NewMockLogger(ctrl)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		trackLongRunningTransformation(ctx, "stage", time.Microsecond, mockLogger)
+		trackLongRunningTransformation(ctx, "stage", time.Hour, mockLogger)
 	})
 
 	t.Run("log stmt", func(t *testing.T) {

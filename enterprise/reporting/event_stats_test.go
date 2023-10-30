@@ -40,7 +40,10 @@ func TestEventStatsReporter(t *testing.T) {
 								{
 									ID:      destinationID,
 									Enabled: true,
-								},
+									DestinationDefinition: backendconfig.DestinationDefinitionT{
+										Name: "test-destination-name",
+									},
+								}, // Added a comma here
 							},
 						},
 					},
@@ -77,8 +80,9 @@ func TestEventStatsReporter(t *testing.T) {
 				TerminalPU: true,
 			},
 			StatusDetail: &types.StatusDetail{
-				Count:  10,
-				Status: "succeeded",
+				Count:      10,
+				Status:     "succeeded",
+				StatusCode: 200,
 			},
 		},
 		{
@@ -92,51 +96,33 @@ func TestEventStatsReporter(t *testing.T) {
 				TerminalPU: false,
 			},
 			StatusDetail: &types.StatusDetail{
-				Count:  10,
-				Status: "aborted",
+				Count:      10,
+				Status:     "aborted",
+				StatusCode: 500,
 			},
 		},
-		// {
-		// 	ConnectionDetails: types.ConnectionDetails{
-		// 		SourceID:       "momentum",
-		// 		DestinationID:  destinationID,
-		// 		SourceCategory: sourceCategory,
-		// 	},
-		// 	PUDetails: types.PUDetails{
-		// 		PU:         reportedBy,
-		// 		TerminalPU: false,
-		// 	},
-		// 	StatusDetail: &types.StatusDetail{
-		// 		Count:  10,
-		// 		Status: "momentum",
-		// 	},
-		// },
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
-	err := esr.Report(testReports, nil)
+	err := esr.Report(testReports)
 	require.NoError(t, err)
 	require.Equal(t, statsStore.Get(EventsDeliveredMetricName, map[string]string{
-		"workspaceId":    workspaceID,
-		"sourceId":       sourceID,
-		"destinationId":  destinationID,
-		"reportedBy":     reportedBy,
-		"sourceCategory": sourceCategory,
-		"terminal":       "true",
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"terminal":        "true",
+		"status_code":     "200",
+		"destinationType": "test-destination-name",
 	}).LastValue(), float64(10))
 	require.Equal(t, statsStore.Get(EventsAbortedMetricName, map[string]string{
-		"workspaceId":    workspaceID,
-		"sourceId":       sourceID,
-		"destinationId":  destinationID,
-		"reportedBy":     reportedBy,
-		"sourceCategory": sourceCategory,
-		"terminal":       "false",
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"terminal":        "false",
+		"status_code":     "500",
+		"destinationType": "test-destination-name",
 	}).LastValue(), float64(10))
-	// require.Equal(t, statsStore.Get(EventsAbortedMetricName, map[string]string{
-	// 	"workspaceId":    workspaceID,
-	// 	"sourceId":       "momentum",
-	// 	"destinationId":  destinationID,
-	// 	"reportedBy":     reportedBy,
-	// 	"sourceCategory": sourceCategory,
-	// 	"terminal":       "false",
-	// }), nil)
 }

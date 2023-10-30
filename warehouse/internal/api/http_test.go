@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -172,12 +173,12 @@ func TestAPI_Process(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.degradedWorkspaceIDs", tc.degradedWorkspaceIDs)
 
-			m := multitenant.New(c, backendConfig.DefaultBackendConfig)
+			m := multitenant.New(c, backendconfig.DefaultBackendConfig)
 
 			wAPI := api.WarehouseAPI{
 				Repo:        r,
 				Logger:      logger.NOP,
-				Stats:       stats.Default, // TODO: use a NOP stats
+				Stats:       memstats.New(), // TODO: use a NOP stats
 				Multitenant: m,
 			}
 

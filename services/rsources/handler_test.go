@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/segmentio/ksuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -38,6 +39,7 @@ var defaultJobTargetKey = JobTargetKey{
 }
 
 var _ = Describe("Using sources handler", func() {
+	var noPaging PagingInfo
 	Context("single-tenant setup with a single local datasource", Ordered, func() {
 		var (
 			pool     *dockertest.Pool
@@ -78,7 +80,7 @@ var _ = Describe("Using sources handler", func() {
 				TaskRunID: []string{"task_run_id"},
 			}
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
 			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
 			expcetedRecords := JobFailedRecords{
 				ID: jobRunId,
@@ -96,6 +98,49 @@ var _ = Describe("Using sources handler", func() {
 			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
 		})
 
+		It("should be able to add and get failed records using pagination", func() {
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []json.RawMessage{
+				[]byte(`"id-1"`),
+				[]byte(`"id-2"`),
+				[]byte(`"id-3"`),
+				[]byte(`"id-4"`),
+			})
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			paging := PagingInfo{
+				Size: 2,
+			}
+			for i := 0; i < 2; i++ {
+				failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, paging)
+				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+				Expect(failedRecords.Paging).NotTo(BeNil(), "paging should not be nil")
+				paging = *failedRecords.Paging
+				expectedRecords := JobFailedRecords{
+					ID: jobRunId,
+					Tasks: []TaskFailedRecords{{
+						ID: "task_run_id",
+						Sources: []SourceFailedRecords{{
+							ID: defaultJobTargetKey.SourceID,
+							Destinations: []DestinationFailedRecords{{
+								ID:      defaultJobTargetKey.DestinationID,
+								Records: []json.RawMessage{[]byte(fmt.Sprintf(`"id-%d"`, (2*i)+1)), []byte(fmt.Sprintf(`"id-%d"`, (2*i)+2))},
+							}},
+						}},
+					}},
+					Paging: failedRecords.Paging,
+				}
+				Expect(failedRecords).To(Equal(expectedRecords), "it should be able to get failed records")
+
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, paging)
+			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			Expect(failedRecords.Tasks).To(BeEmpty(), "last page should be empty")
+			Expect(failedRecords.Paging).To(BeNil(), "last page should have no paging")
+		})
+
 		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection
@@ -108,7 +153,7 @@ var _ = Describe("Using sources handler", func() {
 				[]byte(`{"record-2": "id-2"}`),
 			})
 
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{})
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{}, noPaging)
 			Expect(err).To(HaveOccurred(), "it shouldn't be able to get failed records")
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}), "it should return an empty failed records")
 			Expect(err).To(Equal(ErrOperationNotSupported), "it should return an ErrOperationNotSupported error")
@@ -164,7 +209,7 @@ var _ = Describe("Using sources handler", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(status).To(Equal(JobStatus{}))
 			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
 		})
@@ -195,14 +240,14 @@ var _ = Describe("Using sources handler", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(status).To(Equal(JobStatus{}))
 			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
-			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
 
 			jobFilters.SourceID = []string{defaultJobTargetKey.SourceID}
 			_, err = sh.GetStatus(context.Background(), jobRunId, jobFilters)
 			Expect(err).ToNot(HaveOccurred())
-			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).ToNot(Equal(JobFailedRecords{ID: jobRunId}))
 		})
@@ -288,8 +333,8 @@ var _ = Describe("Using sources handler", func() {
 									ID: "destination_id",
 									Records: []json.RawMessage{
 										[]byte(`{"record-1": "id-1"}`),
-										[]byte(`{"record-2": "id-2"}`),
 										[]byte(`{"record-11": "id-112"}`),
+										[]byte(`{"record-2": "id-2"}`),
 										[]byte(`{"record-22": "id-222"}`),
 									},
 								}},
@@ -324,7 +369,7 @@ var _ = Describe("Using sources handler", func() {
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 				SourceID:  []string{"source_id1", "source_id2"},
 				TaskRunID: []string{"task_run_id1", "task_run_id2"},
-			})
+			}, noPaging)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(expected).To(Equal(failedRecords), "it should return the failed records for the jobrunid based on the filtering")
 		})
@@ -476,7 +521,7 @@ var _ = Describe("Using sources handler", func() {
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = stmt.Close() }()
-			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
+			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys_v2_records" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt2.Exec(ts)
 			defer func() { _ = stmt2.Close() }()
@@ -497,7 +542,7 @@ var _ = Describe("Using sources handler", func() {
 					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
 					Expect(err).NotTo(HaveOccurred())
 
-					sqlStatement = `select count(*) from "rsources_failed_keys" where job_run_id = $1`
+					sqlStatement = `select count(*) from "rsources_failed_keys_v2" k join "rsources_failed_keys_v2_records" v on v.id = k.id where k.job_run_id = $1`
 					var failedRecordCount int
 					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
 					Expect(err).NotTo(HaveOccurred())
@@ -673,7 +718,7 @@ var _ = Describe("Using sources handler", func() {
 				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
-				})
+				}, noPaging)
 				if err != nil {
 					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
 					return false
@@ -681,7 +726,7 @@ var _ = Describe("Using sources handler", func() {
 				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
-				})
+				}, noPaging)
 				if err != nil {
 					err = fmt.Errorf("failed to get failed records from serviceB: %w", err)
 					return false
@@ -820,8 +865,8 @@ var _ = Describe("Using sources handler", func() {
 		})
 	})
 
-	Context("adding failed_keys to the publication alongside stats", Ordered, func() {
-		It("should be able to add rsources_failed_keys table to the publication and subscription seamlessly", func() {
+	Context("migrating to failed_keys_v2", Ordered, func() {
+		It("should be able to add rsources_failed_keys_v2 table to the publication and subscription seamlessly", func() {
 			pool, err := dockertest.NewPool("")
 			Expect(err).NotTo(HaveOccurred())
 			networkId := randomString()
@@ -877,16 +922,27 @@ var _ = Describe("Using sources handler", func() {
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname, log)
 			Expect(err).NotTo(HaveOccurred())
+			err = setupFailedKeysTableV0(context.Background(), databaseA, configA.LocalHostname, log)
+			Expect(err).NotTo(HaveOccurred())
 			err = setupStatsTable(context.Background(), databaseB, configB.LocalHostname, log)
+			Expect(err).NotTo(HaveOccurred())
+			err = setupFailedKeysTableV0(context.Background(), databaseB, configB.LocalHostname, log)
 			Expect(err).NotTo(HaveOccurred())
 			err = setupStatsTable(context.Background(), databaseC, "shared", log)
 			Expect(err).NotTo(HaveOccurred())
+			err = setupFailedKeysTableV0(context.Background(), databaseC, "shared", log)
+			Expect(err).NotTo(HaveOccurred())
 
 			// setup logical replication(only stats tables as previously done)
-			publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
-			_, err = databaseA.ExecContext(context.TODO(), publicationQuery)
+			publicationQueryA := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
+			publicationQueryB := `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys`
+			_, err = databaseA.ExecContext(context.TODO(), publicationQueryA)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseB.ExecContext(context.TODO(), publicationQuery)
+			_, err = databaseA.ExecContext(context.TODO(), publicationQueryB)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseB.ExecContext(context.TODO(), publicationQueryA)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseB.ExecContext(context.TODO(), publicationQueryB)
 			Expect(err).NotTo(HaveOccurred())
 
 			subscriptionQuery := `CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`
@@ -901,9 +957,83 @@ var _ = Describe("Using sources handler", func() {
 			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
 
+			// Fill some data in the tables to verify migration
+			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_stats (job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1',2,1,1)`)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
+			Expect(err).NotTo(HaveOccurred())
+
 			// Now setup the handlers
 			serviceA := createService(configA)
 			serviceB := createService(configB)
+
+			// make sure previous table is gone
+			for _, db := range []*sql.DB{databaseA, databaseB, databaseA} {
+				var exists bool
+				err = db.QueryRow(`SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`).Scan(&exists)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(exists).To(BeFalse())
+			}
+
+			var failedKeysA, failedKeysB, expected JobFailedRecords
+
+			// migrated data
+			Eventually(func() bool {
+				expected = JobFailedRecords{
+					ID: "migrated-1",
+					Tasks: []TaskFailedRecords{
+						{
+							ID: "migrated-1",
+							Sources: []SourceFailedRecords{
+								{
+									ID: "migrated-1",
+									Destinations: []DestinationFailedRecords{{
+										ID: "migrated-1",
+										Records: []json.RawMessage{
+											[]byte(`"migrated-1"`),
+										},
+									}},
+								},
+							},
+						},
+					},
+				}
+				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), "migrated-1", JobFilter{
+					SourceID:  []string{"migrated-1"},
+					TaskRunID: []string{"migrated-1"},
+				}, noPaging)
+				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
+					return false
+				}
+				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), "migrated-1", JobFilter{
+					SourceID:  []string{"migrated-1"},
+					TaskRunID: []string{"migrated-1"},
+				}, noPaging)
+				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceB: %w", err)
+					return false
+				}
+				if !reflect.DeepEqual(failedKeysA, failedKeysB) {
+					err = fmt.Errorf("failed keys from serviceA are different compared to failed keys from serviceB")
+					return false
+				}
+				if len(failedKeysA.Tasks) != 1 || len(failedKeysA.Tasks[0].Sources) != 1 || len(failedKeysA.Tasks[0].Sources[0].Destinations) != 1 {
+					err = fmt.Errorf("failed keys from serviceA don't contain 1 task with 1 source and 1 destination")
+					return false
+				}
+				sort.Slice(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records, func(i, j int) bool {
+					return string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[i]) < string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[j])
+				})
+				if !reflect.DeepEqual(failedKeysA, expected) {
+					err = fmt.Errorf("failed keys from serviceA don't match expectation")
+					return false
+				}
+				return true
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+
 			jobRunId := newJobRunId()
 			addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []json.RawMessage{
 				json.RawMessage(`{"id": "1"}`),
@@ -913,7 +1043,7 @@ var _ = Describe("Using sources handler", func() {
 				json.RawMessage(`{"id": "2"}`),
 				json.RawMessage(`{"id": "3"}`),
 			})
-			expected := JobFailedRecords{
+			expected = JobFailedRecords{
 				ID: jobRunId,
 				Tasks: []TaskFailedRecords{
 					{
@@ -936,12 +1066,11 @@ var _ = Describe("Using sources handler", func() {
 				},
 			}
 
-			var failedKeysA, failedKeysB JobFailedRecords
 			Eventually(func() bool {
 				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
-				})
+				}, noPaging)
 				if err != nil {
 					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
 					return false
@@ -949,7 +1078,7 @@ var _ = Describe("Using sources handler", func() {
 				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
-				})
+				}, noPaging)
 				if err != nil {
 					err = fmt.Errorf("failed to get failed records from serviceB: %w", err)
 					return false
@@ -1097,5 +1226,5 @@ func getDB(conn string, maxOpenConns int) *sql.DB {
 }
 
 func randomString() string {
-	return strings.ToLower(rand.String(10))
+	return ksuid.New().String()
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -58,7 +57,9 @@ type Router struct {
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
-	triggerStore *sync.Map
+
+	triggerStore       *sync.Map
+	createUploadAlways createUploadAlwaysLoader
 
 	isEnabled atomic.Bool
 
@@ -78,6 +79,9 @@ type Router struct {
 
 	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
+
+	scheduledTimesCache     map[string][]int
+	scheduledTimesCacheLock sync.RWMutex
 
 	activeWorkerCount atomic.Int32
 	now               func() time.Time
@@ -134,6 +138,7 @@ func New(
 	bcManager *bcm.BackendConfigManager,
 	encodingFactory *encoding.Factory,
 	triggerStore *sync.Map,
+	createUploadAlways createUploadAlwaysLoader,
 ) (*Router, error) {
 	r := &Router{}
 
@@ -155,6 +160,8 @@ func New(
 	r.now = time.Now
 	r.triggerStore = triggerStore
 	r.createJobMarkerMap = make(map[string]time.Time)
+	r.createUploadAlways = createUploadAlways
+	r.scheduledTimesCache = make(map[string][]int)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
@@ -473,7 +480,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		})
 		r.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
+		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 
 		if !found {
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{

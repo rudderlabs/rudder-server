@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,7 +21,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -762,7 +762,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+				if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}

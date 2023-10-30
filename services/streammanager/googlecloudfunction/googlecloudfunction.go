@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 type Config struct {
@@ -135,16 +136,17 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 
 	// Make the request using the client
 	resp, err := producer.httpClient.Do(req)
-	if err != nil && os.IsTimeout(err) {
-		return http.StatusAccepted, "Success", "[GoogleCloudFunction] :: Function is called"
-	}
 
 	var responseBody []byte
-	defer resp.Body.Close()
 	if err == nil {
+		defer func() { httputil.CloseResponse(resp) }()
 		responseBody, err = io.ReadAll(resp.Body)
 	}
+
 	if err != nil {
+		if os.IsTimeout(err) {
+			return http.StatusAccepted, "Success", "[GoogleCloudFunction] :: Function is called"
+		}
 		responseMessage = err.Error()
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage

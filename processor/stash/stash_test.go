@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -20,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 var prefix = "proc_error_jobs_"
@@ -37,9 +38,9 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	minioResource := make([]*destination.MINIOResource, uniqueWorkspaces)
+	minioResource := make([]*resource.MinioResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
+		minioResource[i], err = resource.SetupMinio(pool, cleanup)
 		require.NoError(t, err)
 	}
 
@@ -51,8 +52,8 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 					"bucketName":      minioResource[0].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[0].Endpoint,
-					"accessKeyID":     minioResource[0].AccessKey,
-					"secretAccessKey": minioResource[0].SecretKey,
+					"accessKeyID":     minioResource[0].AccessKeyID,
+					"secretAccessKey": minioResource[0].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -66,8 +67,8 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 					"bucketName":      minioResource[1].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[1].Endpoint,
-					"accessKeyID":     minioResource[1].AccessKey,
-					"secretAccessKey": minioResource[1].SecretKey,
+					"accessKeyID":     minioResource[1].AccessKeyID,
+					"secretAccessKey": minioResource[1].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -81,8 +82,8 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 					"bucketName":      minioResource[2].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[2].Endpoint,
-					"accessKeyID":     minioResource[2].AccessKey,
-					"secretAccessKey": minioResource[2].SecretKey,
+					"accessKeyID":     minioResource[2].AccessKeyID,
+					"secretAccessKey": minioResource[2].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -96,8 +97,8 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 					"bucketName":      minioResource[3].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[3].Endpoint,
-					"accessKeyID":     minioResource[3].AccessKey,
-					"secretAccessKey": minioResource[3].SecretKey,
+					"accessKeyID":     minioResource[3].AccessKeyID,
+					"secretAccessKey": minioResource[3].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{

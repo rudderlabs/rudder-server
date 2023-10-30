@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {

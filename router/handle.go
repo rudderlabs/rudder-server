@@ -14,9 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -231,7 +232,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				flush()
 			}
 		} else {
-			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error()}).Increment()
+			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId}).Increment()
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
@@ -404,7 +405,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if err != nil {
 					return err
 				}
-				if err = rt.Reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+				if err = rt.Reporting.Report(reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 				return nil
@@ -478,14 +479,6 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return nil, types.ErrParamsUnmarshal
 	}
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
-
-	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
-	// this check is done to maintain order.
-	if _, ok := blockedOrderKeys[orderKey]; ok {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
-		return nil, types.ErrJobOrderBlocked
-	}
 
 	if !rt.guaranteeUserEventOrder {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
@@ -506,37 +499,45 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 
 	}
 
+	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+
+	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
+	// this check is done to maintain order.
+	if _, ok := blockedOrderKeys[orderKey]; ok {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
+		return nil, types.ErrJobOrderBlocked
+	}
+
 	//#JobOrder (see other #JobOrder comment)
-	worker := workers[getWorkerPartition(orderKey, len(workers))]
 	if rt.shouldBackoff(job) { // backoff
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrJobBackoff
 	}
+	worker := workers[getWorkerPartition(orderKey, len(workers))]
 	slot := worker.ReserveSlot()
 	if slot == nil {
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrWorkerNoSlot
 	}
 
-	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
-	if enter {
-		rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-		if rt.shouldThrottle(job, parameters) {
-			blockedOrderKeys[orderKey] = struct{}{}
-			worker.barrier.Leave(orderKey, job.JobID)
-			slot.Release()
-			return nil, types.ErrDestinationThrottled
+	if enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID); !enter {
+		previousFailedJobIDStr := "<nil>"
+		if previousFailedJobID != nil {
+			previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 		}
-		return slot, nil
+		rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
+		slot.Release()
+		blockedOrderKeys[orderKey] = struct{}{}
+		return nil, types.ErrBarrierExists
 	}
-	previousFailedJobIDStr := "<nil>"
-	if previousFailedJobID != nil {
-		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
+	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
+	if rt.shouldThrottle(job, parameters) {
+		blockedOrderKeys[orderKey] = struct{}{}
+		worker.barrier.Leave(orderKey, job.JobID)
+		slot.Release()
+		return nil, types.ErrDestinationThrottled
 	}
-	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
-	slot.Release()
-	blockedOrderKeys[orderKey] = struct{}{}
-	return nil, types.ErrBarrierExists
+	return slot, nil
 	//#EndJobOrder
 }
 
@@ -613,8 +614,10 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 			return trRespStatusCode, trRespBody
 		}
 		switch destErrOutput.AuthErrorCategory {
-		case oauth.DISABLE_DEST:
-			return rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+		case oauth.AUTH_STATUS_INACTIVE:
+			authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			authStatusMsg := gjson.Get(trRespBody, "message").Raw
+			return authStatusStCd, authStatusMsg
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -627,21 +630,21 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
-			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
+			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.REF_TOKEN_INVALID_GRANT {
 				// In-case the refresh token has been revoked, this error comes in
 				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
-				stats.Default.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
+				authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destType":      refTokenParams.DestDefName,
 					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
-				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
-				return disableStCd, refSec.Err
+				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
+				return authStatusInactiveStCode, refSecret.ErrorMessage
 			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
@@ -655,24 +658,25 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *Handle) execDisableDestination(destination *backendconfig.DestinationT, workspaceID, destResBody, rudderAccountId string) (int, string) {
-	disableDestStatTags := stats.Tags{
+func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
+	inactiveAuthStatusStatTags := stats.Tags{
 		"id":          destination.ID,
 		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceID,
 		"success":     "true",
 		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceID, rudderAccountId)
+	errCatStatusCode, _ := rt.oauth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+		Destination:     destination,
+		WorkspaceId:     workspaceID,
+		RudderAccountId: rudderAccountId,
+		AuthStatus:      oauth.AuthStatusInactive,
+	})
 	if errCatStatusCode != http.StatusOK {
-		// Error while disabling a destination
-		// High-Priority notification to rudderstack needs to be sent
-		disableDestStatTags["success"] = "false"
-		stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-		return http.StatusBadRequest, errCatResponse
+		// Error while inactivating authStatus
+		inactiveAuthStatusStatTags["success"] = "false"
 	}
-	// High-Priority notification to workspace(& rudderstack) needs to be sent
-	stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
 	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest, destResBody
+	return http.StatusBadRequest
 }

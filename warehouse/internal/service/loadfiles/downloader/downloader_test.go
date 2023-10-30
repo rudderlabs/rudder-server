@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -14,7 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -87,20 +88,20 @@ func TestDownloader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			minioResource, err := destination.SetupMINIO(pool, t)
+			minioResource, err := resource.SetupMinio(pool, t)
 			require.NoError(t, err)
 
 			t.Log("minio:", minioResource.Endpoint)
 
 			conf := map[string]any{
 				"bucketName":       minioResource.BucketName,
-				"accessKeyID":      minioResource.AccessKey,
-				"secretAccessKey":  minioResource.SecretKey,
+				"accessKeyID":      minioResource.AccessKeyID,
+				"secretAccessKey":  minioResource.AccessKeySecret,
 				"endPoint":         minioResource.Endpoint,
 				"forcePathStyle":   true,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
-				"region":           minioResource.SiteRegion,
+				"region":           minioResource.Region,
 				"enableSSE":        false,
 				"bucketProvider":   provider,
 			}
@@ -175,7 +176,7 @@ func TestDownloader(t *testing.T) {
 func newMockUploader(t testing.TB, loadFiles []warehouseutils.LoadFile) *mockuploader.MockUploader {
 	ctrl := gomock.NewController(t)
 	u := mockuploader.NewMockUploader(ctrl)
-	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).AnyTimes().Return(loadFiles)
+	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).AnyTimes().Return(loadFiles, nil)
 	u.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	return u
 }

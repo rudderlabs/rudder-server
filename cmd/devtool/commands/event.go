@@ -33,19 +33,22 @@ func EVENT() *cli.Command {
 				Action: EventSend,
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "endpoint",
-						Usage: "HTTP endpoint for rudder-server",
-						Value: "http://localhost:8080",
+						Name:    "endpoint",
+						Usage:   "HTTP endpoint for rudder-server",
+						Value:   "http://localhost:8080",
+						Aliases: []string{"e"},
 					},
 					&cli.StringFlag{
 						Name:     "write-key",
 						Usage:    "source write key",
 						Required: true,
+						Aliases:  []string{"w"},
 					},
 					&cli.IntFlag{
-						Name:  "count",
-						Usage: "number of events to send",
-						Value: 1,
+						Name:    "count",
+						Usage:   "number of events to send",
+						Value:   1,
+						Aliases: []string{"c"},
 					},
 				},
 				ArgsUsage: "",

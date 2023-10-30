@@ -150,7 +150,7 @@ func TestSourceToWorkspace(t *testing.T) {
 		backendConfig[workspace] = entry
 	}
 
-	m := multitenant.New(config.Default, &mockBackendConfig{
+	m := multitenant.New(config.New(), &mockBackendConfig{
 		config: backendConfig,
 	})
 
@@ -177,7 +177,7 @@ func TestSourceToWorkspace(t *testing.T) {
 	require.NoError(t, g.Wait())
 
 	t.Run("context canceled", func(t *testing.T) {
-		m := multitenant.New(config.Default, &mockBackendConfig{
+		m := multitenant.New(config.New(), &mockBackendConfig{
 			config: backendConfig,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
