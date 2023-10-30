@@ -10,38 +10,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
-
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
-	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
+	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/stretchr/testify/require"
-
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -82,9 +74,9 @@ func TestIntegration(t *testing.T) {
 
 	destType := warehouseutils.POSTGRES
 
-	namespace := testhelper.RandSchema(destType)
-	sourcesNamespace := testhelper.RandSchema(destType)
-	tunnelledNamespace := testhelper.RandSchema(destType)
+	namespace := whth.RandSchema(destType)
+	sourcesNamespace := whth.RandSchema(destType)
+	tunnelledNamespace := whth.RandSchema(destType)
 
 	host := "localhost"
 	database := "rudderdb"
@@ -143,7 +135,7 @@ func TestIntegration(t *testing.T) {
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
-	testhelper.EnhanceWithDefaultEnvs(t)
+	whth.EnhanceWithDefaultEnvs(t)
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
@@ -184,7 +176,7 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 
-		jobsDB := testhelper.JobsDB(t, jobsDBPort)
+		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testCases := []struct {
 			name                  string
@@ -193,10 +185,10 @@ func TestIntegration(t *testing.T) {
 			sourceID              string
 			destinationID         string
 			tables                []string
-			stagingFilesEventsMap testhelper.EventsCountMap
-			loadFilesEventsMap    testhelper.EventsCountMap
-			tableUploadsEventsMap testhelper.EventsCountMap
-			warehouseEventsMap    testhelper.EventsCountMap
+			stagingFilesEventsMap whth.EventsCountMap
+			loadFilesEventsMap    whth.EventsCountMap
+			tableUploadsEventsMap whth.EventsCountMap
+			warehouseEventsMap    whth.EventsCountMap
 			asyncJob              bool
 			stagingFilePrefix     string
 		}{
@@ -218,10 +210,10 @@ func TestIntegration(t *testing.T) {
 				tables:                []string{"tracks", "google_sheet"},
 				sourceID:              sourcesSourceID,
 				destinationID:         sourcesDestinationID,
-				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
-				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+				stagingFilesEventsMap: whth.SourcesStagingFilesEventsMap(),
+				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
+				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
+				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
 				stagingFilePrefix:     "testdata/sources-job",
 			},
@@ -249,7 +241,7 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
-				ts1 := testhelper.TestConfig{
+				ts1 := whth.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
 					Tables:                tc.tables,
@@ -268,12 +260,12 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                whth.GetUserId(destType),
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				ts2 := testhelper.TestConfig{
+				ts2 := whth.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
 					Tables:                tc.tables,
@@ -293,7 +285,7 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                whth.GetUserId(destType),
 				}
 				if tc.asyncJob {
 					ts2.UserID = ts1.UserID
@@ -330,7 +322,7 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 
-		jobsDB := testhelper.JobsDB(t, jobsDBPort)
+		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testcases := []struct {
 			name                  string
@@ -339,10 +331,10 @@ func TestIntegration(t *testing.T) {
 			sourceID              string
 			destinationID         string
 			tables                []string
-			stagingFilesEventsMap testhelper.EventsCountMap
-			loadFilesEventsMap    testhelper.EventsCountMap
-			tableUploadsEventsMap testhelper.EventsCountMap
-			warehouseEventsMap    testhelper.EventsCountMap
+			stagingFilesEventsMap whth.EventsCountMap
+			loadFilesEventsMap    whth.EventsCountMap
+			tableUploadsEventsMap whth.EventsCountMap
+			warehouseEventsMap    whth.EventsCountMap
 			stagingFilePrefix     string
 		}{
 			{
@@ -380,7 +372,7 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
-				ts1 := testhelper.TestConfig{
+				ts1 := whth.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
 					SourceID:              tc.sourceID,
@@ -399,12 +391,12 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                whth.GetUserId(destType),
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				ts2 := testhelper.TestConfig{
+				ts2 := whth.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
 					SourceID:              tc.sourceID,
@@ -423,7 +415,7 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                whth.GetUserId(destType),
 				}
 				ts2.VerifyEvents(t)
 			})
@@ -459,7 +451,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
 		}
-		testhelper.VerifyConfigurationTest(t, dest)
+		whth.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
@@ -469,7 +461,7 @@ func TestIntegration(t *testing.T) {
 			workspaceID   = "test_workspace_id"
 		)
 
-		namespace := testhelper.RandSchema(destType)
+		namespace := whth.RandSchema(destType)
 
 		schemaInUpload := model.TableSchema{
 			"test_bool":     "boolean",
@@ -546,7 +538,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -562,7 +554,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("table does not exists", func(t *testing.T) {
 			tableName := "table_not_exists_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -582,7 +574,7 @@ func TestIntegration(t *testing.T) {
 			tableName := "merge_test_table"
 
 			t.Run("without dedup", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -590,8 +582,11 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
 				pg := postgres.New(c, logger.NOP, memstats.New())
-				err := pg.Setup(ctx, warehouse, mockUploader)
+				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = pg.CreateSchema(ctx)
@@ -610,7 +605,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 					fmt.Sprintf(`
 					SELECT
 					  id,
@@ -629,10 +624,10 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.SampleTestRecords())
+				require.Equal(t, records, whth.SampleTestRecords())
 			})
 			t.Run("with dedup", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -640,8 +635,11 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
 				pg := postgres.New(config.New(), logger.NOP, memstats.New())
-				err := pg.Setup(ctx, warehouse, mockUploader)
+				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = pg.CreateSchema(ctx)
@@ -655,7 +653,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 					fmt.Sprintf(`
 					SELECT
 					  id,
@@ -674,13 +672,13 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.DedupTestRecords())
+				require.Equal(t, records, whth.DedupTestRecords())
 			})
 		})
 		t.Run("append", func(t *testing.T) {
 			tableName := "append_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -708,7 +706,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 				fmt.Sprintf(`
 					SELECT
 					  id,
@@ -727,7 +725,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.AppendTestRecords())
+			require.Equal(t, records, whth.AppendTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
@@ -754,7 +752,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("mismatch in number of columns", func(t *testing.T) {
 			tableName := "mismatch_columns_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -776,7 +774,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("mismatch in schema", func(t *testing.T) {
 			tableName := "mismatch_schema_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -798,7 +796,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("discards", func(t *testing.T) {
 			tableName := warehouseutils.DiscardsTable
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
@@ -818,7 +816,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
 				fmt.Sprintf(`
 					SELECT
 					  column_name,
@@ -835,7 +833,7 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardTestRecords())
+			require.Equal(t, records, whth.DiscardTestRecords())
 		})
 	})
 }
@@ -855,6 +853,7 @@ func mockUploader(
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles, nil).AnyTimes() // Try removing this
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+	mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
 
 	return mockUploader
 }
