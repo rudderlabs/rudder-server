@@ -17,12 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -47,7 +47,7 @@ func TestJobsArchival(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 
-	postgresResource, err := resource.SetupPostgres(pool, t)
+	postgresResource, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres resource")
 	c := config.New()
 	c.Set("DB.name", postgresResource.Database)
@@ -205,7 +205,7 @@ func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
 	if err != nil {
 		return []*jobsdb.JobT{}, err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	sc := bufio.NewScanner(gz)
 	// default scanner buffer maxCapacity is 64K
@@ -255,24 +255,24 @@ type jdWrapper struct {
 	queries *int32
 }
 
-func (jd jdWrapper) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
+func (jd jdWrapper) GetDistinctParameterValues(context.Context, string) ([]string, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return []string{}, nil
 }
 
 func (jd jdWrapper) GetUnprocessed(
-	ctx context.Context,
-	params jobsdb.GetQueryParams,
+	context.Context,
+	jobsdb.GetQueryParams,
 ) (jobsdb.JobsResult, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return jobsdb.JobsResult{}, nil
 }
 
 func (jd jdWrapper) UpdateJobStatus(
-	ctx context.Context,
-	statusList []*jobsdb.JobStatusT,
-	customValFilters []string,
-	parameterFilters []jobsdb.ParameterFilterT,
+	context.Context,
+	[]*jobsdb.JobStatusT,
+	[]string,
+	[]jobsdb.ParameterFilterT,
 ) error {
 	atomic.AddInt32(jd.queries, 1)
 	return nil
