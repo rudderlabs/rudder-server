@@ -2,8 +2,7 @@ package loadfiles_test
 
 import (
 	"context"
-
-	"golang.org/x/exp/slices"
+	"slices"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
