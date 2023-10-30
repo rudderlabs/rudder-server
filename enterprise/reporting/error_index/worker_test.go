@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +20,6 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/minio/minio-go/v7"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 

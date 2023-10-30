@@ -7,11 +7,10 @@ import (
 	"io"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
