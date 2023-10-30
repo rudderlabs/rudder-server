@@ -21,18 +21,21 @@ func WithNow(now func() time.Time) Opt {
 }
 
 func (r *repo) WithTx(f func(tx *sqlmiddleware.Tx) error) error {
-	txn, err := r.db.Begin()
+	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	if err := f(txn); err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("%w; %s", err, rollbackErr)
+	if err := f(tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("rollback transaction for %w: %w", err, rollbackErr)
 		}
 		return err
 	}
-	return txn.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
 }
 
 type UpdateField func(v interface{}) UpdateKeyValue
