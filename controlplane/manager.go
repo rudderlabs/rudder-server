@@ -18,6 +18,7 @@ type ConnectionManager struct {
 	active          bool
 	url             string
 	connHandler     *ConnHandler
+	Options         []grpc.ServerOption
 }
 
 type LoggerI interface {

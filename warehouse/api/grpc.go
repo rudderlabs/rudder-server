@@ -7,8 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -80,6 +85,7 @@ type GRPC struct {
 func NewGRPCServer(
 	conf *config.Config,
 	logger logger.Logger,
+	statsFactory stats.Stats,
 	db *sqlmw.DB,
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
@@ -134,6 +140,9 @@ func NewGRPCServer(
 		RetryInterval: 0,
 		UseTLS:        g.config.cpRouterUseTLS,
 		Logger:        g.logger,
+		Options: []grpc.ServerOption{
+			grpc.UnaryInterceptor(statsInterceptor(statsFactory)),
+		},
 		RegisterService: func(srv *grpc.Server) {
 			proto.RegisterWarehouseServer(srv, g)
 		},
@@ -940,4 +949,21 @@ func (g *GRPC) RetryFailedBatches(
 		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
+}
+
+func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		start := time.Now()
+		res, err := handler(ctx, req)
+		statusCode := codes.Unknown
+		if s, ok := status.FromError(err); ok {
+			statusCode = s.Code()
+		}
+		tags := stats.Tags{
+			"reqType": info.FullMethod,
+			"code":    strconv.Itoa(runtime.HTTPStatusFromCode(statusCode)),
+		}
+		statsFactory.NewTaggedStat("warehouse.grpc.response_time", stats.TimerType, tags).Since(start)
+		return res, err
+	}
 }
