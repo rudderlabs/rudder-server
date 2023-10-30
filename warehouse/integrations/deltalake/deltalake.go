@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,6 @@ import (
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

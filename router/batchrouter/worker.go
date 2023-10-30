@@ -3,13 +3,13 @@ package batchrouter
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"

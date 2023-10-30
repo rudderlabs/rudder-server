@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"

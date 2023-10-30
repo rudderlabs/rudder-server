@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,8 +18,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
