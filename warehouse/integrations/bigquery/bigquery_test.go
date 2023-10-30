@@ -488,7 +488,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -504,7 +504,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -617,7 +617,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -670,7 +670,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -692,7 +692,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -714,7 +714,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -736,7 +736,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -897,7 +897,7 @@ func TestIntegration(t *testing.T) {
 		}
 
 		t.Run("tables doesn't exists", func(t *testing.T) {
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -906,7 +906,7 @@ func TestIntegration(t *testing.T) {
 			require.True(t, isEmpty)
 		})
 		t.Run("tables empty", func(t *testing.T) {
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -932,7 +932,7 @@ func TestIntegration(t *testing.T) {
 			require.True(t, isEmpty)
 		})
 		t.Run("tables not empty", func(t *testing.T) {
-			bq := whbigquery.New(config.Default, logger.NOP)
+			bq := whbigquery.New(config.New(), logger.NOP)
 			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
