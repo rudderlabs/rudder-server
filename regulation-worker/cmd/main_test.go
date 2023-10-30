@@ -29,7 +29,6 @@ import (
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 var (
@@ -68,18 +67,18 @@ func TestRegulationWorkerFlow(t *testing.T) {
 	t.Log("Redis server is up and running")
 
 	// starting minio server for batch-destination
-	minioResource, err := destination.SetupMINIO(pool, t)
+	minioResource, err := resource.SetupMinio(pool, t)
 	require.NoError(t, err)
 	minioConfig := map[string]interface{}{
 		"bucketName":       minioResource.BucketName,
-		"accessKeyID":      minioResource.AccessKey,
-		"accessKey":        minioResource.SecretKey,
+		"accessKeyID":      minioResource.AccessKeyID,
+		"accessKey":        minioResource.AccessKeySecret,
 		"enableSSE":        false,
 		"prefix":           "some-prefix",
 		"endPoint":         minioResource.Endpoint,
 		"s3ForcePathStyle": true,
 		"disableSSL":       true,
-		"region":           minioResource.SiteRegion,
+		"region":           minioResource.Region,
 	}
 	insertMinioData(t, minioConfig)
 
