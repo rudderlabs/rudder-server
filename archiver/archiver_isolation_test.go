@@ -14,13 +14,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -127,7 +130,7 @@ func ArchivalScenario(
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresContainer, err := resource.SetupPostgres(pool, cleanup)
+	postgresContainer, err := resource.SetupPostgres(pool, cleanup, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres container")
 
 	minioResource, err := resource.SetupMinio(pool, cleanup)
