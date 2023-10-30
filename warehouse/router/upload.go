@@ -737,6 +737,7 @@ func (job *UploadJob) exportRegularTables(specialTables []string, loadFilesTable
 // * the source is not an ETL source
 // * the source is not a replay source
 // * the source category is not in "mergeSourceCategoryMap"
+// * the job is not a retry
 func (job *UploadJob) CanAppend() bool {
 	if isSourceETL := job.upload.SourceJobRunID != ""; isSourceETL {
 		return false
@@ -745,6 +746,9 @@ func (job *UploadJob) CanAppend() bool {
 		return false
 	}
 	if _, isMergeCategory := mergeSourceCategoryMap[job.warehouse.Source.SourceDefinition.Category]; isMergeCategory {
+		return false
+	}
+	if job.upload.Retried {
 		return false
 	}
 	return true
