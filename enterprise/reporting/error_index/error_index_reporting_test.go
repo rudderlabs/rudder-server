@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/samber/lo"
 
 	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/stretchr/testify/require"
 
@@ -226,7 +226,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				cs := newMockConfigSubscriber()
 				cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.Default)
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
 				defer eir.Stop()
 
 				syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -293,7 +293,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cf := newMockConfigSubscriber()
 		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
 		defer eir.Stop()
 
 		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -329,7 +329,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			cf := newMockConfigSubscriber()
 			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.Default)
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
 			defer eir.Stop()
 
 			syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -392,7 +392,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.Default)
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
 		defer eir.Stop()
 
 		syncer1 := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -550,7 +550,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.Default)
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
 		eir.now = func() time.Time {
 			return failedAt
 		}
