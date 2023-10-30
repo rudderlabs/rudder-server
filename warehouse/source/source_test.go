@@ -226,7 +226,6 @@ func TestSource(t *testing.T) {
 					Status:  notifier.Succeeded,
 				},
 			},
-			Err: nil,
 		}
 		close(response)
 		publishResponse := make(chan chan *notifier.PublishResponse, 1)

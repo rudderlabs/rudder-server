@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -33,8 +34,18 @@ type jobStatusResponse struct {
 	Err    string
 }
 
-type notifierResponse struct {
-	Id int64 `json:"id"`
+type NotifierRequest struct {
+	ID            int64           `json:"id"`
+	SourceID      string          `json:"source_id"`
+	DestinationID string          `json:"destination_id"`
+	WorkspaceID   string          `json:"workspace_id"`
+	TableName     string          `json:"tablename"`
+	JobType       string          `json:"async_job_type"`
+	MetaData      json.RawMessage `json:"metadata"`
+}
+
+type NotifierResponse struct {
+	ID int64 `json:"id"`
 }
 
 type publisher interface {

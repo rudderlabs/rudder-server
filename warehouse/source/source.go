@@ -59,17 +59,6 @@ func New(conf *config.Config, log logger.Logger, db *sqlmw.DB, publisher publish
 	return m
 }
 
-func (m *Manager) Run(ctx context.Context) error {
-	if err := m.sourceRepo.Reset(ctx); err != nil {
-		return fmt.Errorf("resetting source jobs with error %w", err)
-	}
-
-	if err := m.process(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("processing source jobs with error %w", err)
-	}
-	return nil
-}
-
 func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]int64, error) {
 	var jobType model.SourceJobType
 	switch payload.JobType {
@@ -115,14 +104,14 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		JobType:   string(notifier.JobTypeAsync),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshalling metadata: %w", err)
 	}
-	jobIds, err := m.sourceRepo.Insert(ctx, lo.Map(tableNames, func(item string, index int) model.SourceJob {
+	jobIds, err := m.sourceRepo.Insert(ctx, lo.Map(tableNames, func(tableName string, _ int) model.SourceJob {
 		return model.SourceJob{
 			SourceID:      payload.SourceID,
 			DestinationID: payload.DestinationID,
 			WorkspaceID:   payload.WorkspaceID,
-			TableName:     item,
+			TableName:     tableName,
 			JobType:       jobType,
 			Metadata:      metadataJson,
 		}
@@ -131,6 +120,17 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		return nil, fmt.Errorf("inserting source jobs: %w", err)
 	}
 	return jobIds, nil
+}
+
+func (m *Manager) Run(ctx context.Context) error {
+	if err := m.sourceRepo.Reset(ctx); err != nil {
+		return fmt.Errorf("resetting source jobs with error %w", err)
+	}
+
+	if err := m.process(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("processing source jobs with error %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) process(ctx context.Context) error {
@@ -166,7 +166,15 @@ func (m *Manager) process(ctx context.Context) error {
 func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.SourceJob) error {
 	claims := make([]json.RawMessage, 0, len(pendingJobs))
 	for _, job := range pendingJobs {
-		message, err := json.Marshal(job)
+		message, err := json.Marshal(NotifierRequest{
+			ID:            job.ID,
+			SourceID:      job.SourceID,
+			DestinationID: job.DestinationID,
+			WorkspaceID:   job.WorkspaceID,
+			TableName:     job.TableName,
+			JobType:       job.JobType.String(),
+			MetaData:      job.Metadata,
+		})
 		if err != nil {
 			return fmt.Errorf("marshalling source job %d: %w", job.ID, err)
 		}
@@ -212,7 +220,7 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 		}
 
 		for _, job := range responses.Jobs {
-			var response notifierResponse
+			var response NotifierResponse
 			var jobStatus model.SourceJobStatus
 
 			if err = json.Unmarshal(job.Payload, &response); err != nil {
@@ -221,9 +229,9 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 			if jobStatus, err = model.FromSourceJobStatus(string(job.Status)); err != nil {
 				return fmt.Errorf("invalid job status %s for source job %d: %w", job.Status, job.ID, err)
 			}
-			if pj, ok := pendingJobsMap[response.Id]; ok {
-				pj.Status = jobStatus
-				pj.Error = job.Error
+			if pendingJob, ok := pendingJobsMap[response.ID]; ok {
+				pendingJob.Status = jobStatus
+				pendingJob.Error = job.Error
 			}
 		}
 

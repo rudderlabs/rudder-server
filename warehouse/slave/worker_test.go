@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/source"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -576,14 +578,14 @@ func TestSlaveWorker(t *testing.T) {
 				workerIdx,
 			)
 
-			p := model.SourceJob{
+			p := source.NotifierRequest{
 				ID:            1,
 				SourceID:      sourceID,
 				DestinationID: destinationID,
 				TableName:     "test_table_name",
 				WorkspaceID:   workspaceID,
-				JobType:       model.SourceJobTypeDeleteByJobRunID,
-				Metadata:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
+				JobType:       model.SourceJobTypeDeleteByJobRunID.String(),
+				MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 			}
 
 			payloadJson, err := json.Marshal(p)
@@ -610,12 +612,11 @@ func TestSlaveWorker(t *testing.T) {
 			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
-			var asyncResult sourceJobRunResult
-			err = json.Unmarshal(response.Payload, &asyncResult)
+			var notifierResponse source.NotifierResponse
+			err = json.Unmarshal(response.Payload, &notifierResponse)
 			require.NoError(t, err)
 
-			require.Equal(t, int64(1), asyncResult.ID)
-			require.True(t, asyncResult.Result)
+			require.Equal(t, int64(1), notifierResponse.ID)
 
 			<-claimedJobDone
 		})
@@ -652,21 +653,21 @@ func TestSlaveWorker(t *testing.T) {
 				{
 					name:          "invalid parameters",
 					jobType:       model.SourceJobTypeDeleteByJobRunID,
-					expectedError: errors.New("invalid Parameters"),
+					expectedError: errors.New("getting warehouse: invalid Parameters"),
 				},
 				{
 					name:          "invalid source id",
 					sourceID:      "invalid_source_id",
 					destinationID: destinationID,
 					jobType:       model.SourceJobTypeDeleteByJobRunID,
-					expectedError: errors.New("invalid Source Id"),
+					expectedError: errors.New("getting warehouse: invalid Source Id"),
 				},
 				{
 					name:          "invalid destination id",
 					sourceID:      sourceID,
 					destinationID: "invalid_destination_id",
 					jobType:       model.SourceJobTypeDeleteByJobRunID,
-					expectedError: errors.New("invalid Destination Id"),
+					expectedError: errors.New("getting warehouse: invalid Destination Id"),
 				},
 			}
 
@@ -674,14 +675,14 @@ func TestSlaveWorker(t *testing.T) {
 				tc := tc
 
 				t.Run(tc.name, func(t *testing.T) {
-					p := model.SourceJob{
+					p := source.NotifierRequest{
 						ID:            1,
 						SourceID:      tc.sourceID,
 						DestinationID: tc.destinationID,
 						TableName:     "test_table_name",
 						WorkspaceID:   workspaceID,
-						JobType:       tc.jobType,
-						Metadata:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
+						JobType:       tc.jobType.String(),
+						MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 					}
 
 					payloadJson, err := json.Marshal(p)

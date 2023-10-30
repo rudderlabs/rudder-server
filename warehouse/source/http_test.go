@@ -311,7 +311,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		var statusResponse jobStatusResponse
 		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 		require.NoError(t, err)
-		require.Equal(t, statusResponse.Status, model.SourceJobStatusWaiting)
+		require.Equal(t, statusResponse.Status, model.SourceJobStatusWaiting.String())
 		require.Empty(t, statusResponse.Err)
 	})
 	t.Run("status aborted", func(t *testing.T) {
@@ -339,7 +339,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		var statusResponse jobStatusResponse
 		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 		require.NoError(t, err)
-		require.Equal(t, statusResponse.Status, model.SourceJobStatusAborted)
+		require.Equal(t, statusResponse.Status, model.SourceJobStatusAborted.String())
 		require.Equal(t, statusResponse.Err, errors.New("test error").Error())
 	})
 	t.Run("job not found", func(t *testing.T) {
@@ -355,7 +355,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 
 		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
 		sourceManager.StatusJobHandler(resp, req)
-		require.Equal(t, http.StatusBadRequest, resp.Code)
+		require.Equal(t, http.StatusNotFound, resp.Code)
 
 		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)

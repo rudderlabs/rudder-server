@@ -379,13 +379,13 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 				DestinationID: destinationId,
 				WorkspaceID:   workspaceId,
 				TableName:     "table-0",
-				// Status:        model.Failed,
-				Error:     errors.New(testError),
-				JobType:   model.SourceJobTypeDeleteByJobRunID,
-				Metadata:  json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
-				CreatedAt: now.UTC(),
-				UpdatedAt: now.UTC(),
-				Attempts:  1,
+				Status:        model.SourceJobStatusFailed,
+				Error:         errors.New(testError),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt:     now.UTC(),
+				UpdatedAt:     now.UTC(),
+				Attempts:      1,
 			})
 		})
 		t.Run("crossed max attempt", func(t *testing.T) {
@@ -401,13 +401,13 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 				DestinationID: destinationId,
 				WorkspaceID:   workspaceId,
 				TableName:     "table-0",
-				// Status:        model.Aborted,
-				Error:     errors.New(testError),
-				JobType:   model.SourceJobTypeDeleteByJobRunID,
-				Metadata:  json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
-				CreatedAt: now.UTC(),
-				UpdatedAt: now.UTC(),
-				Attempts:  2,
+				Status:        model.SourceJobStatusAborted,
+				Error:         errors.New(testError),
+				JobType:       model.SourceJobTypeDeleteByJobRunID,
+				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt:     now.UTC(),
+				UpdatedAt:     now.UTC(),
+				Attempts:      2,
 			})
 		})
 	})

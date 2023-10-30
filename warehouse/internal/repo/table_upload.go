@@ -116,7 +116,7 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 
 	tableUploads, err := scanTableUploads(rows)
 	if err != nil {
-		return nil, fmt.Errorf("parsing rows: %w", err)
+		return nil, fmt.Errorf("scanning table uploads: %w", err)
 	}
 	return tableUploads, nil
 }
@@ -137,7 +137,7 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 		return tableUpload, fmt.Errorf("no table upload found with uploadID: %d, tableName: %s", uploadID, tableName)
 	}
 	if err != nil {
-		return tableUpload, fmt.Errorf("parsing rows: %w", err)
+		return tableUpload, fmt.Errorf("scanning table upload: %w", err)
 	}
 	return tableUpload, err
 }
@@ -148,7 +148,7 @@ func scanTableUploads(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
 		var tableUpload model.TableUpload
 		err := scanTableUpload(rows.Scan, &tableUpload)
 		if err != nil {
-			return nil, fmt.Errorf("parsing rows: %w", err)
+			return nil, fmt.Errorf("scanning table upload: %w", err)
 		}
 		tableUploads = append(tableUploads, tableUpload)
 	}
@@ -437,13 +437,13 @@ func (repo *TableUploads) GetByJobRunTaskRun(
 		taskRunID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("getting table uploads: %w", err)
+		return nil, fmt.Errorf("querying: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	tableUploads, err := scanTableUploads(rows)
 	if err != nil {
-		return nil, fmt.Errorf("parsing rows: %w", err)
+		return nil, fmt.Errorf("scanning table uploads: %w", err)
 	}
 	return tableUploads, nil
 }

@@ -80,10 +80,10 @@ func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]in
 			sourceJob.SourceID,
 			sourceJob.DestinationID,
 			sourceJob.TableName,
-			model.SourceJobStatusWaiting,
+			model.SourceJobStatusWaiting.String(),
 			s.now(),
 			s.now(),
-			sourceJob.JobType,
+			sourceJob.JobType.String(),
 			sourceJob.WorkspaceID,
 			sourceJob.Metadata,
 		).Scan(&id)
@@ -109,9 +109,9 @@ func (s *Source) Reset(ctx context.Context) error {
 		WHERE
 			status = $2 OR status = $3;
 	`,
-		model.SourceJobStatusWaiting,
-		model.SourceJobStatusExecuting,
-		model.SourceJobStatusFailed,
+		model.SourceJobStatusWaiting.String(),
+		model.SourceJobStatusExecuting.String(),
+		model.SourceJobStatusFailed.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("executing: %w", err)
@@ -129,8 +129,8 @@ func (s *Source) GetToProcess(ctx context.Context, limit int64) ([]model.SourceJ
 			status = $1 OR status = $2
 		LIMIT $3;
 	`,
-		model.SourceJobStatusWaiting,
-		model.SourceJobStatusFailed,
+		model.SourceJobStatusWaiting.String(),
+		model.SourceJobStatusFailed.String(),
 		limit,
 	)
 	if err != nil {
@@ -140,7 +140,7 @@ func (s *Source) GetToProcess(ctx context.Context, limit int64) ([]model.SourceJ
 
 	sourceJobs, err := scanSourceJobs(rows)
 	if err != nil {
-		return nil, fmt.Errorf("scanning: %w", err)
+		return nil, fmt.Errorf("scanning source jobs: %w", err)
 	}
 	return sourceJobs, nil
 }
@@ -151,7 +151,7 @@ func scanSourceJobs(rows *sqlmw.Rows) ([]model.SourceJob, error) {
 		var sourceJob model.SourceJob
 		err := scanSourceJob(rows.Scan, &sourceJob)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning source job: %w", err)
 		}
 		sourceJobs = append(sourceJobs, sourceJob)
 	}
@@ -163,49 +163,45 @@ func scanSourceJobs(rows *sqlmw.Rows) ([]model.SourceJob, error) {
 
 func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 	var errorRaw sql.NullString
-	var jobTypeRaw sql.NullString
+	var jobType, status string
 
 	if err := scan(
 		&sourceJob.ID,
 		&sourceJob.SourceID,
 		&sourceJob.DestinationID,
-		&sourceJob.Status,
+		&status,
 		&sourceJob.CreatedAt,
 		&sourceJob.UpdatedAt,
 		&sourceJob.TableName,
 		&errorRaw,
-		&jobTypeRaw,
+		&jobType,
 		&sourceJob.Metadata,
 		&sourceJob.Attempts,
 		&sourceJob.WorkspaceID,
 	); err != nil {
-		return fmt.Errorf("scanning: %w", err)
+		return fmt.Errorf("scanning row: %w", err)
 	}
 
-	if errorRaw.Valid {
+	sourceJobStatus, err := model.FromSourceJobStatus(status)
+	if err != nil {
+		return fmt.Errorf("getting sourceJobStatus %w", err)
+	}
+	sourceJobType, err := model.FromSourceJobType(jobType)
+	if err != nil {
+		return fmt.Errorf("getting sourceJobType: %w", err)
+	}
+	if errorRaw.Valid && errorRaw.String != "" {
 		sourceJob.Error = errors.New(errorRaw.String)
 	}
-	if jobTypeRaw.Valid {
-		jobType, err := model.FromSourceJobType(jobTypeRaw.String)
-		if err != nil {
-			return fmt.Errorf("scanning: %w", err)
-		}
-		sourceJob.JobType = jobType
-	} else {
-		return fmt.Errorf("scanning: job type is null")
-	}
 
+	sourceJob.Status = sourceJobStatus
+	sourceJob.JobType = sourceJobType
 	sourceJob.CreatedAt = sourceJob.CreatedAt.UTC()
 	sourceJob.UpdatedAt = sourceJob.UpdatedAt.UTC()
-
 	return nil
 }
 
-func (s *Source) GetByJobRunTaskRun(
-	ctx context.Context,
-	jobRunID string,
-	taskRunID string,
-) (*model.SourceJob, error) {
+func (s *Source) GetByJobRunTaskRun(ctx context.Context, jobRunID, taskRunID string) (*model.SourceJob, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			`+sourceJobColumns+`
@@ -226,7 +222,7 @@ func (s *Source) GetByJobRunTaskRun(
 		return nil, model.ErrSourcesJobNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scanning source job: %w", err)
 	}
 	return &sourceJob, nil
 }
@@ -246,7 +242,7 @@ func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("on update success: %w", err)
+		return fmt.Errorf("executing: %w", err)
 	}
 	rowsAffected, err := r.RowsAffected()
 	if err != nil {
@@ -258,12 +254,7 @@ func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Source) OnUpdateFailure(
-	ctx context.Context,
-	id int64,
-	error error,
-	maxAttempt int,
-) error {
+func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, maxAttempt int) error {
 	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
@@ -286,7 +277,7 @@ func (s *Source) OnUpdateFailure(
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("on update failed: %w", err)
+		return fmt.Errorf("executing: %w", err)
 	}
 	rowsAffected, err := r.RowsAffected()
 	if err != nil {
@@ -313,7 +304,7 @@ func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
 		pq.Array(ids),
 	)
 	if err != nil {
-		return fmt.Errorf("query: %w", err)
+		return fmt.Errorf("executing: %w", err)
 	}
 	return nil
 }

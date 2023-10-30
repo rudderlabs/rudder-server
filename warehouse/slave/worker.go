@@ -51,11 +51,6 @@ type uploadResult struct {
 	UseRudderStorage      bool
 }
 
-type sourceJobRunResult struct {
-	Result bool  `json:"Result"`
-	ID     int64 `json:"Id"`
-}
-
 type worker struct {
 	conf               *config.Config
 	log                logger.Logger
@@ -434,7 +429,7 @@ func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifi
 	}
 
 	var (
-		job model.SourceJob
+		job source.NotifierRequest
 		err error
 	)
 
@@ -443,13 +438,15 @@ func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifi
 		return
 	}
 
-	jobResult, err := w.runSourceJob(ctx, job)
+	err = w.runSourceJob(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
 
-	jobResultJSON, err := json.Marshal(jobResult)
+	jobResultJSON, err := json.Marshal(source.NotifierResponse{
+		ID: job.ID,
+	})
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -460,20 +457,15 @@ func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifi
 	})
 }
 
-func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (sourceJobRunResult, error) {
-	result := sourceJobRunResult{
-		ID:     sourceJob.ID,
-		Result: false,
-	}
-
+func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequest) error {
 	warehouse, err := w.destinationFromSlaveConnectionMap(sourceJob.DestinationID, sourceJob.SourceID)
 	if err != nil {
-		return result, err
+		return fmt.Errorf("getting warehouse: %w", err)
 	}
 
 	integrationsManager, err := manager.NewWarehouseOperations(warehouse.Destination.DestinationDefinition.Name, w.conf, w.log, w.statsFactory)
 	if err != nil {
-		return result, err
+		return fmt.Errorf("getting integrations manager: %w", err)
 	}
 
 	integrationsManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
@@ -483,17 +475,17 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (s
 
 	err = integrationsManager.Setup(ctx, warehouse, &source.Uploader{})
 	if err != nil {
-		return result, err
+		return fmt.Errorf("setting up integrations manager: %w", err)
 	}
 	defer integrationsManager.Cleanup(ctx)
 
 	var metadata warehouseutils.DeleteByMetaData
-	if err = json.Unmarshal(sourceJob.Metadata, &metadata); err != nil {
-		return result, err
+	if err = json.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
+		return fmt.Errorf("unmarshalling metadata: %w", err)
 	}
 
 	switch sourceJob.JobType {
-	case model.SourceJobTypeDeleteByJobRunID:
+	case model.SourceJobTypeDeleteByJobRunID.String():
 		err = integrationsManager.DeleteBy(ctx, []string{sourceJob.TableName}, warehouseutils.DeleteByParams{
 			SourceId:  sourceJob.SourceID,
 			TaskRunId: metadata.TaskRunId,
@@ -503,13 +495,7 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob model.SourceJob) (s
 	default:
 		err = errors.New("invalid sourceJob type")
 	}
-	if err != nil {
-		return result, err
-	}
-
-	result.Result = true
-
-	return result, nil
+	return err
 }
 
 func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
