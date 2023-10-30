@@ -621,12 +621,11 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
-				Secret:          params.secret,
-				WorkspaceId:     workspaceID,
-				AccountId:       rudderAccountID,
-				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
-				EventNamePrefix: "refresh_token",
-				WorkerId:        params.workerID,
+				Secret:      params.secret,
+				WorkspaceId: workspaceID,
+				AccountId:   rudderAccountID,
+				DestDefName: destinationJob.Destination.DestinationDefinition.Name,
+				WorkerId:    params.workerID,
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret

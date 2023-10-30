@@ -222,6 +222,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		destDefName:     refTokenParams.DestDefName,
 		flowType:        authErrHandler.rudderFlowType,
 	}
+	refTokenParams.EventNamePrefix = "refresh_token"
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
 
@@ -238,6 +239,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		isTokenFetch:    true,
 		flowType:        authErrHandler.rudderFlowType,
 	}
+	fetchTokenParams.EventNamePrefix = "fetch_token"
 	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
 
