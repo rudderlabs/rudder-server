@@ -114,7 +114,7 @@ func (s *Source) Reset(ctx context.Context) error {
 		model.SourceJobStatusFailed,
 	)
 	if err != nil {
-		return fmt.Errorf("resetting: %w", err)
+		return fmt.Errorf("executing: %w", err)
 	}
 	return nil
 }
@@ -187,8 +187,8 @@ func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 	}
 	if jobTypeRaw.Valid {
 		switch jobTypeRaw.String {
-		case model.SourceJobTypeDeleteByJobRunID:
-			sourceJob.JobType = jobTypeRaw.String
+		case model.SourceJobTypeDeleteByJobRunID.String():
+			sourceJob.JobType = model.SourceJobTypeDeleteByJobRunID
 		default:
 			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
 		}
@@ -227,7 +227,7 @@ func (s *Source) GetByJobRunTaskRun(
 		return nil, model.ErrSourcesJobNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("scanning: %w", err)
+		return nil, err
 	}
 	return &sourceJob, nil
 }
@@ -300,7 +300,7 @@ func (s *Source) OnUpdateFailure(
 }
 
 func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
-	r, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
 		SET
@@ -315,13 +315,6 @@ func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
 	)
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
-	}
-	rowsAffected, err := r.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return model.ErrSourcesJobNotFound
 	}
 	return nil
 }

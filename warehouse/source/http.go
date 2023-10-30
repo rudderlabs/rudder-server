@@ -98,10 +98,10 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 		if sourceJob.Error != nil {
 			errorMessage = sourceJob.Error.Error()
 		}
-		statusResponse.Status = sourceJob.Status
+		statusResponse.Status = sourceJob.Status.String()
 		statusResponse.Err = errorMessage
 	default:
-		statusResponse.Status = sourceJob.Status
+		statusResponse.Status = sourceJob.Status.String()
 	}
 
 	resBody, err := json.Marshal(statusResponse)

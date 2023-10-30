@@ -71,6 +71,14 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]int64, error) {
+	var jobType model.SourceJobType
+	switch payload.JobType {
+	case model.SourceJobTypeDeleteByJobRunID.String():
+		jobType = model.SourceJobTypeDeleteByJobRunID
+	default:
+		return nil, fmt.Errorf("invalid job type %s", payload.JobType)
+	}
+
 	tableUploads, err := m.tableUploadsRepo.GetByJobRunTaskRun(
 		ctx,
 		payload.SourceID,
@@ -115,7 +123,7 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 			DestinationID: payload.DestinationID,
 			WorkspaceID:   payload.WorkspaceID,
 			TableName:     item,
-			JobType:       payload.JobType,
+			JobType:       jobType,
 			Metadata:      metadataJson,
 		}
 	}))

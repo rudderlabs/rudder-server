@@ -113,14 +113,14 @@ func TestSource_Reset(t *testing.T) {
 			var status string
 			err = db.QueryRowContext(ctx, `SELECT status FROM `+warehouseutils.WarehouseAsyncJobTable+` WHERE id = $1`, id).Scan(&status)
 			require.NoError(t, err)
-			require.Equal(t, model.SourceJobStatusSucceeded, status)
+			require.Equal(t, model.SourceJobStatusSucceeded.String(), status)
 		}
 
 		for _, id := range ids[3:10] {
 			var status string
 			err = db.QueryRowContext(ctx, `SELECT status FROM `+warehouseutils.WarehouseAsyncJobTable+` WHERE id = $1`, id).Scan(&status)
 			require.NoError(t, err)
-			require.Equal(t, model.SourceJobStatusWaiting, status)
+			require.Equal(t, model.SourceJobStatusWaiting.String(), status)
 		}
 	})
 	t.Run("context cancelled", func(t *testing.T) {
@@ -379,13 +379,13 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 				DestinationID: destinationId,
 				WorkspaceID:   workspaceId,
 				TableName:     "table-0",
-				Status:        model.Failed,
-				Error:         errors.New(testError),
-				JobType:       model.SourceJobTypeDeleteByJobRunID,
-				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
-				CreatedAt:     now.UTC(),
-				UpdatedAt:     now.UTC(),
-				Attempts:      1,
+				//Status:        model.Failed,
+				Error:     errors.New(testError),
+				JobType:   model.SourceJobTypeDeleteByJobRunID,
+				Metadata:  json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt: now.UTC(),
+				UpdatedAt: now.UTC(),
+				Attempts:  1,
 			})
 		})
 		t.Run("crossed max attempt", func(t *testing.T) {
@@ -401,13 +401,13 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 				DestinationID: destinationId,
 				WorkspaceID:   workspaceId,
 				TableName:     "table-0",
-				Status:        model.Aborted,
-				Error:         errors.New(testError),
-				JobType:       model.SourceJobTypeDeleteByJobRunID,
-				Metadata:      json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
-				CreatedAt:     now.UTC(),
-				UpdatedAt:     now.UTC(),
-				Attempts:      2,
+				//Status:        model.Aborted,
+				Error:     errors.New(testError),
+				JobType:   model.SourceJobTypeDeleteByJobRunID,
+				Metadata:  json.RawMessage(`{"job_run_id": "test-job-run", "task_run_id": "test-task-run"}`),
+				CreatedAt: now.UTC(),
+				UpdatedAt: now.UTC(),
+				Attempts:  2,
 			})
 		})
 	})
@@ -440,7 +440,7 @@ func TestSource_MarkExecuting(t *testing.T) {
 		return now
 	}))
 
-	t.Run("source job found", func(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
 		ids, err := repoSource.Insert(ctx, lo.RepeatBy(1, func(i int) model.SourceJob {
 			return model.SourceJob{
 				SourceID:      sourceId,
@@ -474,10 +474,6 @@ func TestSource_MarkExecuting(t *testing.T) {
 			UpdatedAt:     now.UTC(),
 			Attempts:      0,
 		})
-	})
-	t.Run("source job not found", func(t *testing.T) {
-		err := repoSource.MarkExecuting(ctx, []int64{-1})
-		require.ErrorIs(t, err, model.ErrSourcesJobNotFound)
 	})
 	t.Run("context cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)

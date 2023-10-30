@@ -139,7 +139,6 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 	if err != nil {
 		return tableUpload, fmt.Errorf("parsing rows: %w", err)
 	}
-
 	return tableUpload, err
 }
 

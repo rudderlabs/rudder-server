@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v2"
 )
 

@@ -5,20 +5,36 @@ import (
 	"time"
 )
 
-type SourceJobType = string
+type SourceJobType interface {
+	String() string
+	sourceJobTypeProtected()
+}
 
-const (
-	SourceJobTypeDeleteByJobRunID SourceJobType = "deletebyjobrunid"
+type sourceJobType string
+
+func (s sourceJobType) String() string          { return string(s) }
+func (s sourceJobType) sourceJobTypeProtected() {}
+
+var (
+	SourceJobTypeDeleteByJobRunID SourceJobType = sourceJobType("deletebyjobrunid")
 )
 
-type SourceJobStatus = string
+type SourceJobStatus interface {
+	String() string
+	sourceJobStatusProtected()
+}
 
-const (
-	SourceJobStatusWaiting   SourceJobStatus = "waiting"
-	SourceJobStatusExecuting SourceJobStatus = "executing"
-	SourceJobStatusFailed    SourceJobStatus = "failed"
-	SourceJobStatusAborted   SourceJobStatus = "aborted"
-	SourceJobStatusSucceeded SourceJobStatus = "succeeded"
+type sourceJobStatus string
+
+func (s sourceJobStatus) String() string            { return string(s) }
+func (s sourceJobStatus) sourceJobStatusProtected() {}
+
+var (
+	SourceJobStatusWaiting   SourceJobStatus = sourceJobStatus("waiting")
+	SourceJobStatusExecuting SourceJobStatus = sourceJobStatus("executing")
+	SourceJobStatusFailed    SourceJobStatus = sourceJobStatus("failed")
+	SourceJobStatusAborted   SourceJobStatus = sourceJobStatus("aborted")
+	SourceJobStatusSucceeded SourceJobStatus = sourceJobStatus("succeeded")
 )
 
 type SourceJob struct {

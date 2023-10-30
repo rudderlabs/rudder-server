@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -181,6 +181,7 @@ func (a *App) Setup(ctx context.Context) error {
 	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
 		a.logger,
+		a.statsFactory,
 		a.db,
 		a.tenantManager,
 		a.bcManager,
