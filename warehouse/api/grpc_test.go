@@ -149,7 +149,7 @@ func TestGRPC(t *testing.T) {
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
 		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats.Default)
-		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
+		grpcServer, err := NewGRPCServer(c, logger.NOP, stats.Default, db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
 		tcpPort, err := kithelper.GetFreePort()
@@ -160,7 +160,7 @@ func TestGRPC(t *testing.T) {
 		listener, err := net.Listen("tcp", tcpAddress)
 		require.NoError(t, err)
 
-		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()), grpc.UnaryInterceptor(statsInterceptor(stats.Default)))
 		proto.RegisterWarehouseServer(server, grpcServer)
 
 		g, gCtx := errgroup.WithContext(ctx)
