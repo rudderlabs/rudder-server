@@ -3,8 +3,6 @@ package reporting
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -33,8 +31,8 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	g, ctx := errgroup.WithContext(ctx)
 
 	rm := &Mediator{
-		log:   log,
-		stats: stats.Default,
+		log:    log,
+		stats:  stats.Default,
 		g:      g,
 		ctx:    ctx,
 		cancel: cancel,
