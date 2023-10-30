@@ -230,3 +230,31 @@ type TrackingPlanT struct {
 	Id      string `json:"id"`
 	Version int    `json:"version"`
 }
+
+func (d *DestinationT) IsOAuthDestination() bool {
+	if authValue, err := misc.NestedMapLookup(d.Config, "auth", "type"); err == nil {
+		if authType, ok := authValue.(string); ok {
+			return authType == "OAuth"
+		}
+	}
+	return false
+}
+
+/*
+Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
+
+Example:
+`GetAccountId(destDetail.Config, "rudderDeleteAccountId")` --> To be used when we make use of OAuth during regulation flow
+`GetAccountId(destDetail.Config, "rudderAccountId")` --> To be used when we make use of OAuth during normal event delivery
+*/
+func (d *DestinationT) GetAccountID(idKey string) string {
+	rudderAccountIdInterface, found := d.Config[idKey]
+	if !d.IsOAuthDestination() || !found || idKey == "" {
+		return ""
+	}
+	rudderAccountId, ok := rudderAccountIdInterface.(string)
+	if ok {
+		return rudderAccountId
+	}
+	return ""
+}
