@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,6 +98,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
+		createUploadAlways := &atomic.Bool{}
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
@@ -129,6 +131,7 @@ func TestRouter(t *testing.T) {
 			backendConfigManager,
 			ef,
 			triggerStore,
+			createUploadAlways,
 		)
 		require.NoError(t, err)
 
@@ -196,6 +199,8 @@ func TestRouter(t *testing.T) {
 		r.triggerStore = &sync.Map{}
 		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.createJobMarkerMap = make(map[string]time.Time)
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		t.Run("no staging files", func(t *testing.T) {
 			err = r.createJobs(ctx, warehouse)
@@ -350,6 +355,8 @@ func TestRouter(t *testing.T) {
 		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.triggerStore = &sync.Map{}
 		r.logger = logger.NOP
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		priority := 50
 
@@ -497,6 +504,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -610,6 +619,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -751,6 +762,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		close(r.bcManager.InitialConfigFetched)
 
@@ -900,6 +913,8 @@ func TestRouter(t *testing.T) {
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			close(r.bcManager.InitialConfigFetched)
 
@@ -972,6 +987,8 @@ func TestRouter(t *testing.T) {
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			closeCh := make(chan struct{})
 
@@ -1186,6 +1203,8 @@ func TestRouter(t *testing.T) {
 		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.Default)
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		go func() {
 			r.bcManager.Start(ctx)

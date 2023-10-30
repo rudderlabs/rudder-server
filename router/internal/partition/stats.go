@@ -2,11 +2,11 @@ package partition
 
 import (
 	"math"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 )

@@ -9,12 +9,12 @@ import (
 	"io"
 	"net/http"
 	"runtime/trace"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"

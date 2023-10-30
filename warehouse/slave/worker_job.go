@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"

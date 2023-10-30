@@ -10,15 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
@@ -32,7 +33,6 @@ import (
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -1003,7 +1003,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	)
 
 	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config); err != nil {
+		if db, err = tunnelling.Connect(dsn.String(), cred.TunnelInfo.Config); err != nil {
 			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
 		}
 	} else {
@@ -1236,7 +1236,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 		Username:   warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		Password:   warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 		timeout:    rs.connectTimeout,
-		TunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
+		TunnelInfo: tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
 	}
 
 	return creds
