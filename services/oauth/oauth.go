@@ -231,8 +231,8 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
 
-func getTokenStatName(stat string) string {
-	return fmt.Sprintf("token_%v", stat)
+func getOAuthActionStatName(stat string) string {
+	return fmt.Sprintf("oauth_action_%v", stat)
 }
 
 func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse) {
@@ -255,7 +255,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
 	startTime := time.Now()
 	defer func() {
-		authStats.statName = getTokenStatName("total_req_latency")
+		authStats.statName = getOAuthActionStatName("total_latency")
 		authStats.isCallToCpApi = false
 		authStats.SendTimerStats(startTime)
 	}()
@@ -311,13 +311,6 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 
 	authErrHandler.logger.Debugf("[%s] [%v request] Lock Acquired by rt-worker-%d\n", loggerNm, logTypeName, refTokenParams.WorkerId)
 
-	errHandlerReqTimeStart := time.Now()
-	defer func() {
-		authStats.statName = getTokenStatName("request_exec_time")
-		authStats.isCallToCpApi = true
-		authStats.SendTimerStats(errHandlerReqTimeStart)
-	}()
-
 	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 	return statusCode, authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 }
@@ -342,21 +335,21 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
-	authStats.statName = getTokenStatName(`request_sent`)
+	authStats.statName = getOAuthActionStatName(`request_sent`)
 	authStats.isCallToCpApi = true
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	authStats.statName = getTokenStatName(`request_latency`)
+	authStats.statName = getOAuthActionStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
 	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
-		authStats.statName = getTokenStatName("request_failure")
+		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
@@ -380,7 +373,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = errType
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].ErrorMessage = refErrMsg
 		}
-		authStats.statName = getTokenStatName("request_failure")
+		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
 		if refErrMsg == REF_TOKEN_INVALID_GRANT {
@@ -394,7 +387,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 		Account: accountSecret,
 	}
-	authStats.statName = getTokenStatName("request_success")
+	authStats.statName = getOAuthActionStatName("success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	authErrHandler.logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
@@ -464,10 +457,6 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	authStatusToggleMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
 	action := fmt.Sprintf("auth_status_%v", params.AuthStatus)
 
-	getStatName := func(statName string) string {
-		return fmt.Sprintf("auth_status_%v", statName)
-	}
-
 	authStatusToggleStats := &OAuthStats{
 		id:              destinationId,
 		workspaceId:     params.WorkspaceId,
@@ -481,7 +470,7 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 		action:          action,
 	}
 	defer func() {
-		authStatusToggleStats.statName = getStatName("total_req_latency")
+		authStatusToggleStats.statName = getOAuthActionStatName("total_latency")
 		authStatusToggleStats.isCallToCpApi = false
 		authStatusToggleStats.SendTimerStats(authErrHandlerTimeStart)
 	}()
@@ -522,13 +511,13 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 		RequestType: action,
 	}
 
-	authStatusToggleStats.statName = getStatName("request_sent")
+	authStatusToggleStats.statName = getOAuthActionStatName("request_sent")
 	authStatusToggleStats.isCallToCpApi = true
 	authStatusToggleStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.cpApiCall(authStatusInactiveCpReq)
-	authStatusToggleStats.statName = getStatName("request_latency")
+	authStatusToggleStats.statName = getOAuthActionStatName("request_latency")
 	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
 	authErrHandler.logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
 
@@ -541,14 +530,14 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 		} else {
 			msg = fmt.Sprintf("Could not update authStatus to inactive for destination: %v", authStatusToggleRes.Message)
 		}
-		authStatusToggleStats.statName = getStatName("failure")
+		authStatusToggleStats.statName = getOAuthActionStatName("failure")
 		authStatusToggleStats.errorMessage = msg
 		authStatusToggleStats.SendCountStat()
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	authErrHandler.logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
-	authStatusToggleStats.statName = getStatName("success")
+	authStatusToggleStats.statName = getOAuthActionStatName("success")
 	authStatusToggleStats.errorMessage = ""
 	authStatusToggleStats.SendCountStat()
 
