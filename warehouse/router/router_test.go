@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,14 +92,15 @@ func TestRouter(t *testing.T) {
 
 		ctx := context.Background()
 
-		n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+		n := notifier.New(config.New(), logger.NOP, memstats.New(), workspaceIdentifier)
 		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
 
+		createUploadAlways := &atomic.Bool{}
 		triggerStore := &sync.Map{}
-		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
+		tenantManager := multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -108,20 +110,20 @@ func TestRouter(t *testing.T) {
 		cp := controlplane.NewClient(s.URL, &identity.Namespace{},
 			controlplane.WithHTTPClient(s.Client()),
 		)
-		backendConfigManager := bcm.New(config.Default, db, tenantManager, logger.NOP, stats.Default)
+		backendConfigManager := bcm.New(config.New(), db, tenantManager, logger.NOP, memstats.New())
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		r, err := New(
 			ctx,
 			&reporting.NOOP{},
 			destinationType,
-			config.Default,
+			config.New(),
 			logger.NOP,
-			stats.Default,
+			memstats.New(),
 			db,
 			n,
 			tenantManager,
@@ -129,6 +131,7 @@ func TestRouter(t *testing.T) {
 			backendConfigManager,
 			ef,
 			triggerStore,
+			createUploadAlways,
 		)
 		require.NoError(t, err)
 
@@ -186,7 +189,7 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
-		r.conf = config.Default
+		r.conf = config.New()
 		r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -196,6 +199,8 @@ func TestRouter(t *testing.T) {
 		r.triggerStore = &sync.Map{}
 		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.createJobMarkerMap = make(map[string]time.Time)
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		t.Run("no staging files", func(t *testing.T) {
 			err = r.createJobs(ctx, warehouse)
@@ -342,7 +347,7 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
-		r.conf = config.Default
+		r.conf = config.New()
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 		r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
@@ -350,6 +355,8 @@ func TestRouter(t *testing.T) {
 		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.triggerStore = &sync.Map{}
 		r.logger = logger.NOP
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		priority := 50
 
@@ -475,7 +482,7 @@ func TestRouter(t *testing.T) {
 		r.statsFactory = statsStore
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.conf = config.Default
+		r.conf = config.New()
 		r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -497,6 +504,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -581,17 +590,17 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
-		r.conf = config.Default
+		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 		r.destType = destinationType
 		r.logger = logger.NOP
-		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
+		r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			reporting:    &reporting.NOOP{},
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
 			db:           r.db,
@@ -610,6 +619,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -714,7 +725,7 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
-		r.conf = config.Default
+		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -723,12 +734,12 @@ func TestRouter(t *testing.T) {
 		r.config.uploadAllocatorSleep = time.Millisecond * 100
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
-		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.Default)
+		r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			reporting:    &reporting.NOOP{},
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: r.statsFactory,
 			db:           r.db,
@@ -751,6 +762,8 @@ func TestRouter(t *testing.T) {
 		})
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		close(r.bcManager.InitialConfigFetched)
 
@@ -863,7 +876,7 @@ func TestRouter(t *testing.T) {
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.statsFactory = memstats.New()
-			r.conf = config.Default
+			r.conf = config.New()
 			r.config.allowMultipleSourcesForJobsPickup = true
 			r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -872,12 +885,12 @@ func TestRouter(t *testing.T) {
 			r.config.uploadAllocatorSleep = time.Millisecond * 100
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
-			r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
-			r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.Default)
+			r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
+			r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
 				reporting:    &reporting.NOOP{},
-				conf:         config.Default,
+				conf:         config.New(),
 				logger:       logger.NOP,
 				statsFactory: r.statsFactory,
 				db:           r.db,
@@ -900,6 +913,8 @@ func TestRouter(t *testing.T) {
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			close(r.bcManager.InitialConfigFetched)
 
@@ -952,7 +967,7 @@ func TestRouter(t *testing.T) {
 			r.statsFactory = statsStore
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
-			r.conf = config.Default
+			r.conf = config.New()
 
 			r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -972,6 +987,8 @@ func TestRouter(t *testing.T) {
 			})
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			closeCh := make(chan struct{})
 
@@ -1178,14 +1195,16 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
-		r.conf = config.Default
+		r.conf = config.New()
 		r.logger = logger.NOP
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
-		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
-		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.Default)
+		r.tenantManager = multitenant.New(config.New(), mockBackendConfig)
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
+		r.createUploadAlways = &atomic.Bool{}
+		r.scheduledTimesCache = make(map[string][]int)
 
 		go func() {
 			r.bcManager.Start(ctx)

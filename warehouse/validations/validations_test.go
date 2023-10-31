@@ -706,32 +706,29 @@ func TestValidator_Validate(t *testing.T) {
 		t.Run("empty step", func(t *testing.T) {
 			namespace := "es_test_namespace"
 
-			res, err := validations.Validate(ctx, &model.ValidationRequest{
-				Path: "validate",
-				Step: "",
-				Destination: &backendconfig.DestinationT{
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: warehouseutils.POSTGRES,
-					},
-					Config: map[string]interface{}{
-						"host":            pgResource.Host,
-						"port":            pgResource.Port,
-						"database":        pgResource.Database,
-						"user":            pgResource.User,
-						"password":        pgResource.Password,
-						"sslMode":         sslMode,
-						"namespace":       namespace,
-						"bucketProvider":  provider,
-						"bucketName":      minioResource.BucketName,
-						"accessKeyID":     minioResource.AccessKeyID,
-						"secretAccessKey": minioResource.AccessKeySecret,
-						"endPoint":        minioResource.Endpoint,
-					},
+			v := NewValidator(config.New(), logger.NOP, stats.Default, filemanager.New, encoding.NewFactory(c))
+			res := v.Validate(ctx, &backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.POSTGRES,
 				},
-			})
+				Config: map[string]interface{}{
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
+					"sslMode":         sslMode,
+					"namespace":       namespace,
+					"bucketProvider":  provider,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKeyID,
+					"secretAccessKey": minioResource.AccessKeySecret,
+					"endPoint":        minioResource.Endpoint,
+				},
+			}, "")
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
+			require.JSONEq(t, res.Steps, `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
 		})
 
 		t.Run("steps in order", func(t *testing.T) {

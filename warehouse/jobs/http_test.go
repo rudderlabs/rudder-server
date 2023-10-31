@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/ory/dockertest/v3"
@@ -61,7 +62,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 	ctx := context.Background()
 
-	n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+	n := notifier.New(config.New(), logger.NOP, memstats.New(), workspaceIdentifier)
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 

@@ -1,4 +1,4 @@
-package reporting
+package error_index
 
 import (
 	"context"
@@ -6,22 +6,39 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
-	"github.com/golang/mock/gomock"
+	"github.com/samber/lo"
+
+	"github.com/ory/dockertest/v3"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+func newMockConfigSubscriber() *mockConfigSubscriber {
+	return &mockConfigSubscriber{
+		workspaceIDForSourceIDMap: make(map[string]string),
+	}
+}
+
+type mockConfigSubscriber struct {
+	workspaceIDForSourceIDMap map[string]string
+}
+
+func (m *mockConfigSubscriber) WorkspaceIDFromSource(sourceID string) string {
+	return m.workspaceIDForSourceIDMap[sourceID]
+}
+
+func (m *mockConfigSubscriber) addWorkspaceIDForSourceID(sourceID, workspaceID string) {
+	m.workspaceIDForSourceIDMap[sourceID] = workspaceID
+}
 
 func TestErrorIndexReporter(t *testing.T) {
 	workspaceID := "test-workspace-id"
@@ -30,8 +47,6 @@ func TestErrorIndexReporter(t *testing.T) {
 	transformationID := "test-transformation-id"
 	trackingPlanID := "test-tracking-plan-id"
 	reportedBy := "test-reported-by"
-	destinationDefinitionID := "test-destination-definition-id"
-	destType := "test-dest-type"
 	eventName := "test-event-name"
 	eventType := "test-event-type"
 	messageID := "test-message-id"
@@ -41,48 +56,8 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	ctx := context.Background()
 
-	ctrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{
-			Data: map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										ID:   destinationDefinitionID,
-										Name: destType,
-									},
-								},
-							},
-						},
-					},
-					Settings: backendconfig.Settings{
-						DataRetention: backendconfig.DataRetention{
-							DisableReportingPII: true,
-						},
-					},
-				},
-			},
-			Topic: string(backendconfig.TopicBackendConfig),
-		}
-		close(ch)
-		return ch
-	}).AnyTimes()
-
-	receivedAt := time.Now()
-
-	failedAt := func() time.Time {
-		return receivedAt.Add(time.Hour)
-	}
+	receivedAt := time.Now().UTC()
+	failedAt := receivedAt.Add(time.Hour)
 
 	t.Run("reports", func(t *testing.T) {
 		testCases := []struct {
@@ -188,7 +163,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				expectedPayload: []payload{
 					{
 						MessageID:        messageID + "1",
-						ReceivedAt:       receivedAt.Add(1 * time.Hour),
+						ReceivedAt:       receivedAt.Add(1 * time.Hour).UnixMicro(),
 						SourceID:         sourceID,
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
@@ -196,11 +171,11 @@ func TestErrorIndexReporter(t *testing.T) {
 						EventName:        eventName,
 						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         failedAt(),
+						FailedAt:         failedAt.UnixMicro(),
 					},
 					{
 						MessageID:        messageID + "2",
-						ReceivedAt:       receivedAt.Add(2 * time.Hour),
+						ReceivedAt:       receivedAt.Add(2 * time.Hour).UnixMicro(),
 						SourceID:         sourceID,
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
@@ -208,11 +183,11 @@ func TestErrorIndexReporter(t *testing.T) {
 						EventName:        eventName,
 						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         failedAt(),
+						FailedAt:         failedAt.UnixMicro(),
 					},
 					{
 						MessageID:        messageID + "3",
-						ReceivedAt:       receivedAt.Add(3 * time.Hour),
+						ReceivedAt:       receivedAt.Add(3 * time.Hour).UnixMicro(),
 						SourceID:         sourceID,
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
@@ -220,11 +195,11 @@ func TestErrorIndexReporter(t *testing.T) {
 						EventName:        eventName,
 						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         failedAt(),
+						FailedAt:         failedAt.UnixMicro(),
 					},
 					{
 						MessageID:        messageID + "4",
-						ReceivedAt:       receivedAt.Add(4 * time.Hour),
+						ReceivedAt:       receivedAt.Add(4 * time.Hour).UnixMicro(),
 						SourceID:         sourceID,
 						DestinationID:    destinationID,
 						TransformationID: transformationID,
@@ -232,7 +207,7 @@ func TestErrorIndexReporter(t *testing.T) {
 						EventName:        eventName,
 						EventType:        eventType,
 						FailedStage:      reportedBy,
-						FailedAt:         failedAt(),
+						FailedAt:         failedAt.UnixMicro(),
 					},
 				},
 			},
@@ -244,22 +219,29 @@ func TestErrorIndexReporter(t *testing.T) {
 				require.NoError(t, err)
 
 				c := config.New()
-				ctx, cancel := context.WithCancel(ctx)
-				cs := newConfigSubscriber(logger.NOP)
-				subscribeDone := make(chan struct{})
-				go func() {
-					defer close(subscribeDone)
-					cs.Subscribe(ctx, mockBackendConfig)
-				}()
 
-				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
-				_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+				ctx, cancel := context.WithCancel(ctx)
+				defer cancel()
+
+				cs := newMockConfigSubscriber()
+				cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
 				defer eir.Stop()
 
-				eir.now = failedAt
-				sqltx, err := postgresContainer.DB.Begin()
+				syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+				syncerDone := make(chan struct{})
+				go func() {
+					defer close(syncerDone)
+					syncer()
+				}()
+
+				eir.now = func() time.Time {
+					return failedAt
+				}
+				sqlTx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
-				tx := &Tx{Tx: sqltx}
+				tx := &Tx{Tx: sqlTx}
 				err = eir.Report(tc.reports, tx)
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
@@ -283,8 +265,8 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, eventPayload.FailedStage, tc.expectedPayload[i].FailedStage)
 					require.Equal(t, eventPayload.EventName, tc.expectedPayload[i].EventName)
 					require.Equal(t, eventPayload.EventType, tc.expectedPayload[i].EventType)
-					require.EqualValues(t, eventPayload.FailedAt.UTC(), failedAt().UTC())
-					require.EqualValues(t, eventPayload.ReceivedAt.UTC(), tc.expectedPayload[i].ReceivedAt.UTC())
+					require.Equal(t, eventPayload.FailedAt, tc.expectedPayload[i].FailedAt)
+					require.Equal(t, eventPayload.ReceivedAt, tc.expectedPayload[i].ReceivedAt)
 
 					var params map[string]interface{}
 					err = json.Unmarshal(job.Parameters, &params)
@@ -292,44 +274,43 @@ func TestErrorIndexReporter(t *testing.T) {
 
 					require.Equal(t, params["source_id"], sourceID)
 					require.Equal(t, params["workspaceId"], workspaceID)
+
+					<-syncerDone
 				}
-				cancel()
-				<-subscribeDone
 			})
 		}
 	})
+
 	t.Run("graceful shutdown", func(t *testing.T) {
 		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
+
 		ctx, cancel := context.WithCancel(ctx)
-		cs := newConfigSubscriber(logger.NOP)
-		subscribeDone := make(chan struct{})
-		go func() {
-			defer close(subscribeDone)
-			cs.Subscribe(ctx, mockBackendConfig)
-		}()
+		defer cancel()
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
+		cf := newMockConfigSubscriber()
+		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
 		defer eir.Stop()
+
 		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
-
-		sqltx, err := postgresContainer.DB.Begin()
-		require.NoError(t, err)
-		tx := &Tx{Tx: sqltx}
-		err = eir.Report([]*types.PUReportedMetric{}, tx)
-		require.NoError(t, err)
-		require.NoError(t, tx.Commit())
-
 		syncerDone := make(chan struct{})
 		go func() {
 			defer close(syncerDone)
 			syncer()
 		}()
 
+		sqlTx, err := postgresContainer.DB.Begin()
+		require.NoError(t, err)
+		tx := &Tx{Tx: sqlTx}
+		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+
 		cancel()
-		<-subscribeDone
 		<-syncerDone
 	})
 
@@ -341,21 +322,26 @@ func TestErrorIndexReporter(t *testing.T) {
 			require.NoError(t, err)
 
 			c := config.New()
+
 			ctx, cancel := context.WithCancel(ctx)
-			cs := newConfigSubscriber(logger.NOP)
-			subscribeDone := make(chan struct{})
+			defer cancel()
+
+			cf := newMockConfigSubscriber()
+			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
+			defer eir.Stop()
+
+			syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+			syncerDone := make(chan struct{})
 			go func() {
-				defer close(subscribeDone)
-				cs.Subscribe(ctx, mockBackendConfig)
+				defer close(syncerDone)
+				syncer()
 			}()
 
-			eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
-			defer eir.Stop()
-			_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
-
-			sqltx, err := pg2.DB.Begin()
+			sqlTx, err := pg2.DB.Begin()
 			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
+			tx := &Tx{Tx: sqlTx}
 			err = eir.Report([]*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
@@ -386,8 +372,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			require.Error(t, err)
 			require.Error(t, tx.Commit())
 
-			cancel()
-			<-subscribeDone
+			<-syncerDone
 		})
 	})
 
@@ -400,23 +385,30 @@ func TestErrorIndexReporter(t *testing.T) {
 		require.NoError(t, err)
 
 		c := config.New()
+
 		ctx, cancel := context.WithCancel(ctx)
-		cs := newConfigSubscriber(logger.NOP)
-		subscribeDone := make(chan struct{})
+		defer cancel()
+
+		cs := newMockConfigSubscriber()
+		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		defer eir.Stop()
+
+		syncer1 := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
+		syncer2 := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg2.DBDsn})
+
+		syncersDone := make(chan struct{})
 		go func() {
-			defer close(subscribeDone)
-			cs.Subscribe(ctx, mockBackendConfig)
+			defer close(syncersDone)
+			syncer1()
+			syncer2()
 		}()
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c)
-		defer eir.Stop()
-		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
-		_ = eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg2.DBDsn})
-
 		t.Run("correct transaction", func(t *testing.T) {
-			sqltx, err := pg1.DB.Begin()
+			sqlTx, err := pg1.DB.Begin()
 			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
+			tx := &Tx{Tx: sqlTx}
 			err = eir.Report([]*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
@@ -448,9 +440,9 @@ func TestErrorIndexReporter(t *testing.T) {
 			require.NoError(t, tx.Commit())
 		})
 		t.Run("wrong transaction", func(t *testing.T) {
-			sqltx, err := pg3.DB.Begin()
+			sqlTx, err := pg3.DB.Begin()
 			require.NoError(t, err)
-			tx := &Tx{Tx: sqltx}
+			tx := &Tx{Tx: sqlTx}
 			err = eir.Report([]*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
@@ -482,7 +474,128 @@ func TestErrorIndexReporter(t *testing.T) {
 			require.NoError(t, tx.Commit())
 		})
 
+		<-syncersDone
+	})
+
+	t.Run("sync data", func(t *testing.T) {
+		postgresContainer, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		minioResource, err := resource.SetupMinio(pool, t)
+		require.NoError(t, err)
+
+		reports := []*types.PUReportedMetric{
+			{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TransformationID: transformationID,
+					TrackingPlanID:   trackingPlanID,
+				},
+				PUDetails: types.PUDetails{
+					PU: reportedBy,
+				},
+				StatusDetail: &types.StatusDetail{
+					EventName: eventName,
+					EventType: eventType,
+					FailedMessages: []*types.FailedMessage{
+						{
+							MessageID:  messageID + "1",
+							ReceivedAt: receivedAt.Add(1 * time.Hour),
+						},
+						{
+							MessageID:  messageID + "2",
+							ReceivedAt: receivedAt.Add(2 * time.Hour),
+						},
+					},
+				},
+			},
+			{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TransformationID: transformationID,
+					TrackingPlanID:   trackingPlanID,
+				},
+				PUDetails: types.PUDetails{
+					PU: reportedBy,
+				},
+				StatusDetail: &types.StatusDetail{
+					EventName: eventName,
+					EventType: eventType,
+					FailedMessages: []*types.FailedMessage{
+						{
+							MessageID:  messageID + "3",
+							ReceivedAt: receivedAt.Add(3 * time.Hour),
+						},
+						{
+							MessageID:  messageID + "4",
+							ReceivedAt: receivedAt.Add(4 * time.Hour),
+						},
+					},
+				},
+			},
+		}
+
+		c := config.New()
+		c.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
+		c.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
+		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)
+		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
+		c.Set("ErrorIndex.storage.S3ForcePathStyle", true)
+		c.Set("ErrorIndex.storage.DisableSSL", true)
+
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		cs := newMockConfigSubscriber()
+		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
+
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		eir.now = func() time.Time {
+			return failedAt
+		}
+		eir.trigger = func() <-chan time.Time {
+			return time.After(time.Duration(0))
+		}
+		defer eir.Stop()
+
+		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
+
+		syncerDone := make(chan struct{})
+		go func() {
+			defer close(syncerDone)
+			syncer()
+		}()
+
+		sqlTx, err := postgresContainer.DB.Begin()
+		require.NoError(t, err)
+
+		tx := &Tx{Tx: sqlTx}
+		err = eir.Report(reports, tx)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+
+		db, err := eir.resolveJobsDB(tx)
+		require.NoError(t, err)
+
+		failedJobs := lo.Flatten(lo.Map(reports, func(item *types.PUReportedMetric, index int) []*types.FailedMessage {
+			return item.StatusDetail.FailedMessages
+		}))
+
+		require.Eventually(t, func() bool {
+			jr, err := db.GetSucceeded(ctx, jobsdb.GetQueryParams{
+				JobsLimit: 100,
+			})
+			require.NoError(t, err)
+
+			return len(jr.Jobs) == len(failedJobs)
+		},
+			time.Second*30,
+			time.Millisecond*100,
+		)
+
 		cancel()
-		<-subscribeDone
+
+		<-syncerDone
 	})
 }
