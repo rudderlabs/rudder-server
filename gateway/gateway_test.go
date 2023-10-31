@@ -1343,6 +1343,77 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
+		It("sanitizes messageID replace with new uuid", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": "\u0000\u00A0\t\n\r\u034F",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+
+			u, err := uuid.Parse(job.Batch[0].MessageID)
+			Expect(err).To(BeNil())
+			Expect(u.Version()).To(Equal(uuid.Version(4)))
+		})
+
+		It("sanitizes messageID, remove bad runes", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": "\u0000-a-random-string\u00A0\t\n\r\u034F",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
+		})
+
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
