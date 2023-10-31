@@ -237,7 +237,7 @@ func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
 		WHERE
 			id = $3;
 `,
-		model.SourceJobStatusSucceeded,
+		model.SourceJobStatusSucceeded.String(),
 		s.now(),
 		id,
 	)
@@ -270,8 +270,8 @@ func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, max
 			id = $6;
 `,
 		maxAttempt,
-		model.SourceJobStatusAborted,
-		model.SourceJobStatusFailed,
+		model.SourceJobStatusAborted.String(),
+		model.SourceJobStatusFailed.String(),
 		s.now(),
 		error.Error(),
 		id,

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -60,11 +62,8 @@ func New(conf *config.Config, log logger.Logger, db *sqlmw.DB, publisher publish
 }
 
 func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]int64, error) {
-	var jobType model.SourceJobType
-	switch payload.JobType {
-	case model.SourceJobTypeDeleteByJobRunID.String():
-		jobType = model.SourceJobTypeDeleteByJobRunID
-	default:
+	jobType, err := model.FromSourceJobType(payload.JobType)
+	if err != nil {
 		return nil, fmt.Errorf("invalid job type %s", payload.JobType)
 	}
 
@@ -127,8 +126,15 @@ func (m *Manager) Run(ctx context.Context) error {
 		return fmt.Errorf("resetting source jobs with error %w", err)
 	}
 
-	if err := m.process(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("processing source jobs with error %w", err)
+	if err := m.process(ctx); err != nil {
+		var pqErr *pq.Error
+
+		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &pqErr) && pqErr.Code == "57014":
+			return nil
+		default:
+			return fmt.Errorf("processing source jobs with error %w", err)
+		}
 	}
 	return nil
 }
