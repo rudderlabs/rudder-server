@@ -92,3 +92,26 @@ func RESTJSONDestTransformerHandler(method, url string) func(request []transform
 		}
 	})
 }
+
+// WarehouseTransformerHandler mirrors the request payload in the response but uses an error, status code along with warehouse compatible output
+func WarehouseTransformerHandler(tableName string, code int, err string) TransformerHandler {
+	return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+		for i := range request {
+			req := request[i]
+			response = append(response, transformer.TransformerResponse{
+				Metadata: req.Metadata,
+				Output: map[string]interface{}{
+					"table": tableName,
+					"data":  req.Message,
+					"metadata": map[string]interface{}{
+						"table":   tableName,
+						"columns": map[string]interface{}{},
+					},
+				},
+				StatusCode: code,
+				Error:      err,
+			})
+		}
+		return
+	}
+}

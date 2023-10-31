@@ -16,10 +16,6 @@ type state struct {
 }
 
 func init() {
-	initializeStateMachine()
-}
-
-func initializeStateMachine() {
 	stateTransitions = make(map[string]*state)
 
 	waitingState := &state{

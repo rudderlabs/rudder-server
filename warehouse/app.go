@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
@@ -25,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -69,6 +70,7 @@ type App struct {
 	sourcesManager     *jobs.AsyncJobWh
 	admin              *whadmin.Admin
 	triggerStore       *sync.Map
+	createUploadAlways *atomic.Bool
 
 	appName string
 
@@ -132,6 +134,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("setting up database: %w", err)
 	}
 
+	a.createUploadAlways = &atomic.Bool{}
 	a.triggerStore = &sync.Map{}
 	a.tenantManager = multitenant.New(
 		a.conf,
@@ -181,6 +184,7 @@ func (a *App) Setup(ctx context.Context) error {
 	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
 		a.logger,
+		a.statsFactory,
 		a.db,
 		a.tenantManager,
 		a.bcManager,
@@ -205,7 +209,7 @@ func (a *App) Setup(ctx context.Context) error {
 	)
 	a.admin = whadmin.New(
 		a.bcManager,
-		&router.StartUploadAlways,
+		a.createUploadAlways,
 		a.logger,
 	)
 
@@ -483,6 +487,7 @@ func (a *App) onConfigDataEvent(
 					a.bcManager,
 					a.encodingFactory,
 					a.triggerStore,
+					a.createUploadAlways,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)

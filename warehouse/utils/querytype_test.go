@@ -38,6 +38,7 @@ func TestGetQueryType(t *testing.T) {
 		{"drop table 2", "\t\n\n  \t\n\n  IF OBJECT_ID ('foo.qux','X') IS NOT NULL DROP TABLE foo.bar", "DROP_TABLE", true},
 		{"show tables", "\t\n\n  \t\n\n  sHoW tAbLes FROM some_table", "SHOW_TABLES", true},
 		{"show partitions", "\t\n\n  \t\n\n  sHoW pArtItiOns billing.tracks_t1", "SHOW_PARTITIONS", true},
+		{"show schemas", "\t\n\n  \t\n\n  sHoW schemaS like foobar", "SHOW_SCHEMAS", true},
 		{"describe table 1", "\t\n\n  \t\n\n  dEscrIbe tABLE t1", "DESCRIBE_TABLE", true},
 		{"describe table 2", "\t\n\n  \t\n\n  dEscrIbe qUeRy tABLE t1", "DESCRIBE_TABLE", true},
 		{"set", "\t\n\n  \t\n\n  sEt something TO something_else", "SET_TO", true},

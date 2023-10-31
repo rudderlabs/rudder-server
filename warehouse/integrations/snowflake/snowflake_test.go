@@ -7,27 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/exp/slices"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/golang/mock/gomock"
+	"github.com/samber/lo"
 	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -38,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -133,57 +130,53 @@ func TestIntegration(t *testing.T) {
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
-	templateConfigurations := map[string]any{
-		"workspaceID":                workspaceID,
-		"sourceID":                   sourceID,
-		"destinationID":              destinationID,
-		"writeKey":                   writeKey,
-		"caseSensitiveSourceID":      caseSensitiveSourceID,
-		"caseSensitiveDestinationID": caseSensitiveDestinationID,
-		"caseSensitiveWriteKey":      caseSensitiveWriteKey,
-		"rbacSourceID":               rbacSourceID,
-		"rbacDestinationID":          rbacDestinationID,
-		"rbacWriteKey":               rbacWriteKey,
-		"sourcesSourceID":            sourcesSourceID,
-		"sourcesDestinationID":       sourcesDestinationID,
-		"sourcesWriteKey":            sourcesWriteKey,
-		"account":                    credentials.Account,
-		"user":                       credentials.User,
-		"password":                   credentials.Password,
-		"role":                       credentials.Role,
-		"database":                   credentials.Database,
-		"caseSensitiveDatabase":      strings.ToLower(credentials.Database),
-		"warehouse":                  credentials.Warehouse,
-		"bucketName":                 credentials.BucketName,
-		"accessKeyID":                credentials.AccessKeyID,
-		"accessKey":                  credentials.AccessKey,
-		"namespace":                  namespace,
-		"sourcesNamespace":           sourcesNamespace,
-		"caseSensitiveNamespace":     caseSensitiveNamespace,
-		"rbacNamespace":              rbacNamespace,
-		"rbacAccount":                rbacCredentials.Account,
-		"rbacUser":                   rbacCredentials.User,
-		"rbacPassword":               rbacCredentials.Password,
-		"rbacRole":                   rbacCredentials.Role,
-		"rbacDatabase":               rbacCredentials.Database,
-		"rbacWarehouse":              rbacCredentials.Warehouse,
-		"rbacBucketName":             rbacCredentials.BucketName,
-		"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
-		"rbacAccessKey":              rbacCredentials.AccessKey,
-	}
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-	bootstrap := func(t testing.TB, appendMode bool) func() {
-		loadTableStrategy := "MERGE"
-		if appendMode {
-			loadTableStrategy = "APPEND"
+	bootstrapSvc := func(t testing.TB, enableMerge bool) {
+		templateConfigurations := map[string]any{
+			"workspaceID":                workspaceID,
+			"sourceID":                   sourceID,
+			"destinationID":              destinationID,
+			"writeKey":                   writeKey,
+			"caseSensitiveSourceID":      caseSensitiveSourceID,
+			"caseSensitiveDestinationID": caseSensitiveDestinationID,
+			"caseSensitiveWriteKey":      caseSensitiveWriteKey,
+			"rbacSourceID":               rbacSourceID,
+			"rbacDestinationID":          rbacDestinationID,
+			"rbacWriteKey":               rbacWriteKey,
+			"sourcesSourceID":            sourcesSourceID,
+			"sourcesDestinationID":       sourcesDestinationID,
+			"sourcesWriteKey":            sourcesWriteKey,
+			"account":                    credentials.Account,
+			"user":                       credentials.User,
+			"password":                   credentials.Password,
+			"role":                       credentials.Role,
+			"database":                   credentials.Database,
+			"caseSensitiveDatabase":      strings.ToLower(credentials.Database),
+			"warehouse":                  credentials.Warehouse,
+			"bucketName":                 credentials.BucketName,
+			"accessKeyID":                credentials.AccessKeyID,
+			"accessKey":                  credentials.AccessKey,
+			"namespace":                  namespace,
+			"sourcesNamespace":           sourcesNamespace,
+			"caseSensitiveNamespace":     caseSensitiveNamespace,
+			"rbacNamespace":              rbacNamespace,
+			"rbacAccount":                rbacCredentials.Account,
+			"rbacUser":                   rbacCredentials.User,
+			"rbacPassword":               rbacCredentials.Password,
+			"rbacRole":                   rbacCredentials.Role,
+			"rbacDatabase":               rbacCredentials.Database,
+			"rbacWarehouse":              rbacCredentials.Warehouse,
+			"rbacBucketName":             rbacCredentials.BucketName,
+			"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
+			"rbacAccessKey":              rbacCredentials.AccessKey,
+			"enableMerge":                enableMerge,
 		}
+		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+
 		testhelper.EnhanceWithDefaultEnvs(t)
 		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
 		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_LOAD_TABLE_STRATEGY", loadTableStrategy)
 		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
@@ -196,20 +189,19 @@ func TestIntegration(t *testing.T) {
 		))
 
 		ctx, cancel := context.WithCancel(context.Background())
-
 		svcDone := make(chan struct{})
+
 		go func() {
 			r := runner.New(runner.ReleaseInfo{})
 			_ = r.Run(ctx, []string{"snowflake-integration-test"})
-
 			close(svcDone)
 		}()
+
 		t.Cleanup(func() { <-svcDone })
+		t.Cleanup(cancel)
 
 		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 		health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, 100*time.Millisecond, "serviceHealthEndpoint")
-
-		return cancel
 	}
 
 	t.Run("Event flow", func(t *testing.T) {
@@ -235,7 +227,7 @@ func TestIntegration(t *testing.T) {
 			asyncJob                      bool
 			stagingFilePrefix             string
 			emptyJobRunID                 bool
-			appendMode                    bool
+			enableMerge                   bool
 			customUserID                  string
 		}{
 			{
@@ -256,6 +248,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job",
+				enableMerge:       true,
 			},
 			{
 				name:     "Upload Job with Role",
@@ -275,6 +268,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-with-role",
+				enableMerge:       true,
 			},
 			{
 				name:     "Upload Job with Case Sensitive Database",
@@ -294,6 +288,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
+				enableMerge:       true,
 			},
 			{
 				name:          "Async Job with Sources",
@@ -315,6 +310,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
 				stagingFilePrefix:     "testdata/sources-job",
+				enableMerge:           true,
 			},
 			{
 				name:                          "Upload Job in append mode",
@@ -335,7 +331,7 @@ func TestIntegration(t *testing.T) {
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				emptyJobRunID: true,
-				appendMode:    true,
+				enableMerge:   false,
 				customUserID:  testhelper.GetUserId("append_test"),
 			},
 		}
@@ -343,8 +339,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testcase {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				cancel := bootstrap(t, tc.appendMode)
-				defer cancel()
+				bootstrapSvc(t, tc.enableMerge)
 
 				urlConfig := sfdb.Config{
 					Account:   tc.cred.Account,
@@ -506,6 +501,7 @@ func TestIntegration(t *testing.T) {
 				"syncFrequency":      "30",
 				"enableSSE":          false,
 				"useRudderStorage":   false,
+				"enableMerge":        true,
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				ID:          "1XjvXnzw34UMAz1YOuKqL1kwzh6",
@@ -628,7 +624,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -645,7 +641,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -664,17 +660,9 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
-				c := config.New()
-				c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", []string{workspaceID})
-				c.Set("Warehouse.snowflake.debugDuplicateIntervalInDays", 1000)
-				c.Set("Warehouse.snowflake.debugDuplicateTables", []string{whutils.ToProviderCase(
-					whutils.SNOWFLAKE,
-					tableName,
-				)})
-
-				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -692,12 +680,14 @@ func TestIntegration(t *testing.T) {
 
 				loadTableStat, err = sf.LoadTable(ctx, tableName)
 				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(0))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+				require.Equal(t, loadTableStat.RowsInserted, int64(0),
+					"2nd copy on the same table with the same data should not have any 'rows_loaded'")
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0),
+					"2nd copy on the same table with the same data should not have any 'rows_loaded'")
 
 				records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
-					fmt.Sprintf(`
-						SELECT
+					fmt.Sprintf(
+						`SELECT
 						  id,
 						  received_at,
 						  test_bool,
@@ -705,16 +695,13 @@ func TestIntegration(t *testing.T) {
 						  test_float,
 						  test_int,
 						  test_string
-						FROM
-						  %q.%q
-						ORDER BY
-						  id;
-						`,
+						FROM %q.%q
+						ORDER BY id;`,
 						namespace,
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.SampleTestRecords())
+				require.Equal(t, testhelper.SampleTestRecords(), records)
 			})
 			t.Run("with dedup use new record", func(t *testing.T) {
 				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
@@ -722,7 +709,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, true)
 
-				sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -769,10 +756,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
-				c := config.New()
-				c.Set("Warehouse.snowflake.loadTableStrategy", "APPEND")
-
-				sf, err := snowflake.New(c, logger.NOP, stats.Default)
+				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
 				err = sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
@@ -829,7 +813,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -852,7 +836,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -897,7 +881,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -924,7 +908,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, false, false)
 
-			sf, err := snowflake.New(config.Default, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
 			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -962,58 +946,63 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
-func TestSnowflake_ShouldAppend(t *testing.T) {
+func TestSnowflake_ShouldMerge(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		loadTableStrategy     string
+		enableMerge           bool
 		uploaderCanAppend     bool
 		uploaderExpectedCalls int
 		expected              bool
 	}{
 		{
-			name:                  "uploader says we can append and we are in append mode",
-			loadTableStrategy:     "APPEND",
+			name:                  "uploader says we can append and merge is not enabled",
+			enableMerge:           false,
+			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 1,
+			expected:              false,
+		},
+		{
+			name:                  "uploader says we cannot append and merge is not enabled",
+			enableMerge:           false,
+			uploaderCanAppend:     false,
+			uploaderExpectedCalls: 1,
+			expected:              true,
+		},
+		{
+			name:                  "uploader says we can append and merge is enabled",
+			enableMerge:           true,
 			uploaderCanAppend:     true,
 			uploaderExpectedCalls: 1,
 			expected:              true,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in append mode",
-			loadTableStrategy:     "APPEND",
+			name:                  "uploader says we cannot append and we are in merge mode",
+			enableMerge:           true,
 			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
-			expected:              false,
-		},
-		{
-			name:                  "uploader says we can append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 0,
-			expected:              false,
-		},
-		{
-			name:                  "uploader says we cannot append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 0,
-			expected:              false,
+			expected:              true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := config.New()
-			c.Set("Warehouse.snowflake.loadTableStrategy", tc.loadTableStrategy)
-
-			sf, err := snowflake.New(c, logger.NOP, stats.Default)
+			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 			require.NoError(t, err)
+
+			sf.Warehouse = model.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]any{
+						string(model.EnableMergeSetting): tc.enableMerge,
+					},
+				},
+			}
 
 			mockCtrl := gomock.NewController(t)
 			uploader := mockuploader.NewMockUploader(mockCtrl)
 			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
 
 			sf.Uploader = uploader
-			require.Equal(t, sf.ShouldAppend(), tc.expected)
+			require.Equal(t, sf.ShouldMerge(), tc.expected)
 		})
 	}
 }
