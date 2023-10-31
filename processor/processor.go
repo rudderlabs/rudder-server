@@ -110,39 +110,40 @@ type Handle struct {
 		store      kitsync.Limiter
 	}
 	config struct {
-		isolationMode             isolation.Mode
-		mainLoopTimeout           time.Duration
-		featuresRetryMaxAttempts  int
-		enablePipelining          bool
-		pipelineBufferedItems     int
-		subJobSize                int
-		pingerSleep               misc.ValueLoader[time.Duration]
-		readLoopSleep             misc.ValueLoader[time.Duration]
-		maxLoopSleep              misc.ValueLoader[time.Duration]
-		storeTimeout              misc.ValueLoader[time.Duration]
-		maxEventsToProcess        misc.ValueLoader[int]
-		transformBatchSize        misc.ValueLoader[int]
-		userTransformBatchSize    misc.ValueLoader[int]
-		sourceIdDestinationMap    map[string][]backendconfig.DestinationT
-		sourceIdSourceMap         map[string]backendconfig.SourceT
-		workspaceLibrariesMap     map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap    map[string]string
-		destConsentCategories     map[string][]string
-		batchDestinations         []string
-		configSubscriberLock      sync.RWMutex
-		enableEventSchemasFeature bool
-		enableEventSchemasAPIOnly misc.ValueLoader[bool]
-		enableDedup               bool
-		enableEventCount          misc.ValueLoader[bool]
-		transformTimesPQLength    int
-		captureEventNameStats     misc.ValueLoader[bool]
-		transformerURL            string
-		pollInterval              time.Duration
-		GWCustomVal               string
-		asyncInit                 *misc.AsyncInit
-		eventSchemaV2Enabled      bool
-		archivalEnabled           misc.ValueLoader[bool]
-		eventAuditEnabled         map[string]bool
+		isolationMode                       isolation.Mode
+		mainLoopTimeout                     time.Duration
+		featuresRetryMaxAttempts            int
+		enablePipelining                    bool
+		pipelineBufferedItems               int
+		subJobSize                          int
+		pingerSleep                         misc.ValueLoader[time.Duration]
+		readLoopSleep                       misc.ValueLoader[time.Duration]
+		maxLoopSleep                        misc.ValueLoader[time.Duration]
+		storeTimeout                        misc.ValueLoader[time.Duration]
+		maxEventsToProcess                  misc.ValueLoader[int]
+		transformBatchSize                  misc.ValueLoader[int]
+		userTransformBatchSize              misc.ValueLoader[int]
+		sourceIdDestinationMap              map[string][]backendconfig.DestinationT
+		sourceIdSourceMap                   map[string]backendconfig.SourceT
+		workspaceLibrariesMap               map[string]backendconfig.LibrariesT
+		destinationIDtoTypeMap              map[string]string
+		destConsentCategories               map[string][]string
+		destGenericConsentManagementData    map[string]map[string]map[string]interface{}
+		batchDestinations                   []string
+		configSubscriberLock                sync.RWMutex
+		enableEventSchemasFeature           bool
+		enableEventSchemasAPIOnly           misc.ValueLoader[bool]
+		enableDedup                         bool
+		enableEventCount                    misc.ValueLoader[bool]
+		transformTimesPQLength              int
+		captureEventNameStats               misc.ValueLoader[bool]
+		transformerURL                      string
+		pollInterval                        time.Duration
+		GWCustomVal                         string
+		asyncInit                           *misc.AsyncInit
+		eventSchemaV2Enabled                bool
+		archivalEnabled                     misc.ValueLoader[bool]
+		eventAuditEnabled                   map[string]bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -249,6 +250,13 @@ type NonSuccessfulTransformationMetrics struct {
 type (
 	SourceIDT string
 )
+
+type ConsentManagementInfo struct {
+	deniedConsentIds   []string
+	allowedConsentIds  []string
+	provider 				   string
+	resolutionStrategy string
+}
 
 func buildStatTags(sourceID, workspaceID string, destination *backendconfig.DestinationT, transformationType string) map[string]string {
 	module := "router"
@@ -738,6 +746,44 @@ func getConsentCategories(dest *backendconfig.DestinationT) []string {
 	)
 }
 
+func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]map[string]interface{} {
+	config := dest.Config
+	consentManagementConfig, _ := config["consentManagement"].([]map[string]interface{})
+
+	if len(consentManagementConfig) == 0 {
+		return nil
+	}
+
+	consentManagementData := make(map[string]map[string]interface{})
+	for _, providerConfig := range consentManagementConfig {
+		provider, _ := providerConfig["provider"].(string)
+		resolutionStrategy, _ := providerConfig["resolutionStrategy"].(string)
+		consentsConfig, _ := providerConfig["consents"].([]map[string]string)
+
+		if len(consentsConfig) > 0 && provider != "" {
+			consentIds, consentsOk := lo.FilterMap(
+				consentsConfig,
+				func(consentObj interface{}, _ int) (string, bool) {
+					switch consentObj.(type) {
+					case map[string]string:
+						consentId, ok := consentObj["consent"].(string)
+						return consentId, ok && consentId != ""
+					default:
+						return "", false
+					}
+				},
+			)
+
+			if consentsOk && len(consentIds) > 0 {
+				consentManagementData[provider] = map[string]interface{}{
+					"resolutionStrategy": resolutionStrategy,
+					"consents":           consentIds,
+				}
+			}
+		}
+	}
+}
+
 func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	var initDone bool
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
@@ -745,6 +791,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
 			destConsentCategories  = make(map[string][]string)
+			destGenericConsentManagementData = make(map[string]map[string]map[string]interface{})
 			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
@@ -761,6 +808,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 						destConsentCategories[destination.ID] = getConsentCategories(destination)
+						destGenericConsentManagementData[destination.ID] = getGenericConsentManagementData(destination)
 					}
 				}
 			}
@@ -769,6 +817,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
+		proc.config.destGenericConsentManagementData = destGenericConsentManagementData
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
@@ -786,6 +835,15 @@ func (proc *Handle) getConsentCategories(destinationID string) []string {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.destConsentCategories[destinationID]
+}
+
+func (proc *Handle) getConsentsForDestination(destinationID string, provider string) []string, string {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+
+	providerData, _ = misc.MapLookup(proc.config.destGenericConsentManagementData, destinationID, provider).(map[string]interface{})
+
+	return providerData["consents"].([]string), providerData["resolutionStrategy"].(string)
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -2875,13 +2933,32 @@ func (proc *Handle) filterDestinations(
 	event types.SingularEventT,
 	dests []backendconfig.DestinationT,
 ) []backendconfig.DestinationT {
-	deniedCategories := deniedConsentCategories(event)
-	if len(deniedCategories) == 0 {
+	consentManagementInfo := getConsentManagementInfo(event)
+	if len(consentManagementInfo.deniedConsentIds) == 0 && len(consentManagementInfo.allowedConsentIds) == 0 {
 		return dests
 	}
+
 	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
-		if consentCategories := proc.getConsentCategories(dest.ID); len(consentCategories) > 0 {
-			return len(lo.Intersect(consentCategories, deniedCategories)) == 0
+		// This field differentiates legacy and generic consent management
+		if consentManagementInfo.provider != nil {
+			if configuredConsentIds, resolutionStrategy := proc.getGenericConsentManagementData(dest.ID, consentManagementInfo.provider); len(configuredConsentIds) > 0 {
+
+				var finalResolutionStrategy string = consentManagementInfo.resolutionStrategy
+				if consentManagementInfo.provider == "custom" {
+					finalResolutionStrategy = resolutionStrategy
+				}
+
+				switch finalResolutionStrategy {
+				case "or":
+					return len(lo.Intersect(configuredConsentIds, consentManagementInfo.allowedConsentIds)) > 0
+				default:
+					return len(lo.Intersect(configuredConsentIds, consentManagementInfo.allowedConsentIds)) == len(consentCategories)
+				}
+			}
+		} else {
+			if configuredConsentIds := proc.getConsentManagementData(dest.ID); len(configuredConsentIds) > 0 {
+				return len(lo.Intersect(configuredConsentIds, consentManagementInfo.deniedConsentIds)) == 0
+			}
 		}
 		return true
 	})
@@ -2918,16 +2995,37 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 	return true
 }
 
-func deniedConsentCategories(se types.SingularEventT) []string {
-	if deniedConsents, _ := misc.MapLookup(se, "context", "consentManagement", "deniedConsentIds").([]interface{}); len(deniedConsents) > 0 {
-		return lo.FilterMap(
-			deniedConsents,
-			func(consent interface{}, _ int) (string, bool) {
-				consentStr, ok := consent.(string)
-				return consentStr, ok && consentStr != ""
-			},
-		)
+func getValidConsents(consents []string) []string {
+	return lo.FilterMap(consents, func(consent interface{}, _ int) (string, bool) {
+		consentStr, ok := consent.(string)
+		return consentStr, ok && consentStr != ""
+	})
+}
+
+
+func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
+	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
+		var sanitizedAllowedConsentIds []string := []
+		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]interface{}); len(allowedConsentIds) > 0 {
+			sanitizedAllowedConsentIds = getValidConsents(allowedConsentIds)
+		}
+
+		var sanitizedDeniedConsentIds []string := []
+		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]interface{}); len(deniedConsentIds) > 0 {
+			sanitizedDeniedConsentIds = getValidConsents(deniedConsentIds)
+		}
+
+		provider, _ := misc.MapLookup(consentManagement, "provider").(string)
+		resolutionStrategy, _ := misc.MapLookup(consentManagement, "resolutionStrategy").(string)
+
+		return ConsentManagementInfo{
+			allowedConsentIds: sanitizedAllowedConsentIds,
+			deniedConsentIds: sanitizedDeniedConsentIds,
+			provider: provider,
+			resolutionStrategy: resolutionStrategy,
+		}
 	}
+
 	return nil
 }
 

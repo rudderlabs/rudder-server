@@ -15,7 +15,7 @@ const (
 	SuppressEventCode = 299
 )
 
-// SingularEventT single event structrue
+// SingularEventT single event structure
 type SingularEventT map[string]interface{}
 
 type SingularEventWithReceivedAt struct {
