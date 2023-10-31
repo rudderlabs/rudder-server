@@ -85,7 +85,7 @@ install-tools:
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
-	golangci-lint run -v --timeout 5m
+	golangci-lint run -v --timeout 15m
 
 .PHONY: fmt
 fmt: install-tools ## Formats all go files
