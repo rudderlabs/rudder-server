@@ -31,6 +31,41 @@ func TestState(t *testing.T) {
 				next:    nil,
 			},
 			{
+				name:    "waiting state",
+				current: model.Waiting,
+				next:    stateTransitions[model.GeneratedUploadSchema],
+			},
+			{
+				name:    "generating_upload_schema",
+				current: model.GeneratedUploadSchema,
+				next:    stateTransitions[model.CreatedTableUploads],
+			},
+			{
+				name:    "creating_table_uploads",
+				current: model.CreatedTableUploads,
+				next:    stateTransitions[model.GeneratedLoadFiles],
+			},
+			{
+				name:    "generating_load_files",
+				current: model.GeneratedLoadFiles,
+				next:    stateTransitions[model.UpdatedTableUploadsCounts],
+			},
+			{
+				name:    "updating_table_uploads_counts",
+				current: model.UpdatedTableUploadsCounts,
+				next:    stateTransitions[model.CreatedRemoteSchema],
+			},
+			{
+				name:    "creating_remote_schema",
+				current: model.CreatedRemoteSchema,
+				next:    stateTransitions[model.ExportedData],
+			},
+			{
+				name:    "exporting_data",
+				current: model.ExportedData,
+				next:    nil,
+			},
+			{
 				name:    "in progress state",
 				current: "generating_upload_schema",
 				next:    stateTransitions[model.GeneratedUploadSchema],
@@ -39,11 +74,6 @@ func TestState(t *testing.T) {
 				name:    "failed state",
 				current: "generating_upload_schema_failed",
 				next:    stateTransitions[model.GeneratedUploadSchema],
-			},
-			{
-				name:    "completed state",
-				current: "generated_upload_schema",
-				next:    stateTransitions[model.CreatedTableUploads],
 			},
 		}
 		for _, tc := range testCases {
