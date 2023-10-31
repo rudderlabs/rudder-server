@@ -2147,8 +2147,8 @@ var _ = Describe("Processor", Ordered, func() {
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
 				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"category1", "someOtherCategory"},
+					"consentManagement": map[string][]string{
+						"deniedConsentIds": []string{"category1", "someOtherCategory"},
 					},
 				},
 				"type":      "track",
