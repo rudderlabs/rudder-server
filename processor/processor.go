@@ -3015,12 +3015,12 @@ func getValidConsents(consents []string) []string {
 
 func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
-		sanitizedAllowedConsentIds []string := []
+		sanitizedAllowedConsentIds := make([]string, 0)
 		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]interface{}); len(allowedConsentIds) > 0 {
 			sanitizedAllowedConsentIds = getValidConsents(allowedConsentIds)
 		}
 
-		sanitizedDeniedConsentIds []string := []
+		sanitizedDeniedConsentIds := make([]string, 0)
 		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]interface{}); len(deniedConsentIds) > 0 {
 			sanitizedDeniedConsentIds = getValidConsents(deniedConsentIds)
 		}
