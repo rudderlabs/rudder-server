@@ -64,6 +64,12 @@ type OAuthStats struct {
 	destDefName     string
 	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
 	flowType        RudderFlow
+	action          string // refresh_token, fetch_token, auth_status_toggle
+}
+
+type statTag struct {
+	k string
+	v string
 }
 
 type DisableDestinationResponse struct {
@@ -83,12 +89,11 @@ type AuthStatusToggleParams struct {
 }
 
 type RefreshTokenParams struct {
-	AccountId       string
-	WorkspaceId     string
-	DestDefName     string
-	EventNamePrefix string
-	WorkerId        int
-	Secret          json.RawMessage
+	AccountId   string
+	WorkspaceId string
+	DestDefName string
+	WorkerId    int
+	Secret      json.RawMessage
 }
 
 // OAuthErrResHandler is the handle for this class
@@ -221,9 +226,13 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
 		flowType:        authErrHandler.rudderFlowType,
+		action:          "refresh_token",
 	}
-	refTokenParams.EventNamePrefix = "refresh_token"
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
+}
+
+func getTokenStatName(stat string) string {
+	return fmt.Sprintf("token_%v", stat)
 }
 
 func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse) {
@@ -238,15 +247,15 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		destDefName:     fetchTokenParams.DestDefName,
 		isTokenFetch:    true,
 		flowType:        authErrHandler.rudderFlowType,
+		action:          "fetch_token",
 	}
-	fetchTokenParams.EventNamePrefix = "fetch_token"
 	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
 
 func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
 	startTime := time.Now()
 	defer func() {
-		authStats.statName = fmt.Sprintf("%v_total_req_latency", refTokenParams.EventNamePrefix)
+		authStats.statName = getTokenStatName("total_req_latency")
 		authStats.isCallToCpApi = false
 		authStats.SendTimerStats(startTime)
 	}()
@@ -304,7 +313,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 
 	errHandlerReqTimeStart := time.Now()
 	defer func() {
-		authStats.statName = fmt.Sprintf("%v_request_exec_time", refTokenParams.EventNamePrefix)
+		authStats.statName = getTokenStatName("request_exec_time")
 		authStats.isCallToCpApi = true
 		authStats.SendTimerStats(errHandlerReqTimeStart)
 	}()
@@ -329,25 +338,25 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		ContentType: "application/json; charset=utf-8",
 		Body:        string(res),
 		destName:    refTokenParams.DestDefName,
-		RequestType: logTypeName,
+		RequestType: authStats.action,
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
-	authStats.statName = fmt.Sprintf(`%v_request_sent`, refTokenParams.EventNamePrefix)
+	authStats.statName = getTokenStatName(`request_sent`)
 	authStats.isCallToCpApi = true
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	authStats.statName = fmt.Sprintf(`%v_request_latency`, refTokenParams.EventNamePrefix)
+	authStats.statName = getTokenStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
 	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
-		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.statName = getTokenStatName("request_failure")
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
@@ -371,7 +380,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = errType
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].ErrorMessage = refErrMsg
 		}
-		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.statName = getTokenStatName("request_failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
 		if refErrMsg == REF_TOKEN_INVALID_GRANT {
@@ -385,7 +394,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 		Account: accountSecret,
 	}
-	authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+	authStats.statName = getTokenStatName("request_success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	authErrHandler.logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
@@ -412,8 +421,8 @@ func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string
 	return errorType, message
 }
 
-func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
-	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, stats.Tags{
+func (authStats *OAuthStats) SendTimerStats(startTime time.Time, tags ...statTag) {
+	statsTags := stats.Tags{
 		"id":              authStats.id,
 		"workspaceId":     authStats.workspaceId,
 		"rudderCategory":  authStats.rudderCategory,
@@ -421,12 +430,17 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"authErrCategory": authStats.authErrCategory,
 		"destType":        authStats.destDefName,
 		"flowType":        string(authStats.flowType),
-	}).SendTiming(time.Since(startTime))
+		"action":          authStats.action,
+	}
+	for _, t := range tags {
+		statsTags[t.k] = t.v
+	}
+	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
 }
 
 // Send count type stats related to OAuth(Destination)
-func (refStats *OAuthStats) SendCountStat() {
-	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, stats.Tags{
+func (refStats *OAuthStats) SendCountStat(tags ...statTag) {
+	statsTags := stats.Tags{
 		"id":              refStats.id,
 		"workspaceId":     refStats.workspaceId,
 		"rudderCategory":  refStats.rudderCategory,
@@ -436,16 +450,22 @@ func (refStats *OAuthStats) SendCountStat() {
 		"destType":        refStats.destDefName,
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 		"flowType":        string(refStats.flowType),
-	}).Increment()
+		"action":          refStats.action,
+	}
+	for _, t := range tags {
+		statsTags[t.k] = t.v
+	}
+	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, statsTags).Increment()
 }
 
 func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := params.Destination.ID
 	authStatusToggleMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
+	action := fmt.Sprintf("auth_status_%v", params.AuthStatus)
 
 	getStatName := func(statName string) string {
-		return fmt.Sprintf("auth_status_%v_%v", statName, params.AuthStatus)
+		return fmt.Sprintf("auth_status_%v", statName)
 	}
 
 	authStatusToggleStats := &OAuthStats{
@@ -458,6 +478,7 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 		errorMessage:    "",
 		destDefName:     params.Destination.DestinationDefinition.Name,
 		flowType:        authErrHandler.rudderFlowType,
+		action:          action,
 	}
 	defer func() {
 		authStatusToggleStats.statName = getStatName("total_req_latency")
@@ -495,10 +516,10 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	authStatusInactiveCpReq := &ControlPlaneRequestT{
 		Url:         authStatusToggleUrl,
 		Method:      http.MethodPut,
-		Body:        `{"authStatus": "inactive"}`,
+		Body:        fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
 		ContentType: "application/json",
 		destName:    params.Destination.DestinationDefinition.Name,
-		RequestType: "Auth Status inactive",
+		RequestType: action,
 	}
 
 	authStatusToggleStats.statName = getStatName("request_sent")
