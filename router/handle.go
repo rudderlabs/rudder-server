@@ -585,7 +585,7 @@ func (*Handle) crashRecover() {
 	// NO-OP
 }
 
-func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (int, string) {
+func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (int, string, bool) {
 	trRespStatusCode := params.trRespStCd
 	trRespBody := params.trRespBody
 	destinationJob := params.destinationJob
@@ -598,7 +598,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 			return http.StatusInternalServerError, fmt.Sprintf(`{
 				Error: %v,
 				(trRespStCd, trRespBody): (%v, %v),
-			}`, destError, trRespStatusCode, trRespBody)
+			}`, destError, trRespStatusCode, trRespBody), true
 		}
 		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
 		var errCatStatusCode int
@@ -606,11 +606,12 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		// Trigger the refresh endpoint/disable endpoint
 		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
 		if strings.TrimSpace(rudderAccountID) == "" {
-			return trRespStatusCode, trRespBody
+			return trRespStatusCode, trRespBody, true
 		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
-			return rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+			c, b := rt.execDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+			return c, b, true
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -637,18 +638,18 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
-				return disableStCd, refSec.Err
+				return disableStCd, refSec.Err, true
 			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
-				return http.StatusTooManyRequests, refSec.Err
+				return http.StatusTooManyRequests, refSec.Err, true
 			}
 			// Retry with Refreshed Token by failing with 5xx
-			return http.StatusInternalServerError, trRespBody
+			return http.StatusInternalServerError, trRespBody, true
 		}
 	}
 	// By default, send the status code & response from transformed response directly
-	return trRespStatusCode, trRespBody
+	return trRespStatusCode, trRespBody, false
 }
 
 func (rt *Handle) execDisableDestination(destination *backendconfig.DestinationT, workspaceID, destResBody, rudderAccountId string) (int, string) {

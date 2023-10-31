@@ -479,7 +479,8 @@ func (w *worker) processDestinationJobs() {
 									if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
 										w.logger.Debugf(`Sending for OAuth destination`)
 										// Token from header of the request
-										respStatusCode, respBodyTemp = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
+										var nonSuccess bool
+										respStatusCode, respBodyTemp, nonSuccess = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
 											ctx:            ctx,
 											destinationJob: destinationJob,
 											workerID:       w.id,
@@ -487,6 +488,9 @@ func (w *worker) processDestinationJobs() {
 											trRespBody:     proxyRespBodyTemp,
 											secret:         m[0].Secret,
 										})
+										if nonSuccess {
+											respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
+										}
 									}
 								} else {
 									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
