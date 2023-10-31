@@ -552,8 +552,6 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) err
 		"event_name", "event_type",
 		"error_type",
 	))
-	
-
 	if err != nil {
 		return fmt.Errorf("preparing statement: %v", err)
 	}
