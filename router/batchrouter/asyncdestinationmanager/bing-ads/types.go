@@ -41,10 +41,10 @@ type Data struct {
 }
 
 type DestinationConfig struct {
-	AudienceID               string   `json:"audienceId"`
-	CustomerAccountID        string   `json:"customerAccountId"`
-	CustomerID               string   `json:"customerId"`
-	RudderAccountID          string   `json:"rudderAccountId"`
+	AudienceID        string `json:"audienceId"`
+	CustomerAccountID string `json:"customerAccountId"`
+	CustomerID        string `json:"customerId"`
+	RudderAccountID   string `json:"rudderAccountId"`
 }
 
 type ActionFileInfo struct {

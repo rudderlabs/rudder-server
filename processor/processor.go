@@ -110,40 +110,40 @@ type Handle struct {
 		store      kitsync.Limiter
 	}
 	config struct {
-		isolationMode                       isolation.Mode
-		mainLoopTimeout                     time.Duration
-		featuresRetryMaxAttempts            int
-		enablePipelining                    bool
-		pipelineBufferedItems               int
-		subJobSize                          int
-		pingerSleep                         misc.ValueLoader[time.Duration]
-		readLoopSleep                       misc.ValueLoader[time.Duration]
-		maxLoopSleep                        misc.ValueLoader[time.Duration]
-		storeTimeout                        misc.ValueLoader[time.Duration]
-		maxEventsToProcess                  misc.ValueLoader[int]
-		transformBatchSize                  misc.ValueLoader[int]
-		userTransformBatchSize              misc.ValueLoader[int]
-		sourceIdDestinationMap              map[string][]backendconfig.DestinationT
-		sourceIdSourceMap                   map[string]backendconfig.SourceT
-		workspaceLibrariesMap               map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap              map[string]string
-		destConsentCategories               map[string][]string
-		destGenericConsentManagementData    map[string]map[string]GenericConsentManagementProviderData
-		batchDestinations                   []string
-		configSubscriberLock                sync.RWMutex
-		enableEventSchemasFeature           bool
-		enableEventSchemasAPIOnly           misc.ValueLoader[bool]
-		enableDedup                         bool
-		enableEventCount                    misc.ValueLoader[bool]
-		transformTimesPQLength              int
-		captureEventNameStats               misc.ValueLoader[bool]
-		transformerURL                      string
-		pollInterval                        time.Duration
-		GWCustomVal                         string
-		asyncInit                           *misc.AsyncInit
-		eventSchemaV2Enabled                bool
-		archivalEnabled                     misc.ValueLoader[bool]
-		eventAuditEnabled                   map[string]bool
+		isolationMode                    isolation.Mode
+		mainLoopTimeout                  time.Duration
+		featuresRetryMaxAttempts         int
+		enablePipelining                 bool
+		pipelineBufferedItems            int
+		subJobSize                       int
+		pingerSleep                      misc.ValueLoader[time.Duration]
+		readLoopSleep                    misc.ValueLoader[time.Duration]
+		maxLoopSleep                     misc.ValueLoader[time.Duration]
+		storeTimeout                     misc.ValueLoader[time.Duration]
+		maxEventsToProcess               misc.ValueLoader[int]
+		transformBatchSize               misc.ValueLoader[int]
+		userTransformBatchSize           misc.ValueLoader[int]
+		sourceIdDestinationMap           map[string][]backendconfig.DestinationT
+		sourceIdSourceMap                map[string]backendconfig.SourceT
+		workspaceLibrariesMap            map[string]backendconfig.LibrariesT
+		destinationIDtoTypeMap           map[string]string
+		destConsentCategories            map[string][]string
+		destGenericConsentManagementData map[string]map[string]GenericConsentManagementProviderData
+		batchDestinations                []string
+		configSubscriberLock             sync.RWMutex
+		enableEventSchemasFeature        bool
+		enableEventSchemasAPIOnly        misc.ValueLoader[bool]
+		enableDedup                      bool
+		enableEventCount                 misc.ValueLoader[bool]
+		transformTimesPQLength           int
+		captureEventNameStats            misc.ValueLoader[bool]
+		transformerURL                   string
+		pollInterval                     time.Duration
+		GWCustomVal                      string
+		asyncInit                        *misc.AsyncInit
+		eventSchemaV2Enabled             bool
+		archivalEnabled                  misc.ValueLoader[bool]
+		eventAuditEnabled                map[string]bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -254,15 +254,14 @@ type (
 type ConsentManagementInfo struct {
 	deniedConsentIds   []string
 	allowedConsentIds  []string
-	provider 				   string
+	provider           string
 	resolutionStrategy string
 }
 
 type GenericConsentManagementProviderData struct {
 	resolutionStrategy string
-	consents					 []string
+	consents           []string
 }
-
 
 func buildStatTags(sourceID, workspaceID string, destination *backendconfig.DestinationT, transformationType string) map[string]string {
 	module := "router"
@@ -798,13 +797,13 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
-			destConsentCategories  = make(map[string][]string)
+			destConsentCategories            = make(map[string][]string)
 			destGenericConsentManagementData = make(map[string]map[string]GenericConsentManagementProviderData)
-			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
-			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
-			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap = make(map[string]string)
-			eventAuditEnabled      = make(map[string]bool)
+			workspaceLibrariesMap            = make(map[string]backendconfig.LibrariesT, len(config))
+			sourceIdDestinationMap           = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap                = map[string]backendconfig.SourceT{}
+			destinationIDtoTypeMap           = make(map[string]string)
+			eventAuditEnabled                = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -846,7 +845,7 @@ func (proc *Handle) getConsentManagementData(destinationID string) []string {
 }
 
 // returns the consent management data for a destination and provider
-func (proc *Handle) getConsentManagementDataForDestination(destinationID string, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) getConsentManagementDataForDestination(destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 
@@ -3009,7 +3008,6 @@ func getValidConsents(consents []string) []string {
 	})
 }
 
-
 func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	sanitizedAllowedConsentIds := make([]string, 0)
 	sanitizedDeniedConsentIds := make([]string, 0)
@@ -3029,9 +3027,9 @@ func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	}
 
 	return ConsentManagementInfo{
-		allowedConsentIds: sanitizedAllowedConsentIds,
-		deniedConsentIds: sanitizedDeniedConsentIds,
-		provider: provider,
+		allowedConsentIds:  sanitizedAllowedConsentIds,
+		deniedConsentIds:   sanitizedDeniedConsentIds,
+		provider:           provider,
 		resolutionStrategy: resolutionStrategy,
 	}
 }
