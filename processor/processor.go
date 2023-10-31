@@ -2950,7 +2950,7 @@ func (proc *Handle) filterDestinations(
 	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
 		// This field differentiates legacy and generic consent management
 		if consentManagementInfo.provider != nil {
-			if cmpData := proc.getConsentManagementDataForDestination(dest.ID, consentManagementInfo.provider); cmpData && len(cmpData["configuredConsentIds"]) > 0 {
+			if cmpData := proc.getConsentManagementDataForDestination(dest.ID, consentManagementInfo.provider); cmpData && len(cmpData["consents"]) > 0 {
 
 				var finalResolutionStrategy string = consentManagementInfo.resolutionStrategy
 				if consentManagementInfo.provider == "custom" {
@@ -2959,9 +2959,9 @@ func (proc *Handle) filterDestinations(
 
 				switch finalResolutionStrategy {
 				case "or":
-					return len(lo.Intersect(cmpData["configuredConsentIds"], consentManagementInfo.allowedConsentIds)) > 0
+					return len(lo.Intersect(cmpData["consents"], consentManagementInfo.allowedConsentIds)) > 0
 				default: // "and"
-					return len(lo.Intersect(cmpData["configuredConsentIds"], consentManagementInfo.allowedConsentIds)) == len(consentCategories)
+					return len(lo.Intersect(cmpData["consents"], consentManagementInfo.allowedConsentIds)) == len(consentCategories)
 				}
 			}
 		} else {
@@ -3015,12 +3015,12 @@ func getValidConsents(consents []string) []string {
 
 func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
-		var sanitizedAllowedConsentIds []string := []
+		sanitizedAllowedConsentIds []string := []
 		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]interface{}); len(allowedConsentIds) > 0 {
 			sanitizedAllowedConsentIds = getValidConsents(allowedConsentIds)
 		}
 
-		var sanitizedDeniedConsentIds []string := []
+		sanitizedDeniedConsentIds []string := []
 		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]interface{}); len(deniedConsentIds) > 0 {
 			sanitizedDeniedConsentIds = getValidConsents(deniedConsentIds)
 		}
