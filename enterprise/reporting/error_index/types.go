@@ -34,8 +34,8 @@ type payload struct {
 	FailedStage      string `json:"failedStage" parquet:"name=failed_stage, type=BYTE_ARRAY, convertedtype=UTF8, encoding=RLE_DICTIONARY"`
 	EventType        string `json:"eventType" parquet:"name=event_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=RLE_DICTIONARY"`
 	EventName        string `json:"eventName" parquet:"name=event_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=RLE_DICTIONARY"`
-	ReceivedAt       int64  `json:"receivedAt" parquet:"name=received_at, type=INT64, convertedtype=TIMESTAMP_MICROS, encoding=DELTA_BINARY_PACKED"` // In Microseconds
-	FailedAt         int64  `json:"failedAt" parquet:"name=failed_at, type=INT64, convertedtype=TIMESTAMP_MICROS, encoding=DELTA_BINARY_PACKED"`     // In Microseconds
+	ReceivedAt       int64  `json:"receivedAt" parquet:"name=received_at, type=INT64, encoding=DELTA_BINARY_PACKED"` // In Microseconds
+	FailedAt         int64  `json:"failedAt" parquet:"name=failed_at, type=INT64, encoding=DELTA_BINARY_PACKED"`     // In Microseconds
 }
 
 func (p *payload) SetReceivedAt(t time.Time) {
