@@ -414,7 +414,7 @@ func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string
 	return errorType, message
 }
 
-func (authStats *OAuthStats) SendTimerStats(startTime time.Time, tags ...statTag) {
+func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 	statsTags := stats.Tags{
 		"id":              authStats.id,
 		"workspaceId":     authStats.workspaceId,
@@ -425,14 +425,11 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time, tags ...statTag
 		"flowType":        string(authStats.flowType),
 		"action":          authStats.action,
 	}
-	for _, t := range tags {
-		statsTags[t.k] = t.v
-	}
 	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
 }
 
 // Send count type stats related to OAuth(Destination)
-func (refStats *OAuthStats) SendCountStat(tags ...statTag) {
+func (refStats *OAuthStats) SendCountStat() {
 	statsTags := stats.Tags{
 		"id":              refStats.id,
 		"workspaceId":     refStats.workspaceId,
@@ -444,9 +441,6 @@ func (refStats *OAuthStats) SendCountStat(tags ...statTag) {
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 		"flowType":        string(refStats.flowType),
 		"action":          refStats.action,
-	}
-	for _, t := range tags {
-		statsTags[t.k] = t.v
 	}
 	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, statsTags).Increment()
 }
