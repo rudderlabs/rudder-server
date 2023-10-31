@@ -13,7 +13,7 @@ func (job *UploadJob) generateUploadSchema() error {
 
 	marshalledSchema, err := json.Marshal(uploadSchema)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal upload schema: %w", err)
 	}
 
 	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{

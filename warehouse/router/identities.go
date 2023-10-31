@@ -424,7 +424,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			return
 		}
 		if !tableUploadsCreated {
-			err := job.initTableUploads()
+			err := job.createTableUploads()
 			if err != nil {
 				// TODO: Handle error / Retry
 				r.logger.Error("[WH]: Error creating records in wh_table_uploads", err)

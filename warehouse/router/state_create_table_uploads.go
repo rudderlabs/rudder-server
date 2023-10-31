@@ -1,16 +1,12 @@
 package router
 
 import (
-	"golang.org/x/exp/slices"
+	"slices"
 
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func (job *UploadJob) createTableUploads() error {
-	return job.initTableUploads()
-}
-
-func (job *UploadJob) initTableUploads() error {
 	schemaForUpload := job.upload.UploadSchema
 	destType := job.warehouse.Type
 	tables := make([]string, 0, len(schemaForUpload))
@@ -23,7 +19,6 @@ func (job *UploadJob) initTableUploads() error {
 			}
 		}
 	}
-
 	return job.tableUploadsRepo.Insert(
 		job.ctx,
 		job.upload.ID,
