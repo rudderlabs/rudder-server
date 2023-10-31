@@ -128,7 +128,7 @@ type Handle struct {
 		workspaceLibrariesMap               map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap              map[string]string
 		destConsentCategories               map[string][]string
-		destGenericConsentManagementData    map[string]map[string]map[string]interface{}
+		destGenericConsentManagementData    map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations                   []string
 		configSubscriberLock                sync.RWMutex
 		enableEventSchemasFeature           bool
@@ -799,7 +799,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
 			destConsentCategories  = make(map[string][]string)
-			destGenericConsentManagementData = make(map[string]map[string]map[string]interface{})
+			destGenericConsentManagementData = make(map[string]map[string]GenericConsentManagementProviderData)
 			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
