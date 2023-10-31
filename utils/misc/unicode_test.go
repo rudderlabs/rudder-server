@@ -5,10 +5,13 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/text/unicode/rangetable"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
+
+var out string
 
 func BenchmarkMessageID(b *testing.B) {
 	dirtyMessageID := "\u0000 Test foo_bar-baz \u034F 123-222 "
@@ -16,28 +19,27 @@ func BenchmarkMessageID(b *testing.B) {
 
 	b.Run("in-place for loop - dirty", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			sanitizeMessageIDForLoop(dirtyMessageID)
+			out = sanitizeMessageIDForLoop(dirtyMessageID)
 		}
 	})
 
 	b.Run("in-place for loop - proper", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			sanitizeMessageIDForLoop(properMessageID)
+			out = sanitizeMessageIDForLoop(properMessageID)
 		}
 	})
 
 	b.Run("strings map - dirty", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			misc.SanitizeUnicode(dirtyMessageID)
+			out = misc.SanitizeUnicode(dirtyMessageID)
 		}
 	})
 
 	b.Run("strings map - proper", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			misc.SanitizeUnicode(properMessageID)
+			out = misc.SanitizeUnicode(properMessageID)
 		}
 	})
-
 }
 
 var invisibleRangeTable *unicode.RangeTable
@@ -59,7 +61,6 @@ func sanitizeMessageIDForLoop(messageID string) string {
 		messageID = messageID[:i] + messageID[i+1:]
 	}
 	return messageID
-
 }
 
 func TestSanitizeMessageID(t *testing.T) {
