@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"

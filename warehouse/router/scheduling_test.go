@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,7 +92,10 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, tc.expectedPrevScheduledTime, prevScheduledTime(tc.syncFrequency, tc.syncStartAt, tc.currTime))
+				r := Router{}
+				r.createUploadAlways = &atomic.Bool{}
+				r.scheduledTimesCache = make(map[string][]int)
+				require.Equal(t, tc.expectedPrevScheduledTime, r.prevScheduledTime(tc.syncFrequency, tc.syncStartAt, tc.currTime))
 			})
 		}
 	})
@@ -194,6 +198,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r := Router{}
 			r.triggerStore = &sync.Map{}
 			r.triggerStore.Store(w.Identifier, struct{}{})
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.NoError(t, err)
@@ -210,6 +216,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.triggerStore = &sync.Map{}
+				r.createUploadAlways = &atomic.Bool{}
+				r.scheduledTimesCache = make(map[string][]int)
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
 				require.NoError(t, err)
@@ -231,6 +239,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
+				r.createUploadAlways = &atomic.Bool{}
+				r.scheduledTimesCache = make(map[string][]int)
 
 				r.updateCreateJobMarker(w, now.Add(-time.Hour))
 
@@ -254,6 +264,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
+				r.createUploadAlways = &atomic.Bool{}
+				r.scheduledTimesCache = make(map[string][]int)
 
 				r.updateCreateJobMarker(w, now)
 
@@ -278,6 +290,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 			r := Router{}
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
@@ -306,6 +320,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 
 			r.updateCreateJobMarker(w, now)
 
@@ -331,6 +347,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
 			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 			r.triggerStore = &sync.Map{}
+			r.createUploadAlways = &atomic.Bool{}
+			r.scheduledTimesCache = make(map[string][]int)
 			r.createJobMarkerMap = make(map[string]time.Time)
 
 			r.updateCreateJobMarker(w, now.Add(-time.Hour))
@@ -421,6 +439,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					r.triggerStore = &sync.Map{}
 					r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
 					r.createJobMarkerMap = make(map[string]time.Time)
+					r.createUploadAlways = &atomic.Bool{}
+					r.scheduledTimesCache = make(map[string][]int)
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {
 						return tc.now

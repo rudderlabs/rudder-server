@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
@@ -41,7 +42,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockMeasurement.EXPECT().Count(1).Times(1)
 
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: mockStats,
 			db:           sqlmiddleware.New(db),
@@ -71,7 +72,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockMeasurement.EXPECT().Count(4).Times(2)
 
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: mockStats,
 			db:           sqlmiddleware.New(db),
@@ -102,7 +103,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: mockStats,
 			db:           sqlmiddleware.New(db),
@@ -131,7 +132,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
 
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
 			statsFactory: mockStats,
 			db:           sqlmiddleware.New(db),
@@ -165,9 +166,9 @@ func TestUploadJob_MatchRows(t *testing.T) {
 
 	t.Run("Total rows in load files", func(t *testing.T) {
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: stats.Default,
+			statsFactory: memstats.New(),
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -205,9 +206,9 @@ func TestUploadJob_MatchRows(t *testing.T) {
 
 	t.Run("Total rows in staging files", func(t *testing.T) {
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: stats.Default,
+			statsFactory: memstats.New(),
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -246,9 +247,9 @@ func TestUploadJob_MatchRows(t *testing.T) {
 
 	t.Run("Get uploads timings", func(t *testing.T) {
 		ujf := &UploadJobFactory{
-			conf:         config.Default,
+			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: stats.Default,
+			statsFactory: memstats.New(),
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -333,7 +334,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 				mockMeasurement.EXPECT().Gauge(gomock.Any()).Times(tc.statsCount)
 
 				ujf := &UploadJobFactory{
-					conf:         config.Default,
+					conf:         config.New(),
 					logger:       logger.NOP,
 					statsFactory: mockStats,
 					db:           sqlmiddleware.New(db),

@@ -3,11 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"golang.org/x/exp/slices"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

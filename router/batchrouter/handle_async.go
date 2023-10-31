@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
