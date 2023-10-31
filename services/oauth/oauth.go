@@ -67,11 +67,6 @@ type OAuthStats struct {
 	action          string // refresh_token, fetch_token, auth_status_toggle
 }
 
-type statTag struct {
-	k string
-	v string
-}
-
 type DisableDestinationResponse struct {
 	Enabled       bool   `json:"enabled"`
 	DestinationId string `json:"id"`
