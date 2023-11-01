@@ -2268,7 +2268,7 @@ var _ = Describe("Processor", Ordered, func() {
 				commonMetadata.SourceJobRunID,
 				commonMetadata.EventName,
 				commonMetadata.EventType,
-			},  "!<<#>>!")
+			}, "!<<#>>!")
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
