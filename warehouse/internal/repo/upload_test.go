@@ -92,7 +92,6 @@ func TestUploads_Count(t *testing.T) {
 			DestinationID:   uploads[i].DestinationID,
 			SourceTaskRunID: uploads[i].SourceTaskRunID,
 		}})
-
 		require.NoError(t, err)
 
 		uploads[i].ID = id
