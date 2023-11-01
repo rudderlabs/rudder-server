@@ -64,8 +64,9 @@ func GetUserFriendlyJobErrorCategory(errorType JobErrorType) string {
 }
 
 var (
-	ErrUploadNotFound = errors.New("upload not found")
-	ErrNoUploadsFound = errors.New("no uploads found")
+	ErrUploadNotFound     = errors.New("upload not found")
+	ErrSourcesJobNotFound = errors.New("sources job not found")
+	ErrNoUploadsFound     = errors.New("no uploads found")
 )
 
 type Upload struct {
