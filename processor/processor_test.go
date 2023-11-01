@@ -2164,7 +2164,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("isDestinationEnabled", func() {
 		It("should filter based on consent management preferences", func() {
-			event := types.SingularEventT{
+			eventWithDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
@@ -2174,11 +2174,11 @@ var _ = Describe("Processor", Ordered, func() {
 					},
 				},
 				"type":      "track",
-				"channel":   "android-srk",
+				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
 				"properties": map[string]interface{}{
-					"lbael":    "",
+					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
@@ -2188,8 +2188,59 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err := json.Marshal(event)
-			Expect(err).To(BeNil())
+			_, err1 := json.Marshal(eventWithDeniedConsents)
+			Expect(err1).To(BeNil())
+
+			eventWithoutDeniedConsents := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err2 := json.Marshal(eventWithoutDeniedConsents)
+			Expect(err2).To(BeNil())
+
+			eventWithoutConsentManagementData := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			Expect(err3).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
@@ -2202,16 +2253,39 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceID3)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
-					event,
+					eventWithDeniedConsents,
 					processor.getEnabledDestinations(
 						SourceID3,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(3)) // all except D1 and D3
-			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
+
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceID3)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutDeniedConsents,
+					processor.getEnabledDestinations(
+						SourceID3,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
+
+
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceID3)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutConsentManagementData,
+					processor.getEnabledDestinations(
+						SourceID3,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
 		})
 	})
 
