@@ -50,7 +50,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	})
 
 	// default reporting implementation
-	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber)
+	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation

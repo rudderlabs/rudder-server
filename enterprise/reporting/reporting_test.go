@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -198,7 +199,7 @@ var _ = Describe("Reporting", func() {
 			},
 		}
 		configSubscriber := newConfigSubscriber(logger.NOP)
-		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber)
+		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.Default)
 
 		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 		Expect(aggregatedMetrics).To(Equal(expectedResponse))

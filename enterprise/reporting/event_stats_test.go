@@ -101,10 +101,25 @@ func TestEventStatsReporter(t *testing.T) {
 				StatusCode: 500,
 			},
 		},
+		{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:       "im-not-there",
+				DestinationID:  destinationID,
+				SourceCategory: sourceCategory,
+			},
+			PUDetails: types.PUDetails{
+				PU:         reportedBy,
+				TerminalPU: false,
+			},
+			StatusDetail: &types.StatusDetail{
+				Count:      100,
+				Status:     "failed",
+				StatusCode: 500,
+			},
+		},
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
-	err := esr.Report(testReports)
-	require.NoError(t, err)
+	esr.Report(testReports)
 	require.Equal(t, statsStore.Get(EventsDeliveredMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
@@ -125,4 +140,19 @@ func TestEventStatsReporter(t *testing.T) {
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
 	}).LastValue(), float64(10))
+	require.Equal(t, statsStore.Get(EventsDeliveredMetricName, map[string]string{
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"terminal":        "true",
+		"status_code":     "200",
+		"destinationType": "test-destination-name",
+	}).LastValue(), float64(10)) // last value should be 10 because we are not reporting failed events
+
+	t.Cleanup(func() {
+		cancel()
+		<-subscribeDone
+	})
 }
