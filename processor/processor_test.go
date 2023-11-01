@@ -2222,12 +2222,11 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-				},
-				"type":      "track",
-				"channel":   "mobile",
-				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"context":           map[string]interface{}{},
+				"type":              "track",
+				"channel":           "mobile",
+				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
 				"properties": map[string]interface{}{
 					"label":    "",
 					"value":    float64(1),
@@ -2274,7 +2273,6 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 				)),
 			).To(Equal(5)) // all
-
 
 			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceID3)).To(BeTrue())
 			Expect(
