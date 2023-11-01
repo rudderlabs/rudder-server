@@ -754,7 +754,7 @@ func getConsentCategories(dest *backendconfig.DestinationT) []string {
 func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]GenericConsentManagementProviderData {
 	consentManagementData := make(map[string]GenericConsentManagementProviderData)
 
-	if dest.Config["consentManagement"] == nil {
+	if _, ok := dest.Config["consentManagement"]; !ok {
 		return consentManagementData
 	}
 
