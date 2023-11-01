@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -20,8 +22,8 @@ func WithNow(now func() time.Time) Opt {
 	}
 }
 
-func (r *repo) WithTx(f func(tx *sqlmiddleware.Tx) error) error {
-	tx, err := r.db.Begin()
+func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}

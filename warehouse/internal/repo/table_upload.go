@@ -59,7 +59,7 @@ func NewTableUploads(db *sqlmiddleware.DB, opts ...Opt) *TableUploads {
 }
 
 func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
-	return (*repo)(tu).WithTx(func(tx *sqlmiddleware.Tx) error {
+	return (*repo)(tu).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO `+tableUploadTableName+` (
 		  wh_upload_id, table_name, status,

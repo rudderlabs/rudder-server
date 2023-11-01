@@ -1314,8 +1314,8 @@ func (uploads *Uploads) RetryFailedBatches(
 	return r.RowsAffected()
 }
 
-func (uploads *Uploads) WithTx(f func(tx *sqlmiddleware.Tx) error) error {
-	return (*repo)(uploads).WithTx(f)
+func (uploads *Uploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
+	return (*repo)(uploads).WithTx(ctx, f)
 }
 
 func (uploads *Uploads) Update(ctx context.Context, id int64, fields []UpdateKeyValue) error {

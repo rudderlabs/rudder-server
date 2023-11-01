@@ -2624,7 +2624,7 @@ func TestUploads_Update(t *testing.T) {
 	t.Run("withTx succeeded", func(t *testing.T) {
 		id := prepareUpload(t)
 
-		err := repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+		err := repoUpload.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 			return repoUpload.UpdateWithTx(ctx, tx, id, fieldsToUpdate)
 		})
 		require.NoError(t, err)
@@ -2634,7 +2634,7 @@ func TestUploads_Update(t *testing.T) {
 	t.Run("withTx failed", func(t *testing.T) {
 		id := prepareUpload(t)
 
-		err := repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+		err := repoUpload.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 			require.NoError(t, repoUpload.UpdateWithTx(ctx, tx, id, fieldsToUpdate))
 			return errors.New("test error")
 		})
@@ -2653,7 +2653,7 @@ func TestUploads_Update(t *testing.T) {
 		err := repoUpload.Update(ctx, -1, fieldsToUpdate)
 		require.ErrorIs(t, err, context.Canceled)
 
-		err = repoUpload.WithTx(func(tx *sqlmiddleware.Tx) error {
+		err = repoUpload.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 			return repoUpload.UpdateWithTx(ctx, tx, -1, fieldsToUpdate)
 		})
 		require.ErrorIs(t, err, context.Canceled)

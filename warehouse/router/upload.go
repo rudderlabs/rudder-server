@@ -1403,31 +1403,22 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		var txn *sqlquerywrapper.Tx
-		txn, err = job.db.BeginTx(job.ctx, &sql.TxOptions{})
-		if err != nil {
-			return
-		}
-		defer func() {
+		err = job.uploadsRepo.WithTx(job.ctx, func(tx *sqlquerywrapper.Tx) error {
+			err = job.uploadsRepo.UpdateWithTx(job.ctx, tx, job.upload.ID, updateFields)
 			if err != nil {
-				_ = txn.Rollback()
+				return fmt.Errorf("updating upload status: %w", err)
 			}
-		}()
-
-		err = job.uploadsRepo.UpdateWithTx(job.ctx, txn, job.upload.ID, updateFields)
-		if err != nil {
-			return
-		}
-		if job.config.reportingEnabled {
-			err = job.reporting.Report(
-				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
-				txn.Tx,
-			)
-			if err != nil {
-				return
+			if job.config.reportingEnabled {
+				err = job.reporting.Report(
+					[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
+					tx.Tx,
+				)
+				if err != nil {
+					return fmt.Errorf("reporting upload status: %w", err)
+				}
 			}
-		}
-		err = txn.Commit()
+			return nil
+		})
 		return
 	}
 	return job.uploadsRepo.Update(job.ctx, job.upload.ID, updateFields)
