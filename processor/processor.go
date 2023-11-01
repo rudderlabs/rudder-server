@@ -2961,7 +2961,8 @@ func (proc *Handle) filterDestinations(
 				case "or":
 					return len(lo.Intersect(cmpData.consents, consentManagementInfo.allowedConsentIds)) > 0
 				default: // "and"
-					return len(lo.Intersect(cmpData.consents, consentManagementInfo.allowedConsentIds)) == len(cmpData.consents)
+					return slices.Equal(cmpData.consents, lo.Intersect(cmpData.consents, consentManagementInfo.allowedConsentIds))
+
 				}
 			}
 		} else {
