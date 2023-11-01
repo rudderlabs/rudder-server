@@ -554,7 +554,10 @@ func (w *worker) processDestinationJobs() {
 
 		if !isJobTerminated(respStatusCode) {
 			for _, metadata := range destinationJob.JobMetadataArray {
-				failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+				orderKey := jobOrderKey(metadata.UserID, metadata.DestinationID)
+				if w.rt.guaranteeUserEventOrder && !w.barrier.Disabled(orderKey) { // if barrier is disabled, we shouldn't need to track the failed job
+					failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+				}
 			}
 		}
 
@@ -685,7 +688,8 @@ func (w *worker) canSendJobToDestination(prevRespStatusCode int, failedJobOrderK
 	// If the destinationJob has come through router transform,
 	// drop the request if it is of a failed user, else send
 	for i := range destinationJob.JobMetadataArray {
-		if _, ok := failedJobOrderKeys[jobOrderKey(destinationJob.JobMetadataArray[i].UserID, destinationJob.JobMetadataArray[i].DestinationID)]; ok {
+		orderKey := jobOrderKey(destinationJob.JobMetadataArray[i].UserID, destinationJob.JobMetadataArray[i].DestinationID)
+		if _, ok := failedJobOrderKeys[orderKey]; ok {
 			return false
 		}
 	}
