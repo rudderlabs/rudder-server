@@ -22,13 +22,13 @@ type GenericConsentManagementProviderData struct {
 }
 
 type GenericConsentsConfig struct {
-	consent string
+	Consent string `json:"consent"`
 }
 
 type GenericConsentManagementProviderConfig struct {
-	provider           string
-	resolutionStrategy string
-	consents           []GenericConsentsConfig
+	Provider           string                  `json:"provider"`
+	ResolutionStrategy string                  `json:"resolutionStrategy"`
+	Consents           []GenericConsentsConfig `json:"consents"`
 }
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -63,32 +63,32 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 		return genericConsentManagementData
 	}
 
-	consentManagementConfigStr, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
+	consentManagementConfigBytes, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
 	if mErr != nil {
 		return genericConsentManagementData
 	}
 
 	consentManagementConfig := make([]GenericConsentManagementProviderConfig, 0)
-	err := jsonfast.Unmarshal(consentManagementConfigStr, &consentManagementConfig)
+	err := jsonfast.Unmarshal(consentManagementConfigBytes, &consentManagementConfig)
 
 	if err != nil || len(consentManagementConfig) == 0 {
 		return genericConsentManagementData
 	}
 
 	for _, providerConfig := range consentManagementConfig {
-		consentsConfig := providerConfig.consents
+		consentsConfig := providerConfig.Consents
 
-		if len(consentsConfig) > 0 && providerConfig.provider != "" {
+		if len(consentsConfig) > 0 && providerConfig.Provider != "" {
 			consentIds := lo.FilterMap(
 				consentsConfig,
 				func(consentsObj GenericConsentsConfig, _ int) (string, bool) {
-					return consentsObj.consent, consentsObj.consent != ""
+					return consentsObj.Consent, consentsObj.Consent != ""
 				},
 			)
 
 			if len(consentIds) > 0 {
-				genericConsentManagementData[providerConfig.provider] = GenericConsentManagementProviderData{
-					ResolutionStrategy: providerConfig.resolutionStrategy,
+				genericConsentManagementData[providerConfig.Provider] = GenericConsentManagementProviderData{
+					ResolutionStrategy: providerConfig.ResolutionStrategy,
 					Consents:           consentIds,
 				}
 			}
