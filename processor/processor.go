@@ -32,6 +32,7 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/consentmanagementfilter"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
@@ -128,7 +129,7 @@ type Handle struct {
 		workspaceLibrariesMap            map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap           map[string]string
 		destConsentCategories            map[string][]string
-		destGenericConsentManagementData map[string]map[string]GenericConsentManagementProviderData
+		destGenericConsentManagementData map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData
 		batchDestinations                []string
 		configSubscriberLock             sync.RWMutex
 		enableEventSchemasFeature        bool
@@ -250,18 +251,6 @@ type NonSuccessfulTransformationMetrics struct {
 type (
 	SourceIDT string
 )
-
-type ConsentManagementInfo struct {
-	deniedConsentIds   []string
-	allowedConsentIds  []string
-	provider           string
-	resolutionStrategy string
-}
-
-type GenericConsentManagementProviderData struct {
-	resolutionStrategy string
-	consents           []string
-}
 
 func buildStatTags(sourceID, workspaceID string, destination *backendconfig.DestinationT, transformationType string) map[string]string {
 	module := "router"
@@ -728,72 +717,6 @@ func (proc *Handle) makeFeaturesFetchCall() bool {
 	return false
 }
 
-func getConsentCategories(dest *backendconfig.DestinationT) []string {
-	config := dest.Config
-	cookieCategories, _ := misc.MapLookup(
-		config,
-		"oneTrustCookieCategories",
-	).([]interface{})
-	if len(cookieCategories) == 0 {
-		return nil
-	}
-	return lo.FilterMap(
-		cookieCategories,
-		func(cookieCategory interface{}, _ int) (string, bool) {
-			switch category := cookieCategory.(type) {
-			case map[string]interface{}:
-				cCategory, ok := category["oneTrustCookieCategory"].(string)
-				return cCategory, ok && cCategory != ""
-			default:
-				return "", false
-			}
-		},
-	)
-}
-
-func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]GenericConsentManagementProviderData {
-	consentManagementData := make(map[string]GenericConsentManagementProviderData)
-
-	if _, ok := dest.Config["consentManagement"]; !ok {
-		return consentManagementData
-	}
-
-	consentManagementConfig, ok := dest.Config["consentManagement"].([]map[string]interface{})
-	if !ok || len(consentManagementConfig) == 0 {
-		return consentManagementData
-	}
-
-	for _, providerConfig := range consentManagementConfig {
-		provider, _ := providerConfig["provider"].(string)
-		resolutionStrategy, _ := providerConfig["resolutionStrategy"].(string)
-		consentsConfig, _ := providerConfig["consents"].([]interface{})
-
-		if len(consentsConfig) > 0 && provider != "" {
-			consentIds := lo.FilterMap(
-				consentsConfig,
-				func(consentObj interface{}, _ int) (string, bool) {
-					switch consent := consentObj.(type) {
-					case map[string]interface{}:
-						consentId, ok := consent["consent"].(string)
-						return consentId, ok && consentId != ""
-					default:
-						return "", false
-					}
-				},
-			)
-
-			if len(consentIds) > 0 {
-				consentManagementData[provider] = GenericConsentManagementProviderData{
-					resolutionStrategy: resolutionStrategy,
-					consents:           consentIds,
-				}
-			}
-		}
-	}
-
-	return consentManagementData
-}
-
 func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	var initDone bool
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
@@ -801,7 +724,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
 			destConsentCategories            = make(map[string][]string)
-			destGenericConsentManagementData = make(map[string]map[string]GenericConsentManagementProviderData)
+			destGenericConsentManagementData = make(map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData)
 			workspaceLibrariesMap            = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap           = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap                = map[string]backendconfig.SourceT{}
@@ -817,8 +740,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						destConsentCategories[destination.ID] = getConsentCategories(destination)
-						destGenericConsentManagementData[destination.ID] = getGenericConsentManagementData(destination)
+						destConsentCategories[destination.ID] = consentmanagementfilter.GetConsentCategories(destination)
+						destGenericConsentManagementData[destination.ID] = consentmanagementfilter.GetGenericConsentManagementData(destination)
 					}
 				}
 			}
@@ -848,14 +771,22 @@ func (proc *Handle) getConsentManagementData(destinationID string) []string {
 }
 
 // returns the consent management data for a destination and provider
-func (proc *Handle) getConsentManagementDataForDestination(destinationID, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) getGCMData(destinationID, provider string) consentmanagementfilter.GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-	data, ok := proc.config.destGenericConsentManagementData[destinationID]
+
+	defRetVal := consentmanagementfilter.GenericConsentManagementProviderData{}
+	destinationData, ok := proc.config.destGenericConsentManagementData[destinationID]
 	if !ok {
-		return GenericConsentManagementProviderData{}
+		return defRetVal
 	}
-	return data[provider]
+
+	providerData, ok := destinationData[provider]
+	if !ok {
+		return defRetVal
+	}
+
+	return providerData
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -2945,33 +2876,32 @@ func (proc *Handle) filterDestinations(
 	event types.SingularEventT,
 	dests []backendconfig.DestinationT,
 ) []backendconfig.DestinationT {
-	consentManagementInfo := getConsentManagementInfo(event)
-	if len(consentManagementInfo.deniedConsentIds) == 0 && len(consentManagementInfo.allowedConsentIds) == 0 {
+	consentManagementInfo := consentmanagementfilter.GetConsentManagementInfo(event)
+	if len(consentManagementInfo.DeniedConsentIds) == 0 && len(consentManagementInfo.AllowedConsentIds) == 0 {
 		return dests
 	}
 
 	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
 		// This field differentiates legacy and generic consent management
-		if consentManagementInfo.provider != "" {
-			if cmpData := proc.getConsentManagementDataForDestination(dest.ID, consentManagementInfo.provider); len(cmpData.consents) > 0 {
+		if consentManagementInfo.Provider != "" {
+			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
-				var finalResolutionStrategy string = consentManagementInfo.resolutionStrategy
-				if consentManagementInfo.provider == "custom" {
-					finalResolutionStrategy = cmpData.resolutionStrategy
+				var finalResolutionStrategy string = consentManagementInfo.ResolutionStrategy
+				if consentManagementInfo.Provider == "custom" {
+					finalResolutionStrategy = cmpData.ResolutionStrategy
 				}
 
 				switch finalResolutionStrategy {
 				case "or":
-					return len(lo.Intersect(cmpData.consents, consentManagementInfo.allowedConsentIds)) > 0
+					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds)) > 0
 				default: // "and"
-					return slices.Equal(cmpData.consents, lo.Intersect(cmpData.consents, consentManagementInfo.allowedConsentIds))
-
+					return slices.Equal(cmpData.Consents, lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds))
 				}
 			}
 		} else {
 			// Legacy consent management
 			if configuredConsentIds := proc.getConsentManagementData(dest.ID); len(configuredConsentIds) > 0 {
-				return len(lo.Intersect(configuredConsentIds, consentManagementInfo.deniedConsentIds)) == 0
+				return len(lo.Intersect(configuredConsentIds, consentManagementInfo.DeniedConsentIds)) == 0
 			}
 		}
 		return true
@@ -3007,39 +2937,6 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 	}
 
 	return true
-}
-
-func getValidConsents(consents []interface{}) []string {
-	return lo.FilterMap(consents, func(consent interface{}, _ int) (string, bool) {
-		consentStr := consent.(string)
-		return consentStr, consentStr != ""
-	})
-}
-
-func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
-	sanitizedAllowedConsentIds := make([]string, 0)
-	sanitizedDeniedConsentIds := make([]string, 0)
-	provider := ""
-	resolutionStrategy := ""
-	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
-		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]interface{}); len(allowedConsentIds) > 0 {
-			sanitizedAllowedConsentIds = getValidConsents(allowedConsentIds)
-		}
-
-		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]interface{}); len(deniedConsentIds) > 0 {
-			sanitizedDeniedConsentIds = getValidConsents(deniedConsentIds)
-		}
-
-		provider, _ = misc.MapLookup(consentManagement, "provider").(string)
-		resolutionStrategy, _ = misc.MapLookup(consentManagement, "resolutionStrategy").(string)
-	}
-
-	return ConsentManagementInfo{
-		allowedConsentIds:  sanitizedAllowedConsentIds,
-		deniedConsentIds:   sanitizedDeniedConsentIds,
-		provider:           provider,
-		resolutionStrategy: resolutionStrategy,
-	}
 }
 
 // pipelineDelayStats reports the delay of the pipeline as a range:
