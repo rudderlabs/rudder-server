@@ -46,18 +46,11 @@ func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 }
 
 func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]int64, error) {
-	txn, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf(`begin transaction: %w`, err)
-	}
-	defer func() {
-		if err != nil {
-			_ = txn.Rollback()
-		}
-	}()
+	var ids []int64
 
-	stmt, err := txn.PrepareContext(
-		ctx, `
+	err := (*repo)(s).WithTx(ctx, func(tx *sqlmw.Tx) error {
+		stmt, err := tx.PrepareContext(
+			ctx, `
 			INSERT INTO `+sourceJobTableName+` (
 			  source_id, destination_id, tablename,
 			  status, created_at, updated_at, async_job_type,
@@ -66,36 +59,36 @@ func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]in
 			VALUES
 			  ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id;
 `,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(`preparing statement: %w`, err)
-	}
-	defer func() { _ = stmt.Close() }()
-
-	var ids []int64
-	for _, sourceJob := range sourceJobs {
-		var id int64
-		err = stmt.QueryRowContext(
-			ctx,
-			sourceJob.SourceID,
-			sourceJob.DestinationID,
-			sourceJob.TableName,
-			model.SourceJobStatusWaiting.String(),
-			s.now(),
-			s.now(),
-			sourceJob.JobType.String(),
-			sourceJob.WorkspaceID,
-			sourceJob.Metadata,
-		).Scan(&id)
+		)
 		if err != nil {
-			return nil, fmt.Errorf(`executing: %w`, err)
+			return fmt.Errorf(`preparing statement: %w`, err)
 		}
+		defer func() { _ = stmt.Close() }()
 
-		ids = append(ids, id)
-	}
+		for _, sourceJob := range sourceJobs {
+			var id int64
+			err = stmt.QueryRowContext(
+				ctx,
+				sourceJob.SourceID,
+				sourceJob.DestinationID,
+				sourceJob.TableName,
+				model.SourceJobStatusWaiting.String(),
+				s.now(),
+				s.now(),
+				sourceJob.JobType.String(),
+				sourceJob.WorkspaceID,
+				sourceJob.Metadata,
+			).Scan(&id)
+			if err != nil {
+				return fmt.Errorf(`executing: %w`, err)
+			}
 
-	if err = txn.Commit(); err != nil {
-		return nil, fmt.Errorf(`committing: %w`, err)
+			ids = append(ids, id)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

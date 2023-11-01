@@ -30,8 +30,7 @@ var syncStatusMap = map[string]string{
 
 const (
 	uploadsTableName = warehouseutils.WarehouseUploadsTable
-
-	uploadColumns = `
+	uploadColumns    = `
 		id,
 		status,
 		schema,
