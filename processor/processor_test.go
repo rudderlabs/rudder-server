@@ -117,6 +117,7 @@ const (
 	DestID2   = "dest-id-2"
 	DestID3   = "dest-id-3"
 	DestID4   = "dest-id-4"
+	DestID5   = "dest-id-5"
 )
 
 var (
@@ -359,6 +360,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{"oneTrustCookieCategory": "category1"},
+							map[string]interface{}{"oneTrustCookieCategory": "someOtherCategory"},
+							map[string]interface{}{"oneTrustCookieCategory": "someOtherCategory2"},
+						},
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -376,7 +382,23 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Config: map[string]interface{}{
 						"oneTrustCookieCategories": []interface{}{
 							map[string]interface{}{"oneTrustCookieCategory": "category2"},
+							map[string]interface{}{"oneTrustCookieCategory": ""},
 						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID5,
+					Name:               "D5",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -2188,7 +2210,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(3)) // all except dest-1
+			).To(Equal(3)) // all except D1 and D3
 			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
 		})
 	})
