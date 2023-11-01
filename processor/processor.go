@@ -752,14 +752,17 @@ func getConsentCategories(dest *backendconfig.DestinationT) []string {
 }
 
 func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]GenericConsentManagementProviderData {
-	config := dest.Config
-	consentManagementConfig, _ := config["consentManagement"].([]map[string]interface{})
+	consentManagementData := make(map[string]GenericConsentManagementProviderData)
 
-	if len(consentManagementConfig) == 0 {
-		return nil
+	if dest.Config["consentManagement"] == nil {
+		return consentManagementData
 	}
 
-	consentManagementData := make(map[string]GenericConsentManagementProviderData)
+	consentManagementConfig := dest.Config["consentManagement"].([]map[string]interface{})
+	if len(consentManagementConfig) == 0 {
+		return consentManagementData
+	}
+
 	for _, providerConfig := range consentManagementConfig {
 		provider, _ := providerConfig["provider"].(string)
 		resolutionStrategy, _ := providerConfig["resolutionStrategy"].(string)
@@ -770,8 +773,8 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 				consentsConfig,
 				func(consentObj interface{}, _ int) (string, bool) {
 					switch consent := consentObj.(type) {
-					case map[string]string:
-						consentId, ok := consent["consent"]
+					case map[string]interface{}:
+						consentId, ok := consent["consent"].(string)
 						return consentId, ok && consentId != ""
 					default:
 						return "", false
