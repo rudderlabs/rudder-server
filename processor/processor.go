@@ -3002,9 +3002,10 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 	return true
 }
 
-func getValidConsents(consents []string) []string {
-	return lo.FilterMap(consents, func(consent string, _ int) (string, bool) {
-		return consent, consent != ""
+func getValidConsents(consents []interface{}) []string {
+	return lo.FilterMap(consents, func(consent interface{}, _ int) (string, bool) {
+		consentStr := consent.(string)
+		return consentStr, consentStr != ""
 	})
 }
 
@@ -3014,11 +3015,11 @@ func getConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	provider := ""
 	resolutionStrategy := ""
 	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
-		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]string); len(allowedConsentIds) > 0 {
+		if allowedConsentIds, _ := misc.MapLookup(consentManagement, "allowedConsentIds").([]interface{}); len(allowedConsentIds) > 0 {
 			sanitizedAllowedConsentIds = getValidConsents(allowedConsentIds)
 		}
 
-		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]string); len(deniedConsentIds) > 0 {
+		if deniedConsentIds, _ := misc.MapLookup(consentManagement, "deniedConsentIds").([]interface{}); len(deniedConsentIds) > 0 {
 			sanitizedDeniedConsentIds = getValidConsents(deniedConsentIds)
 		}
 
