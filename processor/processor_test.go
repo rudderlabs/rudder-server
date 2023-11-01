@@ -2262,14 +2262,13 @@ var _ = Describe("Processor", Ordered, func() {
 				types.DEST_TRANSFORMER,
 			)
 
-			key := fmt.Sprintf(
-				"%s!<<#>>!%s!<<#>>!%s!<<#>>!%s!<<#>>!%s",
+			key := strings.Join([]string{
 				commonMetadata.SourceID,
 				commonMetadata.DestinationID,
 				commonMetadata.SourceJobRunID,
 				commonMetadata.EventName,
 				commonMetadata.EventType,
-			)
+			},  "!<<#>>!")
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
