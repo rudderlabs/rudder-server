@@ -758,8 +758,8 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 		return consentManagementData
 	}
 
-	consentManagementConfig := dest.Config["consentManagement"].([]map[string]interface{})
-	if len(consentManagementConfig) == 0 {
+	consentManagementConfig, ok := dest.Config["consentManagement"].([]map[string]interface{})
+	if !ok || len(consentManagementConfig) == 0 {
 		return consentManagementData
 	}
 
