@@ -355,6 +355,20 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 	}
 }
 
+func TestExtractErrorDetails(t *testing.T) { 
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}) 
+	sampleResponse := "Offline Conversions API is deprecated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until." 
+	errorDetails := edr.extractErrorDetails(sampleResponse) 
+	expectedErrorMessage := "Offline Conversions API is deprecated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until " 
+	expectedErrorCode := "deprecation" 
+	if errorDetails.ErrorMessage != expectedErrorMessage {
+		 t.Errorf("Expected error message %q, but got %q", expectedErrorMessage, errorDetails.ErrorMessage)
+		  } 
+	if errorDetails.ErrorCode != expectedErrorCode { 
+		t.Errorf("Expected error code %q, but got %q", expectedErrorCode, errorDetails.ErrorCode)
+	} 
+}
+
 func TestCleanUpErrorMessage(t *testing.T) {
 	ext := NewErrorDetailExtractor(logger.NOP)
 	type testCase struct {
