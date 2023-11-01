@@ -96,7 +96,7 @@ func (tu *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]mo
 		return nil, fmt.Errorf("querying table uploads: %w", err)
 	}
 
-	return tu.parseRows(rows)
+	return parseTableUploads(rows)
 }
 
 func (tu *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
@@ -112,7 +112,7 @@ func (tu *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID 
 		return model.TableUpload{}, fmt.Errorf("querying table uploads: %w", err)
 	}
 
-	entries, err := tu.parseRows(rows)
+	entries, err := parseTableUploads(rows)
 	if err != nil {
 		return model.TableUpload{}, fmt.Errorf("parsing rows: %w", err)
 	}
@@ -123,7 +123,7 @@ func (tu *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID 
 	return entries[0], err
 }
 
-func (*TableUploads) parseRows(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
+func parseTableUploads(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
 	var tableUploads []model.TableUpload
 
 	defer func() { _ = rows.Close() }()
