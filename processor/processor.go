@@ -851,8 +851,11 @@ func (proc *Handle) getConsentManagementData(destinationID string) []string {
 func (proc *Handle) getConsentManagementDataForDestination(destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-
-	return proc.config.destGenericConsentManagementData[destinationID][provider]
+	data, ok := proc.config.destGenericConsentManagementData[destinationID]
+	if !ok {
+		return GenericConsentManagementProviderData{}
+	}
+	return data[provider]
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
