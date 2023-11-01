@@ -60,7 +60,7 @@ func (lf *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []
 
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
-	return (*repo)(lf).WithTx(func(tx *sqlmiddleware.Tx) error {
+	return (*repo)(lf).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(
 			ctx,
 			pq.CopyIn(
