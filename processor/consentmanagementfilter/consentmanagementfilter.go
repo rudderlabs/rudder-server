@@ -98,7 +98,6 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 	return genericConsentManagementData
 }
 
-
 func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
@@ -111,14 +110,14 @@ func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 		if err != nil {
 			return consentManagementInfo
 		}
-	}
 
-	consentManagementInfo.AllowedConsentIds = lo.FilterMap(consentManagementInfo.AllowedConsentIds, func(consent string, _ int) (string, bool) {
-		return consent, consent != ""
-	})
-	consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, func(consent string, _ int) (string, bool) {
-		return consent, consent != ""
-	})
+		filterPredicate := func(consent string, _ int) (string, bool) {
+			return consent, consent != ""
+		}
+	
+		consentManagementInfo.AllowedConsentIds = lo.FilterMap(consentManagementInfo.AllowedConsentIds, filterPredicate)
+		consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, filterPredicate)
+	}
 
 	return consentManagementInfo
 }
