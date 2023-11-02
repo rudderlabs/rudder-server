@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -189,7 +188,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	t.Logf("Starting docker containers")
 	var (
 		postgresContainer *resource.PostgresResource
-		minioDestination  *destination.MINIOResource
+		minioDestination  *resource.MinioResource
 	)
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "it should be able to create a new docker pool")
@@ -201,7 +200,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	})
 	containersGroup.Go(func() (err error) {
 		t.Logf("Starting minio container")
-		minioDestination, err = destination.SetupMINIO(pool, t)
+		minioDestination, err = resource.SetupMinio(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait(), "it should be able to start all containers without an error")
@@ -212,8 +211,8 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 		"workspaces":           spec.workspaces,
 		"minioEndpoint":        minioDestination.Endpoint,
 		"minioBucket":          minioDestination.BucketName,
-		"minioAccessKeyID":     minioDestination.AccessKey,
-		"minioSecretAccessKey": minioDestination.SecretKey,
+		"minioAccessKeyID":     minioDestination.AccessKeyID,
+		"minioSecretAccessKey": minioDestination.AccessKeySecret,
 	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/brtIsolationTestTemplate.json.tpl", templateCtx)
 	mockCBE := m.newMockConfigBackend(t, configJsonPath)
@@ -303,8 +302,8 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 						"bucketName":      minioDestination.BucketName,
 						"prefix":          "",
 						"endPoint":        minioDestination.Endpoint,
-						"accessKeyID":     minioDestination.AccessKey,
-						"secretAccessKey": minioDestination.SecretKey,
+						"accessKeyID":     minioDestination.AccessKeyID,
+						"secretAccessKey": minioDestination.AccessKeySecret,
 					},
 				}),
 			})

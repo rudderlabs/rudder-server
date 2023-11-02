@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -160,7 +161,7 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap    testhelper.EventsCountMap
 			tableUploadsEventsMap testhelper.EventsCountMap
 			warehouseEventsMap    testhelper.EventsCountMap
-			asyncJob              bool
+			sourceJob             bool
 			stagingFilePrefix     string
 		}{
 			{
@@ -173,7 +174,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
-				name:                  "Async Job",
+				name:                  "Source Job",
 				writeKey:              sourcesWriteKey,
 				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
@@ -183,7 +184,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
@@ -244,7 +245,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -256,7 +257,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
@@ -385,7 +386,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -401,7 +402,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -421,7 +422,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				ms := mssql.New(config.Default, logger.NOP, stats.Default)
+				ms := mssql.New(config.New(), logger.NOP, memstats.New())
 				err := ms.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -468,7 +469,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				ms := mssql.New(config.Default, logger.NOP, stats.Default)
+				ms := mssql.New(config.New(), logger.NOP, memstats.New())
 				err := ms.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -513,7 +514,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -535,7 +536,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -557,7 +558,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -601,7 +602,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -716,7 +717,7 @@ func TestMSSQL_ProcessColumnValue(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ms := mssql.New(config.Default, logger.NOP, stats.Default)
+			ms := mssql.New(config.New(), logger.NOP, memstats.New())
 
 			value, err := ms.ProcessColumnValue(tc.data, tc.dataType)
 			if tc.wantError {

@@ -17,25 +17,24 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 func TestJobsArchival(t *testing.T) {
 	var (
 		prefix        = trand.String(10)
-		minioResource []*destination.MINIOResource
+		minioResource []*resource.MinioResource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
 		seedJobsFileName    = "testdata/MultiWorkspaceBackupJobs.json.gz"
@@ -48,7 +47,7 @@ func TestJobsArchival(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 
-	postgresResource, err := resource.SetupPostgres(pool, t)
+	postgresResource, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres resource")
 	c := config.New()
 	c.Set("DB.name", postgresResource.Database)
@@ -61,9 +60,9 @@ func TestJobsArchival(t *testing.T) {
 	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
 	require.NoError(t, jd.Start())
 
-	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
+	minioResource = make([]*resource.MinioResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, t)
+		minioResource[i], err = resource.SetupMinio(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 
@@ -80,8 +79,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[0].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[0].Endpoint,
-					"accessKeyID":     minioResource[0].AccessKey,
-					"secretAccessKey": minioResource[0].SecretKey,
+					"accessKeyID":     minioResource[0].AccessKeyID,
+					"secretAccessKey": minioResource[0].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -98,8 +97,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[1].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[1].Endpoint,
-					"accessKeyID":     minioResource[1].AccessKey,
-					"secretAccessKey": minioResource[1].SecretKey,
+					"accessKeyID":     minioResource[1].AccessKeyID,
+					"secretAccessKey": minioResource[1].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -116,8 +115,8 @@ func TestJobsArchival(t *testing.T) {
 					"bucketName":      minioResource[2].BucketName,
 					"prefix":          prefix,
 					"endPoint":        minioResource[2].Endpoint,
-					"accessKeyID":     minioResource[2].AccessKey,
-					"secretAccessKey": minioResource[2].SecretKey,
+					"accessKeyID":     minioResource[2].AccessKeyID,
+					"secretAccessKey": minioResource[2].AccessKeySecret,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -206,7 +205,7 @@ func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
 	if err != nil {
 		return []*jobsdb.JobT{}, err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	sc := bufio.NewScanner(gz)
 	// default scanner buffer maxCapacity is 64K
@@ -256,24 +255,24 @@ type jdWrapper struct {
 	queries *int32
 }
 
-func (jd jdWrapper) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
+func (jd jdWrapper) GetDistinctParameterValues(context.Context, string) ([]string, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return []string{}, nil
 }
 
 func (jd jdWrapper) GetUnprocessed(
-	ctx context.Context,
-	params jobsdb.GetQueryParams,
+	context.Context,
+	jobsdb.GetQueryParams,
 ) (jobsdb.JobsResult, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return jobsdb.JobsResult{}, nil
 }
 
 func (jd jdWrapper) UpdateJobStatus(
-	ctx context.Context,
-	statusList []*jobsdb.JobStatusT,
-	customValFilters []string,
-	parameterFilters []jobsdb.ParameterFilterT,
+	context.Context,
+	[]*jobsdb.JobStatusT,
+	[]string,
+	[]jobsdb.ParameterFilterT,
 ) error {
 	atomic.AddInt32(jd.queries, 1)
 	return nil
