@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -236,14 +238,14 @@ func queryCount(cl *whclient.Client, statement string) (int64, error) {
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
 }
 
-func verifyAsyncJob(t testing.TB, tc *TestConfig) {
+func verifySourceJob(t testing.TB, tc *TestConfig) {
 	t.Helper()
 
-	t.Logf("Creating async job for sourceID: %s, jobRunID: %s, taskRunID: %s, destinationID: %s, workspaceID: %s",
+	t.Logf("Creating source job for sourceID: %s, jobRunID: %s, taskRunID: %s, destinationID: %s, workspaceID: %s",
 		tc.SourceID, tc.JobRunID, tc.TaskRunID, tc.DestinationID, tc.WorkspaceID,
 	)
 
-	asyncPayload := fmt.Sprintf(
+	payload := fmt.Sprintf(
 		`{
 			"source_id":"%s","job_run_id":"%s","task_run_id":"%s","channel":"sources",
 			"async_job_type":"deletebyjobrunid","destination_id":"%s","start_time":"%s","workspace_id":"%s"
@@ -257,7 +259,7 @@ func verifyAsyncJob(t testing.TB, tc *TestConfig) {
 	)
 
 	url := fmt.Sprintf("http://localhost:%d/v1/warehouse/jobs", tc.HTTPPort)
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(asyncPayload))
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	require.NoError(t, err)
 
 	req.Header.Add("Content-Type", "application/json")
@@ -275,11 +277,11 @@ func verifyAsyncJob(t testing.TB, tc *TestConfig) {
 	require.NoError(t, err)
 	require.Equal(t, res.Status, "200 OK")
 
-	t.Logf("Verify async job status for sourceID: %s, jobRunID: %s, taskRunID: %s, destID: %s, workspaceID: %s",
+	t.Logf("Verify source job status for sourceID: %s, jobRunID: %s, taskRunID: %s, destID: %s, workspaceID: %s",
 		tc.SourceID, tc.JobRunID, tc.TaskRunID, tc.DestinationID, tc.WorkspaceID,
 	)
 
-	type asyncResponse struct {
+	type jobResponse struct {
 		Status string `json:"status"`
 		Error  string `json:"error"`
 	}
@@ -309,14 +311,14 @@ func verifyAsyncJob(t testing.TB, tc *TestConfig) {
 			return false
 		}
 
-		var asyncRes asyncResponse
-		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
+		var jr jobResponse
+		if err = json.NewDecoder(res.Body).Decode(&jr); err != nil {
 			return false
 		}
-		return asyncRes.Status == "succeeded"
+		return jr.Status == model.SourceJobStatusSucceeded.String()
 	}
-	require.Eventuallyf(t, operation, WaitFor10Minute, AsyncJOBQueryFrequency,
-		"Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s: %v",
+	require.Eventuallyf(t, operation, WaitFor10Minute, SourceJobQueryFrequency,
+		"Failed to get source job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s: %v",
 		tc.JobRunID,
 		tc.TaskRunID,
 		tc.SourceID,
@@ -324,7 +326,7 @@ func verifyAsyncJob(t testing.TB, tc *TestConfig) {
 		err,
 	)
 
-	t.Logf("Completed verifying async job")
+	t.Logf("Completed verifying source job")
 }
 
 func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {

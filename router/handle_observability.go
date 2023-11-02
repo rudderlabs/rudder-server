@@ -14,6 +14,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 func (rt *Handle) trackRequestMetrics(reqMetric requestMetric) {
@@ -175,7 +176,7 @@ func (rt *Handle) eventOrderDebugInfo(orderKey string) (res string) {
 		}
 	}()
 	userID, destinationID := parseJobOrderKey(orderKey)
-	if err := rt.jobsDB.WithTx(func(tx *jobsdb.Tx) error {
+	if err := rt.jobsDB.WithTx(func(tx *Tx) error {
 		rows, err := tx.Query(`SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
 		if err != nil {
 			return err

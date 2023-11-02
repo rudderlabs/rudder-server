@@ -93,6 +93,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
+	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config)})
 	g.Go(func() error {
 		syncer()
@@ -231,6 +232,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
+	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	if err != nil {
+		return fmt.Errorf("setting up pipeline enrichers: %w", err)
+	}
+
+	defer func() {
+		for _, enricher := range enrichers {
+			enricher.Close()
+		}
+	}()
+
 	proc := processor.New(
 		ctx,
 		&options.ClearDB,
@@ -247,6 +259,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
+		enrichers,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)

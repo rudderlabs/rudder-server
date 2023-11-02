@@ -9,6 +9,4 @@ var (
 	ErrNoWarehouseFound            = errors.New("no warehouse found")
 	ErrWorkspaceFromSourceNotFound = errors.New("workspace from source not found")
 	ErrMarshallResponse            = errors.New("can't marshall response")
-	ErrInvalidRequest              = errors.New("invalid request")
-	ErrJobsApiNotInitialized       = errors.New("warehouse jobs api not initialized")
 )

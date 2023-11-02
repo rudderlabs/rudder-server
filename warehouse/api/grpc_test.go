@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -38,7 +38,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -69,7 +68,7 @@ func TestGRPC(t *testing.T) {
 	t.Run("endpoints", func(t *testing.T) {
 		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
-		minioResource, err := destination.SetupMINIO(pool, t)
+		minioResource, err := resource.SetupMinio(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -149,8 +148,8 @@ func TestGRPC(t *testing.T) {
 
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
-		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats.Default)
-		grpcServer, err := NewGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
+		bcManager := bcm.New(c, db, tenantManager, logger.NOP, memstats.New())
+		grpcServer, err := NewGRPCServer(c, logger.NOP, memstats.New(), db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
 		tcpPort, err := kithelper.GetFreePort()
@@ -161,7 +160,7 @@ func TestGRPC(t *testing.T) {
 		listener, err := net.Listen("tcp", tcpAddress)
 		require.NoError(t, err)
 
-		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()), grpc.UnaryInterceptor(statsInterceptor(memstats.New())))
 		proto.RegisterWarehouseServer(server, grpcServer)
 
 		g, gCtx := errgroup.WithContext(ctx)
@@ -834,8 +833,8 @@ func TestGRPC(t *testing.T) {
 								"namespace":       "test_namespace",
 								"bucketProvider":  "MINIO",
 								"bucketName":      minioResource.BucketName,
-								"accessKeyID":     minioResource.AccessKey,
-								"secretAccessKey": minioResource.SecretKey,
+								"accessKeyID":     minioResource.AccessKeyID,
+								"secretAccessKey": minioResource.AccessKeySecret,
 								"endPoint":        minioResource.Endpoint,
 							},
 						},
@@ -961,7 +960,7 @@ func TestGRPC(t *testing.T) {
 							Fields: map[string]*structpb.Value{
 								"region": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SiteRegion,
+										StringValue: minioResource.Region,
 									},
 								},
 								"bucketName": {
@@ -971,12 +970,12 @@ func TestGRPC(t *testing.T) {
 								},
 								"secretAccessKey": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SecretKey,
+										StringValue: minioResource.AccessKeySecret,
 									},
 								},
 								"accessKeyID": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.AccessKey,
+										StringValue: minioResource.AccessKeyID,
 									},
 								},
 								"endPoint": {
@@ -1017,7 +1016,7 @@ func TestGRPC(t *testing.T) {
 							Fields: map[string]*structpb.Value{
 								"region": {
 									Kind: &structpb.Value_StringValue{
-										StringValue: minioResource.SiteRegion,
+										StringValue: minioResource.Region,
 									},
 								},
 								"bucketName": {

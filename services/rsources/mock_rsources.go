@@ -116,18 +116,18 @@ func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId, filter interface{}) 
 }
 
 // GetFailedRecords mocks base method.
-func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
+func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter)
+	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter, paging)
 	ret0, _ := ret[0].(JobFailedRecords)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetFailedRecords indicates an expected call of GetFailedRecords.
-func (mr *MockJobServiceMockRecorder) GetFailedRecords(ctx, jobRunId, filter interface{}) *gomock.Call {
+func (mr *MockJobServiceMockRecorder) GetFailedRecords(ctx, jobRunId, filter, paging interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecords", reflect.TypeOf((*MockJobService)(nil).GetFailedRecords), ctx, jobRunId, filter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecords", reflect.TypeOf((*MockJobService)(nil).GetFailedRecords), ctx, jobRunId, filter, paging)
 }
 
 // GetStatus mocks base method.

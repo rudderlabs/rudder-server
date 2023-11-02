@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -389,5 +391,79 @@ func TestTableUploadRepo(t *testing.T) {
 				require.Equal(t, expectedTotalEvents, totalEvents)
 			})
 		})
+	})
+}
+
+func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
+	const (
+		sourceID      = "test_source_id"
+		destinationID = "test_destination_id"
+		destType      = "test_destination_type"
+		workspaceID   = "test_workspace_id"
+		taskRunID     = "test_task_run_id"
+		jobRunID      = "test_job_run_id"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	upload := model.Upload{
+		WorkspaceID:     workspaceID,
+		Namespace:       "namespace",
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		DestinationType: destType,
+		Status:          model.ExportedData,
+		SourceTaskRunID: taskRunID,
+		SourceJobRunID:  jobRunID,
+	}
+
+	stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, upload, []*model.StagingFile{{
+		ID:              stagingID,
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		SourceTaskRunID: taskRunID,
+		SourceJobRunID:  jobRunID,
+	}})
+	require.NoError(t, err)
+
+	tables := []string{"table1", "table2", "table3"}
+
+	err = repoTableUpload.Insert(ctx, uploadID, tables)
+	require.NoError(t, err)
+
+	t.Run("known", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, jobRunID, taskRunID)
+		require.NoError(t, err)
+		require.Len(t, tableUploads, len(tables))
+		require.Equal(t, tables, lo.Map(tableUploads, func(item model.TableUpload, index int) string {
+			return item.TableName
+		}))
+	})
+	t.Run("unknown", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, "some-other-job-run-id", "some-other-task-run-id")
+		require.NoError(t, err)
+		require.Empty(t, tableUploads)
+	})
+	t.Run("cancelled context", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(cancelledCtx, sourceID, destinationID, jobRunID, taskRunID)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, tableUploads)
 	})
 }

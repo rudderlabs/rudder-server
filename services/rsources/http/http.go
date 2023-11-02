@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
@@ -98,16 +99,24 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
 		return
 	}
+	var paging rsources.PagingInfo
+	if pageSize, ok := r.URL.Query()["pageSize"]; ok && len(pageSize) > 0 {
+		paging.Size, _ = strconv.Atoi(pageSize[0])
+		if nextPageToken, ok := r.URL.Query()["pageToken"]; ok && len(nextPageToken) > 0 {
+			paging.NextPageToken = nextPageToken[0]
+		}
+	}
 
 	failedRecords, err := h.service.GetFailedRecords(
 		ctx, jobRunId, rsources.JobFilter{
 			TaskRunID: taskRunId,
 			SourceID:  sourceId,
 		},
+		paging,
 	)
 	if err != nil {
 		httpStatus := http.StatusInternalServerError
-		if errors.Is(err, rsources.ErrOperationNotSupported) {
+		if errors.Is(err, rsources.ErrOperationNotSupported) || errors.Is(err, rsources.ErrInvalidPaginationToken) {
 			httpStatus = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), httpStatus)

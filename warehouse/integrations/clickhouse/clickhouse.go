@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,8 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/cenkalti/backoff/v4"
 

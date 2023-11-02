@@ -25,6 +25,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -53,6 +54,8 @@ var ErrorDetailReportsColumns = []string{
 
 type ErrorDetailReporter struct {
 	ctx                 context.Context
+	cancel              context.CancelFunc
+	g                   *errgroup.Group
 	configSubscriber    *configSubscriber
 	reportingServiceURL string
 	syncersMu           sync.RWMutex
@@ -97,9 +100,12 @@ func NewErrorDetailReporter(
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
-
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 	return &ErrorDetailReporter{
 		ctx:                   ctx,
+		cancel:                cancel,
+		g:                     g,
 		reportingServiceURL:   reportingServiceURL,
 		log:                   log,
 		sleepInterval:         sleepInterval,
@@ -139,7 +145,10 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 
 	return func() {
-		edr.mainLoop(edr.ctx, c)
+		edr.g.Go(func() error {
+			edr.mainLoop(edr.ctx, c)
+			return nil
+		})
 	}
 }
 
@@ -149,7 +158,7 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return nil
@@ -573,4 +582,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 	return err
 }
 
-// Sending metrics to Reporting service --- ENDS
+func (edr *ErrorDetailReporter) Stop() {
+	edr.cancel()
+	_ = edr.g.Wait()
+}

@@ -149,12 +149,12 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	return config.GetInt64("BatchRouter."+key, defaultValue)
 }
 
-func GetBatchRouterConfigBool(key, destType string, defaultValue bool) bool {
+func GetBatchRouterConfigStringMap(key, destType string, defaultValue []string) []string {
 	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
 	if destOverrideFound {
-		return config.GetBool("BatchRouter."+destType+"."+key, defaultValue)
+		return config.GetStringSlice("BatchRouter."+destType+"."+key, defaultValue)
 	}
-	return config.GetBool("BatchRouter."+key, defaultValue)
+	return config.GetStringSlice("BatchRouter."+key, defaultValue)
 }
 
 /*

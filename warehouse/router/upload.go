@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
@@ -722,6 +721,7 @@ func (job *UploadJob) exportRegularTables(specialTables []string, loadFilesTable
 // * the source is not an ETL source
 // * the source is not a replay source
 // * the source category is not in "mergeSourceCategoryMap"
+// * the job is not a retry
 func (job *UploadJob) CanAppend() bool {
 	if isSourceETL := job.upload.SourceJobRunID != ""; isSourceETL {
 		return false
@@ -730,6 +730,9 @@ func (job *UploadJob) CanAppend() bool {
 		return false
 	}
 	if _, isMergeCategory := mergeSourceCategoryMap[job.warehouse.Source.SourceDefinition.Category]; isMergeCategory {
+		return false
+	}
+	if job.upload.Retried {
 		return false
 	}
 	return true
@@ -1411,7 +1414,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 		if job.config.reportingEnabled {
 			err = job.reporting.Report(
 				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
-				txn.GetTx(),
+				txn.Tx,
 			)
 			if err != nil {
 				return
@@ -1665,7 +1668,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		if err = job.reporting.Report(reportingMetrics, txn.GetTx()); err != nil {
+		if err = job.reporting.Report(reportingMetrics, txn.Tx); err != nil {
 			return "", fmt.Errorf("reporting metrics: %w", err)
 		}
 	}

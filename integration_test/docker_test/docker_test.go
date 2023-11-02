@@ -61,7 +61,7 @@ var (
 	redisContainer               *resource.RedisResource
 	postgresContainer            *resource.PostgresResource
 	transformerContainer         *destination.TransformerResource
-	minioContainer               *destination.MINIOResource
+	minioContainer               *resource.MinioResource
 	EventID                      string
 	VersionID                    string
 )
@@ -424,7 +424,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		minioContainer, err = destination.SetupMINIO(pool, t)
+		minioContainer, err = resource.SetupMinio(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait())

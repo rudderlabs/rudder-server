@@ -8,6 +8,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -16,16 +18,13 @@ import (
 )
 
 func TestValidate(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	validations.Init()
 
 	var (
-		provider  = "MINIO"
-		namespace = "test_namespace"
-		sslmode   = "disable"
+		provider = "MINIO"
+		sslMode  = "disable"
 	)
 
 	ctx := context.Background()
@@ -33,9 +32,12 @@ func TestValidate(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	t.Run("invalid path", func(t *testing.T) {
-		t.Parallel()
+	pgResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	minioResource, err := resource.SetupMinio(pool, t)
+	require.NoError(t, err)
 
+	t.Run("invalid path", func(t *testing.T) {
 		_, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "invalid",
 		})
@@ -43,8 +45,6 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("steps", func(t *testing.T) {
-		t.Parallel()
-
 		res, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "steps",
 			Destination: &backendconfig.DestinationT{
@@ -59,11 +59,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("validate", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("invalid step", func(t *testing.T) {
-			t.Parallel()
-
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "invalid",
@@ -79,8 +75,6 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("step not found", func(t *testing.T) {
-			t.Parallel()
-
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "1000",
@@ -96,8 +90,6 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
-			t.Parallel()
-
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
@@ -113,8 +105,6 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("step error", func(t *testing.T) {
-			t.Parallel()
-
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Destination: &backendconfig.DestinationT{
@@ -129,8 +119,6 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
-			t.Parallel()
-
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
@@ -146,10 +134,7 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("empty step", func(t *testing.T) {
-			t.Parallel()
-
-			tr := setup(t, pool)
-			pgResource, minioResource := tr.pgResource, tr.minioResource
+			namespace := "es_test_namespace"
 
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
@@ -164,12 +149,12 @@ func TestValidate(t *testing.T) {
 						"database":        pgResource.Database,
 						"user":            pgResource.User,
 						"password":        pgResource.Password,
-						"sslMode":         sslmode,
+						"sslMode":         sslMode,
 						"namespace":       namespace,
 						"bucketProvider":  provider,
 						"bucketName":      minioResource.BucketName,
-						"accessKeyID":     minioResource.AccessKey,
-						"secretAccessKey": minioResource.SecretKey,
+						"accessKeyID":     minioResource.AccessKeyID,
+						"secretAccessKey": minioResource.AccessKeySecret,
 						"endPoint":        minioResource.Endpoint,
 					},
 				},
@@ -180,10 +165,7 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("steps in order", func(t *testing.T) {
-			t.Parallel()
-
-			tr := setup(t, pool)
-			pgResource, minioResource := tr.pgResource, tr.minioResource
+			namespace := "sio_test_namespace"
 
 			testCases := []struct {
 				name     string
@@ -238,12 +220,12 @@ func TestValidate(t *testing.T) {
 							"database":        pgResource.Database,
 							"user":            pgResource.User,
 							"password":        pgResource.Password,
-							"sslMode":         sslmode,
+							"sslMode":         sslMode,
 							"namespace":       namespace,
 							"bucketProvider":  provider,
 							"bucketName":      minioResource.BucketName,
-							"accessKeyID":     minioResource.AccessKey,
-							"secretAccessKey": minioResource.SecretKey,
+							"accessKeyID":     minioResource.AccessKeyID,
+							"secretAccessKey": minioResource.AccessKeySecret,
 							"endPoint":        minioResource.Endpoint,
 						},
 					},

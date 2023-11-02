@@ -2,13 +2,17 @@ package reporting
 
 import (
 	"context"
-	"database/sql"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -17,14 +21,20 @@ type Mediator struct {
 
 	g         *errgroup.Group
 	ctx       context.Context
+	cancel    context.CancelFunc
 	reporters []types.Reporting
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
+
 	rm := &Mediator{
-		log: log,
+		log:    log,
+		g:      g,
+		ctx:    ctx,
+		cancel: cancel,
 	}
-	rm.g, rm.ctx = errgroup.WithContext(ctx)
 
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	if enterpriseToken == "" || !reportingEnabled {
@@ -49,14 +59,14 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 
 	// error index reporting implementation
 	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
-		errorIndexReporter := NewErrorIndexReporter(rm.ctx, config.Default, rm.log, configSubscriber)
+		errorIndexReporter := erridx.NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default, stats.Default)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
 
 	return rm
 }
 
-func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	for _, reporter := range rm.reporters {
 		if err := reporter.Report(metrics, txn); err != nil {
 			return err
@@ -82,5 +92,13 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 			})
 		}
 		_ = rm.g.Wait()
+	}
+}
+
+func (rm *Mediator) Stop() {
+	rm.cancel()
+	_ = rm.g.Wait()
+	for _, reporter := range rm.reporters {
+		reporter.Stop()
 	}
 }
