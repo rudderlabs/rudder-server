@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/google/uuid"
@@ -1281,6 +1283,8 @@ func TestRouter_UploadJob(t *testing.T) {
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
+	slave.New(config.New(), log, memstats.New())
+
 	ctrl := gomock.NewController(t)
 
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
@@ -1318,6 +1322,7 @@ func TestRouter_UploadJob(t *testing.T) {
 										"syncFrequency":    "0",
 										"useRudderStorage": false,
 									},
+									RevisionID: destinationID,
 								},
 							},
 						},
@@ -1343,16 +1348,6 @@ func TestRouter_UploadJob(t *testing.T) {
 		controlplane.WithHTTPClient(s.Client()),
 	)
 	backendConfigManager := bcm.New(c, db, tenantManager, log, memstats.New())
-
-	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		backendConfigManager.Start(gCtx)
-		return nil
-	})
-	g.Go(func() error {
-		tenantManager.Run(gCtx)
-		return nil
-	})
 
 	buf := bytes.NewBuffer(make([]byte, 0, 1024))
 	for i := 0; i < 100; i++ {
@@ -1401,6 +1396,15 @@ func TestRouter_UploadJob(t *testing.T) {
 		_, err = repo.NewStagingFiles(db).Insert(ctx, &stagingFileWithSchema)
 		require.NoError(t, err)
 
+		g, gCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			backendConfigManager.Start(gCtx)
+			return nil
+		})
+		g.Go(func() error {
+			tenantManager.Run(gCtx)
+			return nil
+		})
 		g.Go(func() error {
 			r, err := New(
 				ctx, &reporting.NOOP{},
@@ -1421,109 +1425,4 @@ func TestRouter_UploadJob(t *testing.T) {
 		})
 		require.NoError(t, g.Wait())
 	})
-}
-
-func requireStagingFilesCount(
-	t *testing.T,
-	db *sqlmiddleware.DB,
-	stagingFile model.StagingFile,
-	state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		var eventsCount int
-		require.NoError(t, db.QueryRow("SELECT COALESCE(sum(total_events), 0) FROM wh_staging_files WHERE source_id = $1 AND destination_id = $2 AND status = $3;", stagingFile.SourceID, stagingFile.DestinationID, state).Scan(&eventsCount))
-		t.Logf("events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		120*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s job count to be %d", state, expectedCount),
-	)
-}
-
-func requireLoadFilesCount(
-	t *testing.T,
-	db *sqlmiddleware.DB,
-	stagingFile model.StagingFile,
-	state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		var eventsCount int
-		require.NoError(t, db.QueryRow("SELECT COALESCE(sum(total_events), 0) FROM wh_load_files WHERE source_id = $1 AND destination_id = $2 AND status = $3;", stagingFile.SourceID, stagingFile.DestinationID, state).Scan(&eventsCount))
-		t.Logf("events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		20*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s job count to be %d", state, expectedCount),
-	)
-}
-
-func requireTableUploadsCount(
-	t *testing.T,
-	db *sqlmiddleware.DB,
-	stagingFile model.StagingFile,
-	state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		var eventsCount int
-		require.NoError(t, db.QueryRow("SELECT COALESCE(sum(total_events), 0) FROM wh_table_uploads WHERE source_id = $1 AND destination_id = $2 AND status = $3;", stagingFile.SourceID, stagingFile.DestinationID, state).Scan(&eventsCount))
-		t.Logf("events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		20*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s job count to be %d", state, expectedCount),
-	)
-}
-
-func requireUploadsCount(
-	t *testing.T,
-	db *sqlmiddleware.DB,
-	stagingFile model.StagingFile,
-	state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		var jobsCount int
-		require.NoError(t, db.QueryRow("SELECT count(*) FROM wh_uploads WHERE source_id = $1 AND destination_id = $2 AND status = $3;", stagingFile.SourceID, stagingFile.DestinationID, state).Scan(&jobsCount))
-		t.Logf("jobs count: %d", jobsCount)
-		return jobsCount == expectedCount
-	},
-		20*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s job count to be %d", state, expectedCount),
-	)
-}
-
-func requireWarehouseEventsCount(
-	t *testing.T,
-	db *sqlmiddleware.DB,
-	tableName string,
-	state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		var eventsCount int
-		require.NoError(t, db.QueryRow(fmt.Sprintf("SELECT count(*) FROM %s", tableName)).Scan(&eventsCount))
-		t.Logf("events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		20*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s job count to be %d", state, expectedCount),
-	)
 }
