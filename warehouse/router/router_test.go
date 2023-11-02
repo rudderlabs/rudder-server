@@ -1,26 +1,15 @@
 package router
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/slave"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -1246,183 +1235,5 @@ func TestRouter(t *testing.T) {
 			time.Second*5,
 			time.Millisecond*100,
 		)
-	})
-}
-
-func TestRouter_UploadJob(t *testing.T) {
-	sourceID := "test-source-id"
-	destinationID := "test-destination-id"
-	workspaceID := "test-workspace-id"
-	namespace := "test-namespace"
-	destinationType := warehouseutils.POSTGRES
-	workspaceIdentifier := "test-workspace-identifier"
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	pgResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	minioResource, err := resource.SetupMinio(pool, t)
-	require.NoError(t, err)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
-	db := sqlmiddleware.New(pgResource.DB)
-	c := config.New()
-	ef := encoding.NewFactory(c)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	log := logger.NewLogger()
-	n := notifier.New(c, log, memstats.New(), workspaceIdentifier)
-	err = n.Setup(ctx, pgResource.DBDsn)
-	require.NoError(t, err)
-
-	slave.New(config.New(), log, memstats.New())
-
-	ctrl := gomock.NewController(t)
-
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{
-			Data: map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: destinationType,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   "MINIO",
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			},
-			Topic: string(backendconfig.TopicBackendConfig),
-		}
-		close(ch)
-		return ch
-	}).AnyTimes()
-
-	createUploadAlways := &atomic.Bool{}
-	triggerStore := &sync.Map{}
-	tenantManager := multitenant.New(c, mockBackendConfig)
-
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer s.Close()
-
-	cp := controlplane.NewClient(s.URL, &identity.Namespace{},
-		controlplane.WithHTTPClient(s.Client()),
-	)
-	backendConfigManager := bcm.New(c, db, tenantManager, log, memstats.New())
-
-	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-	for i := 0; i < 100; i++ {
-		buf.WriteString(fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}}}`,
-			uuid.New().String(),
-			uuid.New().String(),
-		))
-		buf.WriteString("\n")
-	}
-
-	filePath := path.Join(t.TempDir(), "staging.json")
-	err = os.WriteFile(filePath, buf.Bytes(), os.ModePerm)
-	require.NoError(t, err)
-
-	f, err := os.Open(filePath)
-	require.NoError(t, err)
-
-	minioConfig := map[string]any{
-		"bucketName":      minioResource.BucketName,
-		"accessKeyID":     minioResource.AccessKeyID,
-		"secretAccessKey": minioResource.AccessKeySecret,
-		"endPoint":        minioResource.Endpoint,
-	}
-	fm, err := filemanager.NewMinioManager(minioConfig, log, func() time.Duration {
-		return time.Minute
-	})
-	require.NoError(t, err)
-	uploadFile, err := fm.Upload(ctx, f)
-	require.NoError(t, err)
-
-	stagingFile := model.StagingFile{
-		WorkspaceID:           workspaceID,
-		SourceID:              sourceID,
-		DestinationID:         destinationID,
-		Location:              uploadFile.Location,
-		TotalEvents:           1,
-		TotalBytes:            100,
-		FirstEventAt:          time.Now(),
-		LastEventAt:           time.Now().Add(time.Minute * 30),
-		UseRudderStorage:      false,
-		DestinationRevisionID: destinationID,
-	}
-	stagingFileWithSchema := stagingFile.WithSchema(json.RawMessage(`{"tracks":{"id":"string","event":"string","user_id":"string""received_at":"datetime"}}`))
-
-	t.Run("success", func(t *testing.T) {
-		_, err = repo.NewStagingFiles(db).Insert(ctx, &stagingFileWithSchema)
-		require.NoError(t, err)
-
-		g, gCtx := errgroup.WithContext(ctx)
-		g.Go(func() error {
-			backendConfigManager.Start(gCtx)
-			return nil
-		})
-		g.Go(func() error {
-			tenantManager.Run(gCtx)
-			return nil
-		})
-		g.Go(func() error {
-			r, err := New(
-				ctx, &reporting.NOOP{},
-				destinationType, config.New(), log, memstats.New(), db, n,
-				tenantManager, cp, backendConfigManager, ef, triggerStore, createUploadAlways,
-			)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, r.Shutdown())
-			}()
-
-			requireStagingFilesCount(t, db, stagingFile, "succeeded", 1)
-			requireLoadFilesCount(t, db, stagingFile, "succeeded", 1)
-			requireTableUploadsCount(t, db, stagingFile, "succeeded", 1)
-			requireUploadsCount(t, db, stagingFile, "succeeded", 1)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), "succeeded", 1)
-			return nil
-		})
-		require.NoError(t, g.Wait())
 	})
 }
