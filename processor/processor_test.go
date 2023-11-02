@@ -112,12 +112,23 @@ const (
 	DestinationIDDisabled = "disabled-destination"
 
 	SourceID3 = "source-id-3"
+	SourceID4 = "source-id-4"
 	WriteKey3 = "write-key-3"
+	WriteKey4 = "write-key-4"
 	DestID1   = "dest-id-1"
 	DestID2   = "dest-id-2"
 	DestID3   = "dest-id-3"
 	DestID4   = "dest-id-4"
 	DestID5   = "dest-id-5"
+	DestID6   = "dest-id-6"
+	DestID7   = "dest-id-7"
+	DestID8   = "dest-id-8"
+	DestID9   = "dest-id-9"
+	DestID10  = "dest-id-10"
+	DestID11  = "dest-id-11"
+	DestID12  = "dest-id-12"
+	DestID13  = "dest-id-13"
+	DestID14  = "dest-id-14"
 )
 
 var (
@@ -399,6 +410,241 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceID4,
+			WriteKey:    WriteKey4,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestID6,
+					Name:               "D6",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "consent category 1"},
+								},
+							},
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"consent": "purpose 1"},
+									{"consent": "purpose 2"},
+								},
+							},
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "custom consent category 1"},
+									{"consent": "custom consent category 2"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID7,
+					Name:               "D7",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{"oneTrustCookieCategory": "consent category 1"},
+						},
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "consent category 1"},
+									{"consent": "consent category 2"},
+								},
+							},
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"consent": "purpose 1"},
+									{"consent": "purpose 2"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID8,
+					Name:               "D8",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "consent category 3"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID9,
+					Name:               "D9",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID10,
+					Name:               "D10",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID11,
+					Name:               "D11",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"consent": "purpose 1"},
+									{"consent": "purpose 2"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID12,
+					Name:               "D12",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "custom consent category 1"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID13,
+					Name:               "D13",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "custom",
+								"consents": []map[string]interface{}{
+									{"consent": "custom consent category 1"},
+									{"consent": "custom consent category 2"},
+								},
+							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID14,
+					Name:               "D14",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "custom consent category 3"},
+								},
+							},
+						},
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -2241,6 +2487,96 @@ var _ = Describe("Processor", Ordered, func() {
 			_, err3 := json.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
+			eventWithDeniedConsentsGCM := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "oneTrust",
+						"resolutionStrategy": "and",
+						"allowedConsentIds":  []interface{}{"consent category 1"},
+						"deniedConsentIds":   []interface{}{"consent category 2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err4 := json.Marshal(eventWithDeniedConsentsGCM)
+			Expect(err4).To(BeNil())
+
+			eventWithoutDeniedConsentsGCM := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "oneTrust",
+						"resolutionStrategy": "and",
+						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2", "someOtherCategory", "consent category 3"},
+						"deniedConsentIds":   []interface{}{},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err5 := json.Marshal(eventWithoutDeniedConsentsGCM)
+			Expect(err5).To(BeNil())
+
+			eventWithCustomConsentsGCM := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "custom",
+						"resolutionStrategy": "or",
+						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2"},
+						"deniedConsentIds":   []interface{}{"someOtherCategory", "consent category 3"},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err6 := json.Marshal(eventWithCustomConsentsGCM)
+			Expect(err6).To(BeNil())
+
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -2284,6 +2620,51 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 				)),
 			).To(Equal(5)) // all
+
+			// Generic consent management tests
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceID4)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutConsentManagementData,
+					processor.getEnabledDestinations(
+						SourceID4,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(8)) // all
+
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithDeniedConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceID4,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(6)) // all except D7 and D8
+
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutDeniedConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceID4,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(8)) // all
+
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithCustomConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceID4,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(7)) // all except D14
 		})
 	})
 
