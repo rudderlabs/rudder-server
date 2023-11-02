@@ -844,7 +844,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
@@ -884,10 +884,11 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
+			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
 				gateway.webAliasHandler(),
-				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
+				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"data": "valid-json"}`)),
 				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
 				"alias",
