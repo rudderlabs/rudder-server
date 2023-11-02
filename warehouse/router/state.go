@@ -6,14 +6,15 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-var stateTransitions map[string]*state
-
 type state struct {
 	inProgress string
 	failed     string
 	completed  string
-	nextState  *state
+
+	nextState *state
 }
+
+var stateTransitions map[string]*state
 
 func init() {
 	stateTransitions = make(map[string]*state)
