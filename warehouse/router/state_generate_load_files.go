@@ -45,12 +45,14 @@ func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
 	job.upload.LoadFileStartID = startLoadFileID
 	job.upload.LoadFileEndID = endLoadFileID
 
-	return job.setUploadColumns(UploadColumnsOpts{
-		Fields: []UploadColumn{
-			{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-			{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
+	return job.uploadsRepo.Update(
+		job.ctx,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldStartLoadFileID(startLoadFileID),
+			repo.UploadFieldEndLoadFileID(endLoadFileID),
 		},
-	})
+	)
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {

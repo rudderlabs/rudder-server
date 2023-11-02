@@ -3,6 +3,8 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
 func (job *UploadJob) generateUploadSchema() error {
@@ -13,16 +15,21 @@ func (job *UploadJob) generateUploadSchema() error {
 
 	marshalledSchema, err := json.Marshal(uploadSchema)
 	if err != nil {
-		return fmt.Errorf("marshal upload schema: %w", err)
+		return err
 	}
 
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
-		{Column: UploadSchemaField, Value: marshalledSchema},
-	}})
+	err = job.uploadsRepo.Update(
+		job.ctx,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldSchema(marshalledSchema),
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
 
 	job.upload.UploadSchema = uploadSchema
+
 	return nil
 }
