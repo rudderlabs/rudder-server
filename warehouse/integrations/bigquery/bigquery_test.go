@@ -148,7 +148,7 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap                  whth.EventsCountMap
 			tableUploadsEventsMap               whth.EventsCountMap
 			warehouseEventsMap                  whth.EventsCountMap
-			asyncJob                            bool
+			sourceJob                           bool
 			skipModifiedEvents                  bool
 			prerequisite                        func(context.Context, testing.TB, *bigquery.Client)
 			enableMerge                         bool
@@ -177,7 +177,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-merge-mode",
 			},
 			{
-				name:          "Async Job",
+				name:          "Source Job",
 				writeKey:      sourcesWriteKey,
 				sourceID:      sourcesSourceID,
 				destinationID: sourcesDestinationID,
@@ -192,7 +192,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				enableMerge:           false,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
@@ -347,7 +347,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -359,7 +359,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                whth.GetUserId(destType),
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
