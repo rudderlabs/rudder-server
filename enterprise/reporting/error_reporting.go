@@ -227,63 +227,16 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	}
 	return dbHandle, nil
 }
-func getErrorCode(errorMessage string, thresholdScore int) string {
-	score := 0
-	outputMessage := ""
-	deprecationKeywords := map[string]int{
-		"deprecated":           2,
-		"deprecation":          2,
-		"version":              1,
-		"obsolete":             1,
-		"outdated":             1,
-		"end of life":          4,
-		"legacy":               1,
-		"discontinued":         1,
-		"retired":              2,
-		"no longer supported":  3,
-		"old version":          1,
-		"deprecated software":  2,
-		"upgrade required":     2,
-		"obsolete version":     1,
-		"unsupported version":  2,
-		"deprecated feature":   2,
-		"version no longer valid": 2,
-		"deprecated library":   2,
-		"version upgrade":      2,
-		"deprecated component": 2,
-		"upgrade recommended":  2,
-		"end-of-support":       3,
-		"discontinued product": 1,
-		"deprecated functionality": 2,
-		"version obsolescence": 1,
-		"deprecated module":    2,
-	}
-
-	// Check if the value is a string before converting to lowercase
-	errorMessage = strings.ToLower(errorMessage)
-	for keyword, s := range deprecationKeywords {
-		if strings.Contains(errorMessage, keyword) {
-			score += s
-		}
-	}
-
-	if score > thresholdScore {
-		outputMessage = "deprecation"
-	}
-	return outputMessage
-}
 
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
-	errorCode := getErrorCode(cleanedErrMsg,1)
-	// fmt.Print(cleanedErrMsg)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg)
 	return errorDetails{
 		ErrorMessage: cleanedErrMsg,
-		ErrorCode:   errorCode,
+		ErrorCode:    errorCode,
 	}
 }
-
 
 func (edr *ErrorDetailReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 	syncer := edr.GetSyncer(syncerKey)

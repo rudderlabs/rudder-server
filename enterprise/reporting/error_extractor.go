@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -31,21 +32,52 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", errorKey, "error_message"}
+	deprecationKeywords     = map[string]int{
+		"deprecated":               2,
+		"deprecation":              2,
+		"version":                  1,
+		"obsolete":                 1,
+		"outdated":                 1,
+		"end of life":              4,
+		"legacy":                   1,
+		"discontinued":             1,
+		"retired":                  2,
+		"no longer supported":      3,
+		"old version":              1,
+		"deprecated software":      2,
+		"upgrade required":         2,
+		"obsolete version":         1,
+		"unsupported version":      2,
+		"deprecated feature":       2,
+		"version no longer valid":  2,
+		"deprecated library":       2,
+		"version upgrade":          2,
+		"deprecated component":     2,
+		"upgrade recommended":      2,
+		"end-of-support":           3,
+		"discontinued product":     1,
+		"deprecated functionality": 2,
+		"version obsolescence":     1,
+		"deprecated module":        2,
+	}
 )
 
 type ExtractorHandle struct {
-	log              logger.Logger
-	ErrorMessageKeys []string // the keys where in we may have error message
+	log                              logger.Logger
+	ErrorMessageKeys                 []string // the keys where in we may have error message
+	versionDeprecationThresholdScore misc.ValueLoader[int]
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
+	versionDepThreshold := config.GetReloadableIntVar(1, 1, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
 	extractor := &ExtractorHandle{
-		ErrorMessageKeys: defaultErrorMessageKeys,
-		log:              log.Child("ErrorDetailExtractor"),
+		ErrorMessageKeys:                 defaultErrorMessageKeys,
+		log:                              log.Child("ErrorDetailExtractor"),
+		versionDeprecationThresholdScore: versionDepThreshold,
 	}
 	return extractor
 }
@@ -256,7 +288,21 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 	return regexdMsg
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errMsg string) string {
+func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
 	// version deprecation logic
-	return ""
+	var score int
+	var errorCode string
+
+	// Check if the value is a string before converting to lowercase
+	errorMessage = strings.ToLower(errorMessage)
+	for keyword, s := range deprecationKeywords {
+		if strings.Contains(errorMessage, keyword) {
+			score += s
+		}
+	}
+
+	if score > ext.versionDeprecationThresholdScore.Load() {
+		errorCode = "deprecation"
+	}
+	return errorCode
 }
