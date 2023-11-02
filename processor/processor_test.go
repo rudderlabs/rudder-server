@@ -2664,7 +2664,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all except D14
+			).To(Equal(5)) // all except D6, D12 and D14
 		})
 	})
 
