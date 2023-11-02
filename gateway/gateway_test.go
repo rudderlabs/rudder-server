@@ -1343,14 +1343,14 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("sanitizes messageID replace with new uuid", func() {
+		It("sanitizes messageID, trim space and replace with new uuid", func() {
 			// passing a messageID full of invisible characters
 			payloadMap := map[string]interface{}{
 				"batch": []interface{}{
 					map[string]interface{}{
 						"type":      "track",
 						"userId":    map[string]interface{}{"id": 456},
-						"messageId": "\u0000\u00A0\t\n\r\u034F",
+						"messageId": " \u0000\u00A0\t\n\r\u034F ",
 					},
 				},
 			}
@@ -1380,14 +1380,14 @@ var _ = Describe("Gateway", func() {
 			Expect(u.Version()).To(Equal(uuid.Version(4)))
 		})
 
-		It("sanitizes messageID, remove bad runes", func() {
+		It("sanitizes messageID, remove bad runes and trim space", func() {
 			// passing a messageID full of invisible characters
 			payloadMap := map[string]interface{}{
 				"batch": []interface{}{
 					map[string]interface{}{
 						"type":      "track",
 						"userId":    map[string]interface{}{"id": 456},
-						"messageId": "\u0000-a-random-string\u00A0\t\n\r\u034F",
+						"messageId": "\u0000 -a-random-string \u00A0\t\n\r\u034F",
 					},
 				},
 			}

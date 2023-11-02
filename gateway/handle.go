@@ -271,7 +271,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	fillMessageID := func(event map[string]interface{}) {
 		messageID, _ := event["messageId"].(string)
-		messageID = misc.SanitizeUnicode(messageID)
+		messageID = strings.TrimSpace(misc.SanitizeUnicode(messageID))
 		if messageID == "" {
 			event["messageId"] = uuid.New().String()
 		} else {
