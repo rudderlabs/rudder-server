@@ -3,25 +3,26 @@ package consentmanagementfilter
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestGetConsentManagementInfo(t *testing.T) {
 	type testCaseT struct {
 		description string
-		input types.SingularEventT
-		expected ConsentManagementInfo
+		input       types.SingularEventT
+		expected    ConsentManagementInfo
 	}
 
 	defConsentManagementInfo := ConsentManagementInfo{}
-	testCases := []testCaseT {
+	testCases := []testCaseT{
 		{
 			description: "should return empty consent management info when no context is sent",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -32,8 +33,8 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			description: "should return empty consent management info when no consent management data is sent",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -45,8 +46,8 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			description: "should return empty consent management info when consent management data is not a valid object",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -60,8 +61,8 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			description: "should return empty consent management info when consent management data is malformed",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -77,8 +78,8 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			description: "should return empty consent management info when consent management data is not as per the expected structure",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -96,8 +97,8 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			description: "should return consent management info when consent management data is sent correctly",
 			input: types.SingularEventT{
 				"anonymousId": "123",
-				"type": "track",
-				"event": "test",
+				"type":        "track",
+				"event":       "test",
 				"properties": map[string]interface{}{
 					"category": "test",
 				},
@@ -117,7 +118,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 							"",
 						},
 						"resolutionStrategy": "and",
-						"extra": "extra field",
+						"extra":              "extra field",
 					},
 				},
 			},

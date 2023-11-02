@@ -114,7 +114,7 @@ func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 		filterPredicate := func(consent string, _ int) (string, bool) {
 			return consent, consent != ""
 		}
-	
+
 		consentManagementInfo.AllowedConsentIds = lo.FilterMap(consentManagementInfo.AllowedConsentIds, filterPredicate)
 		consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, filterPredicate)
 	}
