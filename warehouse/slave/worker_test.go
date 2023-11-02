@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/source"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -33,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -577,13 +578,13 @@ func TestSlaveWorker(t *testing.T) {
 				workerIdx,
 			)
 
-			p := jobs.AsyncJobPayload{
-				Id:            "1",
+			p := source.NotifierRequest{
+				ID:            1,
 				SourceID:      sourceID,
 				DestinationID: destinationID,
 				TableName:     "test_table_name",
 				WorkspaceID:   workspaceID,
-				AsyncJobType:  "deletebyjobrunid",
+				JobType:       model.SourceJobTypeDeleteByJobRunID.String(),
 				MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 			}
 
@@ -605,18 +606,17 @@ func TestSlaveWorker(t *testing.T) {
 			go func() {
 				defer close(claimedJobDone)
 
-				slaveWorker.processClaimedAsyncJob(ctx, claim)
+				slaveWorker.processClaimedSourceJob(ctx, claim)
 			}()
 
 			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
-			var asyncResult asyncJobRunResult
-			err = json.Unmarshal(response.Payload, &asyncResult)
+			var notifierResponse source.NotifierResponse
+			err = json.Unmarshal(response.Payload, &notifierResponse)
 			require.NoError(t, err)
 
-			require.Equal(t, "1", asyncResult.ID)
-			require.True(t, asyncResult.Result)
+			require.Equal(t, int64(1), notifierResponse.ID)
 
 			<-claimedJobDone
 		})
@@ -647,34 +647,27 @@ func TestSlaveWorker(t *testing.T) {
 				name          string
 				sourceID      string
 				destinationID string
-				jobType       string
+				jobType       model.SourceJobType
 				expectedError error
 			}{
 				{
-					name:          "invalid job type",
-					sourceID:      sourceID,
-					destinationID: destinationID,
-					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid asyncJob type"),
-				},
-				{
 					name:          "invalid parameters",
-					jobType:       "deletebyjobrunid",
-					expectedError: errors.New("invalid Parameters"),
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
+					expectedError: errors.New("getting warehouse: invalid Parameters"),
 				},
 				{
 					name:          "invalid source id",
 					sourceID:      "invalid_source_id",
 					destinationID: destinationID,
-					jobType:       "deletebyjobrunid",
-					expectedError: errors.New("invalid Source Id"),
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
+					expectedError: errors.New("getting warehouse: invalid Source Id"),
 				},
 				{
 					name:          "invalid destination id",
 					sourceID:      sourceID,
 					destinationID: "invalid_destination_id",
-					jobType:       "deletebyjobrunid",
-					expectedError: errors.New("invalid Destination Id"),
+					jobType:       model.SourceJobTypeDeleteByJobRunID,
+					expectedError: errors.New("getting warehouse: invalid Destination Id"),
 				},
 			}
 
@@ -682,13 +675,13 @@ func TestSlaveWorker(t *testing.T) {
 				tc := tc
 
 				t.Run(tc.name, func(t *testing.T) {
-					p := jobs.AsyncJobPayload{
-						Id:            "1",
+					p := source.NotifierRequest{
+						ID:            1,
 						SourceID:      tc.sourceID,
 						DestinationID: tc.destinationID,
 						TableName:     "test_table_name",
 						WorkspaceID:   workspaceID,
-						AsyncJobType:  tc.jobType,
+						JobType:       tc.jobType.String(),
 						MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 					}
 
@@ -711,7 +704,7 @@ func TestSlaveWorker(t *testing.T) {
 					go func() {
 						defer close(claimedJobDone)
 
-						slaveWorker.processClaimedAsyncJob(ctx, claim)
+						slaveWorker.processClaimedSourceJob(ctx, claim)
 					}()
 
 					response := <-subscribeCh

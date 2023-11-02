@@ -45,8 +45,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -67,7 +67,7 @@ type App struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
-	sourcesManager     *jobs.AsyncJobWh
+	sourcesManager     *source.Manager
 	admin              *whadmin.Admin
 	triggerStore       *sync.Map
 	createUploadAlways *atomic.Bool
@@ -174,12 +174,12 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 
-	a.sourcesManager = jobs.New(
-		ctx,
+	a.sourcesManager = source.New(
+		a.conf,
+		a.logger,
 		a.db,
 		a.notifier,
 	)
-	jobs.WithConfig(a.sourcesManager, a.conf)
 
 	a.grpcServer, err = api.NewGRPCServer(
 		a.conf,
@@ -413,7 +413,7 @@ func (a *App) Run(ctx context.Context) error {
 			return nil
 		})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.sourcesManager.Run()
+			return a.sourcesManager.Run(gCtx)
 		}))
 	}
 
