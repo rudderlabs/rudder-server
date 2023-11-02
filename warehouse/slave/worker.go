@@ -27,7 +27,7 @@ import (
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -49,11 +49,6 @@ type uploadResult struct {
 	StagingFileID         int64
 	DestinationRevisionID string
 	UseRudderStorage      bool
-}
-
-type asyncJobRunResult struct {
-	Result bool   `json:"Result"`
-	ID     string `json:"Id"`
 }
 
 type worker struct {
@@ -134,7 +129,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
-				w.processClaimedAsyncJob(ctx, claimedJob)
+				w.processClaimedSourceJob(ctx, claimedJob)
 			default:
 				w.processClaimedUploadJob(ctx, claimedJob)
 			}
@@ -424,7 +419,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 	return uploadsResults, err
 }
 
-func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
+func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
 		w.log.Errorf("Error processing claim: %v", err)
 
@@ -434,7 +429,7 @@ func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifie
 	}
 
 	var (
-		job jobs.AsyncJobPayload
+		job source.NotifierRequest
 		err error
 	)
 
@@ -443,13 +438,15 @@ func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifie
 		return
 	}
 
-	jobResult, err := w.runAsyncJob(ctx, job)
+	err = w.runSourceJob(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
 
-	jobResultJSON, err := json.Marshal(jobResult)
+	jobResultJSON, err := json.Marshal(source.NotifierResponse{
+		ID: job.ID,
+	})
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -460,20 +457,15 @@ func (w *worker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifie
 	})
 }
 
-func (w *worker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
-	result := asyncJobRunResult{
-		ID:     asyncjob.Id,
-		Result: false,
-	}
-
-	warehouse, err := w.destinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequest) error {
+	warehouse, err := w.destinationFromSlaveConnectionMap(sourceJob.DestinationID, sourceJob.SourceID)
 	if err != nil {
-		return result, err
+		return fmt.Errorf("getting warehouse: %w", err)
 	}
 
 	integrationsManager, err := manager.NewWarehouseOperations(warehouse.Destination.DestinationDefinition.Name, w.conf, w.log, w.statsFactory)
 	if err != nil {
-		return result, err
+		return fmt.Errorf("getting integrations manager: %w", err)
 	}
 
 	integrationsManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
@@ -481,35 +473,29 @@ func (w *worker) runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload)
 		warehouse.Destination.ID,
 	))
 
-	err = integrationsManager.Setup(ctx, warehouse, &jobs.WhAsyncJob{})
+	err = integrationsManager.Setup(ctx, warehouse, &source.Uploader{})
 	if err != nil {
-		return result, err
+		return fmt.Errorf("setting up integrations manager: %w", err)
 	}
 	defer integrationsManager.Cleanup(ctx)
 
 	var metadata warehouseutils.DeleteByMetaData
-	if err = json.Unmarshal(asyncjob.MetaData, &metadata); err != nil {
-		return result, err
+	if err = json.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
+		return fmt.Errorf("unmarshalling metadata: %w", err)
 	}
 
-	switch asyncjob.AsyncJobType {
-	case "deletebyjobrunid":
-		err = integrationsManager.DeleteBy(ctx, []string{asyncjob.TableName}, warehouseutils.DeleteByParams{
-			SourceId:  asyncjob.SourceID,
+	switch sourceJob.JobType {
+	case model.SourceJobTypeDeleteByJobRunID.String():
+		err = integrationsManager.DeleteBy(ctx, []string{sourceJob.TableName}, warehouseutils.DeleteByParams{
+			SourceId:  sourceJob.SourceID,
 			TaskRunId: metadata.TaskRunId,
 			JobRunId:  metadata.JobRunId,
 			StartTime: metadata.StartTime,
 		})
 	default:
-		err = errors.New("invalid asyncJob type")
+		err = errors.New("invalid sourceJob type")
 	}
-	if err != nil {
-		return result, err
-	}
-
-	result.Result = true
-
-	return result, nil
+	return err
 }
 
 func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
