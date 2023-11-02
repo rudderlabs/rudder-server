@@ -2631,7 +2631,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all
+			).To(Equal(9)) // all
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceID4)).To(BeTrue())
 			Expect(
@@ -2642,7 +2642,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(6)) // all except D7 and D8
+			).To(Equal(7)) // all except D7 and D8
 
 			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceID4)).To(BeTrue())
 			Expect(
@@ -2653,7 +2653,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all
+			).To(Equal(9)) // all
 
 			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceID4)).To(BeTrue())
 			Expect(
@@ -2664,7 +2664,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(7)) // all except D14
+			).To(Equal(8)) // all except D14
 		})
 	})
 
