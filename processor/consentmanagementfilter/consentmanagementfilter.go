@@ -118,8 +118,12 @@ func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 		}
 	}
 
-	consentManagementInfo.AllowedConsentIds = getValidConsents(consentManagementInfo.AllowedConsentIds)
-	consentManagementInfo.DeniedConsentIds = getValidConsents(consentManagementInfo.DeniedConsentIds)
+	consentManagementInfo.AllowedConsentIds = lo.FilterMap(consentManagementInfo.AllowedConsentIds, func(consent string, _ int) (string, bool) {
+		return consent, consent != ""
+	})
+	consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, func(consent string, _ int) (string, bool) {
+		return consent, consent != ""
+	})
 
 	return consentManagementInfo
 }
