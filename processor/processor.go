@@ -2886,7 +2886,7 @@ func (proc *Handle) filterDestinations(
 		if consentManagementInfo.Provider != "" {
 			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
-				var finalResolutionStrategy string = consentManagementInfo.ResolutionStrategy
+				var finalResolutionStrategy = consentManagementInfo.ResolutionStrategy
 				if consentManagementInfo.Provider == "custom" {
 					finalResolutionStrategy = cmpData.ResolutionStrategy
 				}
