@@ -2258,11 +2258,17 @@ var _ = Describe("Processor", Ordered, func() {
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				transformer.DestTransformerStage,
-				false,
-				false)
+				types.EVENT_FILTER,
+				types.DEST_TRANSFORMER,
+			)
 
-			key := fmt.Sprintf("%s!<<#>>!%s!<<#>>!%s!<<#>>!%s!<<#>>!%s", commonMetadata.SourceID, commonMetadata.DestinationID, commonMetadata.SourceJobRunID, commonMetadata.EventName, commonMetadata.EventType)
+			key := strings.Join([]string{
+				commonMetadata.SourceID,
+				commonMetadata.DestinationID,
+				commonMetadata.SourceJobRunID,
+				commonMetadata.EventName,
+				commonMetadata.EventType,
+			}, "!<<#>>!")
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
@@ -2490,7 +2496,7 @@ var _ = Describe("Static Function Tests", func() {
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, transformer.TrackingPlanValidationStage, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, types.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))

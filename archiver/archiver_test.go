@@ -33,8 +33,8 @@ import (
 
 func TestJobsArchival(t *testing.T) {
 	var (
-		prefix        = trand.String(10)
-		minioResource []*resource.MinioResource
+		prefixByWorkspace = map[int]string{0: trand.String(10), 1: trand.String(10), 2: trand.String(10)}
+		minioResource     []*resource.MinioResource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
 		seedJobsFileName    = "testdata/MultiWorkspaceBackupJobs.json.gz"
@@ -77,7 +77,7 @@ func TestJobsArchival(t *testing.T) {
 				Type: "MINIO",
 				Config: map[string]interface{}{
 					"bucketName":      minioResource[0].BucketName,
-					"prefix":          prefix,
+					"prefix":          prefixByWorkspace[0],
 					"endPoint":        minioResource[0].Endpoint,
 					"accessKeyID":     minioResource[0].AccessKeyID,
 					"secretAccessKey": minioResource[0].AccessKeySecret,
@@ -95,7 +95,7 @@ func TestJobsArchival(t *testing.T) {
 				Type: "MINIO",
 				Config: map[string]interface{}{
 					"bucketName":      minioResource[1].BucketName,
-					"prefix":          prefix,
+					"prefix":          prefixByWorkspace[1],
 					"endPoint":        minioResource[1].Endpoint,
 					"accessKeyID":     minioResource[1].AccessKeyID,
 					"secretAccessKey": minioResource[1].AccessKeySecret,
@@ -113,7 +113,7 @@ func TestJobsArchival(t *testing.T) {
 				Type: "MINIO",
 				Config: map[string]interface{}{
 					"bucketName":      minioResource[2].BucketName,
-					"prefix":          prefix,
+					"prefix":          prefixByWorkspace[2],
 					"endPoint":        minioResource[2].Endpoint,
 					"accessKeyID":     minioResource[2].AccessKeyID,
 					"secretAccessKey": minioResource[2].AccessKeySecret,
@@ -169,7 +169,7 @@ func TestJobsArchival(t *testing.T) {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
 		fm, err := fileUploaderProvider.GetFileManager(workspace)
 		require.NoError(t, err)
-		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefix, 20)
+		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefixByWorkspace[i], 20)
 		files, err := getAllFileNames(fileIter)
 		require.NoError(t, err)
 		require.Equal(t, sourcesPerWorkspace[i], len(files),
