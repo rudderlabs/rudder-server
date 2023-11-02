@@ -884,10 +884,11 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
+			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
 			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
 				gateway.webAliasHandler(),
-				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
+				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"data": "valid-json"}`)),
 				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
 				"alias",

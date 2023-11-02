@@ -267,6 +267,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		userIDHeader = req.userIDHeader
 		ipAddr       = req.ipAddr
 		body         = req.requestPayload
+
+		// values retrieved from first event in batch
+		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
 	)
 
 	fillMessageID := func(event map[string]interface{}) {
@@ -295,18 +298,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	eventsBatch := gjson.GetBytes(body, "batch").Array()
 	jobData.numEvents = len(eventsBatch)
 
-	if gw.conf.enableRateLimit.Load() {
-		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId, int64(len(eventsBatch)))
-		if errCheck != nil {
-			gw.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
-			gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
-		}
-		if ok {
-			return jobData, errRequestDropped
-		}
-	}
-
 	type jobObject struct {
 		userID string
 		events []map[string]interface{}
@@ -317,8 +308,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		out []jobObject
 
 		marshalledParams []byte
-		// values retrieved from first event in batch
-		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
 
 		// facts about the batch populated as we iterate over events
 		containsAudienceList, suppressed bool
@@ -406,6 +395,18 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			userID: userID,
 			events: []map[string]interface{}{toSet},
 		})
+	}
+
+	if gw.conf.enableRateLimit.Load() && sourcesJobRunID == "" && sourcesTaskRunID == "" {
+		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
+		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId, int64(len(eventsBatch)))
+		if errCheck != nil {
+			gw.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
+			gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+		}
+		if ok {
+			return jobData, errRequestDropped
+		}
 	}
 
 	if len(out) == 0 && suppressed {
