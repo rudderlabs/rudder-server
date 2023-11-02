@@ -98,11 +98,6 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 	return genericConsentManagementData
 }
 
-func getValidConsents(consents []string) []string {
-	return lo.FilterMap(consents, func(consent string, _ int) (string, bool) {
-		return consent, consent != ""
-	})
-}
 
 func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
 	consentManagementInfo := ConsentManagementInfo{}
