@@ -31,9 +31,8 @@ RUN go build -o rudder-cli ./cmd/rudder-cli/
 
 FROM alpine:${ALPINE_VERSION}
 
-RUN apk update && apk add tzdata
-RUN apk -U --no-cache upgrade && \
-    apk add --no-cache ca-certificates postgresql-client curl bash
+RUN apk --no-cache upgrade && \
+    apk --no-cache add tzdata ca-certificates postgresql-client curl bash
 
 COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
