@@ -180,6 +180,16 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *T
 
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
+
+		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
+			"namespace":     edr.namespace,
+			"errorCode":     errDets.ErrorCode,
+			"workspaceId":   workspaceID,
+			"destType":      destinationDetail.destType,
+			"sourceId":      metric.ConnectionDetails.SourceID,
+			"destinationId": metric.ConnectionDetails.DestinationID,
+		}).Count(int(metric.StatusDetail.Count))
+
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
