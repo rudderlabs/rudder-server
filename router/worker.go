@@ -206,10 +206,9 @@ func (w *worker) workLoop() {
 					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
 					tokenStatusCode, accountSecretInfo := w.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
-						AccountId:       rudderAccountID,
-						WorkspaceId:     jobMetadata.WorkspaceID,
-						DestDefName:     destination.DestinationDefinition.Name,
-						EventNamePrefix: "fetch_token",
+						AccountId:   rudderAccountID,
+						WorkspaceId: jobMetadata.WorkspaceID,
+						DestDefName: destination.DestinationDefinition.Name,
 					})
 					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
 					if tokenStatusCode == http.StatusOK {
