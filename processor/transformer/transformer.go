@@ -32,10 +32,9 @@ import (
 )
 
 const (
-	UserTransformerStage        = "user_transformer"
-	EventFilterStage            = "event_filter"
-	DestTransformerStage        = "dest_transformer"
-	TrackingPlanValidationStage = "trackingPlan_validation"
+	userTransformerStage        = "user_transformer"
+	destTransformerStage        = "dest_transformer"
+	trackingPlanValidationStage = "trackingPlan_validation"
 )
 
 const (
@@ -247,17 +246,17 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 	}
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
 	transformURL := trans.destTransformURL(destType)
-	return trans.transform(ctx, clientEvents, transformURL, batchSize, DestTransformerStage)
+	return trans.transform(ctx, clientEvents, transformURL, batchSize, destTransformerStage)
 }
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, UserTransformerStage)
+	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
 }
 
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, TrackingPlanValidationStage)
+	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
 }
 
 func (trans *handle) transform(
@@ -496,7 +495,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		},
 	)
 	if err != nil {
-		if trans.config.failOnUserTransformTimeout.Load() && stage == UserTransformerStage && os.IsTimeout(err) {
+		if trans.config.failOnUserTransformTimeout.Load() && stage == userTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
 		} else if trans.config.failOnError.Load() {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure

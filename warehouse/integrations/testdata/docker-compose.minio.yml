@@ -11,6 +11,6 @@ services:
       - MINIO_SITE_REGION=us-east-1
     command: server /data
     healthcheck:
-      test: curl --fail http://localhost:9000/minio/health/live || exit 1
+      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
       interval: 1s
       retries: 25
