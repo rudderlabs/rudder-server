@@ -32,7 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -82,11 +82,12 @@ type Handle struct {
 	uploadFreq                   misc.ValueLoader[time.Duration]
 	mainLoopFreq                 misc.ValueLoader[time.Duration]
 	disableEgress                bool
-	toAbortDestinationIDs        misc.ValueLoader[string]
 	warehouseServiceMaxRetryTime misc.ValueLoader[time.Duration]
 	transformerURL               string
 	datePrefixOverride           misc.ValueLoader[string]
 	customDatePrefix             misc.ValueLoader[string]
+
+	drainer routerutils.Drainer
 
 	// state
 
@@ -98,9 +99,9 @@ type Handle struct {
 	backendConfigInitializedOnce sync.Once
 	backendConfigInitialized     chan bool
 
-	configSubscriberMu       sync.RWMutex                                    // protects the following fields
-	destinationsMap          map[string]*router_utils.DestinationWithSources // destinationID -> destination
-	connectionWHNamespaceMap map[string]string                               // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	configSubscriberMu       sync.RWMutex                                   // protects the following fields
+	destinationsMap          map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionWHNamespaceMap map[string]string                              // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	uploadIntervalMap        map[string]time.Duration
 
 	encounteredMergeRuleMapMu sync.Mutex
@@ -478,7 +479,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 			}
 		}
 	}
-	var sampleParameters JobParameters
+	var sampleParameters routerutils.JobParameters
 	err = json.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
@@ -592,7 +593,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			errorResp = []byte(errorRespString)
 		}
 
-		var parameters JobParameters
+		var parameters routerutils.JobParameters
 		err = json.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
@@ -609,7 +610,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				abortedEvents = append(abortedEvents, job)
 				failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 				jobState = jobsdb.Aborted.State
-				errorCode = router_utils.DRAIN_ERROR_CODE
+				errorCode = routerutils.DRAIN_ERROR_CODE
 			}
 			if notifyWarehouseErr && isWarehouse {
 				// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -620,7 +621,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 					abortedEvents = append(abortedEvents, job)
 					failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 					jobState = jobsdb.Aborted.State
-					errorCode = router_utils.DRAIN_ERROR_CODE
+					errorCode = routerutils.DRAIN_ERROR_CODE
 				}
 				brt.warehouseServiceFailedTimeMu.RUnlock()
 			}
