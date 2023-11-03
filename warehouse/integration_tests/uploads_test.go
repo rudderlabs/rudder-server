@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -47,11 +49,12 @@ import (
 )
 
 type testConfig struct {
-	workspaceID     string
-	sourceID        string
-	destinationID   string
-	destinationType string
-	namespace       string
+	workspaceID           string
+	sourceID              string
+	destinationID         string
+	destinationRevisionID string
+	destinationType       string
+	namespace             string
 }
 
 func TestUploads(t *testing.T) {
@@ -59,11 +62,12 @@ func TestUploads(t *testing.T) {
 
 	t.Run("tracks", func(t *testing.T) {
 		tc := &testConfig{
-			workspaceID:     "test_workspace_id",
-			sourceID:        "test_source_id",
-			destinationID:   "test_destination_id",
-			namespace:       "test_namespace",
-			destinationType: warehouseutils.POSTGRES,
+			workspaceID:           "test_workspace_id",
+			sourceID:              "test_source_id",
+			destinationID:         "test_destination_id",
+			destinationRevisionID: "test_destination_id",
+			namespace:             "test_namespace",
+			destinationType:       warehouseutils.POSTGRES,
 		}
 
 		pool, err := dockertest.NewPool("")
@@ -105,7 +109,67 @@ func TestUploads(t *testing.T) {
 		})
 		require.NoError(t, g.Wait())
 	})
-	t.Run("destination revision", func(t *testing.T) {})
+	t.Run("destination revision", func(t *testing.T) {
+		tc := &testConfig{
+			workspaceID:           "test_workspace_id",
+			sourceID:              "test_source_id",
+			destinationID:         "test_destination_id",
+			destinationRevisionID: "test_destination_revision_id",
+			namespace:             "test_namespace",
+			destinationType:       warehouseutils.POSTGRES,
+		}
+
+		bcserver := backendconfigtest.NewBuilder().
+			WithWorkspaceConfig(
+				backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-1").
+							WithWriteKey("writekey-1").
+							Build()).
+					Build()).
+			Build()
+		defer bcserver.Close()
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		pgResource, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		minioResource, err := resource.SetupMinio(pool, t)
+		require.NoError(t, err)
+
+		db := sqlmiddleware.New(pgResource.DB)
+
+		ctx, stopServer := context.WithCancel(context.Background())
+		defer stopServer()
+
+		events := 100
+		jobs := 1
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+
+		g, gCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			runWarehouseServer(t, gCtx, webPort, pgResource, minioResource, tc)
+			return nil
+		})
+		g.Go(func() error {
+			defer stopServer()
+			requireHealthCheck(t, serverURL)
+			pingWarehouse(t, gCtx, prepareStagingFile(t, gCtx, minioResource, events), events, serverURL, tc)
+			requireStagingFilesCount(t, db, tc, "succeeded", events)
+			requireLoadFilesCount(t, db, tc, events)
+			requireTableUploadsCount(t, db, tc, model.ExportedData, events)
+			requireUploadsCount(t, db, tc, model.ExportedData, jobs)
+			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", tc.namespace, "tracks"), events)
+			return nil
+		})
+		require.NoError(t, g.Wait())
+	})
 	t.Run("staging file batch size", func(t *testing.T) {})
 	t.Run("source job", func(t *testing.T) {})
 	t.Run("reports", func(t *testing.T) {})
@@ -115,6 +179,8 @@ func TestUploads(t *testing.T) {
 	t.Run("user and identifies", func(t *testing.T) {})
 	t.Run("archiver", func(t *testing.T) {})
 	t.Run("id resolution", func(t *testing.T) {})
+	t.Run("retries", func(t *testing.T) {})
+	t.Run("tunnelling", func(t *testing.T) {})
 }
 
 func runWarehouseServer(
@@ -210,7 +276,7 @@ func runWarehouseServer(
 												"syncFrequency":    "0",
 												"useRudderStorage": false,
 											},
-											RevisionID: tc.destinationID,
+											RevisionID: tc.destinationRevisionID,
 										},
 									},
 								},
