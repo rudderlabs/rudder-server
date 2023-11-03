@@ -117,6 +117,13 @@ const (
 	DestID2   = "dest-id-2"
 	DestID3   = "dest-id-3"
 	DestID4   = "dest-id-4"
+
+	SourceIDKetchConsent = "source-id-ketch-consent"
+	WriteKeyKetchConsent = "write-key-ketch-consent"
+	DestID5              = "dest-id-5"
+	DestID6              = "dest-id-6"
+	DestID7              = "dest-id-7"
+	DestID8              = "dest-id-8"
 )
 
 var (
@@ -376,6 +383,84 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Config: map[string]interface{}{
 						"oneTrustCookieCategories": []interface{}{
 							map[string]interface{}{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceIDKetchConsent,
+			WriteKey:    WriteKeyKetchConsent,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestID5,
+					Name:               "D5",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID6,
+					Name:               "D6",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID7,
+					Name:               "D7",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID8,
+					Name:               "D8",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -2141,7 +2226,7 @@ var _ = Describe("Processor", Ordered, func() {
 	})
 
 	Context("isDestinationEnabled", func() {
-		It("should filter based on consent management preferences", func() {
+		It("should filter based on oneTrust consent management preferences", func() {
 			event := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2190,6 +2275,56 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(3)) // all except dest-1
 			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
+		})
+		It("should filter based on ketch consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(mockTransformer))
+
+			Setup(processor, c, false, false)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			Expect(
+				len(processor.filterDestinations(
+					event,
+					processor.getEnabledDestinations(
+						SourceIDKetchConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(3)) // all except dest-5 since both purpose1 and purpose2 are denied
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
 
