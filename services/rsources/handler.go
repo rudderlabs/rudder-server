@@ -273,6 +273,43 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 	return tx.Commit()
 }
 
+func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
+	filters, filterParams := sqlFilters(jobRunId, filter)
+	tx, err := sh.localDB.Begin()
+	if err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
+	filters, filterParams := sqlFilters(jobRunId, filter)
+	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
+	res, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrStatusNotFound
+	}
+	return nil
+}
+
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 	err := sh.doCleanupTables(ctx)
 	if err != nil {
