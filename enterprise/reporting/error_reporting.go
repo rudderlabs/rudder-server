@@ -407,6 +407,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	if rows.Err() != nil {
 		edr.log.Errorf("Rows error while querying: %v", rows.Err())
 		return []*types.EDReportsDB{}, queryMin.Int64
+	}
 	edr.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 	var metrics []*types.EDReportsDB

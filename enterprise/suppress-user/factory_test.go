@@ -137,6 +137,7 @@ func generateTestData(t *testing.T, tmpDir string) {
 		require.NoError(t, err)
 		require.NoError(t, repo.Backup(f))
 		if err := repo.Add(suppressions, token); err != nil {
+		}
 	}
 
 	repo, err := badgerdb.NewRepository(tmpDir, logger.NOP, stats.Default)
@@ -183,4 +184,3 @@ func backupDir(tmpDir string) (string, error) {
 	}
 	return baseDir, nil
 }
-
