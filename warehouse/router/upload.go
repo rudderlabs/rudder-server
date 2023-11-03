@@ -75,6 +75,7 @@ type UploadJob struct {
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
+	uploadsRepo          *repo.Uploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	schemaHandle         *schema.Schema
@@ -128,11 +129,6 @@ type UploadJob struct {
 	}
 }
 
-type UploadColumn struct {
-	Column string
-	Value  interface{}
-}
-
 type pendingTableUploadsRepo interface {
 	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
 }
@@ -172,6 +168,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logger:               f.logger,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db),
+		uploadsRepo:          repo.NewUploads(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -273,9 +270,13 @@ func (job *UploadJob) generateUploadSchema() error {
 		return err
 	}
 
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
-		{Column: UploadSchemaField, Value: marshalledSchema},
-	}})
+	err = job.uploadsRepo.Update(
+		job.ctx,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldSchema(marshalledSchema),
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
@@ -359,13 +360,26 @@ func (job *UploadJob) run() (err error) {
 	start := job.now()
 	ch := job.trackLongRunningUpload()
 	defer func() {
-		_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadInProgress, Value: false}}})
+		_ = job.uploadsRepo.Update(
+			job.ctx,
+			job.upload.ID,
+			[]repo.UpdateKeyValue{
+				repo.UploadFieldInProgress(false),
+			},
+		)
 
 		job.stats.uploadTime.Since(start)
 		ch <- struct{}{}
 	}()
 
-	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadLastExecAtField, Value: job.now()}, {Column: UploadInProgress, Value: true}}})
+	_ = job.uploadsRepo.Update(
+		job.ctx,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldLastExecAt(job.now()),
+			repo.UploadFieldInProgress(true),
+		},
+	)
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -1348,9 +1362,8 @@ func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
 }
 
 type UploadStatusOpts struct {
-	Status           string
-	AdditionalFields []UploadColumn
-	ReportingMetric  types.PUReportedMetric
+	Status          string
+	ReportingMetric types.PUReportedMetric
 }
 
 func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
@@ -1366,52 +1379,36 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	if err != nil {
 		return
 	}
-	opts := []UploadColumn{
-		{Column: UploadStatusField, Value: statusOpts.Status},
-		{Column: UploadTimingsField, Value: marshalledTimings},
-		{Column: UploadUpdatedAtField, Value: job.now()},
-	}
 
 	job.upload.Status = statusOpts.Status
 	job.upload.Timings = timings
 
-	additionalFields := make([]UploadColumn, 0, len(statusOpts.AdditionalFields)+len(opts))
-	additionalFields = append(additionalFields, statusOpts.AdditionalFields...)
-	additionalFields = append(additionalFields, opts...)
-
-	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
+	updateFields := []repo.UpdateKeyValue{
+		repo.UploadFieldStatus(statusOpts.Status),
+		repo.UploadFieldTimings(marshalledTimings),
+		repo.UploadFieldUpdatedAt(job.now()),
+	}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		var txn *sqlquerywrapper.Tx
-		txn, err = job.db.BeginTx(job.ctx, &sql.TxOptions{})
-		if err != nil {
-			return
-		}
-		defer func() {
+		err = job.uploadsRepo.WithTx(job.ctx, func(tx *sqlquerywrapper.Tx) error {
+			err = job.uploadsRepo.UpdateWithTx(job.ctx, tx, job.upload.ID, updateFields)
 			if err != nil {
-				_ = txn.Rollback()
+				return fmt.Errorf("updating upload status: %w", err)
 			}
-		}()
-
-		uploadColumnOpts.Txn = txn
-		err = job.setUploadColumns(uploadColumnOpts)
-		if err != nil {
-			return
-		}
-		if job.config.reportingEnabled {
-			err = job.reporting.Report(
-				[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
-				txn.Tx,
-			)
-			if err != nil {
-				return
+			if job.config.reportingEnabled {
+				err = job.reporting.Report(
+					[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
+					tx.Tx,
+				)
+				if err != nil {
+					return fmt.Errorf("reporting upload status: %w", err)
+				}
 			}
-		}
-		err = txn.Commit()
+			return nil
+		})
 		return
 	}
-	err = job.setUploadColumns(uploadColumnOpts)
-	return
+	return job.uploadsRepo.Update(job.ctx, job.upload.ID, updateFields)
 }
 
 // Set LoadFileIDs
@@ -1423,53 +1420,14 @@ func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
 	job.upload.LoadFileStartID = startLoadFileID
 	job.upload.LoadFileEndID = endLoadFileID
 
-	return job.setUploadColumns(UploadColumnsOpts{
-		Fields: []UploadColumn{
-			{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-			{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
+	return job.uploadsRepo.Update(
+		job.ctx,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldStartLoadFileID(startLoadFileID),
+			repo.UploadFieldEndLoadFileID(endLoadFileID),
 		},
-	})
-}
-
-type UploadColumnsOpts struct {
-	Fields []UploadColumn
-	Txn    *sqlquerywrapper.Tx
-}
-
-// SetUploadColumns sets any column values passed as args in UploadColumn format for WarehouseUploadsTable
-func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
-	var columns string
-	values := []interface{}{job.upload.ID}
-	// setting values using syntax $n since Exec can correctly format time.Time strings
-	for idx, f := range opts.Fields {
-		// start with $2 as $1 is upload.ID
-		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
-		if idx < len(opts.Fields)-1 {
-			columns += ","
-		}
-		values = append(values, f.Value)
-	}
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  %s
-		WHERE
-		  id = $1;`,
-		whutils.WarehouseUploadsTable,
-		columns,
 	)
-
-	var querier interface {
-		ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-	}
-	if opts.Txn != nil {
-		querier = opts.Txn
-	} else {
-		querier = job.db
-	}
-	_, err := querier.ExecContext(job.ctx, sqlStatement, values...)
-	return err
 }
 
 // extractAndUpdateUploadErrorsByState extracts and augment errors in format
@@ -1579,14 +1537,6 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	serializedErr, _ := json.Marshal(&uploadErrors)
 	serializedErr = whutils.SanitizeJSON(serializedErr)
 
-	uploadColumns := []UploadColumn{
-		{Column: "status", Value: state},
-		{Column: "metadata", Value: metadataJSON},
-		{Column: "error", Value: serializedErr},
-		{Column: "updated_at", Value: job.now()},
-		{Column: "error_category", Value: model.GetUserFriendlyJobErrorCategory(jobErrorType)},
-	}
-
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
 		return "", fmt.Errorf("starting transaction: %w", err)
@@ -1597,9 +1547,22 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		}
 	}()
 
-	if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
+	err = job.uploadsRepo.UpdateWithTx(
+		job.ctx,
+		txn,
+		job.upload.ID,
+		[]repo.UpdateKeyValue{
+			repo.UploadFieldStatus(state),
+			repo.UploadFieldMetadata(metadataJSON),
+			repo.UploadFieldError(serializedErr),
+			repo.UploadFieldUpdatedAt(job.now()),
+			repo.UploadFieldErrorCategory(model.GetUserFriendlyJobErrorCategory(jobErrorType)),
+		},
+	)
+	if err != nil {
 		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
+
 	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
