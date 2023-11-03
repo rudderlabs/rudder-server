@@ -355,6 +355,5 @@ func TestDeleteEndpoints(t *testing.T) {
 			require.Len(t, failedRecords.Tasks, 0)
 			require.Nil(t, failedRecords.Paging, "no paging information should be present")
 		})
-
 	})
 }
