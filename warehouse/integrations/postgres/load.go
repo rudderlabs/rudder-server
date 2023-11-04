@@ -556,6 +556,6 @@ func (pg *Postgres) loadUsersTable(
 func (pg *Postgres) shouldMerge() bool {
 	return !pg.Uploader.CanAppend() ||
 		(pg.config.allowMerge &&
-			pg.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting) &&
+			pg.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting, true) &&
 			!slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID))
 }

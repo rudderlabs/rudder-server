@@ -1387,5 +1387,5 @@ func (*Deltalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPar
 // * the user opted in to merging and we allow merging
 func (d *Deltalake) ShouldMerge() bool {
 	return !d.Uploader.CanAppend() ||
-		(d.config.allowMerge && d.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting))
+		(d.config.allowMerge && d.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting, true))
 }

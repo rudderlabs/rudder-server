@@ -829,7 +829,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 // * the user opted-in
 func (sf *Snowflake) ShouldMerge() bool {
 	return !sf.Uploader.CanAppend() ||
-		(sf.config.allowMerge && sf.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting))
+		(sf.config.allowMerge && sf.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting, true))
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {

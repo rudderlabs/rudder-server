@@ -965,7 +965,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			warehouse: model.Warehouse{
@@ -973,7 +973,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 					Config: map[string]interface{}{},
 				},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			warehouse: model.Warehouse{
@@ -983,7 +983,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 					},
 				},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			warehouse: model.Warehouse{
@@ -1007,7 +1007,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		},
 	}
 	for idx, input := range inputs {
-		got := input.warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
+		got := input.warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting, true)
 		want := input.expected
 		if got != want {
 			t.Errorf("got %t expected %t input %d", got, want, idx)

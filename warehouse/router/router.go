@@ -482,7 +482,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		})
 		r.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
+		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting, true)
 
 		if !found {
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
