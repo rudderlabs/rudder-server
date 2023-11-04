@@ -85,6 +85,7 @@ type UploadJob struct {
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
 	uploadsRepo          *repo.Uploads
+	loadFilesRepo        *repo.LoadFiles
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	schemaHandle         *schema.Schema
@@ -182,6 +183,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db),
 		uploadsRepo:          repo.NewUploads(f.db),
+		loadFilesRepo:        repo.NewLoadFiles(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -321,39 +323,17 @@ func (job *UploadJob) initTableUploads() error {
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	var total sql.NullInt64
-
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			table_name,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v)
-		)
-		SELECT
-		  SUM(total_events)
-		FROM
-		  row_numbered_load_files WHERE
-		  row_number = 1
-		  AND table_name != '%[3]s';
-	`,
-		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
-		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
-	)
-	if err := job.db.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
-		job.logger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
+	loadFiles, err := job.loadFilesRepo.GetByStagingFiles(ctx, job.stagingFileIDs)
+	if err != nil {
+		job.logger.Errorf("Error: Unable to get load files for upload:%d. Error: %s", job.upload.ID, err.Error())
+		return 0
 	}
-	return total.Int64
+	return lo.SumBy(loadFiles, func(lf model.LoadFile) int64 {
+		if lf.TableName == whutils.DiscardsTable {
+			return 0
+		}
+		return int64(lf.TotalRows)
+	})
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
@@ -1686,57 +1666,22 @@ func (job *UploadJob) validateDestinationCredentials() (bool, error) {
 	return response.Success, nil
 }
 
-func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
-	loadFilesMap = make(map[tableNameT]bool)
-
-	sourceID := job.warehouse.Source.ID
-	destID := job.warehouse.Destination.ID
-
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  distinct table_name
-		FROM
-		  %s
-		WHERE
-		  (
-			source_id = $1
-			AND destination_id = $2
-			AND id >= $3
-			AND id <= $4
-		  );
-`,
-		whutils.WarehouseLoadFilesTable,
-	) /**/
-	sqlStatementArgs := []interface{}{
-		sourceID,
-		destID,
+func (job *UploadJob) getLoadFilesTableMap() (map[tableNameT]bool, error) {
+	tableName, err := job.loadFilesRepo.DistinctTableName(
+		job.ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting load files table name: %w", err)
 	}
-	rows, err := job.db.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
-		return
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-		return
-	}
-	defer func() { _ = rows.Close() }()
 
-	for rows.Next() {
-		var tableName string
-		err = rows.Scan(&tableName)
-		if err != nil {
-			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-			return
-		}
-		loadFilesMap[tableNameT(tableName)] = true
-	}
-	if err = rows.Err(); err != nil {
-		err = fmt.Errorf("interate distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-	}
-	return
+	tablesMap := lo.SliceToMap(tableName, func(tName string) (tableNameT, bool) {
+		return tableNameT(tName), true
+	})
+	return tablesMap, nil
 }
 
 func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (bool, error) {

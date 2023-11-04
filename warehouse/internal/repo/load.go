@@ -2,7 +2,9 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	jsonstd "encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -172,4 +174,52 @@ func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int
 	}
 
 	return loadFiles, nil
+}
+
+func (lf *LoadFiles) DistinctTableName(
+	ctx context.Context,
+	sourceID string,
+	destinationID string,
+	startID int64,
+	endID int64,
+) ([]string, error) {
+	rows, err := lf.db.QueryContext(ctx, `
+		SELECT
+		  distinct table_name
+		FROM
+		  `+loadTableName+`
+		WHERE
+		  (
+			source_id = $1
+			AND destination_id = $2
+			AND id >= $3
+			AND id <= $4
+		  );
+`,
+		sourceID,
+		destinationID,
+		startID,
+		endID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying load files: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tableNames []string
+	for rows.Next() {
+		var tableName string
+		err := rows.Scan(&tableName)
+		if err != nil {
+			return nil, fmt.Errorf(`scanning table names: %w`, err)
+		}
+		tableNames = append(tableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("querying table names: %w", err)
+	}
+	return tableNames, nil
 }
