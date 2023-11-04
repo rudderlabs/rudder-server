@@ -7,8 +7,9 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestDeniedConsentCategories(t *testing.T) {
@@ -335,8 +336,6 @@ func TestHandle_FilterDestinations(t *testing.T) {
 				proc.config.oneTrustConsentCategoriesMap[dest.ID] = oneTrustConsentCategories(&dest)
 				proc.config.ketchConsentCategoriesMap[dest.ID] = ketchConsentCategories(&dest)
 			}
-			t.Log(proc.config.oneTrustConsentCategoriesMap)
-			t.Log(proc.config.ketchConsentCategoriesMap)
 
 			filteredDestinations := proc.filterDestinations(tc.event, tc.destinations)
 

@@ -2395,22 +2395,17 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(
-				len(processor.filterDestinations(
-					event,
-					processor.getEnabledDestinations(
-						SourceIDKetchConsent,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(3)) // all except dest-5 since both purpose1 and purpose2 are denied
+			enabledDestinations := processor.getEnabledDestinations(SourceIDKetchConsent, "destination-definition-name-enabled")
+			filteredDestinations := processor.filterDestinations(event, enabledDestinations)
+
+			Expect(len(filteredDestinations)).To(Equal(3)) // all except dest-5 since both purpose1 and purpose2 are denied
 			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
