@@ -1,8 +1,10 @@
 package router
 
 import (
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -177,4 +179,21 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
+}
+
+func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
+	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
+		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
+		CROSS JOIN
+		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
+	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
+	var timeTakenInS time.Duration
+	err = job.db.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
+	if err != nil {
+		job.logger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
+		return
+	}
+
+	job.stats.loadFileGenerationTime.SendTiming(timeTakenInS * time.Second)
+	return nil
 }
