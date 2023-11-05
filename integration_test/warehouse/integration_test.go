@@ -1,4 +1,4 @@
-package integration_test
+package warehouse_test
 
 import (
 	"context"
@@ -32,8 +32,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -45,10 +43,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -66,13 +64,18 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 )
 
-// TODO: check for the data as well
-// TODO: remove event if it is not mandatory
+const (
+	succeeded    = "succeeded"
+	waiting      = "waiting"
+	aborted      = "aborted"
+	exportedData = "exported_data"
+)
+
 func TestUploads(t *testing.T) {
 	admin.Init()
 	validations.Init()
 
-	t.Run("tracks", func(t *testing.T) {
+	t.Run("tracks loading", func(t *testing.T) {
 		const (
 			workspaceID           = "test_workspace_id"
 			sourceID              = "test_source_id"
@@ -119,7 +122,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -128,8 +131,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             pgResource.Port,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -157,12 +160,12 @@ func TestUploads(t *testing.T) {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			payload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
@@ -170,8 +173,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -184,7 +187,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "string",
 						"received_at": "datetime",
 					},
@@ -192,14 +194,401 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 			return nil
 		})
 		require.NoError(t, g.Wait())
+	})
+	t.Run("user and identifies loading", func(t *testing.T) {
+		const (
+			workspaceID           = "test_workspace_id"
+			sourceID              = "test_source_id"
+			destinationID         = "test_destination_id"
+			destinationRevisionID = "test_destination_id"
+			namespace             = "test_namespace"
+		)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		pgResource, err := resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+		minioResource, err := resource.SetupMinio(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		backendConfigCh := make(chan pubsub.DataEvent)
+
+		g, gCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			defer close(backendConfigCh)
+
+			for {
+				select {
+				case <-gCtx.Done():
+					return nil
+				case <-time.After(time.Second):
+					backendConfigCh <- pubsub.DataEvent{
+						Data: map[string]backendconfig.ConfigT{
+							workspaceID: {
+								WorkspaceID: workspaceID,
+								Sources: []backendconfig.SourceT{
+									{
+										ID:      sourceID,
+										Enabled: true,
+										Destinations: []backendconfig.DestinationT{
+											{
+												ID:      destinationID,
+												Enabled: true,
+												DestinationDefinition: backendconfig.DestinationDefinitionT{
+													Name: whutils.POSTGRES,
+												},
+												Config: map[string]interface{}{
+													"host":             pgResource.Host,
+													"database":         pgResource.Database,
+													"user":             pgResource.User,
+													"password":         pgResource.Password,
+													"port":             pgResource.Port,
+													"sslMode":          "disable",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
+													"bucketName":       minioResource.BucketName,
+													"accessKeyID":      minioResource.AccessKeyID,
+													"secretAccessKey":  minioResource.AccessKeySecret,
+													"useSSL":           false,
+													"endPoint":         minioResource.Endpoint,
+													"syncFrequency":    "0",
+													"useRudderStorage": false,
+												},
+												RevisionID: destinationRevisionID,
+											},
+										},
+									},
+								},
+							},
+						},
+						Topic: string(backendconfig.TopicBackendConfig),
+					}
+				}
+			}
+		})
+		g.Go(func() error {
+			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh)
+		})
+		g.Go(func() error {
+			defer cancel()
+
+			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+			db := sqlmw.New(pgResource.DB)
+			events := 100
+			jobs := 1
+
+			users := lo.RepeatBy(events, func(int) string {
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "identifies"}}`,
+					uuid.New().String(),
+					uuid.New().String(),
+				)
+			})
+			identifies := lo.RepeatBy(events, func(int) string {
+				return fmt.Sprintf(`{"data":{"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"user_id":"string","received_at":"datetime"}, "table": "users"}}`,
+					uuid.New().String(),
+				)
+			})
+			payloads := make([]string, 0, events*2)
+			for i := 0; i < events; i++ {
+				payloads = append(payloads, users[i], identifies[i])
+			}
+
+			payload := strings.Join(payloads, "\n")
+
+			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
+
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
+				WorkspaceID:           workspaceID,
+				SourceID:              sourceID,
+				DestinationID:         destinationID,
+				Location:              prepareStagingFile(t, gCtx, minioResource, payload).ObjectName,
+				TotalEvents:           events,
+				FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
+				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+				UseRudderStorage:      false,
+				DestinationRevisionID: destinationID,
+				Schema: map[string]map[string]interface{}{
+					"users": {
+						"user_id":     "string",
+						"received_at": "datetime",
+					},
+					"identifies": {
+						"id":          "string",
+						"user_id":     "string",
+						"received_at": "datetime",
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "users"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "identifies"), events)
+			return nil
+		})
+		require.NoError(t, g.Wait())
+	})
+	t.Run("schema change", func(t *testing.T) {
+		t.Run("add columns", func(t *testing.T) {
+			const (
+				workspaceID           = "test_workspace_id"
+				sourceID              = "test_source_id"
+				destinationID         = "test_destination_id"
+				destinationRevisionID = "test_destination_id"
+				namespace             = "test_namespace"
+			)
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+			minioResource, err := resource.SetupMinio(pool, t)
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			webPort, err := kithelper.GetFreePort()
+			require.NoError(t, err)
+
+			backendConfigCh := make(chan pubsub.DataEvent)
+
+			g, gCtx := errgroup.WithContext(ctx)
+			g.Go(func() error {
+				defer close(backendConfigCh)
+
+				for {
+					select {
+					case <-gCtx.Done():
+						return nil
+					case <-time.After(time.Second):
+						backendConfigCh <- pubsub.DataEvent{
+							Data: map[string]backendconfig.ConfigT{
+								workspaceID: {
+									WorkspaceID: workspaceID,
+									Sources: []backendconfig.SourceT{
+										{
+											ID:      sourceID,
+											Enabled: true,
+											Destinations: []backendconfig.DestinationT{
+												{
+													ID:      destinationID,
+													Enabled: true,
+													DestinationDefinition: backendconfig.DestinationDefinitionT{
+														Name: whutils.POSTGRES,
+													},
+													Config: map[string]interface{}{
+														"host":             pgResource.Host,
+														"database":         pgResource.Database,
+														"user":             pgResource.User,
+														"password":         pgResource.Password,
+														"port":             pgResource.Port,
+														"sslMode":          "disable",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
+														"bucketName":       minioResource.BucketName,
+														"accessKeyID":      minioResource.AccessKeyID,
+														"secretAccessKey":  minioResource.AccessKeySecret,
+														"useSSL":           false,
+														"endPoint":         minioResource.Endpoint,
+														"syncFrequency":    "0",
+														"useRudderStorage": false,
+													},
+													RevisionID: destinationRevisionID,
+												},
+											},
+										},
+									},
+								},
+							},
+							Topic: string(backendconfig.TopicBackendConfig),
+						}
+					}
+				}
+			})
+			g.Go(func() error {
+				return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh)
+			})
+			g.Go(func() error {
+				defer cancel()
+
+				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+				db := sqlmw.New(pgResource.DB)
+				events := 100
+				jobs := 1
+
+				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
+
+				func() {
+					t.Log("first sync")
+
+					payload := strings.Join(lo.RepeatBy(events, func(int) string {
+						return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+							uuid.New().String(),
+							uuid.New().String(),
+						)
+					}), "\n")
+
+					whClient := whclient.NewWarehouse(serverURL)
+					err := whClient.Process(ctx, whclient.StagingFile{
+						WorkspaceID:           workspaceID,
+						SourceID:              sourceID,
+						DestinationID:         destinationID,
+						Location:              prepareStagingFile(t, gCtx, minioResource, payload).ObjectName,
+						TotalEvents:           events,
+						FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
+						LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+						UseRudderStorage:      false,
+						DestinationRevisionID: destinationID,
+						Schema: map[string]map[string]interface{}{
+							"tracks": {
+								"id":          "string",
+								"user_id":     "string",
+								"received_at": "datetime",
+							},
+						},
+					})
+					require.NoError(t, err)
+
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+				}()
+				func() {
+					t.Log("second sync with new properties")
+
+					payload := strings.Join(lo.RepeatBy(events, func(int) string {
+						return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z","new_property_string":%q,"new_property_int":%d},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime","new_property_string":"string","new_property_int":"int"}, "table": "tracks"}}`,
+							uuid.New().String(),
+							uuid.New().String(),
+							uuid.New().String(),
+							rand.Intn(1000),
+						)
+					}), "\n")
+
+					whClient := whclient.NewWarehouse(serverURL)
+					err := whClient.Process(ctx, whclient.StagingFile{
+						WorkspaceID:           workspaceID,
+						SourceID:              sourceID,
+						DestinationID:         destinationID,
+						Location:              prepareStagingFile(t, gCtx, minioResource, payload).ObjectName,
+						TotalEvents:           events,
+						FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
+						LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+						UseRudderStorage:      false,
+						DestinationRevisionID: destinationID,
+						Schema: map[string]map[string]interface{}{
+							"tracks": {
+								"id":                  "string",
+								"user_id":             "string",
+								"received_at":         "datetime",
+								"new_property_string": "string",
+								"new_property_int":    "int",
+							},
+						},
+					})
+					require.NoError(t, err)
+
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+				}()
+				return nil
+			})
+			require.NoError(t, g.Wait())
+		})
 	})
 	t.Run("destination revision", func(t *testing.T) {
 		const (
@@ -248,7 +637,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -257,8 +646,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             pgResource.Port,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -289,7 +678,7 @@ func TestUploads(t *testing.T) {
 						ID:      destinationID,
 						Enabled: true,
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
-							Name: warehouseutils.POSTGRES,
+							Name: whutils.POSTGRES,
 						},
 						Config: map[string]interface{}{
 							"host":             pgResource.Host,
@@ -298,8 +687,8 @@ func TestUploads(t *testing.T) {
 							"password":         pgResource.Password,
 							"port":             pgResource.Port,
 							"sslMode":          "disable",
-							"namespace":        "test_namespace",
-							"bucketProvider":   "MINIO",
+							"namespace":        namespace,
+							"bucketProvider":   whutils.MINIO,
 							"bucketName":       minioResource.BucketName,
 							"accessKeyID":      minioResource.AccessKeyID,
 							"secretAccessKey":  minioResource.AccessKeySecret,
@@ -327,25 +716,24 @@ func TestUploads(t *testing.T) {
 				require.True(t, calls.Load())
 			}()
 
-			overrideConfigs := []lo.Tuple2[string, interface{}]{
+			overrides := []lo.Tuple2[string, interface{}]{
 				{
 					A: "CONFIG_BACKEND_URL",
 					B: cp.URL,
 				},
 			}
-
-			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, overrideConfigs...)
+			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, overrides...)
 		})
 		g.Go(func() error {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			payload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
@@ -353,8 +741,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -367,7 +755,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "string",
 						"received_at": "datetime",
 					},
@@ -375,11 +762,28 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 			return nil
 		})
 		require.NoError(t, g.Wait())
@@ -444,7 +848,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             tunnelledHost,
@@ -453,8 +857,8 @@ func TestUploads(t *testing.T) {
 													"password":         tunnelledPassword,
 													"port":             tunnelledPort,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -487,12 +891,12 @@ func TestUploads(t *testing.T) {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			payload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
@@ -500,8 +904,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -514,7 +918,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "string",
 						"received_at": "datetime",
 					},
@@ -522,10 +925,27 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
 
 			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 				tunnelledUser,
@@ -547,7 +967,7 @@ func TestUploads(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, tunnelDB.Ping())
 
-			requireWarehouseEventsCount(t, sqlmiddleware.New(tunnelDB), fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, sqlmw.New(tunnelDB), fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 			return nil
 		})
 		require.NoError(t, g.Wait())
@@ -600,7 +1020,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -609,8 +1029,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -638,12 +1058,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -651,8 +1071,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				err := whClient.Process(ctx, warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				err := whClient.Process(ctx, whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -665,7 +1085,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -673,12 +1092,38 @@ func TestUploads(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-				requireLoadFilesCount(t, db, sourceID, destinationID, events)
-				requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-				requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-				requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
-				requireReportsCount(t, db, sourceID, destinationID, jobsdb.Succeeded.State, 200, events)
+				requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "status", B: succeeded},
+				}...)
+				requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+				}...)
+				requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+					{A: "status", B: exportedData},
+					{A: "wh_uploads.source_id", B: sourceID},
+					{A: "wh_uploads.destination_id", B: destinationID},
+					{A: "wh_uploads.namespace", B: namespace},
+				}...)
+				requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "namespace", B: namespace},
+					{A: "status", B: exportedData},
+				}...)
+				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+				requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "status", B: jobsdb.Succeeded.State},
+					{A: "status_code", B: 200},
+					{A: "in_pu", B: "batch_router"},
+					{A: "pu", B: "warehouse"},
+					{A: "initial_state", B: false},
+					{A: "terminal_state", B: true},
+				}...)
 				return nil
 			})
 			require.NoError(t, g.Wait())
@@ -722,7 +1167,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -731,8 +1176,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             "5432",
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -754,24 +1199,24 @@ func TestUploads(t *testing.T) {
 				}
 			})
 			g.Go(func() error {
-				configOverrides := []lo.Tuple2[string, interface{}]{
+				overrides := []lo.Tuple2[string, interface{}]{
 					{A: "Warehouse.minRetryAttempts", B: 2},
 					{A: "Warehouse.retryTimeWindow", B: "0s"},
 					{A: "Warehouse.minUploadBackoff", B: "0s"},
 					{A: "Warehouse.maxUploadBackoff", B: "0s"},
 				}
-				return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, configOverrides...)
+				return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, overrides...)
 			})
 			g.Go(func() error {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -779,8 +1224,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				err := whClient.Process(ctx, warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				err := whClient.Process(ctx, whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -793,7 +1238,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -801,9 +1245,32 @@ func TestUploads(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				requireUploadsCount(t, db, sourceID, destinationID, namespace, model.Aborted, jobs)
-				requireReportsCount(t, db, sourceID, destinationID, jobsdb.Failed.State, 400, events*2)
-				requireReportsCount(t, db, sourceID, destinationID, jobsdb.Aborted.State, 400, events)
+				requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "namespace", B: namespace},
+					{A: "status", B: aborted},
+				}...)
+				requireReportsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "status", B: jobsdb.Failed.State},
+					{A: "status_code", B: 400},
+					{A: "in_pu", B: "batch_router"},
+					{A: "pu", B: "warehouse"},
+					{A: "initial_state", B: false},
+					{A: "terminal_state", B: true},
+				}...)
+				requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "status", B: jobsdb.Aborted.State},
+					{A: "status_code", B: 400},
+					{A: "in_pu", B: "batch_router"},
+					{A: "pu", B: "warehouse"},
+					{A: "initial_state", B: false},
+					{A: "terminal_state", B: true},
+				}...)
 				return nil
 			})
 			require.NoError(t, g.Wait())
@@ -856,7 +1323,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -865,8 +1332,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             "5432",
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -888,24 +1355,24 @@ func TestUploads(t *testing.T) {
 			}
 		})
 		g.Go(func() error {
-			configOverrides := []lo.Tuple2[string, interface{}]{
+			overrides := []lo.Tuple2[string, interface{}]{
 				{A: "Warehouse.minRetryAttempts", B: 2},
 				{A: "Warehouse.retryTimeWindow", B: "0s"},
 				{A: "Warehouse.minUploadBackoff", B: "0s"},
 				{A: "Warehouse.maxUploadBackoff", B: "0s"},
 			}
-			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, configOverrides...)
+			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh, overrides...)
 		})
 		g.Go(func() error {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			payload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
@@ -913,8 +1380,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -927,7 +1394,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "string",
 						"received_at": "datetime",
 					},
@@ -935,152 +1401,18 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.Aborted, jobs)
-			requireRetriedUploadsCount(t, db, sourceID, destinationID, namespace, model.Aborted, 3)
-			return nil
-		})
-		require.NoError(t, g.Wait())
-	})
-	t.Run("user and identifies", func(t *testing.T) {
-		const (
-			workspaceID           = "test_workspace_id"
-			sourceID              = "test_source_id"
-			destinationID         = "test_destination_id"
-			destinationRevisionID = "test_destination_id"
-			namespace             = "test_namespace"
-		)
-
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		pgResource, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		webPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-
-		backendConfigCh := make(chan pubsub.DataEvent)
-
-		g, gCtx := errgroup.WithContext(ctx)
-		g.Go(func() error {
-			defer close(backendConfigCh)
-
-			for {
-				select {
-				case <-gCtx.Done():
-					return nil
-				case <-time.After(time.Second):
-					backendConfigCh <- pubsub.DataEvent{
-						Data: map[string]backendconfig.ConfigT{
-							workspaceID: {
-								WorkspaceID: workspaceID,
-								Sources: []backendconfig.SourceT{
-									{
-										ID:      sourceID,
-										Enabled: true,
-										Destinations: []backendconfig.DestinationT{
-											{
-												ID:      destinationID,
-												Enabled: true,
-												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
-												},
-												Config: map[string]interface{}{
-													"host":             pgResource.Host,
-													"database":         pgResource.Database,
-													"user":             pgResource.User,
-													"password":         pgResource.Password,
-													"port":             pgResource.Port,
-													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
-													"bucketName":       minioResource.BucketName,
-													"accessKeyID":      minioResource.AccessKeyID,
-													"secretAccessKey":  minioResource.AccessKeySecret,
-													"useSSL":           false,
-													"endPoint":         minioResource.Endpoint,
-													"syncFrequency":    "0",
-													"useRudderStorage": false,
-												},
-												RevisionID: destinationRevisionID,
-											},
-										},
-									},
-								},
-							},
-						},
-						Topic: string(backendconfig.TopicBackendConfig),
-					}
-				}
-			}
-		})
-		g.Go(func() error {
-			return runWarehouseServer(t, gCtx, webPort, pgResource, backendConfigCh)
-		})
-		g.Go(func() error {
-			defer cancel()
-
-			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
-			events := 100
-			jobs := 1
-
-			users := lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "identifies"}}`,
-					uuid.New().String(),
-					uuid.New().String(),
-				)
-			})
-			identifies := lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"user_id":"string","received_at":"datetime"}, "table": "users"}}`,
-					uuid.New().String(),
-				)
-			})
-			payloads := make([]string, 0, events*2)
-			for i := 0; i < events; i++ {
-				payloads = append(payloads, users[i], identifies[i])
-			}
-
-			payload := strings.Join(payloads, "\n")
-
-			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
-
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
-				WorkspaceID:           workspaceID,
-				SourceID:              sourceID,
-				DestinationID:         destinationID,
-				Location:              prepareStagingFile(t, gCtx, minioResource, payload).ObjectName,
-				TotalEvents:           events,
-				FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
-				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
-				UseRudderStorage:      false,
-				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
-					"users": {
-						"user_id":     "string",
-						"received_at": "datetime",
-					},
-					"identifies": {
-						"id":          "string",
-						"user_id":     "string",
-						"received_at": "datetime",
-					},
-				},
-			})
-			require.NoError(t, err)
-
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "users"), events)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "identifies"), events)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: aborted},
+			}...)
+			requireRetriedUploadJobsCount(t, ctx, db, 3, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: aborted},
+			}...)
 			return nil
 		})
 		require.NoError(t, g.Wait())
@@ -1132,7 +1464,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -1141,8 +1473,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             pgResource.Port,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1170,18 +1502,18 @@ func TestUploads(t *testing.T) {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			goodPayloads := lo.RepeatBy(events/2, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
 			})
 			badPayloads := lo.RepeatBy(events/2, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%d,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"int","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%d,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"int","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					rand.Intn(1000),
 				)
@@ -1195,8 +1527,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -1209,7 +1541,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "int",
 						"received_at": "datetime",
 					},
@@ -1217,12 +1548,29 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events+(events/2))
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events+(events/2))
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
-			requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "rudder_discards"), events/2)
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "rudder_discards"), events/2)
 			return nil
 		})
 		require.NoError(t, g.Wait())
@@ -1274,7 +1622,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -1283,8 +1631,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             pgResource.Port,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1323,12 +1671,12 @@ func TestUploads(t *testing.T) {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
 			payload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 					uuid.New().String(),
 					uuid.New().String(),
 				)
@@ -1336,8 +1684,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -1350,7 +1698,6 @@ func TestUploads(t *testing.T) {
 				Schema: map[string]map[string]interface{}{
 					"tracks": {
 						"id":          "string",
-						"event":       "string",
 						"user_id":     "string",
 						"received_at": "datetime",
 					},
@@ -1358,11 +1705,34 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-			requireArchivedUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+				{A: "metadata->>'archivedStagingAndLoadFiles'", B: "true"},
+			}...)
 			return nil
 		})
 		require.NoError(t, g.Wait())
@@ -1415,7 +1785,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -1424,8 +1794,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1453,12 +1823,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -1466,8 +1836,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -1480,7 +1850,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -1493,11 +1862,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -1505,11 +1891,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				return nil
 			})
@@ -1554,7 +1957,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -1563,8 +1966,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1595,12 +1998,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -1608,8 +2011,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -1622,7 +2025,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -1635,11 +2037,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -1647,11 +2066,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 				}()
 				return nil
 			})
@@ -1696,7 +2132,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -1705,8 +2141,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1738,12 +2174,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -1751,8 +2187,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -1765,7 +2201,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -1778,11 +2213,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -1790,11 +2242,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 				}()
 				return nil
 			})
@@ -1839,7 +2308,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -1848,8 +2317,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -1881,12 +2350,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -1894,8 +2363,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -1908,7 +2377,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -1921,11 +2389,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -1933,11 +2418,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 				}()
 				return nil
 			})
@@ -1982,7 +2484,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -1991,8 +2493,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -2024,12 +2526,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -2037,8 +2539,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -2054,7 +2556,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -2067,11 +2568,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -2079,11 +2597,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				return nil
 			})
@@ -2129,7 +2664,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -2138,8 +2673,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -2171,12 +2706,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -2184,8 +2719,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -2198,7 +2733,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -2211,11 +2745,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -2223,11 +2774,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				return nil
 			})
@@ -2275,7 +2843,7 @@ func TestUploads(t *testing.T) {
 													ID:      destinationID,
 													Enabled: true,
 													DestinationDefinition: backendconfig.DestinationDefinitionT{
-														Name: warehouseutils.POSTGRES,
+														Name: whutils.POSTGRES,
 													},
 													Config: map[string]interface{}{
 														"host":             pgResource.Host,
@@ -2284,8 +2852,8 @@ func TestUploads(t *testing.T) {
 														"password":         pgResource.Password,
 														"port":             pgResource.Port,
 														"sslMode":          "disable",
-														"namespace":        "test_namespace",
-														"bucketProvider":   "MINIO",
+														"namespace":        namespace,
+														"bucketProvider":   whutils.MINIO,
 														"bucketName":       minioResource.BucketName,
 														"accessKeyID":      minioResource.AccessKeyID,
 														"secretAccessKey":  minioResource.AccessKeySecret,
@@ -2317,12 +2885,12 @@ func TestUploads(t *testing.T) {
 				defer cancel()
 
 				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-				db := sqlmiddleware.New(pgResource.DB)
+				db := sqlmw.New(pgResource.DB)
 				events := 100
 				jobs := 1
 
 				payload := strings.Join(lo.RepeatBy(events, func(int) string {
-					return fmt.Sprintf(`{"data":{"id":%q,"event":"tracks","user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","event":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 						uuid.New().String(),
 						uuid.New().String(),
 					)
@@ -2330,8 +2898,8 @@ func TestUploads(t *testing.T) {
 
 				health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-				whClient := warehouseclient.NewWarehouse(serverURL)
-				stagingFile := warehouseclient.StagingFile{
+				whClient := whclient.NewWarehouse(serverURL)
+				stagingFile := whclient.StagingFile{
 					WorkspaceID:           workspaceID,
 					SourceID:              sourceID,
 					DestinationID:         destinationID,
@@ -2344,7 +2912,6 @@ func TestUploads(t *testing.T) {
 					Schema: map[string]map[string]interface{}{
 						"tracks": {
 							"id":          "string",
-							"event":       "string",
 							"user_id":     "string",
 							"received_at": "datetime",
 						},
@@ -2357,11 +2924,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				func() {
 					t.Logf("second sync")
@@ -2369,11 +2953,28 @@ func TestUploads(t *testing.T) {
 					err := whClient.Process(ctx, stagingFile)
 					require.NoError(t, err)
 
-					requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*2)
-					requireLoadFilesCount(t, db, sourceID, destinationID, events*2)
-					requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, events*2)
-					requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs*2)
-					requireWarehouseEventsCount(t, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+					requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "status", B: succeeded},
+					}...)
+					requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+					}...)
+					requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+						{A: "status", B: exportedData},
+						{A: "wh_uploads.source_id", B: sourceID},
+						{A: "wh_uploads.destination_id", B: destinationID},
+						{A: "wh_uploads.namespace", B: namespace},
+					}...)
+					requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+						{A: "source_id", B: sourceID},
+						{A: "destination_id", B: destinationID},
+						{A: "namespace", B: namespace},
+						{A: "status", B: exportedData},
+					}...)
+					requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 				}()
 				return nil
 			})
@@ -2427,7 +3028,7 @@ func TestUploads(t *testing.T) {
 												ID:      destinationID,
 												Enabled: true,
 												DestinationDefinition: backendconfig.DestinationDefinitionT{
-													Name: warehouseutils.POSTGRES,
+													Name: whutils.POSTGRES,
 												},
 												Config: map[string]interface{}{
 													"host":             pgResource.Host,
@@ -2436,8 +3037,8 @@ func TestUploads(t *testing.T) {
 													"password":         pgResource.Password,
 													"port":             pgResource.Port,
 													"sslMode":          "disable",
-													"namespace":        "test_namespace",
-													"bucketProvider":   "MINIO",
+													"namespace":        namespace,
+													"bucketProvider":   whutils.MINIO,
 													"bucketName":       minioResource.BucketName,
 													"accessKeyID":      minioResource.AccessKeyID,
 													"secretAccessKey":  minioResource.AccessKeySecret,
@@ -2465,7 +3066,7 @@ func TestUploads(t *testing.T) {
 			defer cancel()
 
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-			db := sqlmiddleware.New(pgResource.DB)
+			db := sqlmw.New(pgResource.DB)
 			events := 100
 			jobs := 1
 
@@ -2496,8 +3097,8 @@ func TestUploads(t *testing.T) {
 
 			health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-			whClient := warehouseclient.NewWarehouse(serverURL)
-			err := whClient.Process(ctx, warehouseclient.StagingFile{
+			whClient := whclient.NewWarehouse(serverURL)
+			err := whClient.Process(ctx, whclient.StagingFile{
 				WorkspaceID:           workspaceID,
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
@@ -2524,15 +3125,31 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			requireStagingFilesCount(t, db, sourceID, destinationID, warehouseutils.StagingFileSucceededState, events*3)
-			requireLoadFilesCount(t, db, sourceID, destinationID, events*3)
-			requireTableUploadsCount(t, db, sourceID, destinationID, namespace, model.Waiting, events*3) // not supported for postgres yet
-			requireUploadsCount(t, db, sourceID, destinationID, namespace, model.ExportedData, jobs)
+			requireStagingFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireLoadFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+				{A: "status", B: waiting},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...) // not supported for postgres yet
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
 			return nil
 		})
 		require.NoError(t, g.Wait())
 	})
-	t.Run("source job", func(t *testing.T) {})
 }
 
 func runWarehouseServer(
@@ -2541,10 +3158,8 @@ func runWarehouseServer(
 	webPort int,
 	pgResource *resource.PostgresResource,
 	bcConfigCh chan pubsub.DataEvent,
-	overrideConfigs ...lo.Tuple2[string, interface{}],
+	configOverrides ...lo.Tuple2[string, interface{}],
 ) error {
-	t.Helper()
-
 	mockCtrl := gomock.NewController(t)
 
 	mockApp := mocksApp.NewMockApp(mockCtrl)
@@ -2581,8 +3196,8 @@ func runWarehouseServer(
 	conf.Set("PgNotifier.maxPollSleep", "1s")
 	conf.Set("PgNotifier.trackBatchIntervalInS", "1s")
 	conf.Set("PgNotifier.maxAttempt", 1)
-	for _, overrideConfig := range overrideConfigs {
-		conf.Set(overrideConfig.A, overrideConfig.B)
+	for _, override := range configOverrides {
+		conf.Set(override.A, override.B)
 	}
 
 	a := warehouse.New(ap, conf, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
@@ -2630,236 +3245,175 @@ func prepareStagingFile(
 }
 
 // nolint:unparam
-func requireStagingFilesCount(
+func requireStagingFileEventsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID, status string,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
 
+	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_staging_files WHERE 1 = 1"
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
+
 	require.Eventually(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  COALESCE(
-				sum(total_events),
-				0
-			  )
-			FROM
-			  wh_staging_files
-			WHERE
-			  source_id = $1
-			  AND destination_id = $2
-			  AND status = $3;
-`,
-			sourceID,
-			destinationID,
-			status,
-		).Scan(&eventsCount))
-		t.Logf("Staging files count: %d", eventsCount)
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		t.Logf("Staging file events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
-		120*time.Second,
+		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected %s staging files count to be %d", status, expectedCount),
+		fmt.Sprintf("expected staging file events count to be %d", expectedCount),
 	)
 }
 
 // nolint:unparam
-func requireLoadFilesCount(
+func requireLoadFileEventsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID string,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
 
+	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_load_files WHERE 1 = 1"
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
+
 	require.Eventually(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  COALESCE(
-				sum(total_events),
-				0
-			  )
-			FROM
-			  wh_load_files
-			WHERE
-			  source_id = $1
-			  AND destination_id = $2;
-`,
-			sourceID,
-			destinationID,
-		).Scan(&eventsCount))
-		t.Logf("Load files count: %d", eventsCount)
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		t.Logf("Load file events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
-		120*time.Second,
+		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected load files count to be %d", expectedCount),
+		fmt.Sprintf("expected load file events count to be %d", expectedCount),
 	)
 }
 
 // nolint:unparam
-func requireTableUploadsCount(
+func requireTableUploadEventsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID, namespace, status string,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
 
+	tableUploadsFilters := lo.Filter(filters, func(t lo.Tuple2[string, interface{}], index int) bool {
+		return !strings.HasPrefix(t.A, "wh_uploads")
+	})
+	uploadFilters := lo.Filter(filters, func(t lo.Tuple2[string, interface{}], index int) bool {
+		return strings.HasPrefix(t.A, "wh_uploads")
+	})
+
+	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_table_uploads WHERE 1 = 1"
+	query += strings.Join(lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
+	if len(uploadFilters) > 0 {
+		query += " AND wh_upload_id IN (SELECT id FROM wh_uploads WHERE 1 = 1"
+		query += strings.Join(lo.Map(uploadFilters, func(t lo.Tuple2[string, interface{}], index int) string {
+			return fmt.Sprintf(" AND %s = $%d", t.A, len(tableUploadsFilters)+index+1)
+		}), "")
+		query += ")"
+		for _, t := range uploadFilters {
+			queryArgs = append(queryArgs, t.B)
+		}
+	}
+
 	require.Eventually(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  COALESCE(
-				sum(total_events),
-				0
-			  )
-			FROM
-			  wh_table_uploads
-			WHERE
-			  status = $1
-			  AND wh_upload_id IN (
-				SELECT
-				  id
-				FROM
-				  wh_uploads
-				WHERE
-				  wh_uploads.source_id = $2
-				  AND wh_uploads.destination_id = $3
-				  AND wh_uploads.namespace = $4
-			  );
-`,
-			status,
-			sourceID,
-			destinationID,
-			namespace,
-		).Scan(&eventsCount))
-		t.Logf("Table uploads count: %d", eventsCount)
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		t.Logf("Table upload events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
-		120*time.Second,
+		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected %s table uploads count to be %d", status, expectedCount),
+		fmt.Sprintf("expected table upload events count to be %d", expectedCount),
 	)
 }
 
 // nolint:unparam
-func requireUploadsCount(
+func requireUploadJobsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID, namespace, status string,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
+
+	query := "SELECT count(*) FROM wh_uploads WHERE 1 = 1"
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
 
 	require.Eventually(t, func() bool {
 		var jobsCount int
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  count(*)
-			FROM
-			  wh_uploads
-			WHERE
-			  source_id = $1
-			  AND destination_id = $2
-			  AND namespace = $3
-			  AND status = $4;
-`,
-			sourceID,
-			destinationID,
-			namespace,
-			status,
-		).Scan(&jobsCount))
-		t.Logf("uploads count: %d", jobsCount)
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount))
+		t.Logf("upload jobs count: %d", jobsCount)
 		return jobsCount == expectedCount
 	},
-		120*time.Second,
+		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected %s uploads count to be %d", status, expectedCount),
+		fmt.Sprintf("expected upload jobs count to be %d", expectedCount),
 	)
 }
 
-func requireArchivedUploadsCount(
+func requireRetriedUploadJobsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID, namespace, status string,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
-		var jobsCount int
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  count(*)
-			FROM
-			  wh_uploads
-			WHERE
-			  source_id = $1
-			  AND destination_id = $2
-			  AND namespace = $3
-			  AND status = $4
-			  AND metadata ->> 'archivedStagingAndLoadFiles' = 'true';
-`,
-			sourceID,
-			destinationID,
-			namespace,
-			status,
-		).Scan(&jobsCount))
-		t.Logf("uploads count: %d", jobsCount)
-		return jobsCount == expectedCount
-	},
-		120*time.Second,
-		1*time.Second,
-		fmt.Sprintf("expected %s uploads count to be %d", status, expectedCount),
-	)
-}
-
-func requireRetriedUploadsCount(
-	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID, namespace, status string,
-	expectedCount int,
-) {
-	t.Helper()
+	query := "SELECT SUM(CAST(value ->> 'attempt' AS INT)) AS total_attempts FROM wh_uploads, jsonb_each(error) WHERE 1 = 1"
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
 
 	require.Eventually(t, func() bool {
 		var jobsCount sql.NullInt64
-		require.NoError(t, db.QueryRow(`
-			SELECT
-			  SUM(
-				CAST(value ->> 'attempt' AS INT)
-			  ) AS total_attempts
-			FROM
-			  wh_uploads,
-			  jsonb_each(error)
-			WHERE
-			  source_id = $1
-			  AND destination_id = $2
-			  AND namespace = $3
-			  AND status = $4;
-`,
-			sourceID,
-			destinationID,
-			namespace,
-			status,
-		).Scan(&jobsCount))
-		t.Logf("uploads count: %d", jobsCount.Int64)
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount))
+		t.Logf("retried upload jobs count: %d", jobsCount.Int64)
 		return jobsCount.Int64 == int64(expectedCount)
 	},
 		120*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected %s uploads count to be %d", status, expectedCount),
+		fmt.Sprintf("expected retried upload jobs count to be %d", expectedCount),
 	)
 }
 
-func requireWarehouseEventsCount(
+func requireDownstreamEventsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
+	ctx context.Context,
+	db *sqlmw.DB,
 	tableName string,
 	expectedCount int,
 ) {
@@ -2867,48 +3421,41 @@ func requireWarehouseEventsCount(
 
 	require.Eventually(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRow(fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount))
-		t.Logf("warehouse events count for table %s: %d", tableName, eventsCount)
+		require.NoError(t, db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount))
+		t.Logf("downstream events count for table %s: %d", tableName, eventsCount)
 		return eventsCount == expectedCount
 	},
 		10*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected warehouse events count for table %s to be %d", tableName, expectedCount),
+		fmt.Sprintf("expected downstream events count for table %s to be %d", tableName, expectedCount),
 	)
 }
 
 func requireReportsCount(
 	t testing.TB,
-	db *sqlmiddleware.DB,
-	sourceID, destinationID string,
-	status string, statusCode int,
+	ctx context.Context,
+	db *sqlmw.DB,
 	expectedCount int,
+	filters ...lo.Tuple2[string, interface{}],
 ) {
 	t.Helper()
 
+	query := "SELECT sum(count) FROM reports WHERE 1 = 1"
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	}), "")
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+		return t.B
+	})
+
 	require.Eventually(t, func() bool {
 		var reportsCount sql.NullInt64
-		require.NoError(t, db.DB.QueryRow(`
-			SELECT
-			  sum(count)
-			FROM
-			  reports
-			WHERE
-			  source_id = $1
-			  and destination_id = $2
-			  AND status = $3
-			  AND status_code = $4
-			  AND in_pu = 'batch_router'
-			  AND pu = 'warehouse'
-			  AND initial_state = FALSE
-			  AND terminal_state = TRUE;
-`,
-			sourceID,
-			destinationID,
-			status,
-			statusCode,
-		).Scan(&reportsCount))
+		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount))
 		t.Logf("reports count: %d", reportsCount.Int64)
 		return reportsCount.Int64 == int64(expectedCount)
-	}, 10*time.Second, 1*time.Second, fmt.Sprintf("expected %s reports count to be %d", status, expectedCount))
+	},
+		10*time.Second,
+		1*time.Second,
+		fmt.Sprintf("expected reports count to be %d", expectedCount),
+	)
 }
