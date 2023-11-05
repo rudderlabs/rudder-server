@@ -4,8 +4,14 @@ import (
 	"io"
 	"sync"
 
+	"errors"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+)
+
+var (
+	ErrNoValueFound = errors.New("no value found")
 )
 
 // Repository is a repository backed by memory.

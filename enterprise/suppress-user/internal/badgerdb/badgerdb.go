@@ -20,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+var ErrKeyNotFound = errors.New("key not found")
+
 // the key used in badgerdb to store the current token
 const tokenKey = "__token__"
 
