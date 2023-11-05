@@ -103,7 +103,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 //	Ordered by id ascending.
 func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	sqlStatement := `
-		WITH row_numbered_load_files as (
+		WITH row_numbered_load_files AS (
 		SELECT
 			` + loadTableColumns + `,
 			row_number() OVER (
