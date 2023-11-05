@@ -1657,7 +1657,7 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, g.Wait())
 		})
-		t.Run("allowMerge=true, enableMerge=false", func(t *testing.T) {
+		t.Run("allowMerge=true,enableMerge=false", func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1800,7 +1800,7 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, g.Wait())
 		})
-		t.Run("allowMerge=false, enableMerge=false", func(t *testing.T) {
+		t.Run("allowMerge=false,enableMerge=false", func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1943,7 +1943,7 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, g.Wait())
 		})
-		t.Run("allowMerge=false, enableMerge=false, isSourceETL=true", func(t *testing.T) {
+		t.Run("allowMerge=false,enableMerge=false,isSourceETL=true", func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -2089,7 +2089,7 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, g.Wait())
 		})
-		t.Run("allowMerge=false, enableMerge=false, IsReplaySource=true", func(t *testing.T) {
+		t.Run("allowMerge=false,enableMerge=false,IsReplaySource=true", func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -2233,7 +2233,7 @@ func TestUploads(t *testing.T) {
 			})
 			require.NoError(t, g.Wait())
 		})
-		t.Run("allowMerge=false, enableMerge=false, sourceCategory=cloud", func(t *testing.T) {
+		t.Run("allowMerge=false,enableMerge=false,sourceCategory=cloud", func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
