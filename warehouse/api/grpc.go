@@ -765,7 +765,7 @@ func (g *grpcServer) validateObjectStorage(ctx context.Context, request validate
 		return fmt.Errorf("unable to create temp file: \n%w", err)
 	}
 	defer func() {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 	}()
 
 	err = fileManager.Download(

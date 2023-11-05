@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/source"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -13,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
 
@@ -32,7 +33,7 @@ func New(
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
-	asyncManager *jobs.AsyncJobWh,
+	sourcesManager *source.Manager,
 	triggerStore *sync.Map,
 ) (*Api, error) {
 	a := &Api{}
@@ -46,7 +47,7 @@ func New(
 		notifier,
 		tenantManager,
 		bcManager,
-		asyncManager,
+		sourcesManager,
 		triggerStore,
 	)
 
@@ -54,6 +55,7 @@ func New(
 	a.grpcServer, err = newGRPCServer(
 		conf,
 		logger,
+		statsFactory,
 		db,
 		tenantManager,
 		bcManager,
