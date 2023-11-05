@@ -173,7 +173,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 
 	log := f.logger.With(
 		logfield.UploadJobID, dto.Upload.ID,
-		logfield.Namespace, dto.Upload.Namespace,
+		logfield.Namespace, dto.Warehouse.Namespace,
 		logfield.SourceID, dto.Warehouse.Source.ID,
 		logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, dto.Warehouse.Destination.ID,
@@ -336,17 +336,14 @@ func (job *UploadJob) initTableUploads() error {
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	loadFiles, err := job.loadFilesRepo.GetByStagingFiles(ctx, job.stagingFileIDs)
+	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.stagingFileIDs, []string{
+		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
+	})
 	if err != nil {
 		job.logger.Errorw(`Getting total rows in load files`, logfield.Error, err)
 		return 0
 	}
-	return lo.SumBy(loadFiles, func(loadFile model.LoadFile) int64 {
-		if whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable) == loadFile.TableName {
-			return 0
-		}
-		return int64(loadFile.TotalRows)
-	})
+	return exportedEvents
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
@@ -1025,7 +1022,6 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	}
 
 	job.logger.Infow("starting load for table",
-		logfield.Namespace, job.warehouse.Namespace,
 		logfield.TableName, tName,
 	)
 

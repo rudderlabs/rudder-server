@@ -3,8 +3,11 @@ package repo_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/stretchr/testify/require"
 
@@ -107,5 +110,151 @@ func Test_LoadFiles(t *testing.T) {
 		require.Len(t, gotLoadFiles, 1)
 		lastLoadFile.ID = gotLoadFiles[0].ID
 		require.Equal(t, lastLoadFile, gotLoadFiles[0])
+	})
+}
+
+func TestLoadFiles_TotalExportedEvents(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second).UTC()
+	db := setupDB(t)
+
+	r := repo.NewLoadFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	stagingFilesCount := 960
+	loadFilesCount := 25
+	retriesCount := 3
+
+	loadFiles := make([]model.LoadFile, 0, stagingFilesCount*loadFilesCount*retriesCount)
+	stagingFileIDs := make([]int64, 0, stagingFilesCount)
+
+	for i := 0; i < stagingFilesCount; i++ {
+		for j := 0; j < loadFilesCount; j++ {
+			for k := 0; k < retriesCount; k++ {
+				loadFiles = append(loadFiles, model.LoadFile{
+					TableName:             "table_name_" + strconv.Itoa(j+1),
+					Location:              "s3://bucket/path/to/file",
+					TotalRows:             (i + 1) + (j + 1) + (k + 1),
+					ContentLength:         1000,
+					StagingFileID:         int64(i + 1),
+					DestinationRevisionID: "revision_id",
+					UseRudderStorage:      true,
+					SourceID:              "source_id",
+					DestinationID:         "destination_id",
+					DestinationType:       "RS",
+				})
+			}
+		}
+		stagingFileIDs = append(stagingFileIDs, int64(i+1))
+	}
+
+	err := r.Insert(ctx, loadFiles)
+	require.NoError(t, err)
+
+	t.Run("no staging files", func(t *testing.T) {
+		exportedEvents, err := r.TotalExportedEvents(ctx, []int64{-1}, []string{})
+		require.NoError(t, err)
+		require.Zero(t, exportedEvents)
+	})
+	t.Run("without skip tables", func(t *testing.T) {
+		exportedEvents, err := r.TotalExportedEvents(ctx, stagingFileIDs, nil)
+		require.NoError(t, err)
+
+		actualEvents := lo.SumBy(stagingFileIDs, func(item int64) int64 {
+			sum := 0
+			for j := 0; j < loadFilesCount; j++ {
+				sum += int(item) + (j + 1) + retriesCount
+			}
+			return int64(sum)
+		})
+		require.Equal(t, actualEvents, exportedEvents)
+	})
+	t.Run("with skip tables", func(t *testing.T) {
+		excludeIDS := []int64{1, 3, 5, 7, 9}
+
+		skipTable := lo.Map(excludeIDS, func(item int64, index int) string {
+			return "table_name_" + strconv.Itoa(int(item))
+		})
+
+		exportedEvents, err := r.TotalExportedEvents(ctx, stagingFileIDs, skipTable) // 11916000
+		require.NoError(t, err)
+
+		actualEvents := lo.SumBy(stagingFileIDs, func(item int64) int64 {
+			sum := 0
+			for j := 0; j < loadFilesCount; j++ {
+				if lo.Contains(excludeIDS, int64(j+1)) {
+					continue
+				}
+				sum += int(item) + (j + 1) + retriesCount
+			}
+			return int64(sum)
+		})
+		require.Equal(t, actualEvents, exportedEvents)
+	})
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		exportedEvents, err := r.TotalExportedEvents(ctx, stagingFileIDs, nil)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, exportedEvents)
+	})
+}
+
+func TestLoadFiles_DistinctTableName(t *testing.T) {
+	sourceID := "source_id"
+	destinationID := "destination_id"
+
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second).UTC()
+	db := setupDB(t)
+
+	r := repo.NewLoadFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	stagingFilesCount := 960
+	loadFilesCount := 25
+
+	loadFiles := make([]model.LoadFile, 0, stagingFilesCount*loadFilesCount)
+
+	for i := 0; i < stagingFilesCount; i++ {
+		for j := 0; j < loadFilesCount; j++ {
+			loadFiles = append(loadFiles, model.LoadFile{
+				TableName:             "table_name_" + strconv.Itoa(j+1),
+				Location:              "s3://bucket/path/to/file",
+				TotalRows:             (i + 1) + (j + 1),
+				ContentLength:         1000,
+				StagingFileID:         int64(i + 1),
+				DestinationRevisionID: "revision_id",
+				UseRudderStorage:      true,
+				SourceID:              sourceID,
+				DestinationID:         destinationID,
+				DestinationType:       "RS",
+			})
+		}
+	}
+
+	err := r.Insert(ctx, loadFiles)
+	require.NoError(t, err)
+
+	t.Run("no staging files", func(t *testing.T) {
+		tables, err := r.DistinctTableName(ctx, sourceID, destinationID, -1, -1)
+		require.NoError(t, err)
+		require.Zero(t, tables)
+	})
+	t.Run("some staging files", func(t *testing.T) {
+		tables, err := r.DistinctTableName(ctx, sourceID, destinationID, 1, int64(len(loadFiles)))
+		require.NoError(t, err)
+		require.Len(t, tables, loadFilesCount)
+	})
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		tables, err := r.DistinctTableName(ctx, sourceID, destinationID, -1, -1)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, tables)
 	})
 }
