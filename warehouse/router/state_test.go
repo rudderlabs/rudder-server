@@ -10,76 +10,64 @@ import (
 
 func TestState(t *testing.T) {
 	t.Run("inProgressState", func(t *testing.T) {
-		t.Run("panic in case of unknown state", func(t *testing.T) {
+		t.Run("invalid state", func(t *testing.T) {
 			require.Panics(t, func() {
 				inProgressState("unknown")
 			})
 		})
-		t.Run("return in progress state", func(t *testing.T) {
-			require.Equal(t, "generating_upload_schema", inProgressState(model.GeneratedUploadSchema))
+		t.Run("valid state", func(t *testing.T) {
+			testcases := []struct {
+				current         string
+				inProgressState string
+			}{
+				{current: model.GeneratedUploadSchema, inProgressState: "generating_upload_schema"},
+				{current: model.CreatedTableUploads, inProgressState: "creating_table_uploads"},
+				{current: model.GeneratedLoadFiles, inProgressState: "generating_load_files"},
+				{current: model.UpdatedTableUploadsCounts, inProgressState: "updating_table_uploads_counts"},
+				{current: model.CreatedRemoteSchema, inProgressState: "creating_remote_schema"},
+				{current: model.ExportedData, inProgressState: "exporting_data"},
+			}
+
+			for index, tc := range testcases {
+				require.Equal(t, tc.inProgressState, inProgressState(tc.current), "test case %d", index)
+			}
 		})
 	})
 	t.Run("nextState", func(t *testing.T) {
 		testCases := []struct {
-			name    string
 			current string
 			next    *state
 		}{
-			{
-				name:    "unknown state",
-				current: "unknown",
-				next:    nil,
-			},
-			{
-				name:    "waiting state",
-				current: model.Waiting,
-				next:    stateTransitions[model.GeneratedUploadSchema],
-			},
-			{
-				name:    "generating_upload_schema",
-				current: model.GeneratedUploadSchema,
-				next:    stateTransitions[model.CreatedTableUploads],
-			},
-			{
-				name:    "creating_table_uploads",
-				current: model.CreatedTableUploads,
-				next:    stateTransitions[model.GeneratedLoadFiles],
-			},
-			{
-				name:    "generating_load_files",
-				current: model.GeneratedLoadFiles,
-				next:    stateTransitions[model.UpdatedTableUploadsCounts],
-			},
-			{
-				name:    "updating_table_uploads_counts",
-				current: model.UpdatedTableUploadsCounts,
-				next:    stateTransitions[model.CreatedRemoteSchema],
-			},
-			{
-				name:    "creating_remote_schema",
-				current: model.CreatedRemoteSchema,
-				next:    stateTransitions[model.ExportedData],
-			},
-			{
-				name:    "exporting_data",
-				current: model.ExportedData,
-				next:    nil,
-			},
-			{
-				name:    "in progress state",
-				current: "generating_upload_schema",
-				next:    stateTransitions[model.GeneratedUploadSchema],
-			},
-			{
-				name:    "failed state",
-				current: "generating_upload_schema_failed",
-				next:    stateTransitions[model.GeneratedUploadSchema],
-			},
+			{current: "unknown", next: nil},
+
+			// completed states
+			{current: model.Waiting, next: stateTransitions[model.GeneratedUploadSchema]},
+			{current: model.GeneratedUploadSchema, next: stateTransitions[model.CreatedTableUploads]},
+			{current: model.CreatedTableUploads, next: stateTransitions[model.GeneratedLoadFiles]},
+			{current: model.GeneratedLoadFiles, next: stateTransitions[model.UpdatedTableUploadsCounts]},
+			{current: model.UpdatedTableUploadsCounts, next: stateTransitions[model.CreatedRemoteSchema]},
+			{current: model.CreatedRemoteSchema, next: stateTransitions[model.ExportedData]},
+			{current: model.ExportedData, next: nil},
+			{current: model.Aborted, next: nil},
+
+			// in progress states
+			{current: "generating_upload_schema", next: stateTransitions[model.GeneratedUploadSchema]},
+			{current: "creating_table_uploads", next: stateTransitions[model.CreatedTableUploads]},
+			{current: "generating_load_files", next: stateTransitions[model.GeneratedLoadFiles]},
+			{current: "updating_table_uploads_counts", next: stateTransitions[model.UpdatedTableUploadsCounts]},
+			{current: "creating_remote_schema", next: stateTransitions[model.CreatedRemoteSchema]},
+			{current: "exporting_data", next: stateTransitions[model.ExportedData]},
+
+			// failed states
+			{current: "generating_upload_schema_failed", next: stateTransitions[model.GeneratedUploadSchema]},
+			{current: "creating_table_uploads_failed", next: stateTransitions[model.CreatedTableUploads]},
+			{current: "generating_load_files_failed", next: stateTransitions[model.GeneratedLoadFiles]},
+			{current: "updating_table_uploads_counts_failed", next: stateTransitions[model.UpdatedTableUploadsCounts]},
+			{current: "creating_remote_schema_failed", next: stateTransitions[model.CreatedRemoteSchema]},
+			{current: "exporting_data_failed", next: stateTransitions[model.ExportedData]},
 		}
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, tc.next, nextState(tc.current))
-			})
+		for index, tc := range testCases {
+			require.Equal(t, tc.next, nextState(tc.current), "test case %d", index)
 		}
 	})
 }

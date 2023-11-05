@@ -17,7 +17,7 @@ type state struct {
 var stateTransitions map[string]*state
 
 func init() {
-	stateTransitions = make(map[string]*state)
+	stateTransitions = make(map[string]*state, 8)
 
 	waitingState := &state{
 		completed: model.Waiting,
@@ -81,20 +81,20 @@ func init() {
 	abortState.nextState = nil
 }
 
-func inProgressState(state string) string {
-	uploadState, ok := stateTransitions[state]
+func inProgressState(currentState string) string {
+	uploadState, ok := stateTransitions[currentState]
 	if !ok {
-		panic(fmt.Errorf("invalid Upload state: %s", state))
+		panic(fmt.Errorf("invalid state: %s", currentState))
 	}
 	return uploadState.inProgress
 }
 
-func nextState(dbStatus string) *state {
+func nextState(currentState string) *state {
 	for _, uploadState := range stateTransitions {
-		if dbStatus == uploadState.inProgress || dbStatus == uploadState.failed {
+		if currentState == uploadState.inProgress || currentState == uploadState.failed {
 			return uploadState
 		}
-		if dbStatus == uploadState.completed {
+		if currentState == uploadState.completed {
 			return uploadState.nextState
 		}
 	}
