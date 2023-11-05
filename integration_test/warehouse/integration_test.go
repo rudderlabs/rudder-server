@@ -1803,6 +1803,7 @@ func TestUploads(t *testing.T) {
 														"endPoint":         minioResource.Endpoint,
 														"syncFrequency":    "0",
 														"useRudderStorage": false,
+														"enableMerge":      true,
 													},
 													RevisionID: destinationRevisionID,
 												},

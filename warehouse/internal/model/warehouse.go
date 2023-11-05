@@ -22,12 +22,12 @@ type Warehouse struct {
 	Identifier  string
 }
 
-func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting, defaultValue bool) bool {
+func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key.string()] != nil {
 		if val, ok := destConfig[key.string()].(bool); ok {
 			return val
 		}
 	}
-	return defaultValue
+	return false
 }
