@@ -17,14 +17,14 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 	}
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
-		// If the destination has oneTrustCookieCategories, returns true if none of the oneTrustCategories are present in deniedCategories
+		// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
 		if oneTrustCategories := proc.oneConsentCategories(dest.ID); len(oneTrustCategories) > 0 {
 			return len(lo.Intersect(oneTrustCategories, deniedCategories)) == 0
 		}
 
-		// If the destination has ketchConsentPurposes, returns true if all ketchCategories are not present in deniedCategories
+		// If the destination has ketchConsentPurposes, returns false if all ketchCategories are present in deniedCategories
 		if ketchCategories := proc.ketchConsentCategories(dest.ID); len(ketchCategories) > 0 {
-			return len(lo.Intersect(ketchCategories, deniedCategories)) != len(ketchCategories)
+			return !lo.Every(deniedCategories, ketchCategories)
 		}
 		return true
 	})

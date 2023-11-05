@@ -40,6 +40,17 @@ func TestDeniedConsentCategories(t *testing.T) {
 			expected: nil,
 		},
 		{
+			name: "invalid deniedConsentIds",
+			event: types.SingularEventT{
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": "foo",
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
 			name: "empty deniedConsentIds",
 			event: types.SingularEventT{
 				"context": map[string]interface{}{
@@ -260,7 +271,7 @@ func TestHandle_FilterDestinations(t *testing.T) {
 			event: types.SingularEventT{
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3"},
+						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3", "foo-1", "foo-2", "foo-3"},
 					},
 				},
 			},
@@ -318,6 +329,23 @@ func TestHandle_FilterDestinations(t *testing.T) {
 							},
 							map[string]interface{}{
 								"purpose": "foo-3",
+							},
+						},
+					},
+				},
+
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{
+								"purpose": "foo-1",
+							},
+							map[string]interface{}{
+								"purpose": "foo-1",
+							},
+							map[string]interface{}{
+								"purpose": "foo-1",
 							},
 						},
 					},
