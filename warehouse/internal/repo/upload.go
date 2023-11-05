@@ -5,7 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/tidwall/gjson"
 
@@ -30,8 +34,7 @@ var syncStatusMap = map[string]string{
 
 const (
 	uploadsTableName = warehouseutils.WarehouseUploadsTable
-
-	uploadColumns = `
+	uploadColumns    = `
 		id,
 		status,
 		schema,
@@ -53,6 +56,20 @@ const (
 		first_event_at,
 		last_event_at
 	`
+)
+
+var (
+	UploadFieldStatus          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"status", v} }
+	UploadFieldStartLoadFileID UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"start_load_file_id", v} }
+	UploadFieldEndLoadFileID   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"end_load_file_id", v} }
+	UploadFieldUpdatedAt       UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"updated_at", v} }
+	UploadFieldTimings         UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"timings", v} }
+	UploadFieldSchema          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"schema", v} }
+	UploadFieldLastExecAt      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"last_exec_at", v} }
+	UploadFieldInProgress      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"in_progress", v} }
+	UploadFieldMetadata        UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"metadata", v} }
+	UploadFieldError           UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error", v} }
+	UploadFieldErrorCategory   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error_category", v} }
 )
 
 type Uploads repo
@@ -102,7 +119,7 @@ func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	}
 }
 
-func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []*model.StagingFile) (int64, error) {
+func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []*model.StagingFile) (int64, error) {
 	startJSONID := files[0].ID
 	endJSONID := files[len(files)-1].ID
 
@@ -135,7 +152,7 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		return 0, err
 	}
 
-	tx, err := uploads.db.BeginTx(ctx, &sql.TxOptions{})
+	tx, err := u.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return 0, err
 	}
@@ -177,8 +194,8 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		metadata,
 		firstEventAt,
 		lastEventAt,
-		uploads.now(),
-		uploads.now(),
+		u.now(),
+		u.now(),
 	).Scan(&uploadID)
 	if err != nil {
 		return 0, err
@@ -216,7 +233,7 @@ type FilterBy struct {
 	NotEquals bool
 }
 
-func (uploads *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
+func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
 
 	args := make([]interface{}, 0)
@@ -232,15 +249,15 @@ func (uploads *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, 
 	}
 
 	var count int64
-	if err := uploads.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+	if err := u.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("scanning count into local variable: %w", err)
 	}
 
 	return count, nil
 }
 
-func (uploads *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
-	row := uploads.db.QueryRowContext(ctx,
+func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
+	row := u.db.QueryRowContext(ctx,
 		`SELECT
 		`+uploadColumns+`
 		FROM
@@ -262,7 +279,7 @@ func (uploads *Uploads) Get(ctx context.Context, id int64) (model.Upload, error)
 	return upload, nil
 }
 
-func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit int, opts ProcessOptions) ([]model.Upload, error) {
+func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, opts ProcessOptions) ([]model.Upload, error) {
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
 
@@ -326,7 +343,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 		args = append(args, pq.Array(opts.SkipIdentifiers))
 	}
 
-	rows, err = uploads.db.QueryContext(
+	rows, err = u.db.QueryContext(
 		ctx,
 		sqlStatement,
 		args...,
@@ -356,7 +373,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 	return uploadJobs, nil
 }
 
-func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, opts ProcessOptions) (model.UploadJobsStats, error) {
+func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts ProcessOptions) (model.UploadJobsStats, error) {
 	query := `
 		SELECT
 			COALESCE(COUNT(*), 0) AS pending_jobs,
@@ -379,7 +396,7 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	}
 
 	args := []any{
-		uploads.now(),
+		u.now(),
 		destType,
 		model.ExportedData,
 		model.Aborted,
@@ -397,7 +414,7 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 		pickupWaitTime sql.NullFloat64
 	)
 
-	err := uploads.db.QueryRowContext(
+	err := u.db.QueryRowContext(
 		ctx,
 		query,
 		args...,
@@ -417,13 +434,13 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 }
 
 // UploadTimings returns the timings for an upload.
-func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
+func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
 	var (
 		rawJSON jsoniter.RawMessage
 		timings model.Timings
 	)
 
-	err := uploads.db.QueryRowContext(ctx, `
+	err := u.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(timings, '[]')::JSONB
 		FROM
@@ -446,8 +463,8 @@ func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (mode
 	return timings, nil
 }
 
-func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
-	_, err := uploads.db.ExecContext(ctx,
+func (u *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
+	_, err := u.db.ExecContext(ctx,
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2;`,
 		uploadID, model.Waiting,
 	)
@@ -529,9 +546,9 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 // InterruptedDestinations returns a list of destination IDs, which have uploads was interrupted.
 //
 //	Interrupted upload might require cleanup of intermediate upload tables.
-func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destinationType string) ([]string, error) {
+func (u *Uploads) InterruptedDestinations(ctx context.Context, destinationType string) ([]string, error) {
 	destinationIDs := make([]string, 0)
-	rows, err := uploads.db.QueryContext(ctx, `
+	rows, err := u.db.QueryContext(ctx, `
 		SELECT
 			destination_id
 		FROM
@@ -571,10 +588,10 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 }
 
 // PendingTableUploads returns a list of pending table uploads for a given upload.
-func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+func (u *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
-	rows, err := uploads.db.QueryContext(ctx, `
+	rows, err := u.db.QueryContext(ctx, `
 		SELECT
 		  UT.id,
 		  UT.destination_id,
@@ -641,8 +658,8 @@ func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace strin
 	return pendingTableUploads, nil
 }
 
-func (uploads *Uploads) ResetInProgress(ctx context.Context, destType string) error {
-	_, err := uploads.db.ExecContext(ctx, `
+func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
+	_, err := u.db.ExecContext(ctx, `
 		UPDATE
 			`+uploadsTableName+`
 		SET
@@ -659,8 +676,8 @@ func (uploads *Uploads) ResetInProgress(ctx context.Context, destType string) er
 	return nil
 }
 
-func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
-	row := uploads.db.QueryRowContext(ctx, `
+func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
+	row := u.db.QueryRowContext(ctx, `
 		SELECT
 			created_at
 		FROM
@@ -689,8 +706,8 @@ func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destination
 	return createdAt.Time, nil
 }
 
-func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
-	syncUploadInfos, totalUploads, err := uploads.syncsInfo(ctx, limit, offset, opts, true)
+func (u *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	syncUploadInfos, totalUploads, err := u.syncsInfo(ctx, limit, offset, opts, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
 	}
@@ -699,7 +716,7 @@ func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offs
 	}
 
 	// Getting the syncs count in case, we were not able to get the count
-	totalUploads, err = uploads.syncsCount(ctx, opts)
+	totalUploads, err = u.syncsCount(ctx, opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload count: %w", err)
 	}
@@ -707,13 +724,13 @@ func (uploads *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offs
 	return syncUploadInfos, totalUploads, nil
 }
 
-func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
-	syncUploadInfos, _, err := uploads.syncsInfo(ctx, limit, offset, opts, false)
+func (u *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	syncUploadInfos, _, err := u.syncsInfo(ctx, limit, offset, opts, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
 	}
 
-	totalUploads, err := uploads.syncsCount(ctx, opts)
+	totalUploads, err := u.syncsCount(ctx, opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload count: %w", err)
 	}
@@ -721,7 +738,7 @@ func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, o
 	return syncUploadInfos, totalUploads, nil
 }
 
-func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
+func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
 	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
 
 	countOverClause := "0 AS total_uploads"
@@ -765,7 +782,7 @@ func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts m
 	)
 	stmtArgs := append([]interface{}{}, append(filterArgs, limit, offset)...)
 
-	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	rows, err := u.db.QueryContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info: %w", err)
 	}
@@ -833,7 +850,7 @@ func (uploads *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts m
 		if uploadInfo.Status == model.ExportedData || uploadInfo.Status == model.Aborted {
 			uploadInfo.Duration = uploadInfo.UpdatedAt.Sub(uploadInfo.LastExecAt) / time.Second
 		} else {
-			uploadInfo.Duration = uploads.now().Sub(uploadInfo.LastExecAt) / time.Second
+			uploadInfo.Duration = u.now().Sub(uploadInfo.LastExecAt) / time.Second
 		}
 
 		// set error only for failed uploads. skip for retried and then successful uploads
@@ -886,11 +903,11 @@ func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []interface{}) {
 	return queryFilters, queryArgs
 }
 
-func (uploads *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) (int64, error) {
+func (u *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) (int64, error) {
 	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
 
 	var totalUploads int64
-	err := uploads.db.QueryRowContext(ctx, fmt.Sprintf(`
+	err := u.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
 		  	COUNT(*)
 		FROM
@@ -908,8 +925,8 @@ func (uploads *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOpt
 	return totalUploads, nil
 }
 
-func (uploads *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
-	r, err := uploads.db.ExecContext(ctx, `
+func (u *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
+	r, err := u.db.ExecContext(ctx, `
 		UPDATE
 			`+uploadsTableName+`
 		SET
@@ -920,7 +937,7 @@ func (uploads *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error
 			id = $3;
 `,
 		model.Waiting,
-		uploads.now(),
+		u.now(),
 		uploadID,
 	)
 	if err != nil {
@@ -937,7 +954,7 @@ func (uploads *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error
 	return nil
 }
 
-func (uploads *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, error) {
+func (u *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, error) {
 	filterQuery, filterArgs := retryQueryArgs(&opts)
 
 	stmt := fmt.Sprintf(`
@@ -954,9 +971,9 @@ func (uploads *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int
 		len(filterArgs)+2,
 		filterQuery,
 	)
-	stmtArgs := append([]interface{}{}, append(filterArgs, model.Waiting, uploads.now())...)
+	stmtArgs := append([]interface{}{}, append(filterArgs, model.Waiting, u.now())...)
 
-	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
+	r, err := u.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("trigger uploads: update: %w", err)
 	}
@@ -997,7 +1014,7 @@ func retryQueryArgs(ro *model.RetryOptions) (string, []interface{}) {
 	return queryFilters, queryArgs
 }
 
-func (uploads *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int64, error) {
+func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int64, error) {
 	filterQuery, filterArgs := retryQueryArgs(&opts)
 
 	stmt := fmt.Sprintf(`
@@ -1010,16 +1027,16 @@ func (uploads *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions)
 	)
 
 	var totalUploads int64
-	err := uploads.db.QueryRowContext(ctx, stmt, filterArgs...).Scan(&totalUploads)
+	err := u.db.QueryRowContext(ctx, stmt, filterArgs...).Scan(&totalUploads)
 	if err != nil {
 		return 0, fmt.Errorf("count uploads to retry: %w", err)
 	}
 	return totalUploads, nil
 }
 
-func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
+func (u *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
 	var latestUploadInfo model.LatestUploadInfo
-	err := uploads.db.QueryRowContext(ctx, `
+	err := u.db.QueryRowContext(ctx, `
 		SELECT
 		  	id,
 		  	status,
@@ -1048,7 +1065,7 @@ func (uploads *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, desti
 	return &latestUploadInfo, nil
 }
 
-func (uploads *Uploads) RetrieveFailedBatches(
+func (u *Uploads) RetrieveFailedBatches(
 	ctx context.Context,
 	req model.RetrieveFailedBatchesRequest,
 ) ([]model.RetrieveFailedBatchesResponse, error) {
@@ -1188,7 +1205,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 	`
 	start, end := req.Start, req.End
 	if req.End.IsZero() {
-		end = uploads.now()
+		end = u.now()
 	}
 
 	stmtArgs := []interface{}{
@@ -1197,7 +1214,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 		warehouseutils.DiscardsTable,
 	}
 
-	rows, err := uploads.db.QueryContext(ctx, stmt, stmtArgs...)
+	rows, err := u.db.QueryContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying failed batches: %w", err)
 	}
@@ -1245,7 +1262,7 @@ func (uploads *Uploads) RetrieveFailedBatches(
 	return failedBatches, nil
 }
 
-func (uploads *Uploads) RetryFailedBatches(
+func (u *Uploads) RetryFailedBatches(
 	ctx context.Context,
 	req model.RetryFailedBatchesRequest,
 ) (int64, error) {
@@ -1265,12 +1282,12 @@ func (uploads *Uploads) RetryFailedBatches(
 	`
 	start, end := req.Start, req.End
 	if req.End.IsZero() {
-		end = uploads.now()
+		end = u.now()
 	}
 
 	stmtArgs := []interface{}{
 		req.DestinationID, req.WorkspaceID, start, end,
-		model.Waiting, uploads.now(),
+		model.Waiting, u.now(),
 	}
 
 	if req.ErrorCategory != "" {
@@ -1289,10 +1306,49 @@ func (uploads *Uploads) RetryFailedBatches(
 		stmtArgs = append(stmtArgs, pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}))
 	}
 
-	r, err := uploads.db.ExecContext(ctx, stmt, stmtArgs...)
+	r, err := u.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("retrying failed batches: %w", err)
 	}
 
 	return r.RowsAffected()
+}
+
+func (uploads *Uploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
+	return (*repo)(uploads).WithTx(ctx, f)
+}
+
+func (uploads *Uploads) Update(ctx context.Context, id int64, fields []UpdateKeyValue) error {
+	return uploads.update(ctx, uploads.db.ExecContext, id, fields)
+}
+
+func (uploads *Uploads) UpdateWithTx(ctx context.Context, tx *sqlmiddleware.Tx, id int64, fields []UpdateKeyValue) error {
+	return uploads.update(ctx, tx.ExecContext, id, fields)
+}
+
+func (uploads *Uploads) update(
+	ctx context.Context,
+	exec func(context.Context, string, ...interface{}) (sql.Result, error),
+	id int64,
+	fields []UpdateKeyValue,
+) error {
+	if len(fields) == 0 {
+		return fmt.Errorf("no fields to update")
+	}
+
+	filters := strings.Join(lo.Map(fields, func(item UpdateKeyValue, index int) string {
+		return fmt.Sprintf(" %s = $%d ", item.key(), index+1)
+	}), ", ")
+	filtersArgs := lo.Map(fields, func(item UpdateKeyValue, index int) interface{} {
+		return item.value()
+	})
+
+	query := `UPDATE ` + uploadsTableName + ` SET ` + filters + ` WHERE id = $` + strconv.Itoa(len(filtersArgs)+1)
+	filtersArgs = append(filtersArgs, id)
+
+	_, err := exec(ctx, query, filtersArgs...)
+	if err != nil {
+		return fmt.Errorf("updating uploads: %w", err)
+	}
+	return nil
 }

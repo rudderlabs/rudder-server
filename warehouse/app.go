@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
@@ -25,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -44,8 +45,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -65,9 +66,10 @@ type App struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	fileManagerFactory filemanager.Factory
-	sourcesManager     *jobs.AsyncJobWh
+	sourcesManager     *source.Manager
 	admin              *whadmin.Admin
 	triggerStore       *sync.Map
+	createUploadAlways *atomic.Bool
 
 	appName string
 
@@ -131,6 +133,7 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("setting up database: %w", err)
 	}
 
+	a.createUploadAlways = &atomic.Bool{}
 	a.triggerStore = &sync.Map{}
 	a.tenantManager = multitenant.New(
 		a.conf,
@@ -170,12 +173,12 @@ func (a *App) Setup(ctx context.Context) error {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 
-	a.sourcesManager = jobs.New(
-		ctx,
+	a.sourcesManager = source.New(
+		a.conf,
+		a.logger,
 		a.db,
 		a.notifier,
 	)
-	jobs.WithConfig(a.sourcesManager, a.conf)
 
 	a.api, err = api.New(
 		a.config.mode,
@@ -196,7 +199,7 @@ func (a *App) Setup(ctx context.Context) error {
 
 	a.admin = whadmin.New(
 		a.bcManager,
-		&router.StartUploadAlways,
+		a.createUploadAlways,
 		a.logger,
 	)
 
@@ -400,7 +403,7 @@ func (a *App) Run(ctx context.Context) error {
 			return nil
 		})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.sourcesManager.Run()
+			return a.sourcesManager.Run(gCtx)
 		}))
 	}
 
@@ -474,6 +477,7 @@ func (a *App) onConfigDataEvent(
 					a.bcManager,
 					a.encodingFactory,
 					a.triggerStore,
+					a.createUploadAlways,
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)

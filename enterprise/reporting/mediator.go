@@ -3,6 +3,10 @@ package reporting
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -55,7 +59,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 
 	// error index reporting implementation
 	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
-		errorIndexReporter := NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default)
+		errorIndexReporter := erridx.NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default, stats.Default)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
 

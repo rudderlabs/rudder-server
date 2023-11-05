@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -25,8 +27,8 @@ import (
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -37,7 +39,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -177,22 +178,22 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := bcm.New(config.Default, db, tenantManager, logger.NOP, stats.Default)
+	bcManager := bcm.New(config.New(), db, tenantManager, logger.NOP, memstats.New())
 
 	triggerStore := &sync.Map{}
 
 	ctx, stopTest := context.WithCancel(context.Background())
 
-	n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
+	n := notifier.New(config.New(), logger.NOP, memstats.New(), workspaceIdentifier)
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
-	sourcesManager := jobs.New(
-		ctx,
+	sourcesManager := source.New(
+		c,
+		logger.NOP,
 		db,
 		n,
 	)
-	jobs.WithConfig(sourcesManager, config.Default)
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -204,7 +205,7 @@ func TestHTTPApi(t *testing.T) {
 		return nil
 	})
 	g.Go(func() error {
-		return sourcesManager.Run()
+		return sourcesManager.Run(gCtx)
 	})
 
 	setupCh := make(chan struct{})
@@ -411,7 +412,7 @@ func TestHTTPApi(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.runningMode", tc.runningMode)
 
-				a, err := New(tc.mode, c, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+				a, err := New(tc.mode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 				require.NoError(t, err)
 
 				a.httpServer.healthHandler(resp, req)
@@ -431,7 +432,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -451,7 +452,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -471,7 +472,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -491,7 +492,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -511,7 +512,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -539,7 +540,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -571,7 +572,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.pendingEventsHandler(resp, req)
@@ -595,7 +596,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/internal/v1/warehouse/fetch-tables", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.fetchTablesHandler(resp, req)
@@ -614,7 +615,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.fetchTablesHandler(resp, req)
@@ -638,7 +639,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.fetchTablesHandler(resp, req)
@@ -663,7 +664,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/trigger-upload", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -683,7 +684,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -703,7 +704,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -723,7 +724,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -743,7 +744,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -767,7 +768,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a, err := New(config.MasterMode, config.Default, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, config.Default, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			a.httpServer.triggerUploadHandler(resp, req)
@@ -793,7 +794,7 @@ func TestHTTPApi(t *testing.T) {
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 
-			a, err := New(config.MasterMode, c, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			serverSetupCh := make(chan struct{})
@@ -940,7 +941,8 @@ func TestHTTPApi(t *testing.T) {
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
 				  "job_run_id": "test_source_job_run_id",
-				  "task_run_id": "test_source_task_run_id"
+				  "task_run_id": "test_source_task_run_id",
+				  "async_job_type": "deletebyjobrunid"
 				}
 			`)))
 				require.NoError(t, err)
@@ -992,7 +994,7 @@ func TestHTTPApi(t *testing.T) {
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 
-			a, err := New(config.MasterMode, c, logger.NOP, stats.Default, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a, err := New(config.MasterMode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			require.NoError(t, err)
 
 			serverSetupCh := make(chan struct{})

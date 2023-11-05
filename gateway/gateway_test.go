@@ -844,7 +844,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
@@ -884,10 +884,11 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
+			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
 				gateway.webAliasHandler(),
-				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
+				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"data": "valid-json"}`)),
 				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
 				"alias",
@@ -1341,6 +1342,77 @@ var _ = Describe("Gateway", func() {
 			}
 			_, err = gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
+		})
+
+		It("sanitizes messageID, trim space and replace with new uuid", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": " \u0000\u00A0\t\n\r\u034F ",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+
+			u, err := uuid.Parse(job.Batch[0].MessageID)
+			Expect(err).To(BeNil())
+			Expect(u.Version()).To(Equal(uuid.Version(4)))
+		})
+
+		It("sanitizes messageID, remove bad runes and trim space", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": "\u0000 -a-random-string \u00A0\t\n\r\u034F",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
 
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {

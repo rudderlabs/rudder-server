@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -148,8 +148,8 @@ func TestGRPC(t *testing.T) {
 
 		triggerStore := &sync.Map{}
 		tenantManager := multitenant.New(c, mockBackendConfig)
-		bcManager := bcm.New(c, db, tenantManager, logger.NOP, stats.Default)
-		grpcServer, err := newGRPCServer(c, logger.NOP, db, tenantManager, bcManager, triggerStore)
+		bcManager := bcm.New(c, db, tenantManager, logger.NOP, memstats.New())
+		grpcServer, err := newGRPCServer(c, logger.NOP, memstats.New(), db, tenantManager, bcManager, triggerStore)
 		require.NoError(t, err)
 
 		tcpPort, err := kithelper.GetFreePort()
@@ -160,7 +160,7 @@ func TestGRPC(t *testing.T) {
 		listener, err := net.Listen("tcp", tcpAddress)
 		require.NoError(t, err)
 
-		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+		server := grpc.NewServer(grpc.Creds(insecure.NewCredentials()), grpc.UnaryInterceptor(statsInterceptor(memstats.New())))
 		proto.RegisterWarehouseServer(server, grpcServer)
 
 		g, gCtx := errgroup.WithContext(ctx)

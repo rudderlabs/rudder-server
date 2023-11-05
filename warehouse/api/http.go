@@ -34,8 +34,8 @@ import (
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -75,7 +75,7 @@ type httpServer struct {
 	bcConfig      backendconfig.BackendConfig
 	tenantManager *multitenant.Manager
 	bcManager     *bcm.BackendConfigManager
-	asyncManager  *jobs.AsyncJobWh
+	sourceManager *source.Manager
 	stagingRepo   *repo.StagingFiles
 	uploadRepo    *repo.Uploads
 	schemaRepo    *repo.WHSchema
@@ -100,7 +100,7 @@ func newhttpServer(
 	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	bcManager *bcm.BackendConfigManager,
-	asyncManager *jobs.AsyncJobWh,
+	sourceManager *source.Manager,
 	triggerStore *sync.Map,
 ) *httpServer {
 	a := &httpServer{
@@ -112,7 +112,7 @@ func newhttpServer(
 		statsFactory:  statsFactory,
 		tenantManager: tenantManager,
 		bcManager:     bcManager,
-		asyncManager:  asyncManager,
+		sourceManager: sourceManager,
 		triggerStore:  triggerStore,
 		stagingRepo:   repo.NewStagingFiles(db),
 		uploadRepo:    repo.NewUploads(db),
@@ -170,8 +170,8 @@ func (a *httpServer) addMasterEndpoints(ctx context.Context, r chi.Router) {
 			r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
 			r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
 
-			r.Post("/jobs", a.logMiddleware(a.asyncManager.InsertJobHandler))       // TODO: add degraded mode
-			r.Get("/jobs/status", a.logMiddleware(a.asyncManager.StatusJobHandler)) // TODO: add degraded mode
+			r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))       // TODO: add degraded mode
+			r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler)) // TODO: add degraded mode
 
 			r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
 		})

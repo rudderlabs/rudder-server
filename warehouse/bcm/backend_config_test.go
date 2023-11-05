@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 
@@ -112,10 +112,10 @@ func TestBackendConfigManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tenantManager := multitenant.New(config.Default, mockBackendConfig)
+	tenantManager := multitenant.New(config.New(), mockBackendConfig)
 
 	t.Run("Subscriptions", func(t *testing.T) {
-		bcm := New(c, db, tenantManager, logger.NOP, stats.Default)
+		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
 
 		require.False(t, bcm.IsInitialized())
 		require.Equal(t, bcm.Connections(), map[string]map[string]model.Warehouse{})
@@ -191,7 +191,7 @@ func TestBackendConfigManager(t *testing.T) {
 	})
 
 	t.Run("Tunnelling", func(t *testing.T) {
-		bcm := New(c, db, tenantManager, logger.NOP, stats.Default)
+		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
 
 		testCases := []struct {
 			name     string
@@ -261,7 +261,7 @@ func TestBackendConfigManager(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		numSubscribers := 1000
-		bcm := New(c, db, tenantManager, logger.NOP, stats.Default)
+		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
 		subscriptionsChs := make([]<-chan []model.Warehouse, numSubscribers)
 
 		for i := 0; i < numSubscribers; i++ {
@@ -459,11 +459,11 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			require.NoError(t, err)
 
 			tenantManager := multitenant.New(
-				config.Default,
+				config.New(),
 				backendconfig.DefaultBackendConfig,
 			)
 
-			bcm := New(c, db, tenantManager, logger.NOP, stats.Default)
+			bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
 
 			namespace := bcm.namespace(context.Background(), tc.source, tc.destination)
 			require.Equal(t, tc.expectedNamespace, namespace)

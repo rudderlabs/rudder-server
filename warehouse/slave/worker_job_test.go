@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -198,7 +198,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingFileLocation: uf.ObjectName,
 			}
 
-			jr := newJobRun(p, config.Default, logger.NOP, stats.Default, encoding.NewFactory(config.Default))
+			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -226,7 +226,7 @@ func TestSlaveJob(t *testing.T) {
 
 			statsStore := memstats.New()
 
-			jr := newJobRun(p, config.Default, logger.NOP, statsStore, encoding.NewFactory(config.Default))
+			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -263,7 +263,7 @@ func TestSlaveJob(t *testing.T) {
 
 			statsStore := memstats.New()
 
-			jr := newJobRun(p, config.Default, logger.NOP, statsStore, encoding.NewFactory(config.Default))
+			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -296,7 +296,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingDestinationRevisionID: uuid.New().String(),
 			}
 
-			jr := newJobRun(p, config.Default, logger.NOP, stats.Default, encoding.NewFactory(config.Default))
+			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -323,7 +323,7 @@ func TestSlaveJob(t *testing.T) {
 			DestinationType: destType,
 		}
 
-		jr := newJobRun(p, config.Default, logger.NOP, stats.Default, encoding.NewFactory(config.Default))
+		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
 
 		defer jr.cleanup()
 
@@ -364,7 +364,7 @@ func TestSlaveJob(t *testing.T) {
 
 		now := time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC)
 
-		jr := newJobRun(p, config.Default, logger.NOP, stats.Default, encoding.NewFactory(config.Default))
+		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
 		jr.uuidTS = now
 		jr.now = func() time.Time {
 			return now
@@ -515,7 +515,7 @@ func TestSlaveJob(t *testing.T) {
 				c.Set("Warehouse.slaveUploadTimeout", "5m")
 				c.Set("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", loadObjectFolder)
 
-				jr := newJobRun(job, c, logger.NOP, store, encoding.NewFactory(config.Default))
+				jr := newJobRun(job, c, logger.NOP, store, encoding.NewFactory(config.New()))
 				jr.since = func(t time.Time) time.Duration {
 					return time.Second
 				}

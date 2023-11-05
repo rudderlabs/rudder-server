@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v2"
 )
 
@@ -20,6 +20,7 @@ var IgnorePackages = []string{
 	"warehouse/integrations/testdata",
 	"warehouse/integrations/config",
 	"warehouse/integrations/types",
+	"warehouse/integrations/tunnelling",
 }
 
 func main() {

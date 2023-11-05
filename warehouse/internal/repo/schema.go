@@ -40,10 +40,10 @@ func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
 	return r
 }
 
-func (repo *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error) {
+func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error) {
 	var (
 		id  int64
-		now = repo.now()
+		now = sh.now()
 	)
 
 	schemaPayload, err := json.Marshal(whSchema.Schema)
@@ -51,7 +51,7 @@ func (repo *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	err = repo.db.QueryRowContext(ctx, `
+	err = sh.db.QueryRowContext(ctx, `
 		INSERT INTO `+whSchemaTableName+` (
 		  wh_upload_id, source_id, namespace, destination_id,
 		  destination_type, schema, created_at,
@@ -82,7 +82,7 @@ func (repo *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int
 	return id, nil
 }
 
-func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error) {
+func (sh *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error) {
 	query := `SELECT ` + whSchemaTableColumns + ` FROM ` + whSchemaTableName + `
 	WHERE
 		source_id = $1 AND
@@ -92,7 +92,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 		id DESC;
 	`
 
-	rows, err := repo.db.QueryContext(
+	rows, err := sh.db.QueryContext(
 		ctx,
 		query,
 		sourceID,
@@ -103,7 +103,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 		return model.WHSchema{}, fmt.Errorf("querying schemas: %w", err)
 	}
 
-	entries, err := repo.parseRows(rows)
+	entries, err := parseWHSchemas(rows)
 	if err != nil {
 		return model.WHSchema{}, fmt.Errorf("parsing rows: %w", err)
 	}
@@ -114,7 +114,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 	return *entries[0], err
 }
 
-func (*WHSchema) parseRows(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
+func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 	var whSchemas []*model.WHSchema
 
 	defer func() { _ = rows.Close() }()
@@ -159,7 +159,7 @@ func (*WHSchema) parseRows(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) 
 	return whSchemas, nil
 }
 
-func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (string, error) {
+func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (string, error) {
 	query := `SELECT namespace FROM ` + whSchemaTableName + `
 		WHERE
 			source_id = $1 AND
@@ -169,7 +169,7 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 		LIMIT 1;
 	`
 
-	row := repo.db.QueryRowContext(
+	row := sh.db.QueryRowContext(
 		ctx,
 		query,
 		sourceID,
@@ -196,7 +196,7 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 	return namespace, nil
 }
 
-func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
+func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
 	if len(connections) == 0 {
 		return nil, fmt.Errorf("no source id and destination id pairs provided")
 	}
@@ -218,7 +218,7 @@ func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []
 				schema::text <> '{}'::text
 			GROUP BY id
 		)`
-	rows, err := repo.db.QueryContext(
+	rows, err := sh.db.QueryContext(
 		ctx,
 		query,
 		parameters...)
@@ -226,7 +226,7 @@ func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []
 		return nil, fmt.Errorf("querying schema: %w", err)
 	}
 
-	entries, err := repo.parseRows(rows)
+	entries, err := parseWHSchemas(rows)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rows: %w", err)
 	}

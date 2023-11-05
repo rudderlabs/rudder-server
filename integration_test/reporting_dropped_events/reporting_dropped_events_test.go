@@ -503,7 +503,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			gwPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			wg.Go(func() error {
-				config.Set("BatchRouter.toAbortDestinationIDs", "destination-1")
+				config.Set("Router.toAbortDestinationIDs", "destination-1")
 				err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)

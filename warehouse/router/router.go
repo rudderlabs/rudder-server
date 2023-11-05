@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -19,8 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -58,7 +59,9 @@ type Router struct {
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
 	whSchemaRepo *repo.WHSchema
-	triggerStore *sync.Map
+
+	triggerStore       *sync.Map
+	createUploadAlways createUploadAlwaysLoader
 
 	isEnabled atomic.Bool
 
@@ -78,6 +81,9 @@ type Router struct {
 
 	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
+
+	scheduledTimesCache     map[string][]int
+	scheduledTimesCacheLock sync.RWMutex
 
 	activeWorkerCount atomic.Int32
 	now               func() time.Time
@@ -134,6 +140,7 @@ func New(
 	bcManager *bcm.BackendConfigManager,
 	encodingFactory *encoding.Factory,
 	triggerStore *sync.Map,
+	createUploadAlways createUploadAlwaysLoader,
 ) (*Router, error) {
 	r := &Router{}
 
@@ -155,6 +162,8 @@ func New(
 	r.now = time.Now
 	r.triggerStore = triggerStore
 	r.createJobMarkerMap = make(map[string]time.Time)
+	r.createUploadAlways = createUploadAlways
+	r.scheduledTimesCache = make(map[string][]int)
 
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
@@ -473,7 +482,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		})
 		r.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
+		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 
 		if !found {
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
@@ -587,10 +596,9 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 			"workspaceId":   warehouse.WorkspaceID,
 			"destinationID": warehouse.Destination.ID,
 			"destType":      warehouse.Destination.DestinationDefinition.Name,
-			"reason":        err.Error(),
 		}).Count(1)
 
-		r.logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded: %v", warehouse.Identifier, err)
+		r.logger.Debugw("Skipping upload loop since upload freq not exceeded", logfield.Error, err.Error())
 
 		return nil
 	}
