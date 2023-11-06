@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/rudderlabs/rudder-server/compare/v1.16.0...v1.16.1) (2023-11-06)
+
+
+### Bug Fixes
+
+* sorting key for error indexing during parquet ([#4078](https://github.com/rudderlabs/rudder-server/issues/4078)) ([a029a81](https://github.com/rudderlabs/rudder-server/commit/a029a81b76e910990a8af89b559be8ede2c1ed9c))
+
 ## [1.16.0](https://github.com/rudderlabs/rudder-server/compare/v1.15.1...v1.16.0) (2023-10-31)
 
 
