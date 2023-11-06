@@ -1329,7 +1329,7 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 func (rs *Redshift) shouldMerge() bool {
 	return !rs.Uploader.CanAppend() ||
 		(rs.config.allowMerge &&
-			rs.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting) &&
+			rs.Warehouse.GetEnableMergeSetting() &&
 			!slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID))
 }
 

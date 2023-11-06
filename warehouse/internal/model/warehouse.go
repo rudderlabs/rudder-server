@@ -31,3 +31,12 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 	}
 	return false
 }
+
+func (w *Warehouse) GetEnableMergeSetting() bool {
+	destConfig := w.Destination.Config
+	value, ok := destConfig[EnableMergeSetting.string()].(bool)
+	if !ok {
+		return true // default value for backwards compatibility
+	}
+	return value
+}
