@@ -133,17 +133,6 @@ type pendingTableUploadsRepo interface {
 	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
 }
 
-const (
-	UploadStatusField          = "status"
-	UploadStartLoadFileIDField = "start_load_file_id"
-	UploadEndLoadFileIDField   = "end_load_file_id"
-	UploadUpdatedAtField       = "updated_at"
-	UploadTimingsField         = "timings"
-	UploadSchemaField          = "schema"
-	UploadLastExecAtField      = "last_exec_at"
-	UploadInProgress           = "in_progress"
-)
-
 var (
 	alwaysMarkExported                               = []string{whutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
