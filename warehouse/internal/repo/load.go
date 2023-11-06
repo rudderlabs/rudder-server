@@ -218,8 +218,7 @@ func (lf *LoadFiles) TotalExportedEvents(
 		WHERE
 			row_number = 1
 		AND
-			table_name != ALL($2);
-	`
+			table_name != ALL($2);`
 
 	err = lf.db.QueryRowContext(ctx, sqlStatement, pq.Array(stagingFileIDs), pq.Array(skipTables)).Scan(&count)
 	if err != nil {
@@ -246,13 +245,10 @@ func (lf *LoadFiles) DistinctTableName(
 		FROM
 		  `+loadTableName+`
 		WHERE
-		  (
 			source_id = $1
 			AND destination_id = $2
 			AND id >= $3
-			AND id <= $4
-		  );
-`,
+			AND id <= $4;`,
 		sourceID,
 		destinationID,
 		startID,

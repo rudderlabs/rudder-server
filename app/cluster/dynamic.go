@@ -3,15 +3,12 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
 var (
@@ -21,19 +18,11 @@ var (
 
 type ChangeEventProvider interface {
 	ServerMode(ctx context.Context) <-chan servermode.ChangeEvent
-	WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent
 }
 
 type lifecycle interface {
 	Start() error
 	Stop()
-}
-
-//go:generate mockgen -destination=./configlifecycle_mock_test.go -package=cluster_test -source=./dynamic.go configLifecycle
-type configLifecycle interface {
-	Stop()
-	StartWithIDs(ctx context.Context, workspaces string)
-	WaitForConfig(ctx context.Context)
 }
 
 type Dynamic struct {
@@ -54,14 +43,12 @@ type Dynamic struct {
 	SchemaForwarder lifecycle
 	Archiver        lifecycle
 
-	currentMode         servermode.Mode
-	currentWorkspaceIDs string
+	currentMode servermode.Mode
 
 	serverStartTimeStat  stats.Measurement
 	serverStopTimeStat   stats.Measurement
 	serverStartCountStat stats.Measurement
 	serverStopCountStat  stats.Measurement
-	BackendConfig        configLifecycle
 
 	logger logger.Logger
 
@@ -79,10 +66,6 @@ func (d *Dynamic) init() {
 	d.serverStopTimeStat = stats.Default.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
 	d.serverStartCountStat = stats.Default.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
 	d.serverStopCountStat = stats.Default.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
-
-	if d.BackendConfig == nil {
-		d.BackendConfig = backendconfig.DefaultBackendConfig
-	}
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
@@ -92,7 +75,6 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	defer cancel()
 
 	serverModeChan := d.Provider.ServerMode(ctx)
-	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
 	if d.GatewayComponent {
 		d.currentMode = servermode.NormalMode
 	}
@@ -130,23 +112,6 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack mode change: %w", err)
 			}
-		case req := <-workspaceIDsChan:
-			if req.Err() != nil {
-				return req.Err()
-			}
-			ids := strings.Join(req.WorkspaceIDs(), ",")
-
-			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
-			err := d.handleWorkspaceChange(ctx, ids)
-			if ackErr := req.Ack(ctx, err); ackErr != nil {
-				return fmt.Errorf("ack workspaceIDs change with error: %v: %w", err, ackErr)
-			}
-			if err != nil {
-				d.logger.Debugf("Could not handle workspaceIDs change: %v", err)
-				return err
-			}
-
-			d.logger.Debug("WorkspaceIDs changed")
 		}
 	}
 }
@@ -222,14 +187,6 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("ErrorDB stopped")
 	d.serverStopTimeStat.Since(start)
 	d.serverStopCountStat.Increment()
-}
-
-func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) error {
-	d.BackendConfig.Stop()
-	d.BackendConfig.StartWithIDs(ctx, workspaces)
-	d.currentWorkspaceIDs = workspaces
-	d.BackendConfig.WaitForConfig(ctx)
-	return nil
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
