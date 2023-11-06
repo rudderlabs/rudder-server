@@ -90,12 +90,13 @@ func inProgressState(currentState string) string {
 }
 
 func nextState(currentState string) *state {
+	if _, ok := stateTransitions[currentState]; ok {
+		return stateTransitions[currentState].nextState
+	}
+
 	for _, uploadState := range stateTransitions {
 		if currentState == uploadState.inProgress || currentState == uploadState.failed {
 			return uploadState
-		}
-		if currentState == uploadState.completed {
-			return uploadState.nextState
 		}
 	}
 	return nil
