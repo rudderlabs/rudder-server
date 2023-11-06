@@ -116,7 +116,7 @@ func TestWarehouse(t *testing.T) {
 
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "bad request")
+			_, _ = fmt.Fprintf(w, "bad request")
 		}))
 		t.Cleanup(ts.Close)
 
