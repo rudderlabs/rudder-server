@@ -61,18 +61,24 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		jobIdentityFunc:       defaultJobIdentifier,
 	}
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
-func NewDroppedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
-	return &statsCollector{
+func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsStatsCollector {
+	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		jobIdentityFunc:       defaultJobIdentifier,
 	}
+	for _, opt := range opts {
+		opt(sc)
+	}
+	return sc
 }
 
 type statKey struct {
@@ -93,6 +99,7 @@ type statsCollector struct {
 	jobIdsToRecordIdIndex map[int64]json.RawMessage
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]json.RawMessage
+	jobIdentityFunc       GetJobIdentifiersFunc
 }
 
 func (r *statsCollector) orderedStatMapKeys() []statKey {
@@ -237,31 +244,10 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		var jobRunId string
-		var jobTargetKey JobTargetKey
-		var recordId string
-		remaining := 5
-		jp := gjson.ParseBytes(job.Parameters)
-		jp.ForEach(func(key, value gjson.Result) bool {
-			switch key.Str {
-			case "source_job_run_id":
-				jobRunId = value.Str
-				remaining--
-			case "source_task_run_id":
-				jobTargetKey.TaskRunID = value.Str
-				remaining--
-			case "source_id":
-				jobTargetKey.SourceID = value.Str
-				remaining--
-			case "destination_id":
-				jobTargetKey.DestinationID = value.Str
-				remaining--
-			case "record_id":
-				recordId = value.Raw
-				remaining--
-			}
-			return remaining != 0
-		})
+		jobIdentity := r.jobIdentityFunc(job.Parameters)
+		jobRunId := jobIdentity.JobRunID
+		jobTargetKey := jobIdentity.Target
+		recordId := jobIdentity.RecordID
 		if jobRunId != "" {
 			sk := statKey{
 				jobRunId:     jobRunId,
@@ -284,5 +270,77 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				}
 			}
 		}
+	}
+}
+
+type Identifier struct {
+	JobRunID string
+	RecordID string
+	Target   JobTargetKey
+}
+
+type GetJobIdentifiersFunc func(jp json.RawMessage) Identifier
+
+type OptFunc func(*statsCollector)
+
+func WithSourceOnlyIdentifier() OptFunc {
+	return func(r *statsCollector) {
+		r.jobIdentityFunc = func(jobParams json.RawMessage) Identifier {
+			var jobRunId string
+			var jobTargetKey JobTargetKey
+			remaining := 3
+			jp := gjson.ParseBytes(jobParams)
+			jp.ForEach(func(key, value gjson.Result) bool {
+				switch key.Str {
+				case "source_job_run_id":
+					jobRunId = value.Str
+					remaining--
+				case "source_task_run_id":
+					jobTargetKey.TaskRunID = value.Str
+					remaining--
+				case "source_id":
+					jobTargetKey.SourceID = value.Str
+					remaining--
+				}
+				return remaining != 0
+			})
+			return Identifier{
+				JobRunID: jobRunId,
+				Target:   jobTargetKey,
+			}
+		}
+	}
+}
+
+func defaultJobIdentifier(jobParams json.RawMessage) Identifier {
+	var jobRunId string
+	var jobTargetKey JobTargetKey
+	var recordId string
+	remaining := 5
+	jp := gjson.ParseBytes(jobParams)
+	jp.ForEach(func(key, value gjson.Result) bool {
+		switch key.Str {
+		case "source_job_run_id":
+			jobRunId = value.Str
+			remaining--
+		case "source_task_run_id":
+			jobTargetKey.TaskRunID = value.Str
+			remaining--
+		case "source_id":
+			jobTargetKey.SourceID = value.Str
+			remaining--
+		case "destination_id":
+			jobTargetKey.DestinationID = value.Str
+			remaining--
+		case "record_id":
+			recordId = value.Raw
+			remaining--
+		}
+		return remaining != 0
+	})
+	return Identifier{
+		JobRunID: jobRunId,
+		RecordID: recordId,
+		Target:   jobTargetKey,
 	}
 }
