@@ -344,14 +344,15 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
-				edr.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
-			} else {
+				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+			
 				// Handle rows.Err if it exists
 				if delRows.Err() != nil {
-					edr.log.Errorf(`[ Error Detail Reporting ]: Error in delRows: %v`, delRows.Err())
+					edr.log.Errorf("[ Error Detail Reporting ]: Error in delRows: %v", delRows.Err())
 				}
-			delRows.Close()
-		}
+				delRows.Close()
+			}
+			
 
 		mainLoopTimer.Since(loopStart)
 		select {
