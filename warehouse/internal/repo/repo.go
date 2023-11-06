@@ -39,3 +39,18 @@ func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) e
 	}
 	return nil
 }
+
+type UpdateField func(v interface{}) UpdateKeyValue
+
+type UpdateKeyValue interface {
+	key() string
+	value() interface{}
+}
+
+type keyValue struct {
+	k string
+	v interface{}
+}
+
+func (u keyValue) key() string        { return u.k }
+func (u keyValue) value() interface{} { return u.v }

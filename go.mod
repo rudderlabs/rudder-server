@@ -21,7 +21,7 @@ replace (
 	go.mongodb.org/mongo-driver => go.mongodb.org/mongo-driver v1.12.1
 	golang.org/x/crypto => golang.org/x/crypto v0.13.0
 	golang.org/x/image => golang.org/x/image v0.12.0
-	golang.org/x/net => golang.org/x/net v0.15.0
+	golang.org/x/net => golang.org/x/net v0.17.0
 	golang.org/x/text => golang.org/x/text v0.13.0
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
@@ -29,7 +29,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.55.0
+	cloud.google.com/go/bigquery v1.56.0
 	cloud.google.com/go/pubsub v1.33.0
 	cloud.google.com/go/storage v1.33.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -71,8 +71,8 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/onsi/ginkgo/v2 v2.12.0
-	github.com/onsi/gomega v1.27.10
+	github.com/onsi/ginkgo/v2 v2.13.0
+	github.com/onsi/gomega v1.29.0
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/oschwald/maxminddb-golang v1.11.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -92,14 +92,14 @@ require (
 	github.com/spf13/cast v1.5.1
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tidwall/gjson v1.16.0
+	github.com/tidwall/gjson v1.17.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20230830030807-0dd610dbff1d
-	go.etcd.io/etcd/api/v3 v3.5.9
-	go.etcd.io/etcd/client/v3 v3.5.9
+	go.etcd.io/etcd/api/v3 v3.5.10
+	go.etcd.io/etcd/client/v3 v3.5.10
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/goleak v1.3.0
@@ -107,9 +107,10 @@ require (
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/oauth2 v0.13.0
 	golang.org/x/sync v0.4.0
+	golang.org/x/text v0.13.0
 	google.golang.org/api v0.148.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231012201019-e917dd12ba7a
-	google.golang.org/grpc v1.58.3
+	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -188,7 +189,7 @@ require (
 	github.com/golang-jwt/jwt v3.2.1+incompatible // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/golang/glog v1.1.0 // indirect
+	github.com/golang/glog v1.1.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -272,7 +273,7 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.9 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.10 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.19.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.42.0 // indirect
@@ -289,8 +290,7 @@ require (
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/term v0.12.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

@@ -113,8 +113,8 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
 		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.TrackingPlanValidationStage, true, false) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
-		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
+		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, types.DESTINATION_FILTER, types.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, types.DESTINATION_FILTER, types.TRACKINGPLAN_VALIDATOR)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
