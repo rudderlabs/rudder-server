@@ -345,24 +345,23 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
-			
+
 				// Handle rows.Err if it exists
 				if delRows.Err() != nil {
 					edr.log.Errorf("[ Error Detail Reporting ]: Error in delRows: %v", delRows.Err())
 				}
 				delRows.Close()
 			}
-			
 
-		mainLoopTimer.Since(loopStart)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(edr.mainLoopSleepInterval.Load()):
+			mainLoopTimer.Since(loopStart)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(edr.mainLoopSleepInterval.Load()):
+			}
 		}
 	}
 }
-
 func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
 
 	var queryMin sql.NullInt64
