@@ -364,7 +364,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 }
 
 func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
-}
+
 	var queryMin sql.NullInt64
 	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
