@@ -84,7 +84,7 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.16.3
 	github.com/rudderlabs/sql-tunnels v0.1.5
 	github.com/samber/lo v1.38.1
-	github.com/segmentio/kafka-go v0.4.42
+	github.com/segmentio/kafka-go v0.4.44
 	github.com/segmentio/ksuid v1.0.4
 	github.com/snowflakedb/gosnowflake v1.6.25
 	github.com/sony/gobreaker v0.5.0
