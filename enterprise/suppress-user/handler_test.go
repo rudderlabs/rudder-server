@@ -1,6 +1,7 @@
 package suppression
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
+var ErrNoValueFound = errors.New("no value found")
 var globalRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func init() {
