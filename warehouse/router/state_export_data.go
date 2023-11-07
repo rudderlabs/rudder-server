@@ -2,8 +2,6 @@ package router
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -167,56 +165,20 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 }
 
 func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
-	loadFilesMap = make(map[tableNameT]bool)
-
-	sourceID := job.warehouse.Source.ID
-	destID := job.warehouse.Destination.ID
-
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  distinct table_name
-		FROM
-		  %s
-		WHERE
-		  (
-			source_id = $1
-			AND destination_id = $2
-			AND id >= $3
-			AND id <= $4
-		  );
-`,
-		whutils.WarehouseLoadFilesTable,
-	)
-	sqlStatementArgs := []interface{}{
-		sourceID,
-		destID,
+	tableName, err := job.loadFilesRepo.DistinctTableName(
+		job.ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting load files table name: %w", err)
 	}
-	rows, err := job.db.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
-		return
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var tableName string
-		err = rows.Scan(&tableName)
-		if err != nil {
-			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-			return
-		}
-		loadFilesMap[tableNameT(tableName)] = true
-	}
-	if err = rows.Err(); err != nil {
-		err = fmt.Errorf("interate distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-	}
-	return
+	tablesMap := lo.SliceToMap(tableName, func(tName string) (tableNameT, bool) {
+		return tableNameT(tName), true
+	})
+	return tablesMap, nil
 }
 
 func (job *UploadJob) exportUserTables(loadFilesTableMap map[tableNameT]bool) (err error) {
@@ -762,16 +724,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		return alteredSchema, fmt.Errorf("update schema: %w", err)
 	}
 
-	job.logger.Infow("starting load for table",
-		logfield.UploadJobID, job.upload.ID,
-		logfield.SourceID, job.warehouse.Source.ID,
-		logfield.DestinationID, job.warehouse.Destination.ID,
-		logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, job.warehouse.WorkspaceID,
-		logfield.Namespace, job.warehouse.Namespace,
-		logfield.TableName, tName,
-	)
+	job.logger.Infow("starting load for table", logfield.TableName, tName)
 
 	status := model.TableUploadExecuting
 	lastExecTime := job.now()

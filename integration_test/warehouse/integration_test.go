@@ -2744,7 +2744,7 @@ func runWarehouseServer(
 		conf.Set(override.A, override.B)
 	}
 
-	a := warehouse.New(ap, conf, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
+	a := warehouse.New(ap, conf, logger.NewLogger(), memstats.New(), mockBackendConfig, filemanager.New)
 	if err := a.Setup(ctx); err != nil {
 		return fmt.Errorf("setting up warehouse: %w", err)
 	}

@@ -68,6 +68,8 @@ type UploadJob struct {
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
 	uploadsRepo          *repo.Uploads
+	stagingFileRepo      *repo.StagingFiles
+	loadFilesRepo        *repo.LoadFiles
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	schemaHandle         *schema.Schema
@@ -137,6 +139,17 @@ var (
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
 
+	log := f.logger.With(
+		logfield.UploadJobID, dto.Upload.ID,
+		logfield.Namespace, dto.Warehouse.Namespace,
+		logfield.SourceID, dto.Warehouse.Source.ID,
+		logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, dto.Warehouse.Destination.ID,
+		logfield.DestinationType, dto.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, dto.Upload.WorkspaceID,
+		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
+	)
+
 	uj := &UploadJob{
 		ctx:                  ujCtx,
 		reporting:            f.reporting,
@@ -146,10 +159,12 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,
-		logger:               f.logger,
+		logger:               log,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db),
 		uploadsRepo:          repo.NewUploads(f.db),
+		stagingFileRepo:      repo.NewStagingFiles(f.db),
+		loadFilesRepo:        repo.NewLoadFiles(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -363,7 +378,7 @@ func (job *UploadJob) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, job.upload)
+			rowCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, job.upload)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -430,7 +445,7 @@ func (job *UploadJob) CanAppend() bool {
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716}] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings, error) {
-	timings, err := repo.NewUploads(job.db).UploadTimings(job.ctx, job.upload.ID)
+	timings, err := job.uploadsRepo.UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -568,15 +583,8 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	defer func() {
 		job.logger.Warnw("upload error",
-			logfield.UploadJobID, job.upload.ID,
 			logfield.UploadStatus, state,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Namespace, job.upload.Namespace,
 			logfield.Error, statusError,
-			logfield.UseRudderStorage, job.upload.UseRudderStorage,
 			logfield.Priority, job.upload.Priority,
 			logfield.Retried, job.upload.Retried,
 			logfield.Attempt, job.upload.Attempts,
@@ -647,7 +655,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
 
-	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
+	inputCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})

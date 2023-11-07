@@ -74,7 +74,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
@@ -118,7 +118,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)

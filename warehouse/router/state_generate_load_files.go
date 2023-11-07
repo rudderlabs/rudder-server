@@ -2,11 +2,10 @@ package router
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"slices"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -55,7 +54,7 @@ func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
-	rowsInStagingFiles, err := repo.NewStagingFiles(job.db).TotalEventsForUpload(ctx, job.upload)
+	rowsInStagingFiles, err := job.stagingFileRepo.TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
@@ -68,37 +67,12 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	var total sql.NullInt64
-
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			table_name,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v)
-		)
-		SELECT
-		  SUM(total_events)
-		FROM
-		  row_numbered_load_files WHERE
-		  row_number = 1
-		  AND table_name != '%[3]s';
-	`,
-		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
+	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.stagingFileIDs, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
-	)
-	if err := job.db.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
-		job.logger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
+	})
+	if err != nil {
+		job.logger.Errorw(`Getting total rows in load files`, logfield.Error, err)
+		return 0
 	}
-	return total.Int64
+	return exportedEvents
 }
