@@ -224,11 +224,10 @@ func (lf *LoadFiles) TotalExportedEvents(
 	if err != nil {
 		return 0, fmt.Errorf(`counting total exported events: %w`, err)
 	}
-	if count.Valid {
-		return count.Int64, nil
+	if !count.Valid {
+		return 0, errors.New(`count is not valid`)
 	}
-
-	return 0, errors.New(`count is not valid`)
+	return count.Int64, nil
 }
 
 // DistinctTableName returns the distinct table names for the given parameters.
