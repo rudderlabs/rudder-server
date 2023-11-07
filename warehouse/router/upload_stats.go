@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -152,19 +151,16 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	}
 }
 
-func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
-	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
-		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
-		CROSS JOIN
-		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
-	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
-	var timeTakenInS time.Duration
-	err = job.db.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
+func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) error {
+	startLoadFile, err := job.loadFilesRepo.GetByID(job.ctx, startID)
 	if err != nil {
-		job.logger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
-		return
+		return fmt.Errorf("getting start load file by id %d: %w", startID, err)
+	}
+	endLoadFile, err := job.loadFilesRepo.GetByID(job.ctx, endID)
+	if err != nil {
+		return fmt.Errorf("getting end load file by id %d: %w", endID, err)
 	}
 
-	job.stats.loadFileGenerationTime.SendTiming(timeTakenInS * time.Second)
+	job.stats.loadFileGenerationTime.SendTiming(endLoadFile.CreatedAt.Sub(startLoadFile.CreatedAt))
 	return nil
 }
