@@ -130,7 +130,7 @@ func TestIntegration(t *testing.T) {
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
-	bootstrapSvc := func(t testing.TB, enableMerge bool) {
+	bootstrapSvc := func(t testing.TB, preferAppend bool) {
 		templateConfigurations := map[string]any{
 			"workspaceID":                workspaceID,
 			"sourceID":                   sourceID,
@@ -168,7 +168,7 @@ func TestIntegration(t *testing.T) {
 			"rbacBucketName":             rbacCredentials.BucketName,
 			"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
 			"rbacAccessKey":              rbacCredentials.AccessKey,
-			"enableMerge":                enableMerge,
+			"preferAppend":               preferAppend,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -227,7 +227,7 @@ func TestIntegration(t *testing.T) {
 			sourceJob                     bool
 			stagingFilePrefix             string
 			emptyJobRunID                 bool
-			enableMerge                   bool
+			preferAppend                  bool
 			customUserID                  string
 		}{
 			{
@@ -248,7 +248,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job",
-				enableMerge:       true,
+				preferAppend:      false,
 			},
 			{
 				name:     "Upload Job with Role",
@@ -268,7 +268,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-with-role",
-				enableMerge:       true,
+				preferAppend:      false,
 			},
 			{
 				name:     "Upload Job with Case Sensitive Database",
@@ -288,7 +288,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				enableMerge:       true,
+				preferAppend:      false,
 			},
 			{
 				name:          "Source Job with Sources",
@@ -310,7 +310,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
-				enableMerge:           true,
+				preferAppend:          false,
 			},
 			{
 				name:                          "Upload Job in append mode",
@@ -331,7 +331,7 @@ func TestIntegration(t *testing.T) {
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				emptyJobRunID: true,
-				enableMerge:   false,
+				preferAppend:  true,
 				customUserID:  testhelper.GetUserId("append_test"),
 			},
 		}
@@ -339,7 +339,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testcase {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.enableMerge)
+				bootstrapSvc(t, tc.preferAppend)
 
 				urlConfig := sfdb.Config{
 					Account:   tc.cred.Account,
@@ -501,7 +501,7 @@ func TestIntegration(t *testing.T) {
 				"syncFrequency":      "30",
 				"enableSSE":          false,
 				"useRudderStorage":   false,
-				"enableMerge":        true,
+				"preferAppend":       false,
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				ID:          "1XjvXnzw34UMAz1YOuKqL1kwzh6",
@@ -949,35 +949,35 @@ func TestIntegration(t *testing.T) {
 func TestSnowflake_ShouldMerge(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		enableMerge           bool
+		preferAppend          bool
 		uploaderCanAppend     bool
 		uploaderExpectedCalls int
 		expected              bool
 	}{
 		{
-			name:                  "uploader says we can append and merge is not enabled",
-			enableMerge:           false,
+			name:                  "uploader says we can append and user prefers append",
+			preferAppend:          true,
 			uploaderCanAppend:     true,
 			uploaderExpectedCalls: 1,
 			expected:              false,
 		},
 		{
-			name:                  "uploader says we cannot append and merge is not enabled",
-			enableMerge:           false,
+			name:                  "uploader says we cannot append and user prefers append",
+			preferAppend:          true,
 			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
 			expected:              true,
 		},
 		{
-			name:                  "uploader says we can append and merge is enabled",
-			enableMerge:           true,
+			name:                  "uploader says we can append and user prefers not to append",
+			preferAppend:          false,
 			uploaderCanAppend:     true,
 			uploaderExpectedCalls: 1,
 			expected:              true,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in merge mode",
-			enableMerge:           true,
+			name:                  "uploader says we cannot append and user prefers not to append",
+			preferAppend:          false,
 			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
 			expected:              true,
@@ -992,7 +992,7 @@ func TestSnowflake_ShouldMerge(t *testing.T) {
 			sf.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
-						string(model.EnableMergeSetting): tc.enableMerge,
+						string(model.PreferAppendSetting): tc.preferAppend,
 					},
 				},
 			}
