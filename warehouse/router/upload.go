@@ -54,15 +54,6 @@ const (
 	singerProtocolSourceCategory = "singer-protocol"
 )
 
-var stateTransitions map[string]*uploadState
-
-type uploadState struct {
-	inProgress string
-	failed     string
-	completed  string
-	nextState  *uploadState
-}
-
 type tableNameT string
 
 type UploadJobFactory struct {
@@ -142,17 +133,6 @@ type pendingTableUploadsRepo interface {
 	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
 }
 
-const (
-	UploadStatusField          = "status"
-	UploadStartLoadFileIDField = "start_load_file_id"
-	UploadEndLoadFileIDField   = "end_load_file_id"
-	UploadUpdatedAtField       = "updated_at"
-	UploadTimingsField         = "timings"
-	UploadSchemaField          = "schema"
-	UploadLastExecAtField      = "last_exec_at"
-	UploadInProgress           = "in_progress"
-)
-
 var (
 	alwaysMarkExported                               = []string{whutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
@@ -161,10 +141,6 @@ var (
 		"singer-protocol": {},
 	}
 )
-
-func init() {
-	initializeStateMachine()
-}
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
@@ -430,12 +406,12 @@ func (job *UploadJob) run() (err error) {
 
 	var (
 		newStatus       string
-		nextUploadState *uploadState
+		nextUploadState *state
 	)
 
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	if !hasSchemaChanged {
-		nextUploadState = getNextUploadState(job.upload.Status)
+		nextUploadState = nextState(job.upload.Status)
 	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[model.GeneratedUploadSchema]
@@ -665,7 +641,7 @@ func (job *UploadJob) run() (err error) {
 			break
 		}
 
-		nextUploadState = getNextUploadState(newStatus)
+		nextUploadState = nextState(newStatus)
 	}
 
 	if newStatus != model.ExportedData {
@@ -1895,95 +1871,6 @@ func (job *UploadJob) DTO() *model.UploadJob {
 		Upload:       job.upload,
 		StagingFiles: job.stagingFiles,
 	}
-}
-
-/*
- * State Machine for upload job lifecycle
- */
-
-func getNextUploadState(dbStatus string) *uploadState {
-	for _, uploadState := range stateTransitions {
-		if dbStatus == uploadState.inProgress || dbStatus == uploadState.failed {
-			return uploadState
-		}
-		if dbStatus == uploadState.completed {
-			return uploadState.nextState
-		}
-	}
-	return nil
-}
-
-func getInProgressState(state string) string {
-	uploadState, ok := stateTransitions[state]
-	if !ok {
-		panic(fmt.Errorf("invalid Upload state: %s", state))
-	}
-	return uploadState.inProgress
-}
-
-func initializeStateMachine() {
-	stateTransitions = make(map[string]*uploadState)
-
-	waitingState := &uploadState{
-		completed: model.Waiting,
-	}
-	stateTransitions[model.Waiting] = waitingState
-
-	generateUploadSchemaState := &uploadState{
-		inProgress: "generating_upload_schema",
-		failed:     "generating_upload_schema_failed",
-		completed:  model.GeneratedUploadSchema,
-	}
-	stateTransitions[model.GeneratedUploadSchema] = generateUploadSchemaState
-
-	createTableUploadsState := &uploadState{
-		inProgress: "creating_table_uploads",
-		failed:     "creating_table_uploads_failed",
-		completed:  model.CreatedTableUploads,
-	}
-	stateTransitions[model.CreatedTableUploads] = createTableUploadsState
-
-	generateLoadFilesState := &uploadState{
-		inProgress: "generating_load_files",
-		failed:     "generating_load_files_failed",
-		completed:  model.GeneratedLoadFiles,
-	}
-	stateTransitions[model.GeneratedLoadFiles] = generateLoadFilesState
-
-	updateTableUploadCountsState := &uploadState{
-		inProgress: "updating_table_uploads_counts",
-		failed:     "updating_table_uploads_counts_failed",
-		completed:  model.UpdatedTableUploadsCounts,
-	}
-	stateTransitions[model.UpdatedTableUploadsCounts] = updateTableUploadCountsState
-
-	createRemoteSchemaState := &uploadState{
-		inProgress: "creating_remote_schema",
-		failed:     "creating_remote_schema_failed",
-		completed:  model.CreatedRemoteSchema,
-	}
-	stateTransitions[model.CreatedRemoteSchema] = createRemoteSchemaState
-
-	exportDataState := &uploadState{
-		inProgress: "exporting_data",
-		failed:     "exporting_data_failed",
-		completed:  model.ExportedData,
-	}
-	stateTransitions[model.ExportedData] = exportDataState
-
-	abortState := &uploadState{
-		completed: model.Aborted,
-	}
-	stateTransitions[model.Aborted] = abortState
-
-	waitingState.nextState = generateUploadSchemaState
-	generateUploadSchemaState.nextState = createTableUploadsState
-	createTableUploadsState.nextState = generateLoadFilesState
-	generateLoadFilesState.nextState = updateTableUploadCountsState
-	updateTableUploadCountsState.nextState = createRemoteSchemaState
-	createRemoteSchemaState.nextState = exportDataState
-	exportDataState.nextState = nil
-	abortState.nextState = nil
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {

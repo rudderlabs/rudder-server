@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
@@ -772,20 +774,7 @@ func TestHTTPApi(t *testing.T) {
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health", func(t *testing.T) {
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("%s/health", serverURL), time.Second*10, time.Millisecond*100, t.Name())
 			})
 
 			t.Run("process", func(t *testing.T) {
@@ -971,20 +960,7 @@ func TestHTTPApi(t *testing.T) {
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health endpoint should work", func(t *testing.T) {
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("%s/health", serverURL), time.Second*10, time.Millisecond*100, t.Name())
 			})
 
 			t.Run("other endpoints should fail", func(t *testing.T) {
