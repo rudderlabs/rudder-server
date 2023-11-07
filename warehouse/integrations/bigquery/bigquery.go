@@ -867,7 +867,7 @@ func (bq *BigQuery) connect(ctx context.Context, cred BQCredentials) (*bigquery.
 // * the server config says we allow merging
 // * the user opted in to merging
 func (bq *BigQuery) shouldMerge() bool {
-	return bq.config.allowMerge && bq.warehouse.GetEnableMergeSetting()
+	return bq.config.allowMerge && !bq.warehouse.GetPreferAppendSetting()
 }
 
 func (bq *BigQuery) CrashRecover(ctx context.Context) {

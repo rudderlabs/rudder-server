@@ -36,7 +36,7 @@ func (w *Warehouse) GetPreferAppendSetting() bool {
 	destConfig := w.Destination.Config
 	value, ok := destConfig[PreferAppendSetting.string()].(bool)
 	if !ok {
-		return true // default value for backwards compatibility
+		return false // default value for backwards compatibility
 	}
 	return value
 }

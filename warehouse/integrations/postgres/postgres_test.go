@@ -582,11 +582,11 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+				appendWarehouse := th.Clone(t, warehouse)
+				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
 
 				pg := postgres.New(c, logger.NOP, memstats.New())
-				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
+				err := pg.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = pg.CreateSchema(ctx)
@@ -635,11 +635,8 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
-
 				pg := postgres.New(config.New(), logger.NOP, memstats.New())
-				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
+				err := pg.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = pg.CreateSchema(ctx)

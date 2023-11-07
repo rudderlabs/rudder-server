@@ -117,7 +117,7 @@ func TestIntegration(t *testing.T) {
 	db := sql.OpenDB(connector)
 	require.NoError(t, db.Ping())
 
-	bootstrapSvc := func(t *testing.T, enableMerge bool) {
+	bootstrapSvc := func(t *testing.T, preferAppend bool) {
 		templateConfigurations := map[string]any{
 			"workspaceID":   workspaceID,
 			"sourceID":      sourceID,
@@ -131,7 +131,7 @@ func TestIntegration(t *testing.T) {
 			"containerName": deltaLakeCredentials.ContainerName,
 			"accountName":   deltaLakeCredentials.AccountName,
 			"accountKey":    deltaLakeCredentials.AccountKey,
-			"enableMerge":   enableMerge,
+			"preferAppend":  preferAppend,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -186,7 +186,7 @@ func TestIntegration(t *testing.T) {
 			destinationID       string
 			messageID           string
 			warehouseEventsMap  whth.EventsCountMap
-			enableMerge         bool
+			preferAppend        bool
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
 			jobRunID            string
@@ -198,7 +198,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				enableMerge:         true,
+				preferAppend:        false,
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-merge-mode",
 				jobRunID:            misc.FastUUID().String(),
@@ -210,7 +210,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  appendEventsMap(),
-				enableMerge:         false,
+				preferAppend:        true,
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
@@ -224,7 +224,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				enableMerge:         true,
+				preferAppend:        false,
 				useParquetLoadFiles: true,
 				stagingFilePrefix:   "testdata/upload-job-parquet",
 				jobRunID:            misc.FastUUID().String(),
@@ -234,7 +234,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testCases {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.enableMerge)
+				bootstrapSvc(t, tc.preferAppend)
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
 				sqlClient := &warehouseclient.Client{
@@ -564,7 +564,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
 
 				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+				mergeWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
 
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, mergeWarehouse, mockUploader)
@@ -614,7 +614,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-11-15T06:53:49.640Z")
 
 				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+				mergeWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
 
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, mergeWarehouse, mockUploader)
@@ -1057,35 +1057,35 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 func TestDeltalake_ShouldMerge(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		enableMerge           bool
+		preferAppend          bool
 		uploaderCanAppend     bool
 		uploaderExpectedCalls int
 		expected              bool
 	}{
 		{
-			name:                  "uploader says we can append and merge is not enabled",
-			enableMerge:           false,
+			name:                  "uploader says we can append and user prefers to append",
+			preferAppend:          true,
 			uploaderCanAppend:     true,
 			uploaderExpectedCalls: 1,
 			expected:              false,
 		},
 		{
-			name:                  "uploader says we can append and merge is enabled",
-			enableMerge:           true,
+			name:                  "uploader says we can append and users prefers not to append",
+			preferAppend:          false,
 			uploaderCanAppend:     true,
 			uploaderExpectedCalls: 1,
 			expected:              true,
 		},
 		{
-			name:                  "uploader says we cannot append so enableMerge false is ignored",
-			enableMerge:           false,
+			name:                  "uploader says we cannot append and user prefers to append",
+			preferAppend:          true,
 			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
 			expected:              true,
 		},
 		{
-			name:                  "uploader says we cannot append so enableMerge true is ignored",
-			enableMerge:           true,
+			name:                  "uploader says we cannot append and users prefers not to append",
+			preferAppend:          false,
 			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
 			expected:              true,
@@ -1098,7 +1098,7 @@ func TestDeltalake_ShouldMerge(t *testing.T) {
 			d.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
-						string(model.EnableMergeSetting): tc.enableMerge,
+						string(model.PreferAppendSetting): tc.preferAppend,
 					},
 				},
 			}
