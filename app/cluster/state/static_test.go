@@ -28,17 +28,3 @@ func TestStatic_ServerMode(t *testing.T) {
 	_, ok = <-ch
 	require.False(t, ok)
 }
-
-func TestStatic_WorkspaceIDs(t *testing.T) {
-	s := state.NewStaticProvider(servermode.DegradedMode)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	ch := s.WorkspaceIDs(ctx)
-	require.Empty(t, ch)
-
-	t.Log("cancel context should close channel")
-	cancel()
-	_, ok := <-ch
-	require.False(t, ok)
-}

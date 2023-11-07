@@ -1314,19 +1314,19 @@ func (u *Uploads) RetryFailedBatches(
 	return r.RowsAffected()
 }
 
-func (uploads *Uploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
-	return (*repo)(uploads).WithTx(ctx, f)
+func (u *Uploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
+	return (*repo)(u).WithTx(ctx, f)
 }
 
-func (uploads *Uploads) Update(ctx context.Context, id int64, fields []UpdateKeyValue) error {
-	return uploads.update(ctx, uploads.db.ExecContext, id, fields)
+func (u *Uploads) Update(ctx context.Context, id int64, fields []UpdateKeyValue) error {
+	return u.update(ctx, u.db.ExecContext, id, fields)
 }
 
-func (uploads *Uploads) UpdateWithTx(ctx context.Context, tx *sqlmiddleware.Tx, id int64, fields []UpdateKeyValue) error {
-	return uploads.update(ctx, tx.ExecContext, id, fields)
+func (u *Uploads) UpdateWithTx(ctx context.Context, tx *sqlmiddleware.Tx, id int64, fields []UpdateKeyValue) error {
+	return u.update(ctx, tx.ExecContext, id, fields)
 }
 
-func (uploads *Uploads) update(
+func (u *Uploads) update(
 	ctx context.Context,
 	exec func(context.Context, string, ...interface{}) (sql.Result, error),
 	id int64,
