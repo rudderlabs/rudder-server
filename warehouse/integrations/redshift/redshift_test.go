@@ -471,8 +471,11 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
+				appendWarehouse := th.Clone(t, warehouse)
+				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+
 				d := redshift.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, warehouse, mockUploader)
+				err := d.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
