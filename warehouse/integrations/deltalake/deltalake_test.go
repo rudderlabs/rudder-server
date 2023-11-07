@@ -563,11 +563,8 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
 
-				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, mergeWarehouse, mockUploader)
+				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
