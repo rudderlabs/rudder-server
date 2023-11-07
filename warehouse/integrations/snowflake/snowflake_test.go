@@ -760,9 +760,12 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
+				appendWarehouse := th.Clone(t, warehouse)
+				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+
 				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
-				err = sf.Setup(ctx, warehouse, mockUploader)
+				err = sf.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = sf.CreateSchema(ctx)
