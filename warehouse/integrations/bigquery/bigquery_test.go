@@ -588,9 +588,12 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
+			appendWarehouse := th.Clone(t, warehouse)
+			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+
 			c := config.New()
 			bq := whbigquery.New(c, logger.NOP)
-			err := bq.Setup(ctx, warehouse, mockUploader)
+			err := bq.Setup(ctx, appendWarehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)
