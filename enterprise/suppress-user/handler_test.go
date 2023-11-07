@@ -14,9 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
-var (
-	ErrNoValueFound = errors.New("no value found")
-)
+var ErrNoValueFound = errors.New("no value found")
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
