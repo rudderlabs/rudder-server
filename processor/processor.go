@@ -2568,7 +2568,7 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 		}
 		rsourcesStats := rsources.NewDroppedJobsCollector(
 			proc.rsourcesService,
-			rsources.WithSourceOnlyIdentifier(),
+			rsources.IgnoreDestinationID(),
 		)
 		rsourcesStats.JobsDropped(droppedJobs)
 		return rsourcesStats.Publish(context.TODO(), tx.Tx)

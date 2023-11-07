@@ -61,7 +61,7 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
-		jobIdentityFunc:       defaultJobIdentifier,
+		parametersParser:      defaultJobIdentifier,
 	}
 }
 
@@ -73,7 +73,7 @@ func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsS
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
-		jobIdentityFunc:       defaultJobIdentifier,
+		parametersParser:      defaultJobIdentifier,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -99,7 +99,7 @@ type statsCollector struct {
 	jobIdsToRecordIdIndex map[int64]json.RawMessage
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]json.RawMessage
-	jobIdentityFunc       GetJobIdentifiersFunc
+	parametersParser      parametersParser
 }
 
 func (r *statsCollector) orderedStatMapKeys() []statKey {
@@ -244,10 +244,7 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		jobIdentity := r.jobIdentityFunc(job.Parameters)
-		jobRunId := jobIdentity.JobRunID
-		jobTargetKey := jobIdentity.Target
-		recordId := jobIdentity.RecordID
+		jobRunId, recordId, jobTargetKey := r.parametersParser(job.Parameters)
 		if jobRunId != "" {
 			sk := statKey{
 				jobRunId:     jobRunId,
@@ -273,46 +270,22 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 	}
 }
 
-type Identifier struct {
-	JobRunID string
-	RecordID string
-	Target   JobTargetKey
-}
-
-type GetJobIdentifiersFunc func(jp json.RawMessage) Identifier
+type parametersParser func(jp json.RawMessage) (jobRunID, recordID string, target JobTargetKey)
 
 type OptFunc func(*statsCollector)
 
-func WithSourceOnlyIdentifier() OptFunc {
+// IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
+func IgnoreDestinationID() OptFunc {
 	return func(r *statsCollector) {
-		r.jobIdentityFunc = func(jobParams json.RawMessage) Identifier {
-			var jobRunId string
-			var jobTargetKey JobTargetKey
-			remaining := 3
-			jp := gjson.ParseBytes(jobParams)
-			jp.ForEach(func(key, value gjson.Result) bool {
-				switch key.Str {
-				case "source_job_run_id":
-					jobRunId = value.Str
-					remaining--
-				case "source_task_run_id":
-					jobTargetKey.TaskRunID = value.Str
-					remaining--
-				case "source_id":
-					jobTargetKey.SourceID = value.Str
-					remaining--
-				}
-				return remaining != 0
-			})
-			return Identifier{
-				JobRunID: jobRunId,
-				Target:   jobTargetKey,
-			}
+		r.parametersParser = func(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
+			jobRunID, recordID, target = defaultJobIdentifier(jobParams)
+			target.DestinationID = ""
+			return jobRunID, recordID, target
 		}
 	}
 }
 
-func defaultJobIdentifier(jobParams json.RawMessage) Identifier {
+func defaultJobIdentifier(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
 	var jobRunId string
 	var jobTargetKey JobTargetKey
 	var recordId string
@@ -338,9 +311,5 @@ func defaultJobIdentifier(jobParams json.RawMessage) Identifier {
 		}
 		return remaining != 0
 	})
-	return Identifier{
-		JobRunID: jobRunId,
-		RecordID: recordId,
-		Target:   jobTargetKey,
-	}
+	return jobRunId, recordId, jobTargetKey
 }
