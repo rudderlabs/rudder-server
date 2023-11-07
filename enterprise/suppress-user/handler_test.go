@@ -14,8 +14,10 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
-var ErrNoValueFound = errors.New("no value found")
-var globalRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+var (
+	ErrNoValueFound = errors.New("no value found")
+	globalRand      = rand.New(rand.NewSource(time.Now().UnixNano()))
+)
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
