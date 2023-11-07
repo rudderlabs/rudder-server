@@ -16,7 +16,6 @@ import (
 
 var (
 	ErrNoValueFound = errors.New("no value found")
-	globalRand      = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 func init() {
