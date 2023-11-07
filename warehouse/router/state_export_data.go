@@ -175,6 +175,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 	if err != nil {
 		return nil, fmt.Errorf("getting load files table name: %w", err)
 	}
+
 	tablesMap := lo.SliceToMap(tableName, func(tName string) (tableNameT, bool) {
 		return tableNameT(tName), true
 	})
@@ -325,11 +326,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
 	if job.config.disableAlter {
 		job.logger.Debugw("skipping alter columns to warehouse",
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
 			logfield.TableName, tName,
 			"columns", columnsMap,
 		)

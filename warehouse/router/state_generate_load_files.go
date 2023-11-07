@@ -3,8 +3,9 @@ package router
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"slices"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"

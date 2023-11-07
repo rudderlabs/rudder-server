@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2703,10 +2704,12 @@ func runWarehouseServer(
 	mockApp := mocksApp.NewMockApp(mockCtrl)
 	mockApp.EXPECT().Features().Return(&app.Features{Reporting: &reporting.Factory{}}).AnyTimes()
 
-	ap := app.New(&app.Options{
+	mainApp := app.New(&app.Options{
 		EnterpriseToken: "some-token",
 	})
-	ap.Setup()
+	mainApp.Setup()
+
+	bcConfigWg := sync.WaitGroup{}
 
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).DoAndReturn(func(ctx context.Context) error { return nil }).AnyTimes()
@@ -2717,7 +2720,15 @@ func runWarehouseServer(
 			Data:  bcConfig,
 			Topic: string(backendconfig.TopicBackendConfig),
 		}
-		close(ch)
+
+		bcConfigWg.Add(1)
+		go func() {
+			defer bcConfigWg.Done()
+
+			<-ctx.Done()
+			close(ch)
+		}()
+
 		return ch
 	}).AnyTimes()
 
@@ -2744,11 +2755,16 @@ func runWarehouseServer(
 		conf.Set(override.A, override.B)
 	}
 
-	a := warehouse.New(ap, conf, logger.NewLogger(), memstats.New(), mockBackendConfig, filemanager.New)
-	if err := a.Setup(ctx); err != nil {
+	warehouseApp := warehouse.New(mainApp, conf, logger.NewLogger(), memstats.New(), mockBackendConfig, filemanager.New)
+	if err := warehouseApp.Setup(ctx); err != nil {
 		return fmt.Errorf("setting up warehouse: %w", err)
 	}
-	return a.Run(ctx)
+	if err := warehouseApp.Run(ctx); err != nil {
+		return fmt.Errorf("running warehouse: %w", err)
+	}
+
+	bcConfigWg.Wait()
+	return nil
 }
 
 func prepareStagingFile(

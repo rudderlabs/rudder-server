@@ -440,8 +440,6 @@ func (a *App) monitorDestRouters(ctx context.Context) error {
 		}
 	}
 
-	<-ctx.Done()
-
 	g, _ := errgroup.WithContext(context.Background())
 	for _, r := range dstToWhRouter {
 		r := r
