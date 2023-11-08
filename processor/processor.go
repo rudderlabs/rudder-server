@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
+	processorstats "github.com/rudderlabs/rudder-server/processor/stats"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -59,6 +60,10 @@ const (
 	DestTransformation = "DEST_TRANSFORMATION"
 	EventFilter        = "EVENT_FILTER"
 )
+
+type sourceObserver interface {
+	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
+}
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
@@ -143,10 +148,13 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
+		delayedEventsThreshold    misc.ValueLoader[time.Duration]
 	}
 
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
+
+	sourceObservers []sourceObserver
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -186,6 +194,7 @@ type processorStats struct {
 	processJobThroughput          stats.Measurement
 	transformationsThroughput     stats.Measurement
 	DBWriteThroughput             stats.Measurement
+	delayedEvents                 stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -448,6 +457,10 @@ func (proc *Handle) Setup(
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
+	proc.sourceObservers = []sourceObserver{&processorstats.DelayedEventStats{
+		Stats:     stats.Default,
+		Threshold: config.GetDuration("Processor.delayedEventsThreshold", 24*10, time.Hour),
+	}}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -1426,7 +1439,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		var gatewayBatchEvent types.GatewayBatchRequest
 		err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
 		if err != nil {
-			proc.logger.Warnf("json parsing of event payload for %s: %v", batchEvent.JobID, err)
+			proc.logger.Warnf("json parsing of event payload for %d: %v", batchEvent.JobID, err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
 		var eventParams types.EventParams
@@ -1603,7 +1616,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
 			}
 		}
-
 	}
 
 	g, groupCtx := errgroup.WithContext(context.Background())
@@ -1714,6 +1726,17 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Appending validatedReportMetrics to reportMetrics
 	reportMetrics = append(reportMetrics, validatedReportMetrics...)
 	// TRACKING PLAN - END
+
+	for sourceID, events := range groupedEventsBySourceId {
+		if len(events) == 0 {
+			continue
+		}
+		source, _ := proc.getSourceBySourceID(string(sourceID))
+
+		for _, obs := range proc.sourceObservers {
+			obs.ObserveSourceEvents(source, events)
+		}
+	}
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for sourceIdT, eventList := range validatedEventsBySourceId {

@@ -23,6 +23,12 @@ type SingularEventWithReceivedAt struct {
 	ReceivedAt    time.Time
 }
 
+type SourceInfo struct {
+	SourceID    string
+	SourceType  string
+	WorkspaceID string
+}
+
 // GatewayBatchRequest batch request structure
 type GatewayBatchRequest struct {
 	Batch      []SingularEventT `json:"batch"`
