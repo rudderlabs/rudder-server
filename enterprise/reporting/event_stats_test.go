@@ -101,26 +101,10 @@ func TestEventStatsReporter(t *testing.T) {
 				StatusCode: 500,
 			},
 		},
-		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:       "im-not-there",
-				DestinationID:  destinationID,
-				SourceCategory: sourceCategory,
-			},
-			PUDetails: types.PUDetails{
-				PU:         reportedBy,
-				TerminalPU: false,
-			},
-			StatusDetail: &types.StatusDetail{
-				Count:      100,
-				Status:     "failed",
-				StatusCode: 500,
-			},
-		},
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
 	esr.Record(testReports)
-	require.Equal(t, statsStore.Get(measurementNames["succeeded"], map[string]string{
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -129,8 +113,9 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status_code":     "200",
 		"destinationType": "test-destination-name",
+		"status":          "succeeded",
 	}).LastValue(), float64(10))
-	require.Equal(t, statsStore.Get(measurementNames["aborted"], map[string]string{
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -139,6 +124,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "false",
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
+		"status":          "aborted",
 	}).LastValue(), float64(50))
 
 	t.Cleanup(func() {

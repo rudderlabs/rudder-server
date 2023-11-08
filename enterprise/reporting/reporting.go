@@ -69,7 +69,6 @@ type DefaultReporter struct {
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
-	statsReporter             *EventStatsReporter
 	stats                     stats.Stats
 }
 
@@ -110,7 +109,6 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxOpenConnections:                   maxOpenConnections,
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
-		statsReporter:                        NewEventStatsReporter(configSubscriber, stats),
 		stats:                                stats,
 	}
 }
