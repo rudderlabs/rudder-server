@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.2](https://github.com/rudderlabs/rudder-server/compare/v1.16.1...v1.16.2) (2023-11-08)
+
+
+### Bug Fixes
+
+* preferAppend defaults to false if not defined ([#4098](https://github.com/rudderlabs/rudder-server/issues/4098)) ([941caba](https://github.com/rudderlabs/rudder-server/commit/941cabad94b95da64f1045f119a64fc014263698))
+
 ## [1.16.1](https://github.com/rudderlabs/rudder-server/compare/v1.16.0...v1.16.1) (2023-11-06)
 
 
