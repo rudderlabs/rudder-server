@@ -45,7 +45,7 @@ func (*fakeSuppresser) Suppressed(_, _, _ string) (*model.Metadata, error) {
 	if rand.New(rand.NewSource(time.Now().UnixNano())).Intn(2)%2 == 0 { // skipcq: GSC-G404
 		return nil, fmt.Errorf("some error")
 	} else {
-		return &model.Metadata{}, nil
+		return nil, nil
 	}
 }
 

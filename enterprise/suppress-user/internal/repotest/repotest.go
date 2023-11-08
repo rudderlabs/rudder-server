@@ -64,7 +64,7 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 
 	t.Run("non matching key", func(t *testing.T) {
 		metadata, err := repo.Suppressed("workspace3", "user3", "source2")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is not suppressed")
 	})
 
