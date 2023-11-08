@@ -61,18 +61,24 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		parametersParser:      defaultParametersParser,
 	}
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
-func NewDroppedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
-	return &statsCollector{
+func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsStatsCollector {
+	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		parametersParser:      defaultParametersParser,
 	}
+	for _, opt := range opts {
+		opt(sc)
+	}
+	return sc
 }
 
 type statKey struct {
@@ -93,6 +99,7 @@ type statsCollector struct {
 	jobIdsToRecordIdIndex map[int64]json.RawMessage
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]json.RawMessage
+	parametersParser      parametersParser
 }
 
 func (r *statsCollector) orderedStatMapKeys() []statKey {
@@ -237,31 +244,7 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		var jobRunId string
-		var jobTargetKey JobTargetKey
-		var recordId string
-		remaining := 5
-		jp := gjson.ParseBytes(job.Parameters)
-		jp.ForEach(func(key, value gjson.Result) bool {
-			switch key.Str {
-			case "source_job_run_id":
-				jobRunId = value.Str
-				remaining--
-			case "source_task_run_id":
-				jobTargetKey.TaskRunID = value.Str
-				remaining--
-			case "source_id":
-				jobTargetKey.SourceID = value.Str
-				remaining--
-			case "destination_id":
-				jobTargetKey.DestinationID = value.Str
-				remaining--
-			case "record_id":
-				recordId = value.Raw
-				remaining--
-			}
-			return remaining != 0
-		})
+		jobRunId, recordId, jobTargetKey := r.parametersParser(job.Parameters)
 		if jobRunId != "" {
 			sk := statKey{
 				jobRunId:     jobRunId,
@@ -285,4 +268,48 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 			}
 		}
 	}
+}
+
+type parametersParser func(jp json.RawMessage) (jobRunID, recordID string, target JobTargetKey)
+
+type OptFunc func(*statsCollector)
+
+// IgnoreDestinationID ignores the destinationID parameter of the job and while capturing statistics
+func IgnoreDestinationID() OptFunc {
+	return func(r *statsCollector) {
+		r.parametersParser = func(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
+			jobRunID, recordID, target = defaultParametersParser(jobParams)
+			target.DestinationID = ""
+			return jobRunID, recordID, target
+		}
+	}
+}
+
+func defaultParametersParser(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
+	var jobRunId string
+	var jobTargetKey JobTargetKey
+	var recordId string
+	remaining := 5
+	jp := gjson.ParseBytes(jobParams)
+	jp.ForEach(func(key, value gjson.Result) bool {
+		switch key.Str {
+		case "source_job_run_id":
+			jobRunId = value.Str
+			remaining--
+		case "source_task_run_id":
+			jobTargetKey.TaskRunID = value.Str
+			remaining--
+		case "source_id":
+			jobTargetKey.SourceID = value.Str
+			remaining--
+		case "destination_id":
+			jobTargetKey.DestinationID = value.Str
+			remaining--
+		case "record_id":
+			recordId = value.Raw
+			remaining--
+		}
+		return remaining != 0
+	})
+	return jobRunId, recordId, jobTargetKey
 }

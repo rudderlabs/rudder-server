@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
@@ -41,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -142,23 +142,7 @@ func TestApp(t *testing.T) {
 					})
 					g.Go(func() error {
 						defer stopServer()
-
-						serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-
-						require.Eventually(t, func() bool {
-							resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-							if err != nil {
-								return false
-							}
-							defer func() {
-								httputil.CloseResponse(resp)
-							}()
-
-							return resp.StatusCode == http.StatusOK
-						},
-							time.Second*10,
-							time.Millisecond*100,
-						)
+						health.WaitUntilReady(ctx, t, fmt.Sprintf("http://localhost:%d/health", webPort), time.Second*10, time.Millisecond*100, t.Name())
 						return nil
 					})
 					require.NoError(t, g.Wait())
@@ -428,23 +412,7 @@ func TestApp(t *testing.T) {
 			})
 			g.Go(func() error {
 				defer stopServer()
-
-				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("http://localhost:%d/health", webPort), time.Second*10, time.Millisecond*100, t.Name())
 				return nil
 			})
 			require.NoError(t, g.Wait())

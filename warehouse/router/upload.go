@@ -54,15 +54,6 @@ const (
 	singerProtocolSourceCategory = "singer-protocol"
 )
 
-var stateTransitions map[string]*uploadState
-
-type uploadState struct {
-	inProgress string
-	failed     string
-	completed  string
-	nextState  *uploadState
-}
-
 type tableNameT string
 
 type UploadJobFactory struct {
@@ -85,6 +76,8 @@ type UploadJob struct {
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
 	uploadsRepo          *repo.Uploads
+	stagingFileRepo      *repo.StagingFiles
+	loadFilesRepo        *repo.LoadFiles
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	schemaHandle         *schema.Schema
@@ -142,17 +135,6 @@ type pendingTableUploadsRepo interface {
 	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
 }
 
-const (
-	UploadStatusField          = "status"
-	UploadStartLoadFileIDField = "start_load_file_id"
-	UploadEndLoadFileIDField   = "end_load_file_id"
-	UploadUpdatedAtField       = "updated_at"
-	UploadTimingsField         = "timings"
-	UploadSchemaField          = "schema"
-	UploadLastExecAtField      = "last_exec_at"
-	UploadInProgress           = "in_progress"
-)
-
 var (
 	alwaysMarkExported                               = []string{whutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
@@ -162,12 +144,19 @@ var (
 	}
 )
 
-func init() {
-	initializeStateMachine()
-}
-
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
+
+	log := f.logger.With(
+		logfield.UploadJobID, dto.Upload.ID,
+		logfield.Namespace, dto.Warehouse.Namespace,
+		logfield.SourceID, dto.Warehouse.Source.ID,
+		logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, dto.Warehouse.Destination.ID,
+		logfield.DestinationType, dto.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, dto.Upload.WorkspaceID,
+		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
+	)
 
 	uj := &UploadJob{
 		ctx:                  ujCtx,
@@ -178,10 +167,12 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,
-		logger:               f.logger,
+		logger:               log,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db),
 		uploadsRepo:          repo.NewUploads(f.db),
+		stagingFileRepo:      repo.NewStagingFiles(f.db),
+		loadFilesRepo:        repo.NewLoadFiles(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -321,43 +312,18 @@ func (job *UploadJob) initTableUploads() error {
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	var total sql.NullInt64
-
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			table_name,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v)
-		)
-		SELECT
-		  SUM(total_events)
-		FROM
-		  row_numbered_load_files WHERE
-		  row_number = 1
-		  AND table_name != '%[3]s';
-	`,
-		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
+	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.stagingFileIDs, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
-	)
-	if err := job.db.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
-		job.logger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
+	})
+	if err != nil {
+		job.logger.Errorw(`Getting total rows in load files`, logfield.Error, err)
+		return 0
 	}
-	return total.Int64
+	return exportedEvents
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
-	rowsInStagingFiles, err := repo.NewStagingFiles(job.db).TotalEventsForUpload(ctx, job.upload)
+	rowsInStagingFiles, err := job.stagingFileRepo.TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
@@ -430,12 +396,12 @@ func (job *UploadJob) run() (err error) {
 
 	var (
 		newStatus       string
-		nextUploadState *uploadState
+		nextUploadState *state
 	)
 
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	if !hasSchemaChanged {
-		nextUploadState = getNextUploadState(job.upload.Status)
+		nextUploadState = nextState(job.upload.Status)
 	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[model.GeneratedUploadSchema]
@@ -632,7 +598,7 @@ func (job *UploadJob) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, job.upload)
+			rowCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, job.upload)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -665,7 +631,7 @@ func (job *UploadJob) run() (err error) {
 			break
 		}
 
-		nextUploadState = getNextUploadState(newStatus)
+		nextUploadState = nextState(newStatus)
 	}
 
 	if newStatus != model.ExportedData {
@@ -824,11 +790,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
 	if job.config.disableAlter {
 		job.logger.Debugw("skipping alter columns to warehouse",
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
 			logfield.TableName, tName,
 			"columns", columnsMap,
 		)
@@ -1037,13 +998,6 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	}
 
 	job.logger.Infow("starting load for table",
-		logfield.UploadJobID, job.upload.ID,
-		logfield.SourceID, job.warehouse.Source.ID,
-		logfield.DestinationID, job.warehouse.Destination.ID,
-		logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, job.warehouse.WorkspaceID,
-		logfield.Namespace, job.warehouse.Namespace,
 		logfield.TableName, tName,
 	)
 
@@ -1340,7 +1294,7 @@ func (job *UploadJob) processLoadTableResponse(errorMap map[string]error) (error
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716}] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings, error) {
-	timings, err := repo.NewUploads(job.db).UploadTimings(job.ctx, job.upload.ID)
+	timings, err := job.uploadsRepo.UploadTimings(job.ctx, job.upload.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1497,15 +1451,8 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	defer func() {
 		job.logger.Warnw("upload error",
-			logfield.UploadJobID, job.upload.ID,
 			logfield.UploadStatus, state,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Namespace, job.upload.Namespace,
 			logfield.Error, statusError,
-			logfield.UseRudderStorage, job.upload.UseRudderStorage,
 			logfield.Priority, job.upload.Priority,
 			logfield.Retried, job.upload.Retried,
 			logfield.Attempt, job.upload.Attempts,
@@ -1576,7 +1523,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
 
-	inputCount, _ := repo.NewStagingFiles(job.db).TotalEventsForUpload(job.ctx, upload)
+	inputCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, upload)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
@@ -1686,57 +1633,22 @@ func (job *UploadJob) validateDestinationCredentials() (bool, error) {
 	return response.Success, nil
 }
 
-func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
-	loadFilesMap = make(map[tableNameT]bool)
-
-	sourceID := job.warehouse.Source.ID
-	destID := job.warehouse.Destination.ID
-
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  distinct table_name
-		FROM
-		  %s
-		WHERE
-		  (
-			source_id = $1
-			AND destination_id = $2
-			AND id >= $3
-			AND id <= $4
-		  );
-`,
-		whutils.WarehouseLoadFilesTable,
-	) /**/
-	sqlStatementArgs := []interface{}{
-		sourceID,
-		destID,
+func (job *UploadJob) getLoadFilesTableMap() (map[tableNameT]bool, error) {
+	tableName, err := job.loadFilesRepo.DistinctTableName(
+		job.ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting load files table name: %w", err)
 	}
-	rows, err := job.db.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = nil
-		return
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-		return
-	}
-	defer func() { _ = rows.Close() }()
 
-	for rows.Next() {
-		var tableName string
-		err = rows.Scan(&tableName)
-		if err != nil {
-			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-			return
-		}
-		loadFilesMap[tableNameT(tableName)] = true
-	}
-	if err = rows.Err(); err != nil {
-		err = fmt.Errorf("interate distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
-	}
-	return
+	tablesMap := lo.SliceToMap(tableName, func(tName string) (tableNameT, bool) {
+		return tableNameT(tName), true
+	})
+	return tablesMap, nil
 }
 
 func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (bool, error) {
@@ -1895,95 +1807,6 @@ func (job *UploadJob) DTO() *model.UploadJob {
 		Upload:       job.upload,
 		StagingFiles: job.stagingFiles,
 	}
-}
-
-/*
- * State Machine for upload job lifecycle
- */
-
-func getNextUploadState(dbStatus string) *uploadState {
-	for _, uploadState := range stateTransitions {
-		if dbStatus == uploadState.inProgress || dbStatus == uploadState.failed {
-			return uploadState
-		}
-		if dbStatus == uploadState.completed {
-			return uploadState.nextState
-		}
-	}
-	return nil
-}
-
-func getInProgressState(state string) string {
-	uploadState, ok := stateTransitions[state]
-	if !ok {
-		panic(fmt.Errorf("invalid Upload state: %s", state))
-	}
-	return uploadState.inProgress
-}
-
-func initializeStateMachine() {
-	stateTransitions = make(map[string]*uploadState)
-
-	waitingState := &uploadState{
-		completed: model.Waiting,
-	}
-	stateTransitions[model.Waiting] = waitingState
-
-	generateUploadSchemaState := &uploadState{
-		inProgress: "generating_upload_schema",
-		failed:     "generating_upload_schema_failed",
-		completed:  model.GeneratedUploadSchema,
-	}
-	stateTransitions[model.GeneratedUploadSchema] = generateUploadSchemaState
-
-	createTableUploadsState := &uploadState{
-		inProgress: "creating_table_uploads",
-		failed:     "creating_table_uploads_failed",
-		completed:  model.CreatedTableUploads,
-	}
-	stateTransitions[model.CreatedTableUploads] = createTableUploadsState
-
-	generateLoadFilesState := &uploadState{
-		inProgress: "generating_load_files",
-		failed:     "generating_load_files_failed",
-		completed:  model.GeneratedLoadFiles,
-	}
-	stateTransitions[model.GeneratedLoadFiles] = generateLoadFilesState
-
-	updateTableUploadCountsState := &uploadState{
-		inProgress: "updating_table_uploads_counts",
-		failed:     "updating_table_uploads_counts_failed",
-		completed:  model.UpdatedTableUploadsCounts,
-	}
-	stateTransitions[model.UpdatedTableUploadsCounts] = updateTableUploadCountsState
-
-	createRemoteSchemaState := &uploadState{
-		inProgress: "creating_remote_schema",
-		failed:     "creating_remote_schema_failed",
-		completed:  model.CreatedRemoteSchema,
-	}
-	stateTransitions[model.CreatedRemoteSchema] = createRemoteSchemaState
-
-	exportDataState := &uploadState{
-		inProgress: "exporting_data",
-		failed:     "exporting_data_failed",
-		completed:  model.ExportedData,
-	}
-	stateTransitions[model.ExportedData] = exportDataState
-
-	abortState := &uploadState{
-		completed: model.Aborted,
-	}
-	stateTransitions[model.Aborted] = abortState
-
-	waitingState.nextState = generateUploadSchemaState
-	generateUploadSchemaState.nextState = createTableUploadsState
-	createTableUploadsState.nextState = generateLoadFilesState
-	generateLoadFilesState.nextState = updateTableUploadCountsState
-	updateTableUploadCountsState.nextState = createRemoteSchemaState
-	createRemoteSchemaState.nextState = exportDataState
-	exportDataState.nextState = nil
-	abortState.nextState = nil
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
