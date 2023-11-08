@@ -9,7 +9,7 @@ type destConfSetting string
 func (s destConfSetting) string() string { return string(s) }
 
 const (
-	EnableMergeSetting      destConfSetting = "enableMerge"
+	PreferAppendSetting     destConfSetting = "preferAppend"
 	UseRudderStorageSetting destConfSetting = "useRudderStorage"
 )
 
@@ -30,4 +30,11 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 		}
 	}
 	return false
+}
+
+func (w *Warehouse) GetPreferAppendSetting() bool {
+	destConfig := w.Destination.Config
+	// defaulting to false if not defined for backwards compatibility with previous behaviour
+	value, _ := destConfig[PreferAppendSetting.string()].(bool)
+	return value
 }
