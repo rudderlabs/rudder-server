@@ -10,6 +10,7 @@ var (
 	ErrNotSupported = errors.New("operation not supported")
 	SyncDoneMarker  = ".sync_done"
 	ErrNoValueFound = errors.New("no value found")
+	ErrKeyNotFound  = errors.New("key not found")
 )
 var Wildcard = "*"
 
