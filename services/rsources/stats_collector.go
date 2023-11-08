@@ -61,7 +61,7 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
-		parametersParser:      defaultJobIdentifier,
+		parametersParser:      defaultParametersParser,
 	}
 }
 
@@ -73,7 +73,7 @@ func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsS
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
 		failedRecordsIndex:    map[statKey][]json.RawMessage{},
-		parametersParser:      defaultJobIdentifier,
+		parametersParser:      defaultParametersParser,
 	}
 	for _, opt := range opts {
 		opt(sc)
@@ -278,14 +278,14 @@ type OptFunc func(*statsCollector)
 func IgnoreDestinationID() OptFunc {
 	return func(r *statsCollector) {
 		r.parametersParser = func(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
-			jobRunID, recordID, target = defaultJobIdentifier(jobParams)
+			jobRunID, recordID, target = defaultParametersParser(jobParams)
 			target.DestinationID = ""
 			return jobRunID, recordID, target
 		}
 	}
 }
 
-func defaultJobIdentifier(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
+func defaultParametersParser(jobParams json.RawMessage) (jobRunID, recordID string, target JobTargetKey) {
 	var jobRunId string
 	var jobTargetKey JobTargetKey
 	var recordId string
