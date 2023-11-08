@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
@@ -57,17 +58,19 @@ type Handle struct {
 	adaptiveLimit    func(int64) int64
 
 	// configuration
-	reloadableConfig        *reloadableConfig
-	destType                string
-	guaranteeUserEventOrder bool
-	netClientTimeout        time.Duration
-	transformerTimeout      time.Duration
-	enableBatching          bool
-	noOfWorkers             int
-	barrierConcurrencyLimit int
-	drainConcurrencyLimit   int
-	workerInputBufferSize   int
-	saveDestinationResponse bool
+	reloadableConfig                   *reloadableConfig
+	destType                           string
+	guaranteeUserEventOrder            bool
+	netClientTimeout                   time.Duration
+	transformerTimeout                 time.Duration
+	enableBatching                     bool
+	noOfWorkers                        int
+	eventOrderKeyThreshold             misc.ValueLoader[int]
+	eventOrderDisabledStateDuration    misc.ValueLoader[time.Duration]
+	eventOrderHalfEnabledStateDuration misc.ValueLoader[time.Duration]
+	drainConcurrencyLimit              misc.ValueLoader[int]
+	workerInputBufferSize              int
+	saveDestinationResponse            bool
 
 	diagnosisTickerTime time.Duration
 
@@ -100,6 +103,7 @@ type Handle struct {
 	backgroundCancel               context.CancelFunc
 	backgroundWait                 func() error
 	startEnded                     chan struct{}
+	barrier                        *eventorder.Barrier
 
 	limiter struct {
 		pickup    kitsync.Limiter
@@ -146,9 +150,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	//#JobOrder (See comment marked #JobOrder
 	if rt.guaranteeUserEventOrder {
-		for idx := range workers {
-			workers[idx].barrier.Sync()
-		}
+		rt.barrier.Sync()
 	}
 
 	var firstJob *jobsdb.JobT
@@ -482,7 +484,17 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrParamsUnmarshal
 	}
 
-	if !rt.guaranteeUserEventOrder {
+	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+
+	eventOrderingDisabled := !rt.guaranteeUserEventOrder
+	if !eventOrderingDisabled && rt.barrier.Disabled(orderKey) {
+		eventOrderingDisabled = true
+		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
+			"destType":      rt.destType,
+			"destinationId": parameters.DestinationID,
+		}).Increment()
+	}
+	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
 			return nil, types.ErrWorkerNoSlot
@@ -500,8 +512,6 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrWorkerNoSlot
 
 	}
-
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
 
 	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
 	// this check is done to maintain order.
