@@ -43,7 +43,6 @@ func FailedKeysHandler(service rsources.JobService, logger logger.Logger) http.H
 	}
 	srvMux := chi.NewRouter()
 	srvMux.Delete("/{job_run_id}", h.deleteFailedRecords)
-	srvMux.Get("/{job_run_id}", h.failedRecords)
 	return srvMux
 }
 

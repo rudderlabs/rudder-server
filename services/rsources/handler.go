@@ -294,18 +294,25 @@ func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId stri
 }
 
 func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
+	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	if err != nil {
+		return err
+	}
+	for _, target := range jobStatus.TasksStatus {
+		for _, source := range target.SourcesStatus {
+			if !source.Completed {
+				return ErrSourceNotCompleted
+			}
+		}
+	}
 	filters, filterParams := sqlFilters(jobRunId, filter)
 	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
 	res, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
+	if _, err := res.RowsAffected(); err != nil {
 		return err
-	}
-	if rowsAffected == 0 {
-		return ErrStatusNotFound
 	}
 	return nil
 }
