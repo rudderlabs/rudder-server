@@ -42,10 +42,10 @@ type fakeSuppresser struct {
 
 func (*fakeSuppresser) Suppressed(_, _, _ string) (*model.Metadata, error) {
 	// random failures, but always returning false
-	if rand.Intn(2)%2 == 0 { // skipcq: GSC-G404
+	if rand.New(rand.NewSource(time.Now().UnixNano())).Intn(2)%2 == 0 { // skipcq: GSC-G404
 		return nil, fmt.Errorf("some error")
 	} else {
-		return nil, ErrNoValueFound
+		return &model.Metadata{}, nil
 	}
 }
 
