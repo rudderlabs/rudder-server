@@ -15,28 +15,18 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
 type mockModeProvider struct {
-	modeCh      chan servermode.ChangeEvent
-	workspaceCh chan workspace.ChangeEvent
+	modeCh chan servermode.ChangeEvent
 }
 
 func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ChangeEvent {
 	return m.modeCh
 }
 
-func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.ChangeEvent {
-	return m.workspaceCh
-}
-
 func (m *mockModeProvider) sendMode(newMode servermode.ChangeEvent) {
 	m.modeCh <- newMode
-}
-
-func (m *mockModeProvider) sendWorkspaceIDs(ws workspace.ChangeEvent) {
-	m.workspaceCh <- ws
 }
 
 type mockLifecycle struct {
@@ -65,8 +55,7 @@ func TestDynamicCluster(t *testing.T) {
 	Init()
 
 	provider := &mockModeProvider{
-		modeCh:      make(chan servermode.ChangeEvent),
-		workspaceCh: make(chan workspace.ChangeEvent),
+		modeCh: make(chan servermode.ChangeEvent),
 	}
 
 	callCount := uint64(0)
@@ -82,9 +71,6 @@ func TestDynamicCluster(t *testing.T) {
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
-
-	ctrl := gomock.NewController(t)
-	backendConfig := NewMockconfigLifecycle(ctrl)
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -99,8 +85,6 @@ func TestDynamicCluster(t *testing.T) {
 		Router:          router,
 		SchemaForwarder: schemaForwarder,
 		Archiver:        archiver,
-
-		BackendConfig: backendConfig,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -203,51 +187,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
-	})
-
-	t.Run("Update workspaceIDs", func(t *testing.T) {
-		chACK := make(chan struct{})
-		backendConfig.EXPECT().Stop().Times(1)
-		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-		backendConfig.EXPECT().StartWithIDs(gomock.Any(), "a,b,c").Times(1)
-
-		provider.sendWorkspaceIDs(
-			workspace.NewWorkspacesRequest([]string{"a", "b", "c"},
-				func(_ context.Context, err error) error {
-					close(chACK)
-					require.NoError(t, err)
-					return nil
-				},
-			),
-		)
-
-		select {
-		case <-chACK:
-		case <-time.After(time.Second):
-			t.Fatal("Did not get acknowledgement within 1 second")
-		}
-	})
-
-	t.Run("Empty workspaces triggers a reload", func(t *testing.T) {
-		chACK := make(chan struct{})
-		backendConfig.EXPECT().Stop().Times(1)
-		backendConfig.EXPECT().StartWithIDs(gomock.Any(), gomock.Any()).Times(1)
-		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-
-		provider.sendWorkspaceIDs(
-			workspace.NewWorkspacesRequest([]string{},
-				func(ctx context.Context, err error) error {
-					require.NoError(t, err)
-					close(chACK)
-					return nil
-				}),
-		)
-
-		select {
-		case <-chACK:
-		case <-time.After(time.Second):
-			t.Fatal("Did not get acknowledgement error within 1 second")
-		}
 	})
 
 	t.Run("Shutdown from Normal", func(t *testing.T) {

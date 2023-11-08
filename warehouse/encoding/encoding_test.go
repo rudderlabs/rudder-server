@@ -58,7 +58,7 @@ func TestReaderLoader(t *testing.T) {
 		)
 		t.Log("Parquet", outputFilePath)
 
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, schema, destinationType)
 		require.NoError(t, err)
@@ -205,7 +205,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -267,7 +267,7 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
@@ -320,7 +320,7 @@ func TestReaderLoader(t *testing.T) {
 	})
 
 	t.Run("Empty files", func(t *testing.T) {
-		ef := encoding.NewFactory(config.Default)
+		ef := encoding.NewFactory(config.New())
 
 		t.Run("csv", func(t *testing.T) {
 			destinationType := warehouseutils.RS

@@ -34,14 +34,14 @@ func TestGateway_Throttler(t *testing.T) {
 	}
 
 	for i := 0; i < eventLimit; i++ {
-		_, err := testThrottler.checkLimitReached(context.TODO(), workspaceId)
+		_, err := testThrottler.checkLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 	}
 
 	startTime := time.Now()
 	var passed int
 	for i := 0; i < 2*eventLimit; i++ {
-		allowed, err := testThrottler.checkLimitReached(context.TODO(), workspaceId)
+		allowed, err := testThrottler.checkLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 		if allowed {
 			passed++
@@ -69,14 +69,14 @@ func TestGateway_Factory(t *testing.T) {
 	require.NotNil(t, rateLimiter)
 
 	for i := 0; i < eventLimit; i++ {
-		_, err := rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		_, err := rateLimiter.CheckLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 	}
 
 	startTime := time.Now()
 	var passed int
 	for i := 0; i < 2*eventLimit; i++ {
-		allowed, err := rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		allowed, err := rateLimiter.CheckLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 		if allowed {
 			passed++

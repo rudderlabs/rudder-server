@@ -13,7 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -241,14 +240,14 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					t.Log("db:", pgResource.DBDsn)
 
-					rs := redshift.New(config.Default, logger.NOP, stats.Default)
+					rs := redshift.New(config.New(), logger.NOP, memstats.New())
 					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
 					ujf := &UploadJobFactory{
-						conf:         config.Default,
+						conf:         config.New(),
 						logger:       logger.NOP,
-						statsFactory: stats.Default,
+						statsFactory: memstats.New(),
 						db:           sqlmiddleware.New(pgResource.DB),
 					}
 
@@ -317,14 +316,14 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
 			ujf := &UploadJobFactory{
-				conf:         config.Default,
+				conf:         config.New(),
 				logger:       logger.NOP,
-				statsFactory: stats.Default,
+				statsFactory: memstats.New(),
 				db:           sqlmiddleware.New(pgResource.DB),
 			}
 

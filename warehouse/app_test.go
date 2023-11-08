@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
@@ -30,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -40,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -131,7 +132,7 @@ func TestApp(t *testing.T) {
 					c.Set("Warehouse.runningMode", subTC.runningMode)
 					c.Set("Warehouse.webPort", webPort)
 
-					a := New(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+					a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 					err = a.Setup(ctx)
 					require.NoError(t, err)
 
@@ -141,23 +142,7 @@ func TestApp(t *testing.T) {
 					})
 					g.Go(func() error {
 						defer stopServer()
-
-						serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-
-						require.Eventually(t, func() bool {
-							resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-							if err != nil {
-								return false
-							}
-							defer func() {
-								httputil.CloseResponse(resp)
-							}()
-
-							return resp.StatusCode == http.StatusOK
-						},
-							time.Second*10,
-							time.Millisecond*100,
-						)
+						health.WaitUntilReady(ctx, t, fmt.Sprintf("http://localhost:%d/health", webPort), time.Second*10, time.Millisecond*100, t.Name())
 						return nil
 					})
 					require.NoError(t, g.Wait())
@@ -210,7 +195,7 @@ func TestApp(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		a := New(mockApp, c, logger.NOP, stats.Default, mockBackendConfig, filemanager.New)
+		a := New(mockApp, c, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
 		err = a.Setup(ctx)
 		require.NoError(t, err)
 
@@ -278,7 +263,7 @@ func TestApp(t *testing.T) {
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
 
-		a := New(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.EqualError(t, err, "setting up database: warehouse Service needs postgres version >= 10. Exiting")
 	})
@@ -290,7 +275,7 @@ func TestApp(t *testing.T) {
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu")
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 
-		a := New(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.ErrorContains(t, err, "setting up database: could not check compatibility:")
 	})
@@ -305,7 +290,7 @@ func TestApp(t *testing.T) {
 		c.Set("DB.password", pgResource.Password)
 		c.Set("DB.name", pgResource.Database)
 
-		a := New(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.NoError(t, err)
 	})
@@ -386,7 +371,7 @@ func TestApp(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		a := New(mockApp, c, logger.NOP, stats.Default, mockBackendConfig, filemanager.New)
+		a := New(mockApp, c, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
 		require.NoError(t, a.monitorDestRouters(ctx))
 	})
@@ -417,7 +402,7 @@ func TestApp(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			a := New(mockApp, c, logger.NOP, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+			a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 
@@ -427,23 +412,7 @@ func TestApp(t *testing.T) {
 			})
 			g.Go(func() error {
 				defer stopServer()
-
-				serverURL := fmt.Sprintf("http://localhost:%d", webPort)
-
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("http://localhost:%d/health", webPort), time.Second*10, time.Millisecond*100, t.Name())
 				return nil
 			})
 			require.NoError(t, g.Wait())
@@ -475,7 +444,7 @@ func TestApp(t *testing.T) {
 			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Infof(gomock.Any()).AnyTimes()
 
-			a := New(mockApp, c, mockLogger, stats.Default, &bcConfig.NOOP{}, filemanager.New)
+			a := New(mockApp, c, mockLogger, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 

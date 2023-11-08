@@ -23,7 +23,7 @@ type Limiter interface {
 }
 
 type Throttler interface {
-	CheckLimitReached(context context.Context, workspaceId string) (bool, error)
+	CheckLimitReached(context context.Context, workspaceId string, eventCount int64) (bool, error)
 }
 
 type Factory struct {
@@ -45,9 +45,9 @@ func New(stats stats.Stats) (*Factory, error) {
 	return &f, nil
 }
 
-func (f *Factory) CheckLimitReached(context context.Context, workspaceId string) (bool, error) {
+func (f *Factory) CheckLimitReached(context context.Context, workspaceId string, eventCount int64) (bool, error) {
 	t := f.get(workspaceId)
-	return t.checkLimitReached(context, workspaceId)
+	return t.checkLimitReached(context, workspaceId, eventCount)
 }
 
 func (f *Factory) get(workspaceId string) *throttler {
@@ -98,8 +98,8 @@ type throttler struct {
 }
 
 // checkLimitReached returns true if we're not allowed to process the number of event
-func (t *throttler) checkLimitReached(ctx context.Context, key string) (limited bool, retErr error) {
-	allowed, _, err := t.limiter.Allow(ctx, 1, t.config.limit, getWindowInSecs(t.config.window), key)
+func (t *throttler) checkLimitReached(ctx context.Context, key string, count int64) (limited bool, retErr error) {
+	allowed, _, err := t.limiter.Allow(ctx, count, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
 		return false, fmt.Errorf("could not limit: %w", err)
 	}

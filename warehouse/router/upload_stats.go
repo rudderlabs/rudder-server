@@ -2,15 +2,13 @@ package router
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -64,30 +62,16 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		job.logger.Warnw("sum of total exported events for upload",
-			logfield.UploadJobID, job.upload.ID,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err.Error(),
-		)
+		job.logger.Warnw("sum of total exported events for upload", logfield.Error, err.Error())
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
 	if err != nil {
-		job.logger.Warnw("total events for upload",
-			logfield.UploadJobID, job.upload.ID,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err.Error(),
-		)
+		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
 		return
 	}
 
@@ -108,30 +92,16 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		job.logger.Warnw("sum of total exported events for upload",
-			logfield.UploadJobID, job.upload.ID,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err.Error(),
-		)
+		job.logger.Warnw("sum of total exported events for upload", logfield.Error, err.Error())
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(job.db).TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
 	if err != nil {
-		job.logger.Warnw("total events for upload",
-			logfield.UploadJobID, job.upload.ID,
-			logfield.SourceID, job.upload.SourceID,
-			logfield.DestinationID, job.upload.DestinationID,
-			logfield.DestinationType, job.upload.DestinationType,
-			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err.Error(),
-		)
+		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
 		return
 	}
 
@@ -163,7 +133,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := repo.NewStagingFiles(job.db).FirstEventForUpload(job.ctx, job.upload)
+	firstEventAt, err := job.stagingFileRepo.FirstEventForUpload(job.ctx, job.upload)
 	if err != nil {
 		job.logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return

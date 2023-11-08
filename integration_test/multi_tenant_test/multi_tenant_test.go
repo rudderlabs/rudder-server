@@ -19,7 +19,6 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
@@ -213,11 +212,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		defer func() { httputil.CloseResponse(resp) }()
 	}
 
-	// Pushing valid configuration via ETCD
-	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
-	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack-1/1"}`)
-	require.NoError(t, err)
-
 	// Checking now that the configuration has been processed and the server can start
 	t.Log("Checking health endpoint at", healthEndpoint)
 	health.WaitUntilReady(ctx, t,
@@ -226,22 +220,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		100*time.Millisecond,
 		t.Name(),
 	)
-
-	select {
-	case ack := <-etcdContainer.Client.Watch(ctx, "test-ack-1/1", clientv3.WithRev(1)):
-		v, err := unmarshalWorkspaceAckValue(t, &ack)
-		require.NoError(t, err)
-		require.Equal(t, "RELOADED", v.Status)
-		require.Equal(t, "", v.Error)
-	case <-time.After(90 * time.Second):
-		_, err = clientv3.New(clientv3.Config{
-			Endpoints: etcdContainer.Hosts,
-			DialOptions: []grpc.DialOption{
-				grpc.WithBlock(), // block until the underlying connection is up
-			},
-		})
-		t.Fatalf("Timeout waiting for test-ack-1/1 (etcd status error: %v)", err)
-	}
 
 	cleanupGwJobs := func() {
 		_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_job_status_1 WHERE job_id in (SELECT job_id from gw_jobs_1 WHERE workspace_id = $1)`, workspaceID)
@@ -339,33 +317,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			require.Equal(t, 1, count)
 		})
 	}
-
-	// Checking that an empty WorkspaceChange is OK.
-	// For now, it will be up to the Proxy to do the routing properly until we make RudderServer aware of what
-	// workspaces it is serving.
-	t.Run("empty workspaces are accepted", func(t *testing.T) {
-		_, err := etcdContainer.Client.Put(ctx,
-			etcdReqKey, `{"workspaces":"","ack_key":"test-ack-3/3"}`,
-		)
-		require.NoError(t, err)
-		select {
-		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack-3/3", clientv3.WithRev(1)):
-			v, err := unmarshalWorkspaceAckValue(t, &ack)
-			require.NoError(t, err)
-			require.Equal(t, "RELOADED", v.Status)
-			require.Equal(t, "", v.Error)
-		case <-time.After(90 * time.Second):
-			t.Fatal("Timeout waiting for test-ack-3/3")
-		}
-	})
 }
 
 func getETCDServerModeReqKey(releaseName, instance string) string {
 	return fmt.Sprintf("/%s/SERVER/%s/MODE", releaseName, instance)
-}
-
-func getETCDWorkspacesReqKey(releaseName, instance, appType string) string {
-	return fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", releaseName, instance, appType)
 }
 
 func sendEventsToGateway(t *testing.T, httpPort int, writeKey string) {
@@ -417,22 +372,4 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	t.Logf("Event Sent Successfully: (%s)", body)
-}
-
-type workspaceAckValue struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
-}
-
-func unmarshalWorkspaceAckValue(t *testing.T, res *clientv3.WatchResponse) (workspaceAckValue, error) {
-	t.Helper()
-	require.NoError(t, res.Err())
-	var v workspaceAckValue
-	if len(res.Events) == 0 {
-		return v, fmt.Errorf("no events in the response")
-	}
-	if err := json.Unmarshal(res.Events[0].Kv.Value, &v); err != nil {
-		return v, fmt.Errorf("could not unmarshal key value response: %v", err)
-	}
-	return v, nil
 }
