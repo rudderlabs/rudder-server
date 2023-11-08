@@ -156,6 +156,7 @@ func (jf *JobsForwarder) Start() error {
 											JobState:      jobsdb.Succeeded.State,
 											ExecTime:      time.Now(),
 											Parameters:    []byte(`{}`),
+											ErrorResponse: []byte(`{}`),
 											JobParameters: job.Parameters,
 										})
 									}
