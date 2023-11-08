@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,7 +76,6 @@ func getFailedRecords(
 	pageSize int,
 	pageToken,
 	endpoint string,
-	failedKeysResponseCode int,
 ) *rsources.JobFailedRecords {
 	params := url.Values{}
 	if pageSize > 0 {
@@ -93,11 +91,9 @@ func getFailedRecords(
 	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
-	require.Equal(t, failedKeysResponseCode, resp.Code)
+	require.Equal(t, http.StatusOK, resp.Code)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	fmt.Println(`!!!!!!!!!!!!!`)
-	fmt.Println(string(body))
 	var failedRecords rsources.JobFailedRecords
 	require.NoError(t, json.Unmarshal(body, &failedRecords))
 	return &failedRecords
@@ -120,7 +116,6 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 			pageSize,
 			pageToken,
 			"jobRunID/failed-records",
-			http.StatusOK,
 		)
 		require.NotNil(t, failedRecords)
 		require.Len(t, failedRecords.Tasks, 1)
@@ -147,7 +142,6 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 				pageSize,
 				pageToken,
 				"jobRunID/failed-records",
-				http.StatusOK,
 			)
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)
@@ -166,7 +160,6 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 			pageSize,
 			pageToken,
 			"jobRunID/failed-records",
-			http.StatusOK,
 		)
 		require.NotNil(t, failedRecords)
 		require.Len(t, failedRecords.Tasks, 0)
@@ -212,7 +205,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			resp := httptest.NewRecorder()
 			fkHandler.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusNoContent, resp.Code)
-			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID", http.StatusOK)
+			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID")
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)
 			require.Nil(t, failedRecords.Paging, "no paging information should be present")
@@ -297,7 +290,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			jsHandler.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusNotFound, resp.Code)
 
-			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID/failed-records", http.StatusOK)
+			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID/failed-records")
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)
 			require.Nil(t, failedRecords.Paging, "no paging information should be present")
