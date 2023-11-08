@@ -35,16 +35,16 @@ func (m *MockThrottler) EXPECT() *MockThrottlerMockRecorder {
 }
 
 // CheckLimitReached mocks base method.
-func (m *MockThrottler) CheckLimitReached(arg0 context.Context, arg1 string) (bool, error) {
+func (m *MockThrottler) CheckLimitReached(arg0 context.Context, arg1 string, arg2 int64) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckLimitReached", arg0, arg1)
+	ret := m.ctrl.Call(m, "CheckLimitReached", arg0, arg1, arg2)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CheckLimitReached indicates an expected call of CheckLimitReached.
-func (mr *MockThrottlerMockRecorder) CheckLimitReached(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockThrottlerMockRecorder) CheckLimitReached(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckLimitReached", reflect.TypeOf((*MockThrottler)(nil).CheckLimitReached), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckLimitReached", reflect.TypeOf((*MockThrottler)(nil).CheckLimitReached), arg0, arg1, arg2)
 }

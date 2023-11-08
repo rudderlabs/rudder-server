@@ -15,11 +15,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -32,8 +30,7 @@ var (
 )
 
 const (
-	modeRequestKeyPattern        = `/%s/SERVER/%s/MODE`          // /<releaseName>/server/<serverIndex>/mode
-	workspacesRequestsKeyPattern = `/%s/SERVER/%s/%s/WORKSPACES` // /<releaseName>/server/<serverIndex>/<app_type>/workspaces
+	modeRequestKeyPattern = `/%s/SERVER/%s/MODE` // /<releaseName>/server/<serverIndex>/mode
 
 	defaultACKTimeout = 15 * time.Second
 )
@@ -57,16 +54,6 @@ type modeRequestValue struct {
 
 type modeAckValue struct {
 	Status servermode.Mode `json:"status"`
-}
-
-type workspacesRequestsValue struct {
-	Workspaces string `json:"workspaces"` // comma separated workspaces
-	AckKey     string `json:"ack_key"`
-}
-
-type workspacesAckValue struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
 }
 
 func EnvETCDConfig() *ETCDConfig {
@@ -222,107 +209,6 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 				case mvccpb.PUT:
 					select {
 					case resultChan <- manager.unmarshalMode(event.Kv.Value):
-					case <-ctx.Done():
-					}
-				default:
-					manager.logger.Warnf("unknown event type %s", event.Type)
-				}
-			}
-		}
-		close(resultChan)
-	}()
-
-	return resultChan
-}
-
-func errChWorkspacesRequest(err error) <-chan workspace.ChangeEvent {
-	ch := make(chan workspace.ChangeEvent, 1)
-	ch <- workspace.ChangeEventError(err)
-	close(ch)
-	return ch
-}
-
-func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent {
-	var req workspacesRequestsValue
-	err := json.Unmarshal(raw, &req)
-	if err != nil {
-		return workspace.ChangeEventError(err)
-	}
-
-	return workspace.NewWorkspacesRequest(
-		strings.Split(req.Workspaces, ","),
-		func(ctx context.Context, ackErr error) (err error) {
-			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
-			defer cancel()
-
-			var ackValue string
-			if ackErr != nil {
-				ackValue, err = json.MarshalToString(workspacesAckValue{
-					Status: "ERROR",
-					Error:  ackErr.Error(),
-				})
-			} else {
-				ackValue, err = json.MarshalToString(workspacesAckValue{
-					Status: "RELOADED",
-				})
-			}
-			if err != nil {
-				return fmt.Errorf("marshal ack value: %w", err)
-			}
-			// for backward compatibility, for we acknowledge the request at both
-			// the incoming value contained in ack_key and the new value obtained by appending
-			// the instance ID to the ack_key. This enables the scheduler to ensure all the
-			// replicas of the gateway have acknowledged the request, when running in HA mode
-			ackKeys := []string{req.AckKey, fmt.Sprintf("%s/%s", req.AckKey, config.GetString("INSTANCE_ID", ""))}
-			for _, ackKey := range ackKeys {
-				manager.logger.Infof("Workspace ID Change Acknowledgement (error: %v) Key: %s", ackErr != nil, ackKey)
-				_, err = manager.Client.Put(ctx, ackKey, ackValue)
-				if err != nil {
-					manager.logger.Errorf(
-						"Failed to acknowledge workspace ID change (error: %v) for key: %s", ackErr != nil, ackKey,
-					)
-					return err
-				}
-			}
-			return nil
-		},
-	)
-}
-
-func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {
-	if err := manager.init(); err != nil {
-		return errChWorkspacesRequest(err)
-	}
-
-	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
-	workspaceRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
-	manager.logger.Infof("Workspace ID Lookup Key: %s", workspaceRequestKey)
-
-	resultChan := make(chan workspace.ChangeEvent, 1)
-	resp, err := manager.Client.Get(ctx, workspaceRequestKey)
-	if err != nil {
-		return errChWorkspacesRequest(err)
-	}
-
-	revision := int64(0)
-	if len(resp.Kvs) != 0 {
-		resultChan <- manager.unmarshalWorkspace(resp.Kvs[0].Value)
-		revision = resp.Header.Revision + 1
-	}
-
-	etcdWatchChan := manager.Client.Watch(ctx, workspaceRequestKey, clientv3.WithRev(revision))
-	go func() {
-		for watchResp := range etcdWatchChan {
-			if watchResp.Err() != nil {
-				resultChan <- workspace.ChangeEventError(watchResp.Err())
-				continue
-			}
-
-			for _, event := range watchResp.Events {
-				switch event.Type {
-				case mvccpb.PUT:
-					select {
-					case resultChan <- manager.unmarshalWorkspace(event.Kv.Value):
 					case <-ctx.Done():
 					}
 				default:

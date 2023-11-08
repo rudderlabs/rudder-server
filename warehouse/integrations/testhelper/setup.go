@@ -29,10 +29,10 @@ import (
 )
 
 const (
-	WaitFor2Minute         = 2 * time.Minute
-	WaitFor10Minute        = 10 * time.Minute
-	DefaultQueryFrequency  = 100 * time.Millisecond
-	AsyncJOBQueryFrequency = 1000 * time.Millisecond
+	WaitFor2Minute          = 2 * time.Minute
+	WaitFor10Minute         = 10 * time.Minute
+	DefaultQueryFrequency   = 100 * time.Millisecond
+	SourceJobQueryFrequency = 1000 * time.Millisecond
 )
 
 const (
@@ -64,7 +64,7 @@ type TestConfig struct {
 	TableUploadsEventsMap        EventsCountMap
 	WarehouseEventsMap           EventsCountMap
 	JobsDB                       *sql.DB
-	AsyncJob                     bool
+	SourceJob                    bool
 	SkipWarehouse                bool
 	HTTPPort                     int
 }
@@ -80,8 +80,8 @@ func (w *TestConfig) VerifyEvents(t testing.TB) {
 	verifyEventsInLoadFiles(t, w)
 	verifyEventsInTableUploads(t, w)
 
-	if w.AsyncJob {
-		verifyAsyncJob(t, w)
+	if w.SourceJob {
+		verifySourceJob(t, w)
 	}
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
