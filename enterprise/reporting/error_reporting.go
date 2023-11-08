@@ -398,6 +398,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		edr.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
+
 	if rows.Err() != nil {
 		edr.log.Errorf("Rows error while querying: %v", rows.Err())
 		return []*types.EDReportsDB{}, queryMin.Int64

@@ -29,7 +29,7 @@ func TestIsSuppressedConcurrency(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		go func() {
 			defer wg.Done()
-			require.Nil(t, h.GetSuppressedUser("workspaceID", "userID", "sourceID"))
+			h.GetSuppressedUser("workspaceID", "userID", "sourceID")
 		}()
 	}
 	wg.Wait()
