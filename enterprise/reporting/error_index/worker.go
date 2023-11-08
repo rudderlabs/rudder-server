@@ -263,7 +263,7 @@ func (w *worker) encodeToParquet(wr io.Writer, payloads []payload) error {
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
 
 	sort.Slice(payloads, func(i, j int) bool {
-		return payloads[i].FailedAt > payloads[j].FailedAt
+		return payloads[i].SortingKey() < payloads[j].SortingKey()
 	})
 
 	for _, payload := range payloads {
