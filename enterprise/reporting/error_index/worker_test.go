@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,24 +60,28 @@ func TestWorkerWriter(t *testing.T) {
 		receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 		failedAt := receivedAt.Add(time.Hour)
 
-		preparePayloads := func(count int) []payload {
-			return lo.RepeatBy(count, func(i int) payload {
-				p := payload{
-					MessageID:        "messageId" + strconv.Itoa(i),
-					SourceID:         "sourceId" + strconv.Itoa(i%5),
-					DestinationID:    "destinationId" + strconv.Itoa(i%10),
-					TransformationID: "transformationId" + strconv.Itoa(i),
-					TrackingPlanID:   "trackingPlanId" + strconv.Itoa(i),
-					FailedStage:      "failedStage" + strconv.Itoa(i),
-					EventType:        "eventType" + strconv.Itoa(i),
-					EventName:        "eventName" + strconv.Itoa(i),
-				}
-				p.SetReceivedAt(receivedAt.Add(time.Duration(i) * time.Second))
-				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
+		count := 100
+		factor := 10
+		payloads := make([]payload, 0, count)
 
-				return p
-			})
+		for i := 0; i < count; i++ {
+			p := payload{
+				MessageID:        "messageId" + strconv.Itoa(i),
+				SourceID:         "sourceId" + strconv.Itoa(i%5),
+				DestinationID:    "destinationId" + strconv.Itoa(i%10),
+				TransformationID: "transformationId" + strconv.Itoa(i),
+				TrackingPlanID:   "trackingPlanId" + strconv.Itoa(i),
+				FailedStage:      "failedStage" + strconv.Itoa(i),
+				EventType:        "eventType" + strconv.Itoa(i),
+				EventName:        "eventName" + strconv.Itoa(i),
+			}
+			p.SetReceivedAt(receivedAt.Add(time.Duration(i) * time.Second))
+			p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
+
+			payloads = append(payloads, p)
 		}
+		toEncode := make([]payload, len(payloads))
+		copy(toEncode, payloads)
 
 		t.Run("writes", func(t *testing.T) {
 			buf := bytes.NewBuffer(make([]byte, 0, 1024))
@@ -86,34 +91,29 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			payloadCount := 100
-			factor := 10
-
-			require.NoError(t, w.encodeToParquet(buf, preparePayloads(payloadCount)))
+			require.NoError(t, w.encodeToParquet(buf, toEncode))
 
 			pr, err := reader.NewParquetReader(buffer.NewBufferFileFromBytes(buf.Bytes()), new(payload), 8)
 			require.NoError(t, err)
-			require.EqualValues(t, payloadCount, pr.GetNumRows())
-
-			expectedPayloads := preparePayloads(payloadCount)
+			require.EqualValues(t, len(payloads), pr.GetNumRows())
 
 			for i := 0; i < int(pr.GetNumRows())/factor; i++ {
-				actualPayloads := make([]payload, factor)
+				expectedPayloads := make([]payload, factor)
 
-				err := pr.Read(&actualPayloads)
+				err := pr.Read(&expectedPayloads)
 				require.NoError(t, err)
 
-				for j, actualPayload := range actualPayloads {
-					require.Equal(t, expectedPayloads[i*factor+j].MessageID, actualPayload.MessageID)
-					require.Equal(t, expectedPayloads[i*factor+j].SourceID, actualPayload.SourceID)
-					require.Equal(t, expectedPayloads[i*factor+j].DestinationID, actualPayload.DestinationID)
-					require.Equal(t, expectedPayloads[i*factor+j].TransformationID, actualPayload.TransformationID)
-					require.Equal(t, expectedPayloads[i*factor+j].TrackingPlanID, actualPayload.TrackingPlanID)
-					require.Equal(t, expectedPayloads[i*factor+j].FailedStage, actualPayload.FailedStage)
-					require.Equal(t, expectedPayloads[i*factor+j].EventType, actualPayload.EventType)
-					require.Equal(t, expectedPayloads[i*factor+j].EventName, actualPayload.EventName)
-					require.Equal(t, expectedPayloads[i*factor+j].ReceivedAt, actualPayload.ReceivedAt)
-					require.Equal(t, expectedPayloads[i*factor+j].FailedAt, actualPayload.FailedAt)
+				for j, expectedPayload := range expectedPayloads {
+					require.Equal(t, payloads[i*factor+j].MessageID, expectedPayload.MessageID)
+					require.Equal(t, payloads[i*factor+j].SourceID, expectedPayload.SourceID)
+					require.Equal(t, payloads[i*factor+j].DestinationID, expectedPayload.DestinationID)
+					require.Equal(t, payloads[i*factor+j].TransformationID, expectedPayload.TransformationID)
+					require.Equal(t, payloads[i*factor+j].TrackingPlanID, expectedPayload.TrackingPlanID)
+					require.Equal(t, payloads[i*factor+j].FailedStage, expectedPayload.FailedStage)
+					require.Equal(t, payloads[i*factor+j].EventType, expectedPayload.EventType)
+					require.Equal(t, payloads[i*factor+j].EventName, expectedPayload.EventName)
+					require.Equal(t, payloads[i*factor+j].ReceivedAt, expectedPayload.ReceivedAt)
+					require.Equal(t, payloads[i*factor+j].FailedAt, expectedPayload.FailedAt)
 				}
 			}
 		})
@@ -132,15 +132,13 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			payloadCount := 100
-
-			require.NoError(t, w.encodeToParquet(fw, preparePayloads(payloadCount)))
+			require.NoError(t, w.encodeToParquet(fw, toEncode))
 
 			t.Run("count all", func(t *testing.T) {
 				var count int64
 				err := duckDB(t).QueryRowContext(ctx, "SELECT count(*) FROM read_parquet($1);", filePath).Scan(&count)
 				require.NoError(t, err)
-				require.EqualValues(t, payloadCount, count)
+				require.EqualValues(t, len(payloads), count)
 			})
 			t.Run("count for sourceId, destinationId", func(t *testing.T) {
 				var count int64
@@ -149,21 +147,19 @@ func TestWorkerWriter(t *testing.T) {
 				require.EqualValues(t, 10, count)
 			})
 			t.Run("select all", func(t *testing.T) {
-				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1);", []interface{}{filePath})
-
-				expectedPayloads := preparePayloads(payloadCount)
+				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1) ORDER BY failed_at ASC;", []interface{}{filePath})
 
 				for i, failedMessage := range failedMessages {
-					require.Equal(t, expectedPayloads[i].MessageID, failedMessage.MessageID)
-					require.Equal(t, expectedPayloads[i].SourceID, failedMessage.SourceID)
-					require.Equal(t, expectedPayloads[i].DestinationID, failedMessage.DestinationID)
-					require.Equal(t, expectedPayloads[i].TransformationID, failedMessage.TransformationID)
-					require.Equal(t, expectedPayloads[i].TrackingPlanID, failedMessage.TrackingPlanID)
-					require.Equal(t, expectedPayloads[i].FailedStage, failedMessage.FailedStage)
-					require.Equal(t, expectedPayloads[i].EventType, failedMessage.EventType)
-					require.Equal(t, expectedPayloads[i].EventName, failedMessage.EventName)
-					require.Equal(t, expectedPayloads[i].ReceivedAt, failedMessage.ReceivedAt)
-					require.Equal(t, expectedPayloads[i].FailedAt, failedMessage.FailedAt)
+					require.Equal(t, payloads[i].MessageID, failedMessage.MessageID)
+					require.Equal(t, payloads[i].SourceID, failedMessage.SourceID)
+					require.Equal(t, payloads[i].DestinationID, failedMessage.DestinationID)
+					require.Equal(t, payloads[i].TransformationID, failedMessage.TransformationID)
+					require.Equal(t, payloads[i].TrackingPlanID, failedMessage.TrackingPlanID)
+					require.Equal(t, payloads[i].FailedStage, failedMessage.FailedStage)
+					require.Equal(t, payloads[i].EventType, failedMessage.EventType)
+					require.Equal(t, payloads[i].EventName, failedMessage.EventName)
+					require.Equal(t, payloads[i].ReceivedAt, failedMessage.ReceivedAt)
+					require.Equal(t, payloads[i].FailedAt, failedMessage.FailedAt)
 				}
 			})
 		})
@@ -270,7 +266,7 @@ func TestWorkerWriter(t *testing.T) {
 				lastFailedAt.Unix(),
 				instanceID,
 			)
-			failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3;", []interface{}{filePath, failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro()})
+			failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3 ORDER BY failed_at ASC;", []interface{}{filePath, failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro()})
 			require.Len(t, failedMessages, len(jobs))
 			require.EqualValues(t, payloads, failedMessages)
 
@@ -284,6 +280,9 @@ func TestWorkerWriter(t *testing.T) {
 			)
 			s3SelectQuery := fmt.Sprintf("SELECT message_id, source_id, destination_id, transformation_id, tracking_plan_id, failed_stage, event_type, event_name, received_at, failed_at FROM S3Object WHERE failed_at >= %d AND failed_at <= %d", failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro())
 			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, s3SelectPath, s3SelectQuery)
+			slices.SortFunc(failedMessagesUsing3Select, func(a, b payload) int {
+				return a.FailedAtTime().Compare(b.FailedAtTime())
+			})
 			require.Equal(t, len(failedMessages), len(failedMessagesUsing3Select))
 			require.Equal(t, failedMessages, failedMessagesUsing3Select)
 
