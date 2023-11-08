@@ -197,10 +197,13 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	if err != nil {
 		panic(err)
 	}
-	if rows.Err() != nil {
-		// Handle rows error
-		panic(rows.Err())
+	for rows.Next() {
 	}
+	if err := rows.Err(); err != nil {
+		// Handle rows error
+		panic(err)
+	}
+
 	r.getReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 
