@@ -27,9 +27,6 @@ import (
 )
 
 func (job *UploadJob) exportData() error {
-	userTables := []string{job.identifiesTableName(), job.usersTableName()}
-	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-
 	_, currentSucceededTables, err := job.TablesToSkip()
 	if err != nil {
 		return fmt.Errorf("tables to skip: %w", err)
@@ -48,6 +45,9 @@ func (job *UploadJob) exportData() error {
 
 	var wg sync.WaitGroup
 	wg.Add(3)
+
+	userTables := []string{job.identifiesTableName(), job.usersTableName()}
+	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
 	rruntime.GoForWarehouse(func() {
 		defer wg.Done()

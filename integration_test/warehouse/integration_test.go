@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -34,8 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-server/admin"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -77,10 +76,13 @@ const (
 	namespace             = "test_namespace"
 )
 
-func TestUploads(t *testing.T) {
+func TestMain(m *testing.M) {
 	admin.Init()
 	validations.Init()
+	os.Exit(m.Run())
+}
 
+func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
@@ -96,44 +98,7 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 		done := make(chan struct{})
 		go func() {
@@ -214,44 +179,7 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 		done := make(chan struct{})
 		go func() {
@@ -344,44 +272,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -523,52 +414,16 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
-		revisionCalls := atomic.NewBool(false)
+		hasRevisionEndpointBeenCalled := atomic.NewBool(false)
 		cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/workspaces/destinationHistory/test_destination_revision_id":
 				defer func() {
-					revisionCalls.Store(true)
+					hasRevisionEndpointBeenCalled.Store(true)
 				}()
+
 				require.Equal(t, http.MethodGet, r.Method)
 				body, err := json.Marshal(backendconfig.DestinationT{
 					ID:      destinationID,
@@ -604,9 +459,6 @@ func TestUploads(t *testing.T) {
 			}
 		}))
 		defer cp.Close()
-		t.Cleanup(func() {
-			require.True(t, revisionCalls.Load())
-		})
 
 		done := make(chan struct{})
 		go func() {
@@ -670,6 +522,7 @@ func TestUploads(t *testing.T) {
 			{A: "status", B: exportedData},
 		}...)
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+		require.True(t, hasRevisionEndpointBeenCalled.Load())
 
 		cancel()
 		<-done
@@ -846,44 +699,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -1215,44 +1031,7 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 		done := make(chan struct{})
 		go func() {
@@ -1341,44 +1120,7 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 		done := make(chan struct{})
 		go func() {
@@ -1629,44 +1371,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -1783,45 +1488,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"enableMerge":      false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -1938,45 +1605,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"enableMerge":      false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -2093,45 +1722,7 @@ func TestUploads(t *testing.T) {
 			webPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 
-			bcConfig := map[string]backendconfig.ConfigT{
-				workspaceID: {
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      sourceID,
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]interface{}{
-										"host":             pgResource.Host,
-										"database":         pgResource.Database,
-										"user":             pgResource.User,
-										"password":         pgResource.Password,
-										"port":             pgResource.Port,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"enableMerge":      false,
-									},
-									RevisionID: destinationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 			done := make(chan struct{})
 			go func() {
@@ -2566,44 +2157,7 @@ func TestUploads(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		bcConfig := map[string]backendconfig.ConfigT{
-			workspaceID: {
-				WorkspaceID: workspaceID,
-				Sources: []backendconfig.SourceT{
-					{
-						ID:      sourceID,
-						Enabled: true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:      destinationID,
-								Enabled: true,
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									Name: whutils.POSTGRES,
-								},
-								Config: map[string]interface{}{
-									"host":             pgResource.Host,
-									"database":         pgResource.Database,
-									"user":             pgResource.User,
-									"password":         pgResource.Password,
-									"port":             pgResource.Port,
-									"sslMode":          "disable",
-									"namespace":        namespace,
-									"bucketProvider":   whutils.MINIO,
-									"bucketName":       minioResource.BucketName,
-									"accessKeyID":      minioResource.AccessKeyID,
-									"secretAccessKey":  minioResource.AccessKeySecret,
-									"useSSL":           false,
-									"endPoint":         minioResource.Endpoint,
-									"syncFrequency":    "0",
-									"useRudderStorage": false,
-								},
-								RevisionID: destinationID,
-							},
-						},
-					},
-				},
-			},
-		}
+		bcConfig := defaultBackendConfig(pgResource, minioResource)
 
 		done := make(chan struct{})
 		go func() {
@@ -2767,6 +2321,50 @@ func runWarehouseServer(
 	return nil
 }
 
+func defaultBackendConfig(
+	pgResource *resource.PostgresResource,
+	minioResource *resource.MinioResource,
+) map[string]backendconfig.ConfigT {
+	return map[string]backendconfig.ConfigT{
+		workspaceID: {
+			WorkspaceID: workspaceID,
+			Sources: []backendconfig.SourceT{
+				{
+					ID:      sourceID,
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{
+						{
+							ID:      destinationID,
+							Enabled: true,
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: whutils.POSTGRES,
+							},
+							Config: map[string]interface{}{
+								"host":             pgResource.Host,
+								"database":         pgResource.Database,
+								"user":             pgResource.User,
+								"password":         pgResource.Password,
+								"port":             pgResource.Port,
+								"sslMode":          "disable",
+								"namespace":        namespace,
+								"bucketProvider":   whutils.MINIO,
+								"bucketName":       minioResource.BucketName,
+								"accessKeyID":      minioResource.AccessKeyID,
+								"secretAccessKey":  minioResource.AccessKeySecret,
+								"useSSL":           false,
+								"endPoint":         minioResource.Endpoint,
+								"syncFrequency":    "0",
+								"useRudderStorage": false,
+							},
+							RevisionID: destinationID,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func prepareStagingFile(
 	t testing.TB,
 	ctx context.Context,
@@ -2822,15 +2420,19 @@ func requireStagingFileEventsCount(
 		return t.B
 	})
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+		if err != nil {
+			t.Logf("error getting staging file events count: %v", err)
+			return false
+		}
 		t.Logf("Staging file events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
 		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected staging file events count to be %d", expectedCount),
+		"expected staging file events count to be %d", expectedCount,
 	)
 }
 
@@ -2852,15 +2454,19 @@ func requireLoadFileEventsCount(
 		return t.B
 	})
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+		if err != nil {
+			t.Logf("error getting load file events count: %v", err)
+			return false
+		}
 		t.Logf("Load file events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
 		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected load file events count to be %d", expectedCount),
+		"expected load file events count to be %d", expectedCount,
 	)
 }
 
@@ -2899,15 +2505,19 @@ func requireTableUploadEventsCount(
 		}
 	}
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+		if err != nil {
+			t.Logf("error getting table upload events count: %v", err)
+			return false
+		}
 		t.Logf("Table upload events count: %d", eventsCount)
 		return eventsCount == expectedCount
 	},
 		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected table upload events count to be %d", expectedCount),
+		"expected table upload events count to be %d", expectedCount,
 	)
 }
 
@@ -2929,15 +2539,19 @@ func requireUploadJobsCount(
 		return t.B
 	})
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var jobsCount int
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
+		if err != nil {
+			t.Logf("error getting upload jobs count: %v", err)
+			return false
+		}
 		t.Logf("upload jobs count: %d", jobsCount)
 		return jobsCount == expectedCount
 	},
 		30*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected upload jobs count to be %d", expectedCount),
+		"expected upload jobs count to be %d", expectedCount,
 	)
 }
 
@@ -2958,15 +2572,19 @@ func requireRetriedUploadJobsCount(
 		return t.B
 	})
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var jobsCount sql.NullInt64
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
+		if err != nil {
+			t.Logf("error getting retried upload jobs count: %v", err)
+			return false
+		}
 		t.Logf("retried upload jobs count: %d", jobsCount.Int64)
 		return jobsCount.Int64 == int64(expectedCount)
 	},
 		120*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected retried upload jobs count to be %d", expectedCount),
+		"expected retried upload jobs count to be %d", expectedCount,
 	)
 }
 
@@ -2979,15 +2597,19 @@ func requireDownstreamEventsCount(
 ) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var eventsCount int
-		require.NoError(t, db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount))
+		err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount)
+		if err != nil {
+			t.Logf("error getting downstream events count: %v", err)
+			return false
+		}
 		t.Logf("downstream events count for table %s: %d", tableName, eventsCount)
 		return eventsCount == expectedCount
 	},
 		10*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected downstream events count for table %s to be %d", tableName, expectedCount),
+		"expected downstream events count for table %s to be %d", tableName, expectedCount,
 	)
 }
 
@@ -3008,14 +2630,18 @@ func requireReportsCount(
 		return t.B
 	})
 
-	require.Eventually(t, func() bool {
+	require.Eventuallyf(t, func() bool {
 		var reportsCount sql.NullInt64
-		require.NoError(t, db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount))
+		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount)
+		if err != nil {
+			t.Logf("error getting reports count: %v", err)
+			return false
+		}
 		t.Logf("reports count: %d", reportsCount.Int64)
 		return reportsCount.Int64 == int64(expectedCount)
 	},
 		10*time.Second,
 		1*time.Second,
-		fmt.Sprintf("expected reports count to be %d", expectedCount),
+		"expected reports count to be %d", expectedCount,
 	)
 }

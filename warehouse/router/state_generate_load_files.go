@@ -12,7 +12,9 @@ import (
 )
 
 func (job *UploadJob) generateLoadFiles(hasSchemaChanged bool) error {
-	generateAll := hasSchemaChanged || slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || job.config.alwaysRegenerateAllLoadFiles
+	generateAll := hasSchemaChanged ||
+		slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
+		job.config.alwaysRegenerateAllLoadFiles
 
 	var startLoadFileID, endLoadFileID int64
 	var err error
