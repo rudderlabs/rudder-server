@@ -2566,7 +2566,10 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
 			droppedJobs[i].JobID = int64(i)
 		}
-		rsourcesStats := rsources.NewDroppedJobsCollector(proc.rsourcesService)
+		rsourcesStats := rsources.NewDroppedJobsCollector(
+			proc.rsourcesService,
+			rsources.IgnoreDestinationID(),
+		)
 		rsourcesStats.JobsDropped(droppedJobs)
 		return rsourcesStats.Publish(context.TODO(), tx.Tx)
 	}

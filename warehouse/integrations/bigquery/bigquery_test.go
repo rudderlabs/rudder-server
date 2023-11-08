@@ -78,7 +78,7 @@ func TestIntegration(t *testing.T) {
 
 	escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
 
-	bootstrapSvc := func(t *testing.T, enableMerge bool) *bigquery.Client {
+	bootstrapSvc := func(t *testing.T, preferAppend bool) *bigquery.Client {
 		templateConfigurations := map[string]any{
 			"workspaceID":          workspaceID,
 			"sourceID":             sourceID,
@@ -93,7 +93,7 @@ func TestIntegration(t *testing.T) {
 			"bucketName":           bqTestCredentials.BucketName,
 			"credentials":          escapedCredentialsTrimmedStr,
 			"sourcesNamespace":     sourcesNamespace,
-			"enableMerge":          enableMerge,
+			"preferAppend":         preferAppend,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -151,7 +151,7 @@ func TestIntegration(t *testing.T) {
 			sourceJob                           bool
 			skipModifiedEvents                  bool
 			prerequisite                        func(context.Context, testing.TB, *bigquery.Client)
-			enableMerge                         bool
+			preferAppend                        bool
 			customPartitionsEnabledWorkspaceIDs string
 			stagingFilePrefix                   string
 		}{
@@ -169,7 +169,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:            loadFilesEventsMap(),
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            mergeEventsMap(),
-				enableMerge:                   true,
+				preferAppend:                  false,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -193,7 +193,7 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
 				sourceJob:             true,
-				enableMerge:           false,
+				preferAppend:          true,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -215,7 +215,7 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            appendEventsMap(),
 				skipModifiedEvents:            true,
-				enableMerge:                   false,
+				preferAppend:                  true,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -237,7 +237,7 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap:               tableUploadsEventsMap(),
 				warehouseEventsMap:                  appendEventsMap(),
 				skipModifiedEvents:                  true,
-				enableMerge:                         false,
+				preferAppend:                        true,
 				customPartitionsEnabledWorkspaceIDs: workspaceID,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
@@ -274,7 +274,7 @@ func TestIntegration(t *testing.T) {
 					"RSERVER_WAREHOUSE_BIGQUERY_CUSTOM_PARTITIONS_ENABLED_WORKSPACE_IDS",
 					tc.customPartitionsEnabledWorkspaceIDs,
 				)
-				db := bootstrapSvc(t, tc.enableMerge)
+				db := bootstrapSvc(t, tc.preferAppend)
 
 				t.Cleanup(func() {
 					for _, dataset := range []string{tc.schema} {
@@ -542,12 +542,9 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			dedupWarehouse := th.Clone(t, warehouse)
-			dedupWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
-
 			c := config.New()
 			bq := whbigquery.New(c, logger.NOP)
-			err := bq.Setup(ctx, dedupWarehouse, mockUploader)
+			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)
@@ -590,9 +587,12 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
+			appendWarehouse := th.Clone(t, warehouse)
+			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+
 			c := config.New()
 			bq := whbigquery.New(c, logger.NOP)
-			err := bq.Setup(ctx, warehouse, mockUploader)
+			err := bq.Setup(ctx, appendWarehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)
@@ -638,8 +638,11 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
+			appendWarehouse := th.Clone(t, warehouse)
+			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+
 			bq := whbigquery.New(config.New(), logger.NOP)
-			err := bq.Setup(ctx, warehouse, mockUploader)
+			err := bq.Setup(ctx, appendWarehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)
