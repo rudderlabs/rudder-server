@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.3](https://github.com/rudderlabs/rudder-server/compare/v1.16.2...v1.16.3) (2023-11-08)
+
+
+### Bug Fixes
+
+* error index sortKey filter based test ([#4102](https://github.com/rudderlabs/rudder-server/issues/4102)) ([836b0f0](https://github.com/rudderlabs/rudder-server/commit/836b0f0a46eaf721a295f41fde66ec0823407a0e))
+
 ## [1.16.2](https://github.com/rudderlabs/rudder-server/compare/v1.16.1...v1.16.2) (2023-11-08)
 
 
