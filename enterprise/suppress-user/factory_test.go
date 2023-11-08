@@ -136,7 +136,6 @@ func generateTestData(t *testing.T, tmpDir string) {
 		defer func() { _ = f.Close() }()
 		require.NoError(t, err)
 		require.NoError(t, repo.Backup(f))
-
 	}
 
 	repo, err := badgerdb.NewRepository(tmpDir, logger.NOP, stats.Default)
