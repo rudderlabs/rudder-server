@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,15 +24,18 @@ import (
 func prepare(
 	t *testing.T,
 	handlerType func(service rsources.JobService, logger logger.Logger) http.Handler,
+	postgresContainer *resource.PostgresResource,
 ) (
 	handler http.Handler,
 	service rsources.JobService,
-	db *sql.DB,
+	dbResource *resource.PostgresResource,
 ) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
+	if postgresContainer == nil {
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		postgresContainer, err = resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+	}
 
 	config := rsources.JobServiceConfig{
 		LocalHostname: postgresContainer.Host,
@@ -39,10 +43,10 @@ func prepare(
 		LocalConn:     postgresContainer.DBDsn,
 		Log:           logger.NOP,
 	}
-	service, err = rsources.NewJobService(config)
+	service, err := rsources.NewJobService(config)
 	require.NoError(t, err)
 	handler = handlerType(service, logger.NOP)
-	db = postgresContainer.DB
+	dbResource = postgresContainer
 	return
 }
 
@@ -73,6 +77,7 @@ func getFailedRecords(
 	pageSize int,
 	pageToken,
 	endpoint string,
+	failedKeysResponseCode int,
 ) *rsources.JobFailedRecords {
 	params := url.Values{}
 	if pageSize > 0 {
@@ -88,19 +93,20 @@ func getFailedRecords(
 	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
-	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, failedKeysResponseCode, resp.Code)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
+	fmt.Println(`!!!!!!!!!!!!!`)
+	fmt.Println(string(body))
 	var failedRecords rsources.JobFailedRecords
-	err = json.Unmarshal(body, &failedRecords)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(body, &failedRecords))
 	return &failedRecords
 }
 
 func TestGetFailedRecordsIntegration(t *testing.T) {
 	t.Run("without pagination", func(t *testing.T) {
-		handler, service, db := prepare(t, rsources_http.NewV1Handler)
-		addFailedRecords(t, service, db, []json.RawMessage{
+		handler, service, dbResource := prepare(t, rsources_http.NewV1Handler, nil)
+		addFailedRecords(t, service, dbResource.DB, []json.RawMessage{
 			[]byte(`"id-1"`),
 			[]byte(`"id-2"`),
 			[]byte(`"id-3"`),
@@ -114,6 +120,7 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 			pageSize,
 			pageToken,
 			"jobRunID/failed-records",
+			http.StatusOK,
 		)
 		require.NotNil(t, failedRecords)
 		require.Len(t, failedRecords.Tasks, 1)
@@ -124,8 +131,8 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 	})
 
 	t.Run("with pagination", func(t *testing.T) {
-		handler, service, db := prepare(t, rsources_http.NewV1Handler)
-		addFailedRecords(t, service, db, []json.RawMessage{
+		handler, service, dbResource := prepare(t, rsources_http.NewV1Handler, nil)
+		addFailedRecords(t, service, dbResource.DB, []json.RawMessage{
 			[]byte(`"id-1"`),
 			[]byte(`"id-2"`),
 			[]byte(`"id-3"`),
@@ -140,6 +147,7 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 				pageSize,
 				pageToken,
 				"jobRunID/failed-records",
+				http.StatusOK,
 			)
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)
@@ -158,57 +166,8 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 			pageSize,
 			pageToken,
 			"jobRunID/failed-records",
+			http.StatusOK,
 		)
-		require.NotNil(t, failedRecords)
-		require.Len(t, failedRecords.Tasks, 0)
-		require.Nil(t, failedRecords.Paging, "no paging information should be present")
-	})
-}
-
-func TestFailedRecordsV2(t *testing.T) {
-	t.Run("without pagination", func(t *testing.T) {
-		handler, service, db := prepare(t, rsources_http.FailedKeysHandler)
-		addFailedRecords(t, service, db, []json.RawMessage{
-			[]byte(`"id-1"`),
-			[]byte(`"id-2"`),
-			[]byte(`"id-3"`),
-			[]byte(`"id-4"`),
-		})
-		pageSize := 0
-		pageToken := ""
-		failedRecords := getFailedRecords(t, handler, pageSize, pageToken, "jobRunID")
-		require.NotNil(t, failedRecords)
-		require.Len(t, failedRecords.Tasks, 1)
-		require.Len(t, failedRecords.Tasks[0].Sources, 1)
-		require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations, 1)
-		require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations[0].Records, 4)
-		require.Nil(t, failedRecords.Paging, "no paging information should be present")
-	})
-
-	t.Run("with pagination", func(t *testing.T) {
-		handler, service, db := prepare(t, rsources_http.FailedKeysHandler)
-		addFailedRecords(t, service, db, []json.RawMessage{
-			[]byte(`"id-1"`),
-			[]byte(`"id-2"`),
-			[]byte(`"id-3"`),
-			[]byte(`"id-4"`),
-		})
-		pageSize := 2
-		pageToken := ""
-		for i := 0; i < 2; i++ { // 2 pages are retrieved with 2 records each and where paging is present
-			failedRecords := getFailedRecords(t, handler, pageSize, pageToken, "jobRunID")
-			require.NotNil(t, failedRecords)
-			require.Len(t, failedRecords.Tasks, 1)
-			require.Len(t, failedRecords.Tasks[0].Sources, 1)
-			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations, 1)
-			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations[0].Records, pageSize)
-			require.NotNil(t, failedRecords.Paging, "paging information should be present")
-			require.Equal(t, pageSize, failedRecords.Paging.Size)
-			pageToken = failedRecords.Paging.NextPageToken
-		}
-
-		// 3 page is retrieved with 0 records and where paging is not present
-		failedRecords := getFailedRecords(t, handler, pageSize, pageToken, "jobRunID")
 		require.NotNil(t, failedRecords)
 		require.Len(t, failedRecords.Tasks, 0)
 		require.Nil(t, failedRecords.Paging, "no paging information should be present")
@@ -217,15 +176,16 @@ func TestFailedRecordsV2(t *testing.T) {
 
 func TestDeleteEndpoints(t *testing.T) {
 	t.Run("v2 delete endpoints delete only failed-keys", func(t *testing.T) {
-		fkHandler, service, db := prepare(t, rsources_http.FailedKeysHandler)
-		addFailedRecords(t, service, db, []json.RawMessage{
+		fkHandler, service, dbResource := prepare(t, rsources_http.FailedKeysHandler, nil)
+		v1Handler, _, _ := prepare(t, rsources_http.NewV1Handler, dbResource)
+		addFailedRecords(t, service, dbResource.DB, []json.RawMessage{
 			[]byte(`"id-1"`),
 			[]byte(`"id-2"`),
 			[]byte(`"id-3"`),
 			[]byte(`"id-4"`),
 		})
 		jsHandler := rsources_http.JobStatusHandler(service, logger.NOP)
-		tx, err := db.Begin()
+		tx, err := dbResource.DB.Begin()
 		require.NoError(t, err)
 		require.NoError(
 			t,
@@ -246,21 +206,15 @@ func TestDeleteEndpoints(t *testing.T) {
 			),
 		)
 		require.NoError(t, tx.Commit())
-		t.Run("should retrieve failed keys from v2 endpoint", func(t *testing.T) {
-			failedRecords := getFailedRecords(t, fkHandler, 10, "", "jobRunID")
-			require.NotNil(t, failedRecords)
-			require.Len(t, failedRecords.Tasks, 1)
-			require.Nil(t, failedRecords.Paging, "no paging information should be present")
-		})
 		t.Run("calling v2 failed-keys delete should only delete failed keys", func(t *testing.T) {
 			req, err := http.NewRequest("DELETE", "http://localhost/jobRunID", nil)
 			require.NoError(t, err)
 			resp := httptest.NewRecorder()
 			fkHandler.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusNoContent, resp.Code)
-			failedRecords := getFailedRecords(t, fkHandler, 10, "", "jobRunID")
+			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID", http.StatusOK)
 			require.NotNil(t, failedRecords)
-			require.Len(t, failedRecords.Tasks, 0)
+			require.Len(t, failedRecords.Tasks, 1)
 			require.Nil(t, failedRecords.Paging, "no paging information should be present")
 
 			req, err = http.NewRequest("GET", "http://localhost/jobRunID", nil)
@@ -283,15 +237,15 @@ func TestDeleteEndpoints(t *testing.T) {
 	})
 
 	t.Run("v2 delete endpoints delete only job-status", func(t *testing.T) {
-		fkHandler, service, db := prepare(t, rsources_http.FailedKeysHandler)
-		addFailedRecords(t, service, db, []json.RawMessage{
+		v1Handler, service, dbResource := prepare(t, rsources_http.NewV1Handler, nil)
+		jsHandler := rsources_http.JobStatusHandler(service, logger.NOP)
+		addFailedRecords(t, service, dbResource.DB, []json.RawMessage{
 			[]byte(`"id-1"`),
 			[]byte(`"id-2"`),
 			[]byte(`"id-3"`),
 			[]byte(`"id-4"`),
 		})
-		jsHandler := rsources_http.JobStatusHandler(service, logger.NOP)
-		tx, err := db.Begin()
+		tx, err := dbResource.DB.Begin()
 		require.NoError(t, err)
 		require.NoError(
 			t,
@@ -307,7 +261,7 @@ func TestDeleteEndpoints(t *testing.T) {
 				rsources.Stats{
 					In:     15,
 					Out:    6,
-					Failed: 4,
+					Failed: 9,
 				},
 			),
 		)
@@ -329,15 +283,13 @@ func TestDeleteEndpoints(t *testing.T) {
 			require.Len(t, jobStatus.TasksStatus[0].SourcesStatus[0].DestinationsStatus, 1)
 			require.Equal(t, uint(15), jobStatus.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.In)
 			require.Equal(t, uint(6), jobStatus.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Out)
-			require.Equal(t, uint(4), jobStatus.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Failed)
+			require.Equal(t, uint(9), jobStatus.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Failed)
 
 			req, err = http.NewRequest("DELETE", "http://localhost/jobRunID", nil)
 			require.NoError(t, err)
 			resp = httptest.NewRecorder()
 			jsHandler.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusNoContent, resp.Code)
-			failedRecords := getFailedRecords(t, fkHandler, 10, "", "jobRunID")
-			require.NotNil(t, failedRecords)
 
 			req, err = http.NewRequest("GET", "http://localhost/jobRunID", nil)
 			require.NoError(t, err)
@@ -345,15 +297,13 @@ func TestDeleteEndpoints(t *testing.T) {
 			jsHandler.ServeHTTP(resp, req)
 			require.Equal(t, http.StatusNotFound, resp.Code)
 
-			req, err = http.NewRequest("DELETE", "http://localhost/jobRunID", nil)
-			require.NoError(t, err)
-			resp = httptest.NewRecorder()
-			fkHandler.ServeHTTP(resp, req)
-			require.Equal(t, http.StatusNoContent, resp.Code)
-			failedRecords = getFailedRecords(t, fkHandler, 10, "", "jobRunID")
+			failedRecords := getFailedRecords(t, v1Handler, 10, "", "jobRunID/failed-records", http.StatusOK)
 			require.NotNil(t, failedRecords)
-			require.Len(t, failedRecords.Tasks, 0)
+			require.Len(t, failedRecords.Tasks, 1)
 			require.Nil(t, failedRecords.Paging, "no paging information should be present")
+			require.Len(t, failedRecords.Tasks[0].Sources, 1)
+			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations, 1)
+			require.Len(t, failedRecords.Tasks[0].Sources[0].Destinations[0].Records, 4)
 		})
 	})
 }

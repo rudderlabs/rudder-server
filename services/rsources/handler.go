@@ -307,11 +307,7 @@ func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, 
 	}
 	filters, filterParams := sqlFilters(jobRunId, filter)
 	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
-	res, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...)
-	if err != nil {
-		return err
-	}
-	if _, err := res.RowsAffected(); err != nil {
+	if _, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...); err != nil {
 		return err
 	}
 	return nil
