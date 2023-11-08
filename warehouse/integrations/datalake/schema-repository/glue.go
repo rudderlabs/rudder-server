@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -77,7 +78,8 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 
 		getTablesOutput, err = gl.GlueClient.GetTablesWithContext(ctx, getTablesInput)
 		if err != nil {
-			if _, ok := err.(*glue.EntityNotFoundException); ok {
+			var entityNotFoundException *glue.EntityNotFoundException
+			if errors.As(err, &entityNotFoundException) {
 				gl.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
 				err = nil
 			}
@@ -121,7 +123,8 @@ func (gl *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 			Name: &gl.Namespace,
 		},
 	})
-	if _, ok := err.(*glue.AlreadyExistsException); ok {
+	var alreadyExistsException *glue.AlreadyExistsException
+	if errors.As(err, &alreadyExistsException) {
 		gl.logger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
 		err = nil
 	}
@@ -150,7 +153,8 @@ func (gl *GlueSchemaRepository) CreateTable(ctx context.Context, tableName strin
 
 	_, err = gl.GlueClient.CreateTableWithContext(ctx, &input)
 	if err != nil {
-		_, ok := err.(*glue.AlreadyExistsException)
+		var alreadyExistsException *glue.AlreadyExistsException
+		ok := errors.As(err, &alreadyExistsException)
 		if ok {
 			err = nil
 		}
@@ -309,7 +313,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 		})
 
 		if err != nil {
-			if _, ok := err.(*glue.EntityNotFoundException); !ok {
+			var entityNotFoundException *glue.EntityNotFoundException
+			if !errors.As(err, &entityNotFoundException) {
 				return fmt.Errorf("get partition: %w", err)
 			}
 

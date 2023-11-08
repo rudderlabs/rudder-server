@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -52,8 +54,10 @@ import (
 
 // After sending the jobs to the server, we verify that the destination has received the jobs in the
 // correct order. We also verify that the server has not sent any job twice.
+//
+// A second scenario verifies that when [eventOrderKeyThreshold] is enabled jobs are delivered out-of-order even if event ordering is enabled
 func TestEventOrderGuarantee(t *testing.T) {
-	eventOrderTest := func() func(t *testing.T) {
+	eventOrderTest := func(eventOrderKeyThreshold bool) func(t *testing.T) {
 		return func(t *testing.T) {
 			// necessary until we move away from a singleton config
 			config.Reset()
@@ -77,6 +81,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			// this will create a number of jobs for a number of users
 			// and prescribe the sequence of status codes that the webhook will return for each one e.g. 500, 500, 200
 			spec := m.newTestSpec(users, jobsPerUser)
+			spec.eventOrderKeyThreshold = eventOrderKeyThreshold
 			spec.responseDelay = responseDelay
 
 			t.Logf("Starting docker services (postgres & transformer)")
@@ -132,6 +137,11 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("JobsDB.backup.enabled", false)
 			config.Set("Router.jobIterator.maxQueries", 100)
 			config.Set("Router.jobIterator.discardedPercentageTolerance", 0)
+			if eventOrderKeyThreshold {
+				config.Set("Router.eventOrderKeyThreshold", 1)
+			} else {
+				config.Set("Router.eventOrderKeyThreshold", 0)
+			}
 
 			// generatorLoop
 			config.Set("Router.jobQueryBatchSize", 500)
@@ -262,12 +272,19 @@ func TestEventOrderGuarantee(t *testing.T) {
 
 			require.False(t, t.Failed(), "webhook shouldn't have failed")
 
-			for userID, jobs := range spec.doneOrdered {
-				var previousJobID int
-				for _, jobID := range jobs {
-					require.Greater(t, jobID, previousJobID, "%s: jobID %d should be greater than previous jobID %d", userID, jobID, previousJobID)
-					previousJobID = jobID
+			if !eventOrderKeyThreshold {
+				for userID, jobs := range spec.doneOrdered {
+					var previousJobID int
+					for _, jobID := range jobs {
+						require.Greater(t, jobID, previousJobID, "%s: jobID %d should be greater than previous jobID %d", userID, jobID, previousJobID)
+						previousJobID = jobID
+					}
 				}
+			} else {
+				unsorted := lo.Filter(lo.Values(spec.doneOrdered), func(jobs []int, _ int) bool {
+					return !lo.IsSorted(jobs)
+				})
+				require.Greater(t, len(unsorted), 0, "some jobs should be received out-of-order even if event ordering is enabled due to eventOrderKeyThreshold > 0")
 			}
 
 			t.Logf("All jobs arrived in expected order - test passed!")
@@ -277,7 +294,9 @@ func TestEventOrderGuarantee(t *testing.T) {
 		}
 	}
 
-	t.Run("pickup", eventOrderTest())
+	t.Run("pickup with eventOrderKeyThreshold disabled", eventOrderTest(false))
+
+	t.Run("pickup with eventOrderKeyThreshold enabled", eventOrderTest(true))
 }
 
 // Using a struct to keep main_test package clean and
@@ -369,7 +388,9 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			if len(wh.spec.doneOrdered[userID]) > 0 {
 				lastDoneId = wh.spec.doneOrdered[userID][len(wh.spec.doneOrdered[userID])-1]
 			}
-			require.Greater(t, jobID, lastDoneId, "received out-of-order event for user %s: job %d after jobs %+v", userID, jobID, wh.spec.doneOrdered[userID])
+			if !wh.spec.eventOrderKeyThreshold {
+				require.Greater(t, jobID, lastDoneId, "received out-of-order event for user %s: job %d after jobs %+v", userID, jobID, wh.spec.doneOrdered[userID])
+			}
 			wh.spec.done[jobID] = struct{}{}
 			wh.spec.doneOrdered[userID] = append(wh.spec.doneOrdered[userID], jobID)
 			// t.Logf("job %d done", jobID)
@@ -459,12 +480,13 @@ type eventOrderWebhook struct {
 }
 
 type eventOrderSpec struct {
-	jobs          map[int]*eventOrderJobSpec
-	jobsOrdered   []*eventOrderJobSpec
-	received      map[int]int
-	responseDelay time.Duration
-	done          map[int]struct{}
-	doneOrdered   map[string][]int
+	eventOrderKeyThreshold bool
+	jobs                   map[int]*eventOrderJobSpec
+	jobsOrdered            []*eventOrderJobSpec
+	received               map[int]int
+	responseDelay          time.Duration
+	done                   map[int]struct{}
+	doneOrdered            map[string][]int
 }
 
 type eventOrderJobSpec struct {

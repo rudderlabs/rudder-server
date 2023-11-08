@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
@@ -27,8 +29,8 @@ import (
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -188,12 +190,12 @@ func TestHTTPApi(t *testing.T) {
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
-	sourcesManager := jobs.New(
-		ctx,
+	sourcesManager := source.New(
+		c,
+		logger.NOP,
 		db,
 		n,
 	)
-	jobs.WithConfig(sourcesManager, config.New())
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -205,7 +207,7 @@ func TestHTTPApi(t *testing.T) {
 		return nil
 	})
 	g.Go(func() error {
-		return sourcesManager.Run()
+		return sourcesManager.Run(gCtx)
 	})
 
 	setupCh := make(chan struct{})
@@ -772,20 +774,7 @@ func TestHTTPApi(t *testing.T) {
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health", func(t *testing.T) {
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("%s/health", serverURL), time.Second*10, time.Millisecond*100, t.Name())
 			})
 
 			t.Run("process", func(t *testing.T) {
@@ -906,7 +895,8 @@ func TestHTTPApi(t *testing.T) {
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
 				  "job_run_id": "test_source_job_run_id",
-				  "task_run_id": "test_source_task_run_id"
+				  "task_run_id": "test_source_task_run_id",
+				  "async_job_type": "deletebyjobrunid"
 				}
 			`)))
 				require.NoError(t, err)
@@ -970,20 +960,7 @@ func TestHTTPApi(t *testing.T) {
 			serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 
 			t.Run("health endpoint should work", func(t *testing.T) {
-				require.Eventually(t, func() bool {
-					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-					if err != nil {
-						return false
-					}
-					defer func() {
-						httputil.CloseResponse(resp)
-					}()
-
-					return resp.StatusCode == http.StatusOK
-				},
-					time.Second*10,
-					time.Second,
-				)
+				health.WaitUntilReady(ctx, t, fmt.Sprintf("%s/health", serverURL), time.Second*10, time.Millisecond*100, t.Name())
 			})
 
 			t.Run("other endpoints should fail", func(t *testing.T) {

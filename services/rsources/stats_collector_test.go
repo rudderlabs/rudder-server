@@ -18,20 +18,22 @@ import (
 
 var _ = Describe("Using StatsCollector", Serial, func() {
 	var (
-		jobs                   []*jobsdb.JobT
-		jobErrors              map[uuid.UUID]string
-		jobStatuses            []*jobsdb.JobStatusT
-		mockCtrl               *gomock.Controller
-		js                     *MockJobService
-		statsCollector         StatsCollector
-		failedRecordsCollector FailedJobsStatsCollector
+		jobs                    []*jobsdb.JobT
+		jobErrors               map[uuid.UUID]string
+		jobStatuses             []*jobsdb.JobStatusT
+		mockCtrl                *gomock.Controller
+		js                      *MockJobService
+		statsCollector          StatsCollector
+		droppedJobsCollector    FailedJobsStatsCollector
+		sourceOnlyStatCollector FailedJobsStatsCollector
 	)
 
 	BeforeEach(func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		js = NewMockJobService(mockCtrl)
 		statsCollector = NewStatsCollector(js)
-		failedRecordsCollector = NewDroppedJobsCollector(js)
+		droppedJobsCollector = NewDroppedJobsCollector(js)
+		sourceOnlyStatCollector = NewDroppedJobsCollector(js, IgnoreDestinationID())
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
@@ -343,10 +345,10 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 		Context("it calls failedRecordsCollector.JobsDropped", func() {
 			BeforeEach(func() {
-				failedRecordsCollector.JobsDropped(jobs)
+				droppedJobsCollector.JobsDropped(jobs)
 			})
 
-			It("publishes both in and out stats and adds failed records", func() {
+			It("publishes both in and out stats and doesn't add failed records", func() {
 				js.EXPECT().
 					IncrementStats(
 						gomock.Any(),
@@ -363,7 +365,33 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						}).
 					Times(1)
 
-				err := failedRecordsCollector.Publish(context.TODO(), nil)
+				err := droppedJobsCollector.Publish(context.TODO(), nil)
+				Expect(err).To(BeNil())
+			})
+		})
+
+		Context("it calls sourceOnlyStatCollector.JobsDroppedWith when only source information is of use", func() {
+			BeforeEach(func() {
+				sourceOnlyStatCollector.JobsDropped(jobs)
+			})
+
+			It("publishes stats with only source information and no failed records are captured", func() {
+				js.EXPECT().
+					IncrementStats(
+						gomock.Any(),
+						gomock.Any(),
+						params.JobRunID,
+						JobTargetKey{
+							TaskRunID: params.TaskRunID,
+							SourceID:  params.SourceID,
+						},
+						Stats{
+							In:     uint(len(jobs)),
+							Failed: uint(len(jobs)),
+						}).
+					Times(1)
+
+				err := sourceOnlyStatCollector.Publish(context.TODO(), nil)
 				Expect(err).To(BeNil())
 			})
 		})

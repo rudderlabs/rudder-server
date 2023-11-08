@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
@@ -57,17 +58,19 @@ type Handle struct {
 	adaptiveLimit    func(int64) int64
 
 	// configuration
-	reloadableConfig        *reloadableConfig
-	destType                string
-	guaranteeUserEventOrder bool
-	netClientTimeout        time.Duration
-	transformerTimeout      time.Duration
-	enableBatching          bool
-	noOfWorkers             int
-	barrierConcurrencyLimit int
-	drainConcurrencyLimit   int
-	workerInputBufferSize   int
-	saveDestinationResponse bool
+	reloadableConfig                   *reloadableConfig
+	destType                           string
+	guaranteeUserEventOrder            bool
+	netClientTimeout                   time.Duration
+	transformerTimeout                 time.Duration
+	enableBatching                     bool
+	noOfWorkers                        int
+	eventOrderKeyThreshold             misc.ValueLoader[int]
+	eventOrderDisabledStateDuration    misc.ValueLoader[time.Duration]
+	eventOrderHalfEnabledStateDuration misc.ValueLoader[time.Duration]
+	drainConcurrencyLimit              misc.ValueLoader[int]
+	workerInputBufferSize              int
+	saveDestinationResponse            bool
 
 	diagnosisTickerTime time.Duration
 
@@ -100,6 +103,7 @@ type Handle struct {
 	backgroundCancel               context.CancelFunc
 	backgroundWait                 func() error
 	startEnded                     chan struct{}
+	barrier                        *eventorder.Barrier
 
 	limiter struct {
 		pickup    kitsync.Limiter
@@ -113,6 +117,8 @@ type Handle struct {
 			process   *partition.Stats
 		}
 	}
+
+	drainer routerutils.Drainer
 }
 
 // activePartitions returns the list of active partitions, depending on the active isolation strategy
@@ -144,9 +150,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	//#JobOrder (See comment marked #JobOrder
 	if rt.guaranteeUserEventOrder {
-		for idx := range workers {
-			workers[idx].barrier.Sync()
-		}
+		rt.barrier.Sync()
 	}
 
 	var firstJob *jobsdb.JobT
@@ -283,7 +287,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, workerJobStatus := range *workerJobStatuses {
-		var parameters JobParameters
+		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
 		if err != nil {
 			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
@@ -474,13 +478,23 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrContextCancelled
 	}
 
-	var parameters JobParameters
+	var parameters routerutils.JobParameters
 	if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return nil, types.ErrParamsUnmarshal
 	}
 
-	if !rt.guaranteeUserEventOrder {
+	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+
+	eventOrderingDisabled := !rt.guaranteeUserEventOrder
+	if !eventOrderingDisabled && rt.barrier.Disabled(orderKey) {
+		eventOrderingDisabled = true
+		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
+			"destType":      rt.destType,
+			"destinationId": parameters.DestinationID,
+		}).Increment()
+	}
+	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
 			return nil, types.ErrWorkerNoSlot
@@ -498,8 +512,6 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrWorkerNoSlot
 
 	}
-
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
 
 	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
 	// this check is done to maintain order.
@@ -545,7 +557,7 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
@@ -621,12 +633,11 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (in
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
-				Secret:          params.secret,
-				WorkspaceId:     workspaceID,
-				AccountId:       rudderAccountID,
-				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
-				EventNamePrefix: "refresh_token",
-				WorkerId:        params.workerID,
+				Secret:      params.secret,
+				WorkspaceId: workspaceID,
+				AccountId:   rudderAccountID,
+				DestDefName: destinationJob.Destination.DestinationDefinition.Name,
+				WorkerId:    params.workerID,
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret

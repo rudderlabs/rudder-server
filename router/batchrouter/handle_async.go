@@ -509,7 +509,7 @@ func (brt *Handle) getReportMetrics(statusList []*jobsdb.JobStatusT, parametersM
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	for _, status := range statusList {
-		var parameters JobParameters
+		var parameters routerutils.JobParameters
 		err := json.Unmarshal(parametersMap[status.JobID], &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(parametersMap[status.JobID]))

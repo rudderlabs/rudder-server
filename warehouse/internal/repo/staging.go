@@ -99,7 +99,7 @@ func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 // - Error
 // - CreatedAt
 // - UpdatedAt
-func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
+func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
 	var (
 		id                        int64
 		firstEventAt, lastEventAt interface{}
@@ -120,14 +120,14 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 	if err != nil {
 		return id, fmt.Errorf("marshaling metadata: %w", err)
 	}
-	now := repo.now()
+	now := sf.now()
 
 	schemaPayload, err := json.Marshal(stagingFile.Schema)
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	err = repo.db.QueryRowContext(ctx,
+	err = sf.db.QueryRowContext(ctx,
 		`INSERT INTO `+stagingTableName+` (
 			location,
 			schema,
@@ -169,7 +169,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 }
 
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
-func (*StagingFiles) parseRows(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
+func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
@@ -234,15 +234,15 @@ func (*StagingFiles) parseRows(rows *sqlmiddleware.Rows) ([]*model.StagingFile, 
 }
 
 // GetByID returns staging file with the given ID.
-func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
+func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE id = $1`
 
-	rows, err := repo.db.QueryContext(ctx, query, ID)
+	rows, err := sf.db.QueryContext(ctx, query, ID)
 	if err != nil {
 		return model.StagingFile{}, fmt.Errorf("querying staging files: %w", err)
 	}
 
-	entries, err := repo.parseRows(rows)
+	entries, err := parseStagingFiles(rows)
 	if err != nil {
 		return model.StagingFile{}, fmt.Errorf("parsing rows: %w", err)
 	}
@@ -254,10 +254,10 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 }
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
-func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
 
-	rows, err := repo.db.QueryContext(ctx, query, pq.Array(ids))
+	rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("querying schemas: %w", err)
 	}
@@ -292,7 +292,7 @@ func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]m
 }
 
 // GetForUploadID returns all the staging files for that uploadID
-func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
+func (sf *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
 		upload_id = $1
@@ -300,24 +300,24 @@ func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinat
 		AND destination_id = $3
 	ORDER BY
 		id ASC;`
-	rows, err := repo.db.QueryContext(ctx, query, uploadId, sourceID, destinationID)
+	rows, err := sf.db.QueryContext(ctx, query, uploadId, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}
 
-	return repo.parseRows(rows)
+	return parseStagingFiles(rows)
 }
 
-func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]*model.StagingFile, error) {
-	return repo.GetForUploadID(ctx, upload.SourceID, upload.DestinationID, upload.ID)
+func (sf *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]*model.StagingFile, error) {
+	return sf.GetForUploadID(ctx, upload.SourceID, upload.DestinationID, upload.ID)
 }
 
-func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
+func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
 	var (
 		uploadID               int64
 		lastStartStagingFileID int64
 	)
-	err := repo.db.QueryRowContext(ctx, `
+	err := sf.db.QueryRowContext(ctx, `
 		SELECT
 			id,
 			start_staging_file_id
@@ -346,25 +346,25 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 	ORDER BY
 		id ASC;`
 
-	rows, err := repo.db.QueryContext(ctx, query, lastStartStagingFileID, sourceID, destinationID)
+	rows, err := sf.db.QueryContext(ctx, query, lastStartStagingFileID, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}
 
-	return repo.parseRows(rows)
+	return parseStagingFiles(rows)
 }
 
-func (repo *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
-	return repo.countPending(ctx, `source_id = $1`, sourceID)
+func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
+	return sf.countPending(ctx, `source_id = $1`, sourceID)
 }
 
-func (repo *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
-	return repo.countPending(ctx, `destination_id = $1`, destinationID)
+func (sf *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
+	return sf.countPending(ctx, `destination_id = $1`, destinationID)
 }
 
-func (repo *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
+func (sf *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
 	var count int64
-	err := repo.db.QueryRowContext(ctx,
+	err := sf.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > (SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+` WHERE `+query+`)`,
 		value,
 	).Scan(&count)
@@ -375,10 +375,10 @@ func (repo *StagingFiles) countPending(ctx context.Context, query string, value 
 	return count, nil
 }
 
-func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.Upload) (int64, error) {
+func (sf *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.Upload) (int64, error) {
 	var total sql.NullInt64
 
-	err := repo.db.QueryRowContext(ctx, `
+	err := sf.db.QueryRowContext(ctx, `
 		SELECT
 			sum(total_events)
 		FROM
@@ -401,9 +401,9 @@ func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model
 	return total.Int64, nil
 }
 
-func (repo *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.Upload) (time.Time, error) {
+func (sf *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.Upload) (time.Time, error) {
 	var firstEvent sql.NullTime
-	err := repo.db.QueryRowContext(ctx, `
+	err := sf.db.QueryRowContext(ctx, `
 		SELECT
 			first_event_at
 		FROM
@@ -419,7 +419,7 @@ func (repo *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.
 	return firstEvent.Time, nil
 }
 
-func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {
+func (sf *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {
 	sqlStatement := `
 		SELECT
 		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
@@ -432,7 +432,7 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 		  AND destination_id = $4
 		  AND metadata ->> 'destination_revision_id' <> '';
 	`
-	rows, err := repo.db.QueryContext(ctx, sqlStatement,
+	rows, err := sf.db.QueryContext(ctx, sqlStatement,
 		upload.StagingFileStartID,
 		upload.StagingFileEndID,
 		upload.SourceID,
@@ -462,7 +462,7 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 	return revisionIDs, nil
 }
 
-func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
+func (sf *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no staging files to update")
 	}
@@ -476,7 +476,7 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 		WHERE
 		  id = ANY($3);
 `
-	result, err := repo.db.ExecContext(ctx, sqlStatement, status, repo.now(), pq.Array(ids))
+	result, err := sf.db.ExecContext(ctx, sqlStatement, status, sf.now(), pq.Array(ids))
 	if err != nil {
 		return fmt.Errorf("update ids status: %w", err)
 	}
@@ -492,7 +492,7 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 	return nil
 }
 
-func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
+func (sf *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
 	sqlStatement := `
 		UPDATE
 		` + stagingTableName + `
@@ -503,12 +503,12 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 		WHERE
 			id = $4;`
 
-	result, err := repo.db.ExecContext(
+	result, err := sf.db.ExecContext(
 		ctx,
 		sqlStatement,
 		warehouseutils.StagingFileFailedState,
 		stageFileErr.Error(),
-		repo.now(),
+		sf.now(),
 		stagingFileID,
 	)
 	if err != nil {

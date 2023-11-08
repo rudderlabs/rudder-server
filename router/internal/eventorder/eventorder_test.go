@@ -2,10 +2,12 @@ package eventorder
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func Test_Job_Failed_Scenario(t *testing.T) {
@@ -55,7 +57,7 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 }
 
 func Test_Job_Aborted_Scenario(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(1))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
 
 	// Fail job 1 then enter again
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
@@ -122,7 +124,7 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 }
 
 func Test_Job_Abort_then_Fail(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(2))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
 
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -160,7 +162,7 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 }
 
 func Test_Job_Fail_then_Abort(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(2))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
 
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -238,7 +240,7 @@ func Test_Panic_Scenarios(t *testing.T) {
 
 func TestBarrier_Leave(t *testing.T) {
 	orderKey := "user1"
-	barrier := NewBarrier(WithDrainConcurrencyLimit(1))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
 
 	enter, _ := barrier.Enter(orderKey, 1)
 	require.Truef(t, enter, "job 1 for %s should be accepted since no barrier exists", orderKey)
@@ -261,9 +263,14 @@ func TestBarrier_Leave(t *testing.T) {
 	require.Truef(t, enter, "job 3 for %s should now be accepted since job 2 left", orderKey)
 }
 
-func TestGlobalConcurrencyLimiter(t *testing.T) {
+func TestEventOrderKeyThreshold(t *testing.T) {
 	orderKey := "user1"
-	barrier := NewBarrier(WithConcurrencyLimit(2))
+	disabledStateDuration := 100 * time.Millisecond
+	halfEnabledStateDuration := 100 * time.Millisecond
+	barrier := NewBarrier(
+		WithEventOrderKeyThreshold(misc.SingleValueLoader(2)),
+		WithDisabledStateDuration(misc.SingleValueLoader(disabledStateDuration)),
+		WithHalfEnabledStateDuration(misc.SingleValueLoader(halfEnabledStateDuration)))
 
 	enter, previous := barrier.Enter(orderKey, 1)
 	require.True(t, enter, "job 1 for %s should be accepted since no barrier exists and concurrency limiter should be 1", orderKey)
@@ -274,41 +281,42 @@ func TestGlobalConcurrencyLimiter(t *testing.T) {
 	require.Nil(t, previous)
 
 	enter, previous = barrier.Enter(orderKey, 3)
-	require.False(t, enter, "job 3 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	require.True(t, enter, "job 3 for %s should be accepted since event ordering should be now disabled", orderKey)
 	require.Nil(t, previous)
 
-	require.NoError(t, barrier.StateChanged(orderKey, 1, jobsdb.Succeeded.State))
+	require.True(t, barrier.Disabled(orderKey), "barrier should be disabled for %s after reaching the threshold", orderKey)
+
+	// wait to transition to the half-enabled state
+	time.Sleep(disabledStateDuration + 1)
+	require.True(t, barrier.Disabled(orderKey), "barrier should still be disabled for %s since no other job has tried to enter yet", orderKey)
+	enter, previous = barrier.Enter(orderKey, 2)
+	require.True(t, enter, "job 2 for %s should be accepted with the barrier in half-enabled state", orderKey)
+	require.Nil(t, previous)
+	require.False(t, barrier.Disabled(orderKey), "barrier should no longer be disabled for %s", orderKey)
+
+	enter, previous = barrier.Enter(orderKey, 1)
+	require.True(t, enter, "job 1 for %s should be accepted", orderKey)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 2, jobsdb.Failed.State))
+	require.NoError(t, barrier.StateChanged(orderKey, 1, jobsdb.Failed.State), "barrier should not panic when posting a state for a job with a previous job id than the currently failed one")
+	require.NoError(t, barrier.StateChanged(orderKey, 2, jobsdb.Succeeded.State))
 	barrier.Sync()
 
-	enter, previous = barrier.Enter(orderKey, 3)
-	require.True(t, enter, "job 3 for %s should be accepted after job 1 succeeded", orderKey)
+	// wait to transition to the enabled state
+	time.Sleep(halfEnabledStateDuration + 1)
+	enter, previous = barrier.Enter(orderKey, 1)
+	require.True(t, enter, "job 2 for %s should be accepted", orderKey)
 	require.Nil(t, previous)
 
-	enter, previous = barrier.Enter(orderKey, 4)
-	require.False(t, enter, "job 4 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	enter, previous = barrier.Enter(orderKey, 2)
+	require.True(t, enter, "job 1 for %s should be accepted", orderKey)
 	require.Nil(t, previous)
 
-	require.NoError(t, barrier.StateChanged(orderKey, 2, jobsdb.Aborted.State))
-	barrier.Sync()
-
-	enter, previous = barrier.Enter(orderKey, 4)
-	require.True(t, enter, "job 4 for %s should be accepted after job 2 got aborted", orderKey)
-	require.Nil(t, previous)
-
-	enter, previous = barrier.Enter(orderKey, 5)
-	require.False(t, enter, "job 5 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
-	require.Nil(t, previous)
-
-	require.NoError(t, barrier.StateChanged(orderKey, 3, jobsdb.Failed.State))
-
-	enter, previous = barrier.Enter(orderKey, 3)
-	require.True(t, enter, "job 3 for %s should be accepted after failing", orderKey)
-	require.NotNil(t, previous)
-	require.EqualValues(t, 3, *previous)
-
-	enter, previous = barrier.Enter(orderKey, 5)
-	require.False(t, enter, "job 5 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
-	require.Nil(t, previous)
+	require.NoError(t, barrier.StateChanged(orderKey, 2, jobsdb.Failed.State))
+	require.Panics(t, func() {
+		_ = barrier.StateChanged(orderKey, 1, jobsdb.Failed.State)
+	}, "barrier should panic when posting a state for a job with a previous job id than the currently failed one")
 }
 
 func firstBool(v bool, _ ...interface{}) bool {

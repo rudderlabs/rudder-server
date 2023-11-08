@@ -225,7 +225,7 @@ func TestIntegration(t *testing.T) {
 			warehouseEventsMap2           testhelper.EventsCountMap
 			cred                          *testCredentials
 			database                      string
-			asyncJob                      bool
+			sourceJob                     bool
 			stagingFilePrefix             string
 			emptyJobRunID                 bool
 			preferAppend                  bool
@@ -309,7 +309,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
 				preferAppend:          false,
 			},
@@ -439,7 +439,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    whEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -451,7 +451,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                userID,
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)

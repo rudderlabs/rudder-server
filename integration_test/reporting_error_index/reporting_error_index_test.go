@@ -531,7 +531,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				config.Set("BatchRouter.toAbortDestinationIDs", "destination-1")
+				config.Set("Router.toAbortDestinationIDs", "destination-1")
 
 				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {

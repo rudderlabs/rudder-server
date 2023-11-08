@@ -25,7 +25,7 @@ services:
       - postgres
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:latest
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres

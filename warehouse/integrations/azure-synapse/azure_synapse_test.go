@@ -630,7 +630,7 @@ func TestAzureSynapse_ProcessColumnValue(t *testing.T) {
 			name:          "valid float",
 			data:          "1.01",
 			dataType:      model.FloatDataType,
-			expectedValue: float64(1.01),
+			expectedValue: 1.01,
 		},
 		{
 			name:      "invalid boolean",

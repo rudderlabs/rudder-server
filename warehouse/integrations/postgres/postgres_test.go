@@ -189,7 +189,7 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap    whth.EventsCountMap
 			tableUploadsEventsMap whth.EventsCountMap
 			warehouseEventsMap    whth.EventsCountMap
-			asyncJob              bool
+			sourceJob             bool
 			stagingFilePrefix     string
 		}{
 			{
@@ -204,7 +204,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
-				name:                  "Async Job",
+				name:                  "Source Job",
 				writeKey:              sourcesWriteKey,
 				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
@@ -214,7 +214,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
@@ -275,7 +275,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -287,7 +287,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                whth.GetUserId(destType),
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)

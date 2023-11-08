@@ -740,26 +740,6 @@ type Tag struct {
 	Value string
 }
 
-func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module": WAREHOUSE,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
-}
-
-func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module": WAREHOUSE,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
-}
-
 func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,

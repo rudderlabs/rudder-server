@@ -28,9 +28,9 @@ func TestDehydrateAndHydrate(t *testing.T) {
 	}
 
 	destJobs := types.DestinationJobs{
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
+		types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+		types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
+		types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
 	}
 	destJobs.Hydrate(jobs)
 
