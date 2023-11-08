@@ -461,17 +461,20 @@ func (job *UploadJob) run() (err error) {
 
 		case model.UpdatedTableUploadsCounts:
 			newStatus = nextUploadState.failed
-			for tableName := range job.upload.UploadSchema {
-				if err = job.tableUploadsRepo.PopulateTotalEventsFromStagingFileIDs(
-					job.ctx,
-					job.upload.ID,
-					tableName,
-					job.stagingFileIDs,
-				); err != nil {
-					err = fmt.Errorf("populate table uploads total events from staging file: %w", err)
-					break
+			err = job.tableUploadsRepo.WithTx(job.ctx, func(tx *sqlquerywrapper.Tx) error {
+				for tableName := range job.upload.UploadSchema {
+					if err := job.tableUploadsRepo.PopulateTotalEventsWithTx(
+						job.ctx,
+						tx,
+						job.upload.ID,
+						tableName,
+						job.stagingFileIDs,
+					); err != nil {
+						return fmt.Errorf("populate total events from staging file ids for table: %s, %w", tableName, err)
+					}
 				}
-			}
+				return nil
+			})
 			if err != nil {
 				break
 			}
