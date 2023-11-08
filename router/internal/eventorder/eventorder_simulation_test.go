@@ -36,7 +36,7 @@ func TestSimulateBarrier(t *testing.T) {
 	defer cancel()
 
 	var logger log = t
-	barrier := eventorder.NewBarrier(eventorder.WithConcurrencyLimit(1))
+	barrier := eventorder.NewBarrier()
 	generator := &generatorLoop{ctx: ctx, barrier: barrier, batchSize: batchSize, pending: jobs, out: workerQueue, logger: logger}
 	worker := &workerProcess{ctx: ctx, barrier: barrier, in: workerQueue, out: statusQueue, logger: logger}
 	commit := &commitStatusLoop{ctx: ctx, barrier: barrier, in: statusQueue, putBack: generator.putBack, logger: logger}

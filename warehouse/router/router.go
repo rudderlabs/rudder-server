@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/lib/pq"
@@ -480,7 +482,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 		})
 		r.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
+		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 
 		if !found {
 			uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
@@ -594,10 +596,9 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 			"workspaceId":   warehouse.WorkspaceID,
 			"destinationID": warehouse.Destination.ID,
 			"destType":      warehouse.Destination.DestinationDefinition.Name,
-			"reason":        err.Error(),
 		}).Count(1)
 
-		r.logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded: %v", warehouse.Identifier, err)
+		r.logger.Debugw("Skipping upload loop since upload freq not exceeded", logfield.Error, err.Error())
 
 		return nil
 	}

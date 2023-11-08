@@ -159,7 +159,7 @@ func TestArchiver(t *testing.T) {
 			db := sqlmw.New(pgResource.DB)
 
 			archiver := archive.New(
-				config.Default,
+				config.New(),
 				logger.NOP,
 				mockStats,
 				db,

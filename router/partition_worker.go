@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -26,19 +25,11 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	pw.workers = make([]*worker, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &worker{
-			logger:    pw.logger.Child("w-" + strconv.Itoa(i)),
-			partition: partition,
-			id:        i,
-			input:     make(chan workerJob, rt.workerInputBufferSize),
-			barrier: eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
-				"destType":         rt.destType,
-				"batching":         strconv.FormatBool(rt.enableBatching),
-				"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
-			}),
-				eventorder.WithConcurrencyLimit(rt.barrierConcurrencyLimit),
-				eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
-				eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
-			),
+			logger:                    pw.logger.Child("w-" + strconv.Itoa(i)),
+			partition:                 partition,
+			id:                        i,
+			input:                     make(chan workerJob, rt.workerInputBufferSize),
+			barrier:                   rt.barrier,
 			rt:                        rt,
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			batchTimeStat:             stats.Default.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destType}),

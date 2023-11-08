@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var ErrUnsupportedState = errors.New("unsupported state")
@@ -20,15 +22,29 @@ func WithMetadata(metadata map[string]string) OptFn {
 	}
 }
 
-// WithConcurrencyLimit sets the maximum number of concurrent jobs for a given key
-func WithConcurrencyLimit(concurrencyLimit int) OptFn {
+// WithEventOrderKeyThreshold sets the maximum number of concurrent jobs for a given key. After this limit is reached, the barrier will be disabled for this key.
+func WithEventOrderKeyThreshold(eventOrderKeyThreshold misc.ValueLoader[int]) OptFn {
 	return func(b *Barrier) {
-		b.concurrencyLimit = concurrencyLimit
+		b.eventOrderKeyThreshold = eventOrderKeyThreshold
+	}
+}
+
+// WithDisabledStateDuration sets the duration for which the barrier will remain in the disabled state after the concurrency limit has been reached
+func WithDisabledStateDuration(disabledStateDuration misc.ValueLoader[time.Duration]) OptFn {
+	return func(b *Barrier) {
+		b.disabledStateDuration = disabledStateDuration
+	}
+}
+
+// WithHalfEnabledStateDuration sets the duration for which the barrier will remain in the half-enabled state
+func WithHalfEnabledStateDuration(halfEnabledStateDuration misc.ValueLoader[time.Duration]) OptFn {
+	return func(b *Barrier) {
+		b.halfEnabledStateDuration = halfEnabledStateDuration
 	}
 }
 
 // WithDrainConcurrencyLimit sets the maximum number of concurrent jobs for a given key when the limiter is enabled (after a failed job has been drained, i.e. aborted)
-func WithDrainConcurrencyLimit(drainLimit int) OptFn {
+func WithDrainConcurrencyLimit(drainLimit misc.ValueLoader[int]) OptFn {
 	return func(b *Barrier) {
 		b.drainLimit = drainLimit
 	}
@@ -44,8 +60,12 @@ func WithDebugInfoProvider(debugInfoProvider func(key string) string) OptFn {
 // NewBarrier creates a new properly initialized Barrier
 func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
-		barriers: make(map[string]*barrierInfo),
-		metadata: make(map[string]string),
+		barriers:                 make(map[string]*barrierInfo),
+		metadata:                 make(map[string]string),
+		eventOrderKeyThreshold:   misc.SingleValueLoader(0),
+		disabledStateDuration:    misc.SingleValueLoader(10 * time.Minute),
+		halfEnabledStateDuration: misc.SingleValueLoader(5 * time.Minute),
+		drainLimit:               misc.SingleValueLoader(0),
 	}
 	for _, fn := range fns {
 		fn(b)
@@ -71,20 +91,24 @@ type Barrier struct {
 	barriers map[string]*barrierInfo
 	metadata map[string]string
 
-	concurrencyLimit int // maximum number of concurrent jobs for a given key (0 means no limit)
-	drainLimit       int // maximum number of concurrent jobs to accept after a previously failed job has been aborted
-	debugInfo        func(key string) string
+	eventOrderKeyThreshold   misc.ValueLoader[int] // maximum number of concurrent jobs for a given key (0 means no threshold)
+	disabledStateDuration    misc.ValueLoader[time.Duration]
+	halfEnabledStateDuration misc.ValueLoader[time.Duration]
+
+	drainLimit misc.ValueLoader[int] // maximum number of concurrent jobs to accept after a previously failed job has been aborted
+
+	debugInfo func(key string) string
 }
 
 // Enter the barrier for this key and jobID. If there is not already a barrier for this key
 // returns true, otherwise false along with the previous failed jobID if this is the cause of the barrier.
-// Another scenario where a barrier might exist for a key is when the previous job has failed in an unrecoverable manner and the concurrency limiter is enabled.
+// Another scenario where a barrier might exist for a key is when the previous job has failed in an unrecoverable manner and the drain limiter is enabled.
 func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJobID *int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	barrier, ok := b.barriers[key]
 	if !ok {
-		if b.concurrencyLimit == 0 { // if not concurrency limit is set accept the job
+		if b.eventOrderKeyThreshold.Load() == 0 { // if no key threshold is set accept the job
 			return true, nil
 		}
 		// create a new barrier with the concurrency limiter enabled
@@ -94,11 +118,25 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 		b.barriers[key] = barrier
 	}
 
-	// if any of our limits is reached, don't accept the job
-	if barrier.ConcurrencyLimitReached(jobID, b.concurrencyLimit) {
-		return false, nil
+	b.updateState(barrier)
+
+	// if the barrier is in a disabled state, accept the job
+	if barrier.state == stateDisabled {
+		return true, nil
 	}
-	if barrier.DrainLimitReached(jobID, b.drainLimit) {
+
+	// if key threshold is reached, disable the barrier and accept the job
+	if barrier.ConcurrencyLimitReached(jobID, b.eventOrderKeyThreshold.Load()) {
+		b.barriers[key] = &barrierInfo{
+			state:              stateDisabled,
+			stateTime:          time.Now(),
+			concurrencyLimiter: make(map[int64]struct{}),
+		}
+		return true, nil
+	}
+
+	// if drain limit is reached, don't accept the job
+	if barrier.DrainLimitReached(jobID, b.drainLimit.Load()) {
 		return false, nil
 	}
 
@@ -106,12 +144,18 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
 		previousFailedJobID = &failedJob
-		if failedJob > jobID {
+		if failedJob > jobID && barrier.state == stateEnabled {
 			var debugInfo string
 			if b.debugInfo != nil {
-				debugInfo = "DEBUG INFO:\n" + b.debugInfo(key)
+				debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(key)
 			}
-			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, key, failedJob, jobID, debugInfo))
+			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
+				b.metadata,
+				key,
+				failedJob,
+				jobID,
+				!barrier.stateTime.IsZero(),
+				debugInfo))
 		}
 		accepted = jobID == failedJob
 	} else {
@@ -156,17 +200,23 @@ func (b *Barrier) Wait(key string, jobID int64) (wait bool, previousFailedJobID 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	barrier, ok := b.barriers[key]
-	if !ok {
+	if !ok || barrier.state == stateDisabled {
 		return false, nil // no barrier, don't wait
 	}
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
-		if failedJob > jobID {
+		if failedJob > jobID && barrier.state == stateEnabled {
 			var debugInfo string
 			if b.debugInfo != nil {
-				debugInfo = "DEBUG INFO:\n" + b.debugInfo(key)
+				debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(key)
 			}
-			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, key, failedJob, jobID, debugInfo))
+			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d  (previouslyDisabled: %t)%s",
+				b.metadata,
+				key,
+				failedJob,
+				jobID,
+				!barrier.stateTime.IsZero(),
+				debugInfo))
 		}
 		return jobID > failedJob, &failedJob // wait if this is not the failed job
 	}
@@ -218,6 +268,14 @@ func (b *Barrier) Sync() int {
 	return flushed
 }
 
+// Disabled returns [true] if the barrier is disabled for this key, [false] otherwise
+func (b *Barrier) Disabled(key string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	barrier, ok := b.barriers[key]
+	return ok && barrier.state == stateDisabled
+}
+
 // Size returns the number of active barriers
 func (b *Barrier) Size() int {
 	b.mu.RLock()
@@ -242,7 +300,37 @@ func (b *Barrier) String() string {
 	return sb.String()
 }
 
+// updateState applies the state transitions for the barrier if necessary.
+//
+// 1. Disabled: transitions to half-enabled after disabledStateDuration
+// 2. Half-enabled: transitions to enabled after halfEnabledStateDuration
+func (b *Barrier) updateState(barrier *barrierInfo) {
+	switch barrier.state {
+	case stateDisabled:
+		if time.Since(barrier.stateTime) > b.disabledStateDuration.Load() {
+			barrier.state = stateHalfEnabled
+			barrier.stateTime = time.Now()
+		}
+	case stateHalfEnabled:
+		if time.Since(barrier.stateTime) > b.halfEnabledStateDuration.Load() {
+			barrier.state = stateEnabled
+			barrier.stateTime = time.Now()
+		}
+	}
+}
+
+type barrierState int
+
+const (
+	stateEnabled barrierState = iota
+	stateDisabled
+	stateHalfEnabled
+)
+
 type barrierInfo struct {
+	state     barrierState
+	stateTime time.Time
+
 	failedJobID        *int64 // nil if no failed job
 	concurrencyLimiter map[int64]struct{}
 	drainLimiter       map[int64]struct{} // nil if limiter is off
@@ -284,9 +372,10 @@ func (bi *barrierInfo) DrainLimitReached(jobID int64, limit int) bool {
 	return false
 }
 
-// Inactive returns true if there isn't a failed job and both limiters are inactive
+// Inactive returns true if the barrier is enabled, there isn't a failed job and both limiters are inactive
 func (bi *barrierInfo) Inactive() bool {
-	return bi.failedJobID == nil && // no failed job
+	return bi.state == stateEnabled && // barrier is enabled
+		bi.failedJobID == nil && // no failed job
 		len(bi.concurrencyLimiter) == 0 && // no concurrent jobs
 		bi.drainLimiter == nil // drain limiter is off
 }
@@ -328,16 +417,24 @@ func (c *jobFailedCommand) execute(b *Barrier) {
 	if !ok {
 		barrier = &barrierInfo{}
 		b.barriers[c.key] = barrier
+	} else if barrier.state == stateDisabled {
+		return // don't do anything if the barrier is disabled
 	}
 	barrier.Leave(c.jobID)
 	if barrier.failedJobID == nil {
 		barrier.failedJobID = &c.jobID
-	} else if *barrier.failedJobID > c.jobID {
+	} else if *barrier.failedJobID > c.jobID && barrier.state == stateEnabled {
 		var debugInfo string
 		if b.debugInfo != nil {
-			debugInfo = "DEBUG INFO:\n" + b.debugInfo(c.key)
+			debugInfo = "\nDEBUG INFO:\n" + b.debugInfo(c.key)
 		}
-		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, c.key, *barrier.failedJobID, c.jobID, debugInfo))
+		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d (previouslyDisabled: %t)%s",
+			b.metadata,
+			c.key,
+			*barrier.failedJobID,
+			c.jobID,
+			!barrier.stateTime.IsZero(),
+			debugInfo))
 	}
 	barrier.drainLimiter = nil // turn off drain limiter
 }
@@ -354,7 +451,7 @@ type jobSucceededCmd struct {
 
 // removes the barrier for this key, if it exists
 func (c *jobSucceededCmd) execute(b *Barrier) {
-	if barrier, ok := b.barriers[c.key]; ok {
+	if barrier, ok := b.barriers[c.key]; ok && barrier.state != stateDisabled {
 		barrier.Leave(c.jobID)
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
 			return
@@ -374,7 +471,7 @@ type jobFilteredCmd struct {
 
 // removes the barrier for this key, if it exists
 func (c *jobFilteredCmd) execute(b *Barrier) {
-	if barrier, ok := b.barriers[c.key]; ok {
+	if barrier, ok := b.barriers[c.key]; ok && barrier.state != stateDisabled {
 		barrier.Leave(c.jobID)
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
 			return
@@ -394,16 +491,16 @@ type jobAbortedCommand struct {
 
 // Creates a concurrent jobs map if none exists. Also removes the jobID from the concurrent jobs map if it exists there
 func (c *jobAbortedCommand) execute(b *Barrier) {
-	if barrier, ok := b.barriers[c.key]; ok {
+	if barrier, ok := b.barriers[c.key]; ok && barrier.state != stateDisabled {
 		barrier.Leave(c.jobID)
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
 			return
 		}
 		// previouslyFailed indicates whether the job that was aborted was previouly a failed job, which is the condition for enabling the drain limiter
 		previouslyFailed := barrier.failedJobID != nil && *barrier.failedJobID == c.jobID
-		barrier.failedJobID = nil                 // remove the failed job
-		barrier.drainLimiter = nil                // turn off drain limiter
-		if b.drainLimit > 0 && previouslyFailed { // enable the drain limiter only if a previously failed job has been aborted
+		barrier.failedJobID = nil                        // remove the failed job
+		barrier.drainLimiter = nil                       // turn off drain limiter
+		if b.drainLimit.Load() > 0 && previouslyFailed { // enable the drain limiter only if a previously failed job has been aborted
 			barrier.drainLimiter = make(map[int64]struct{})
 		}
 		if barrier.Inactive() {
