@@ -17,7 +17,7 @@ import (
 var ErrNoValueFound = errors.New("no value found")
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func TestIsSuppressedConcurrency(t *testing.T) {
