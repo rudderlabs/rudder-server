@@ -34,7 +34,7 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/types"
-	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -410,7 +410,7 @@ var _ = Describe("router", func() {
 				}).Return(nil).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
-				&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+				&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -482,7 +482,7 @@ var _ = Describe("router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				}).After(callGetAllJobs)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerUtils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
@@ -537,6 +537,84 @@ var _ = Describe("router", func() {
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:         uuid.New(),
+					UserID:       "u1",
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					CustomVal:    customVal["GA"],
+					EventPayload: []byte(gaPayload),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 0,
+					},
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
+				},
+			}
+
+			payloadLimit := router.reloadableConfig.payloadLimit
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
+				CustomValFilters: []string{customVal["GA"]},
+				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
+				PayloadSizeLimit: payloadLimit.Load(),
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
+
+			var routerAborted bool
+			var procErrorStored bool
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
+					job := jobList[0]
+					var parameters map[string]interface{}
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						panic(err)
+					}
+
+					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
+					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
+					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
+					procErrorStored = true
+				})
+
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+					Expect(drainList).To(HaveLen(1))
+					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
+					routerAborted = true
+				})
+
+			<-router.backendConfigInitialized
+			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
+			defer worker.Stop()
+			Expect(worker.Work()).To(BeTrue())
+			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
+			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+		})
+
+		It("aborts jobs that bear a abort configured jobRunId", func() {
+			conf.Set("RSources.toAbortJobRunIDs", "someJobRunId")
+			router := &Handle{
+				Reporting: &reporting.NOOP{},
+			}
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
+			router.netHandle = mockNetHandle
+
+			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
+			parameters := fmt.Sprintf(`{"source_job_run_id": "someJobRunId", "source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
@@ -679,7 +757,7 @@ var _ = Describe("router", func() {
 						jobs[0],
 						drainList[0],
 						jobsdb.Aborted.State,
-						routerUtils.DRAIN_ERROR_CODE,
+						routerutils.DRAIN_ERROR_CODE,
 						fmt.Sprintf(
 							`{"reason": %s}`,
 							fmt.Sprintf(
@@ -785,7 +863,7 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, routerUtils.DRAIN_ERROR_CODE, fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
+					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, routerutils.DRAIN_ERROR_CODE, fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
 					routerAborted = true
 				})
 
@@ -931,7 +1009,7 @@ var _ = Describe("router", func() {
 			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
-		It("fails jobs if destination is not found in config", func() {
+		It("aborts jobs if destination is not found in config", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -983,6 +1061,8 @@ var _ = Describe("router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
 				}).Return(nil).After(callAllJobs)
 
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Len(1)).Times(1)
+
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().
 				WithUpdateSafeTx(
@@ -1002,9 +1082,9 @@ var _ = Describe("router", func() {
 					assertJobStatus(
 						unprocessedJobsList[0],
 						statuses[0],
-						jobsdb.Failed.State,
-						"",
-						`{"reason": "failed because destination is not available in the config" }`,
+						jobsdb.Aborted.State,
+						routerutils.DRAIN_ERROR_CODE,
+						`{"reason": "`+routerutils.DrainReasonDestNotFound+`"}`,
 						3,
 					)
 				}).Return(nil)
@@ -1146,7 +1226,7 @@ var _ = Describe("router", func() {
 						}
 					})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1301,7 +1381,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -1538,7 +1618,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1692,7 +1772,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1860,7 +1940,7 @@ var _ = Describe("router", func() {
 						},
 					}
 				})
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -1892,16 +1972,24 @@ func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+	fmt.Println(`@@@@@@@@@@@@@@@@@@`)
+	fmt.Println(expectedState, errorCode, errorResponse)
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
 	if attemptNum >= 1 {
 		Expect(gjson.GetBytes(status.ErrorResponse, "content-type").String()).To(Equal(gjson.Get(errorResponse, "content-type").String()))
 		Expect(gjson.GetBytes(status.ErrorResponse, "response").String()).To(Equal(gjson.Get(errorResponse, "response").String()))
+		fmt.Println(`!!!!!!!!!`)
+		fmt.Println(status)
+		fmt.Println(string(status.ErrorResponse))
+		fmt.Println(`status.errorResponse.reason: `, gjson.Get(string(status.ErrorResponse), "reason").String())
+		fmt.Println(`expected.errorResponse.reason: `, gjson.Get(errorResponse, "reason").String())
 		Expect(gjson.Get(string(status.ErrorResponse), "reason").String()).To(Equal(gjson.Get(errorResponse, "reason").String()))
 	}
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.RetryTime).To(BeTemporally(">=", status.ExecTime, 10*time.Second))
+	fmt.Println(`status.AttemptNum: `, status.AttemptNum, ` |||| `, `attemptNum: `, attemptNum)
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
@@ -1961,41 +2049,41 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			skip:                   skipT{deliveryAlert: true},
 			transformerProxy:       true,
 			expectedAlertFlagValue: false,
-			errorAt:                routerUtils.ERROR_AT_DEL,
+			errorAt:                routerutils.ERROR_AT_DEL,
 		},
 		{
 			caseName:               "[delivery] when deliveryAlert is to be skipped, proxy is disabled the alert should be false",
 			skip:                   skipT{deliveryAlert: true},
 			transformerProxy:       false,
 			expectedAlertFlagValue: false,
-			errorAt:                routerUtils.ERROR_AT_DEL,
+			errorAt:                routerutils.ERROR_AT_DEL,
 		},
 		{
 			caseName:               "[delivery] when deliveryAlert is not to be skipped, proxy is disabled the alert should be true",
 			skip:                   skipT{},
 			transformerProxy:       false,
 			expectedAlertFlagValue: true,
-			errorAt:                routerUtils.ERROR_AT_DEL,
+			errorAt:                routerutils.ERROR_AT_DEL,
 		},
 		{
 			caseName:               "[delivery] when deliveryAlert is to be skipped, proxy is enabled the alert should be false",
 			skip:                   skipT{},
 			transformerProxy:       true,
 			expectedAlertFlagValue: false,
-			errorAt:                routerUtils.ERROR_AT_DEL,
+			errorAt:                routerutils.ERROR_AT_DEL,
 		},
 		// transformation cases
 		{
 			caseName:               "[transformation] when transformationAlert is to be skipped, the alert should be false",
 			skip:                   skipT{transformationAlert: true},
 			expectedAlertFlagValue: false,
-			errorAt:                routerUtils.ERROR_AT_TF,
+			errorAt:                routerutils.ERROR_AT_TF,
 		},
 		{
 			caseName:               "[transformation]when transformationAlert is not to be skipped, the alert should be true",
 			skip:                   skipT{},
 			expectedAlertFlagValue: true,
-			errorAt:                routerUtils.ERROR_AT_TF,
+			errorAt:                routerutils.ERROR_AT_TF,
 		},
 		// Custom destination's delivery cases
 		{
@@ -2003,21 +2091,21 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			skip:                   skipT{},
 			transformerProxy:       true,
 			expectedAlertFlagValue: true,
-			errorAt:                routerUtils.ERROR_AT_CUST,
+			errorAt:                routerutils.ERROR_AT_CUST,
 		},
 		{
 			caseName:               "[custom] when transformerProxy is disabled, the alert should be true",
 			skip:                   skipT{},
 			transformerProxy:       false,
 			expectedAlertFlagValue: true,
-			errorAt:                routerUtils.ERROR_AT_CUST,
+			errorAt:                routerutils.ERROR_AT_CUST,
 		},
 		{
 			caseName:               "[custom] when transformerProxy is enabled & deliveryAlert is to be skipped, the alert should be false",
 			skip:                   skipT{deliveryAlert: true},
 			transformerProxy:       true,
 			expectedAlertFlagValue: true,
-			errorAt:                routerUtils.ERROR_AT_CUST,
+			errorAt:                routerutils.ERROR_AT_CUST,
 		},
 		// empty errorAt
 		{

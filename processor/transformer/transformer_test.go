@@ -247,14 +247,14 @@ func TestTransformer(t *testing.T) {
 			{
 				name:                       "user transformation timeout",
 				retries:                    3,
-				stage:                      UserTransformerStage,
+				stage:                      userTransformerStage,
 				expectPanic:                true,
 				failOnUserTransformTimeout: false,
 			},
 			{
 				name:        "user transformation timeout with fail on timeout",
 				retries:     3,
-				stage:       UserTransformerStage,
+				stage:       userTransformerStage,
 				expectPanic: false,
 				expectedResponse: []TransformerResponse{
 					{
@@ -272,14 +272,14 @@ func TestTransformer(t *testing.T) {
 			{
 				name:                       "destination transformation timeout",
 				retries:                    3,
-				stage:                      DestTransformerStage,
+				stage:                      destTransformerStage,
 				expectPanic:                true,
 				failOnUserTransformTimeout: false,
 			},
 			{
 				name:                       "destination transformation timeout with fail on timeout",
 				retries:                    3,
-				stage:                      DestTransformerStage,
+				stage:                      destTransformerStage,
 				expectPanic:                true,
 				failOnUserTransformTimeout: true,
 			},

@@ -103,14 +103,28 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
-	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
-	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+func New(
+	ctx context.Context,
+	clearDb *bool,
+	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
+	reporting types.Reporting,
+	transientSources transientsource.Service,
+	fileuploader fileuploader.Provider,
+	rsourcesService rsources.JobService,
+	destDebugger destinationdebugger.DestinationDebugger,
+	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
-		Handle:           NewHandle(transformer.NewTransformer(config.Default, logger.NewLogger().Child("processor"), stats.Default)),
+		Handle: NewHandle(
+			config.Default,
+			transformer.NewTransformer(
+				config.Default,
+				logger.NewLogger().Child("processor"),
+				stats.Default,
+			),
+		),
 		mainCtx:          ctx,
 		gatewayDB:        gwDb,
 		routerDB:         rtDb,

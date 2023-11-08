@@ -2,7 +2,9 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	jsonstd "encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -101,14 +103,15 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 //	Ordered by id ascending.
 func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	sqlStatement := `
-		WITH row_numbered_load_files as (
+		WITH row_numbered_load_files AS (
 		SELECT
 			` + loadTableColumns + `,
 			row_number() OVER (
-			PARTITION BY staging_file_id,
-			table_name
-			ORDER BY
-				id DESC
+				PARTITION BY
+					staging_file_id,
+					table_name
+				ORDER BY
+					id DESC
 			) AS row_number
 		FROM
 			` + loadTableName + `
@@ -118,10 +121,11 @@ func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int
 		SELECT
 		` + loadTableColumns + `
 		FROM
-		row_numbered_load_files
+			row_numbered_load_files
 		WHERE
-		row_number = 1
-		ORDER BY id ASC
+			row_number = 1
+		ORDER BY
+			id ASC;
 	`
 
 	rows, err := lf.db.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
@@ -172,4 +176,102 @@ func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int
 	}
 
 	return loadFiles, nil
+}
+
+// TotalExportedEvents returns the total number of events exported by the corresponding staging files.
+// It excludes the tables present in skipTables.
+func (lf *LoadFiles) TotalExportedEvents(
+	ctx context.Context,
+	stagingFileIDs []int64,
+	skipTables []string,
+) (int64, error) {
+	var (
+		count sql.NullInt64
+		err   error
+	)
+
+	if skipTables == nil {
+		skipTables = []string{}
+	}
+
+	sqlStatement := `
+		WITH row_numbered_load_files AS (
+		SELECT
+			total_events,
+			table_name,
+			row_number() OVER (
+				PARTITION BY
+					staging_file_id,
+					table_name
+				ORDER BY
+					id DESC
+			) AS row_number
+		FROM
+			` + loadTableName + `
+		WHERE
+			staging_file_id = ANY($1)
+		)
+		SELECT
+			COALESCE(sum(total_events), 0) AS total_events
+		FROM
+			row_numbered_load_files
+		WHERE
+			row_number = 1
+		AND
+			table_name != ALL($2);`
+
+	err = lf.db.QueryRowContext(ctx, sqlStatement, pq.Array(stagingFileIDs), pq.Array(skipTables)).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf(`counting total exported events: %w`, err)
+	}
+	if !count.Valid {
+		return 0, errors.New(`count is not valid`)
+	}
+	return count.Int64, nil
+}
+
+// DistinctTableName returns the distinct table names for the given parameters.
+func (lf *LoadFiles) DistinctTableName(
+	ctx context.Context,
+	sourceID string,
+	destinationID string,
+	startID int64,
+	endID int64,
+) ([]string, error) {
+	rows, err := lf.db.QueryContext(ctx, `
+		SELECT
+		  distinct table_name
+		FROM
+		  `+loadTableName+`
+		WHERE
+			source_id = $1
+			AND destination_id = $2
+			AND id >= $3
+			AND id <= $4;`,
+		sourceID,
+		destinationID,
+		startID,
+		endID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying load files: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tableNames []string
+	for rows.Next() {
+		var tableName string
+		err := rows.Scan(&tableName)
+		if err != nil {
+			return nil, fmt.Errorf(`scanning table names: %w`, err)
+		}
+		tableNames = append(tableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("querying table names: %w", err)
+	}
+	return tableNames, nil
 }
