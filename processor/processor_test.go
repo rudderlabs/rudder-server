@@ -1599,7 +1599,30 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(nil) // one for newly stored jobs and one for dropped jobs
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{In: 2, Failed: 2},
+				).Times(1).Return(nil)
+
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{Out: 1},
+				).Times(1).Return(nil)
+
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -2368,8 +2391,28 @@ var _ = Describe("Processor", Ordered, func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), "job_run_id_1", gomock.Any(), rsources.Stats{Out: 1}).Times(1)
-			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), "job_run_id_1", gomock.Any(), rsources.Stats{In: 1, Failed: 1}).Times(1)
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut2",
+					},
+					rsources.Stats{Out: 1},
+				).Times(1)
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut2",
+					},
+					rsources.Stats{In: 1, Failed: 1},
+				).Times(1)
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
