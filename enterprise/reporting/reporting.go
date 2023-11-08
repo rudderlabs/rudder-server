@@ -560,9 +560,6 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) err
 		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
-	txn.AddSuccessListener(func() {
-		r.statsReporter.Report(metrics)
-	})
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {

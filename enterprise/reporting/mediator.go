@@ -64,6 +64,8 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 		errorIndexReporter := erridx.NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default, stats.Default)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
+	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
+	rm.reporters = append(rm.reporters, eventStatsReporter)
 
 	return rm
 }

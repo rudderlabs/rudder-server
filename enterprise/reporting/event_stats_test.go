@@ -96,7 +96,7 @@ func TestEventStatsReporter(t *testing.T) {
 				TerminalPU: false,
 			},
 			StatusDetail: &types.StatusDetail{
-				Count:      10,
+				Count:      50,
 				Status:     "aborted",
 				StatusCode: 500,
 			},
@@ -119,8 +119,8 @@ func TestEventStatsReporter(t *testing.T) {
 		},
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
-	esr.Report(testReports)
-	require.Equal(t, statsStore.Get(EventsDeliveredMetricName, map[string]string{
+	esr.Record(testReports)
+	require.Equal(t, statsStore.Get(measurementNames["succeeded"], map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -130,7 +130,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"status_code":     "200",
 		"destinationType": "test-destination-name",
 	}).LastValue(), float64(10))
-	require.Equal(t, statsStore.Get(EventsAbortedMetricName, map[string]string{
+	require.Equal(t, statsStore.Get(measurementNames["aborted"], map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -139,17 +139,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "false",
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
-	}).LastValue(), float64(10))
-	require.Equal(t, statsStore.Get(EventsDeliveredMetricName, map[string]string{
-		"workspaceId":     workspaceID,
-		"sourceId":        sourceID,
-		"destinationId":   destinationID,
-		"reportedBy":      reportedBy,
-		"sourceCategory":  sourceCategory,
-		"terminal":        "true",
-		"status_code":     "200",
-		"destinationType": "test-destination-name",
-	}).LastValue(), float64(10)) // last value should be 10 because we are not reporting failed events
+	}).LastValue(), float64(15))
 
 	t.Cleanup(func() {
 		cancel()
