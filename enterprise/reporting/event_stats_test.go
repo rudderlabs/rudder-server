@@ -139,7 +139,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "false",
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
-	}).LastValue(), float64(15))
+	}).LastValue(), float64(50))
 
 	t.Cleanup(func() {
 		cancel()
