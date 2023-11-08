@@ -55,5 +55,5 @@ func (es *EventStatsReporter) Stop() {
 }
 
 func (es *EventStatsReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
-	return nil
+	return func() {}
 }
