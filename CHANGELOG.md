@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.3](https://github.com/rudderlabs/rudder-server/compare/v1.16.2...v1.16.3) (2023-11-09)
+
+
+### Bug Fixes
+
+* error index sortKey filter based test ([#4102](https://github.com/rudderlabs/rudder-server/issues/4102)) ([836b0f0](https://github.com/rudderlabs/rudder-server/commit/836b0f0a46eaf721a295f41fde66ec0823407a0e))
+
+
+### Miscellaneous
+
+* remove panic and trigger full update on incremental update failure ([#4109](https://github.com/rudderlabs/rudder-server/issues/4109)) ([92e0918](https://github.com/rudderlabs/rudder-server/commit/92e091878d5ed8d4023aefa8c57c5327494ffd06))
+
 ## [1.16.2](https://github.com/rudderlabs/rudder-server/compare/v1.16.1...v1.16.2) (2023-11-08)
 
 
