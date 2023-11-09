@@ -23,7 +23,7 @@ func (m *mockLoadFilesRepo) Insert(_ context.Context, loadFiles []model.LoadFile
 	return nil
 }
 
-func (m *mockLoadFilesRepo) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
+func (m *mockLoadFilesRepo) DeleteByStagingFiles(_ context.Context, stagingFileIDs []int64) error {
 	store := make([]model.LoadFile, 0)
 	for _, loadFile := range m.store {
 		if !slices.Contains(stagingFileIDs, loadFile.StagingFileID) {
@@ -35,7 +35,7 @@ func (m *mockLoadFilesRepo) DeleteByStagingFiles(ctx context.Context, stagingFil
 	return nil
 }
 
-func (m *mockLoadFilesRepo) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (m *mockLoadFilesRepo) GetByStagingFiles(_ context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	var loadFiles []model.LoadFile
 	for _, loadFile := range m.store {
 		if slices.Contains(stagingFileIDs, loadFile.StagingFileID) {

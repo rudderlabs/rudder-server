@@ -58,6 +58,8 @@ const (
 	SourceIDEnabled           = "enabled-source"
 	ReplaySourceID            = "replay-source"
 	ReplayWriteKey            = "replay-source"
+	RETLSourceID              = "retl-source"
+	RETLWriteKey              = "retl-source"
 	SourceIDDisabled          = "disabled-source"
 	TestRemoteAddressWithPort = "test.com:80"
 	TestRemoteAddress         = "test.com"
@@ -67,6 +69,7 @@ const (
 	WorkspaceID      = "workspace"
 	sourceType1      = "sourceType1"
 	sourceType2      = "webhook"
+	RETLSourceType   = "retl"
 	sdkLibrary       = "sdkLibrary"
 	sdkVersion       = "v1.2.3"
 )
@@ -121,6 +124,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			OriginalID: ReplaySourceID,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: SourceIDEnabled,
+			},
+			WorkspaceID: WorkspaceID,
+		},
+		{
+			ID:         RETLSourceID,
+			WriteKey:   RETLWriteKey,
+			Enabled:    true,
+			OriginalID: RETLSourceID,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name:     SourceIDEnabled,
+				Category: RETLSourceType,
 			},
 			WorkspaceID: WorkspaceID,
 		},
@@ -462,7 +476,7 @@ var _ = Describe("Gateway", func() {
 				}
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
-				if ep == "/internal/v1/replay" {
+				if ep == "/internal/v1/replay" || ep == "/internal/v1/retl" {
 					req.Header.Set("X-Rudder-Source-Id", ReplaySourceID)
 				} else {
 					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
@@ -713,6 +727,121 @@ var _ = Describe("Gateway", func() {
 				},
 				1*time.Second,
 			).Should(BeTrue())
+		})
+
+		It("should accept valid (with and without userId and anonymousId) retl request and store to jobsdb", func() {
+			handler := gateway.webRetlHandler()
+
+			payloads := [2][]byte{
+				[]byte(`{"batch": [{"data": "valid-json", "type": "record", "userId": "dummyId"}]}`),
+				[]byte(`{"batch": [{"data": "valid-json", "type": "record"}]}`),
+			}
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any()).AnyTimes().Do(func(
+				ctx context.Context,
+				f func(tx jobsdb.StoreSafeTx) error,
+			) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.
+				EXPECT().StoreEachBatchRetryInTx(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).AnyTimes()
+
+			// With userId
+			expectHandlerResponse(
+				handler,
+				authorizedRETLRequest(
+					RETLSourceID,
+					bytes.NewBuffer(payloads[0])),
+				http.StatusOK,
+				"OK",
+				"retl",
+			)
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_events",
+						map[string]string{
+							"source":      "_source",
+							"sourceID":    RETLSourceID,
+							"workspaceId": WorkspaceID,
+							"writeKey":    RETLWriteKey,
+							"reqType":     "retl",
+							"sourceType":  "retl",
+							"sdkVersion":  "",
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
+
+			// Without userId
+			expectHandlerResponse(
+				handler,
+				authorizedRETLRequest(
+					RETLSourceID,
+					bytes.NewBuffer(payloads[1])),
+				http.StatusOK,
+				"OK",
+				"retl",
+			)
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_events",
+						map[string]string{
+							"source":      "_source",
+							"sourceID":    RETLSourceID,
+							"workspaceId": WorkspaceID,
+							"writeKey":    RETLWriteKey,
+							"reqType":     "retl",
+							"sourceType":  "retl",
+							"sdkVersion":  "",
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
+		})
+
+		It("should accept requests with both userId and anonymousId absent in case of extract events", func() {
+			extractHandlers := map[string]http.HandlerFunc{
+				"batch":   gateway.webBatchHandler(),
+				"import":  gateway.webImportHandler(),
+				"extract": gateway.webExtractHandler(),
+			}
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+
+			for handlerType, handler := range extractHandlers {
+				var body string
+				switch handlerType {
+				case "extract":
+					body = `{"data": "valid-json", "type": "extract"}`
+				default:
+					body = `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+				}
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(
+						WriteKeyEnabled,
+						bytes.NewBufferString(body),
+					),
+					http.StatusOK,
+					"OK",
+					handlerType,
+				)
+			}
 		})
 	})
 
@@ -1089,38 +1218,6 @@ var _ = Describe("Gateway", func() {
 			}
 		})
 
-		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
-			extractHandlers := map[string]http.HandlerFunc{
-				"batch":   gateway.webBatchHandler(),
-				"import":  gateway.webImportHandler(),
-				"extract": gateway.webExtractHandler(),
-			}
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
-			}).Return(nil)
-			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
-
-			for handlerType, handler := range extractHandlers {
-				var body string
-				switch handlerType {
-				case "extract":
-					body = `{"data": "valid-json", "type": "extract"}`
-				default:
-					body = `{"batch": [{"data": "valid-json", "type": "extract"}]}`
-				}
-				expectHandlerResponse(
-					handler,
-					authorizedRequest(
-						WriteKeyEnabled,
-						bytes.NewBufferString(body),
-					),
-					http.StatusOK,
-					"OK",
-					handlerType,
-				)
-			}
-		})
-
 		It("should reject requests without request body", func() {
 			for handlerType, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, nil), http.StatusBadRequest, response.RequestBodyNil+"\n", handlerType)
@@ -1344,6 +1441,77 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
+		It("sanitizes messageID, trim space and replace with new uuid", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": " \u0000\u00A0\t\n\r\u034F ",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+
+			u, err := uuid.Parse(job.Batch[0].MessageID)
+			Expect(err).To(BeNil())
+			Expect(u.Version()).To(Equal(uuid.Version(4)))
+		})
+
+		It("sanitizes messageID, remove bad runes and trim space", func() {
+			// passing a messageID full of invisible characters
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":      "track",
+						"userId":    map[string]interface{}{"id": 456},
+						"messageId": "\u0000 -a-random-string \u00A0\t\n\r\u034F",
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+				} `json:"batch"`
+			}
+
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
+		})
+
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
@@ -1351,6 +1519,18 @@ var _ = Describe("Gateway", func() {
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+		})
+
+		It("allows retl events even if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "retl",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "record"}]}`),
 			}
 			_, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
@@ -1456,6 +1636,15 @@ func authorizedReplayRequest(sourceID string, body io.Reader) *http.Request {
 	return req
 }
 
+func authorizedRETLRequest(sourceID string, body io.Reader) *http.Request {
+	req := unauthorizedRequest(body)
+	req.Header.Set("X-Rudder-Source-Id", sourceID)
+	// set anonymousId header to ensure everything goes into same batch
+	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
+	req.RemoteAddr = TestRemoteAddressWithPort
+	return req
+}
+
 func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, responseStatus int, responseBody, reqType string) {
 	var body string
 	Eventually(func() int {
@@ -1504,6 +1693,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/webhook",
 		"/beacon/v1/batch",
 		"/internal/v1/extract",
+		"/internal/v1/retl",
 		"/internal/v1/replay",
 		"/internal/v1/audiencelist",
 		"/v1/warehouse/pending-events",

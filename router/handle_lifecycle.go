@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -58,6 +60,14 @@ func (rt *Handle) Setup(
 	rt.errorDB = errorDB
 	rt.destType = destType
 
+	rt.drainer = routerutils.NewDrainer(
+		config,
+		func(destinationID string) (*routerutils.DestinationWithSources, bool) {
+			rt.destinationsMapMu.RLock()
+			defer rt.destinationsMapMu.RUnlock()
+			dest, destFound := rt.destinationsMap[destinationID]
+			return dest, destFound
+		})
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()
 	rt.crashRecover()
@@ -86,8 +96,10 @@ func (rt *Handle) Setup(
 
 	rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
 
-	rt.drainConcurrencyLimit = getRouterConfigInt("drainedConcurrencyLimit", destType, 1)
-	rt.barrierConcurrencyLimit = getRouterConfigInt("barrierConcurrencyLimit", destType, 100)
+	rt.drainConcurrencyLimit = config.GetReloadableIntVar(1, 1, "Router."+destType+".eventOrderDrainedConcurrencyLimit", "Router.eventOrderDrainedConcurrencyLimit")
+	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, "Router."+destType+".eventOrderKeyThreshold", "Router.eventOrderKeyThreshold")
+	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
+	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
@@ -116,6 +128,18 @@ func (rt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
+
+	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
+		"destType":         rt.destType,
+		"batching":         strconv.FormatBool(rt.enableBatching),
+		"transformerProxy": strconv.FormatBool(rt.reloadableConfig.transformerProxy.Load()),
+	}),
+		eventorder.WithEventOrderKeyThreshold(rt.eventOrderKeyThreshold),
+		eventorder.WithDisabledStateDuration(rt.eventOrderDisabledStateDuration),
+		eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
+		eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
+		eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -265,7 +289,6 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.maxStatusUpdateWait = config.GetReloadableDurationVar(5, time.Second, "Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS")
 	rt.reloadableConfig.minRetryBackoff = config.GetReloadableDurationVar(10, time.Second, "Router.minRetryBackoff", "Router.minRetryBackoffInS")
 	rt.reloadableConfig.maxRetryBackoff = config.GetReloadableDurationVar(300, time.Second, "Router.maxRetryBackoff", "Router.maxRetryBackoffInS")
-	rt.reloadableConfig.toAbortDestinationIDs = config.GetReloadableStringVar("", "Router.toAbortDestinationIDs")
 	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, "Router.pickupFlushInterval")
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, "Router.failingJobsPenaltySleep")
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, "Router.failingJobsPenaltyThreshold")

@@ -67,14 +67,15 @@ type sourceObserver interface {
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func NewHandle(transformer transformer.Transformer) *Handle {
-	h := &Handle{transformer: transformer}
+func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
+	h := &Handle{transformer: transformer, conf: c}
 	h.loadConfig()
 	return h
 }
 
 // Handle is a handle to the processor module
 type Handle struct {
+	conf          *config.Config
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
 	lastJobID     int64
@@ -148,6 +149,10 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
+	}
+
+	drainConfig struct {
+		jobRunIDs misc.ValueLoader[[]string]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -358,8 +363,11 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 
 // Setup initializes the module
 func (proc *Handle) Setup(
-	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
+	backendConfig backendconfig.BackendConfig,
+	gatewayDB, routerDB, batchRouterDB,
+	readErrorDB, writeErrorDB,
+	eventSchemaDB, archivalDB jobsdb.JobsDB,
+	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
@@ -371,6 +379,9 @@ func (proc *Handle) Setup(
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	if proc.conf == nil {
+		proc.conf = config.Default
+	}
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
@@ -490,9 +501,10 @@ func (proc *Handle) Setup(
 }
 
 func (proc *Handle) setupReloadableVars() {
-	proc.jobdDBQueryRequestTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
-	proc.jobsDBCommandTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
-	proc.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	proc.jobdDBQueryRequestTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	proc.jobsDBCommandTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
+	proc.jobdDBMaxRetries = proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	proc.drainConfig.jobRunIDs = proc.conf.GetReloadableStringSliceVar([]string{}, "RSources.toAbortJobRunIDs")
 }
 
 // Start starts this processor's main loops.
@@ -2345,7 +2357,24 @@ func (proc *Handle) transformSrcDest(
 	s := time.Now()
 	eventFilterInCount := len(eventsToTransform)
 	proc.logger.Debug("Supported messages filtering input size", eventFilterInCount)
-	response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
+	response = ConvertToFilteredTransformerResponse(
+		eventsToTransform,
+		transformAt != "none",
+		func(event transformer.TransformerEvent) (bool, string) {
+			if event.Metadata.SourceJobRunID != "" &&
+				slices.Contains(
+					proc.drainConfig.jobRunIDs.Load(),
+					event.Metadata.SourceJobRunID,
+				) {
+				proc.logger.Debugf(
+					"cancelled jobRunID: %s",
+					event.Metadata.SourceJobRunID,
+				)
+				return true, "cancelled jobRunId"
+			}
+			return false, ""
+		},
+	)
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
@@ -2554,14 +2583,21 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
 			droppedJobs[i].JobID = int64(i)
 		}
-		rsourcesStats := rsources.NewDroppedJobsCollector(proc.rsourcesService)
+		rsourcesStats := rsources.NewDroppedJobsCollector(
+			proc.rsourcesService,
+			rsources.IgnoreDestinationID(),
+		)
 		rsourcesStats.JobsDropped(droppedJobs)
 		return rsourcesStats.Publish(context.TODO(), tx.Tx)
 	}
 	return nil
 }
 
-func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent, filter bool) transformer.Response {
+func ConvertToFilteredTransformerResponse(
+	events []transformer.TransformerEvent,
+	filter bool,
+	drainFunc func(transformer.TransformerEvent) (bool, string),
+) transformer.Response {
 	var responses []transformer.TransformerResponse
 	var failedEvents []transformer.TransformerResponse
 
@@ -2573,9 +2609,22 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 	supportedMessageEventsCache := make(map[string]*cacheValue)
 
 	// filter unsupported message types
-	var resp transformer.TransformerResponse
 	for i := range events {
 		event := &events[i]
+
+		// drain events
+		if drain, reason := drainFunc(*event); drain {
+			failedEvents = append(
+				failedEvents,
+				transformer.TransformerResponse{
+					Output:     event.Message,
+					StatusCode: types.DrainEventCode,
+					Metadata:   event.Metadata,
+					Error:      reason,
+				},
+			)
+			continue
+		}
 
 		if filter {
 			// filter unsupported message types
@@ -2606,21 +2655,41 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEvent,
 				messageEvent, typOk := event.Message["event"].(string)
 				if !typOk {
 					// add to FailedEvents
-					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: "Invalid message event. Type assertion failed"}
-					failedEvents = append(failedEvents, resp)
+					failedEvents = append(
+						failedEvents,
+						transformer.TransformerResponse{
+							Output:     event.Message,
+							StatusCode: 400,
+							Metadata:   event.Metadata,
+							Error:      "Invalid message event. Type assertion failed",
+						},
+					)
 					continue
 				}
 				if !slices.Contains(supportedEvents.values, messageEvent) {
-					resp = transformer.TransformerResponse{Output: event.Message, StatusCode: types.FilterEventCode, Metadata: event.Metadata, Error: "Event not supported"}
-					failedEvents = append(failedEvents, resp)
+					failedEvents = append(
+						failedEvents,
+						transformer.TransformerResponse{
+							Output:     event.Message,
+							StatusCode: types.FilterEventCode,
+							Metadata:   event.Metadata,
+							Error:      "Event not supported",
+						},
+					)
 					continue
 				}
 			}
 
 		}
 		// allow event
-		resp = transformer.TransformerResponse{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-		responses = append(responses, resp)
+		responses = append(
+			responses,
+			transformer.TransformerResponse{
+				Output:     event.Message,
+				StatusCode: 200,
+				Metadata:   event.Metadata,
+			},
+		)
 	}
 
 	return transformer.Response{Events: responses, FailedEvents: failedEvents}

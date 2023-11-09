@@ -274,8 +274,11 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	fillMessageID := func(event map[string]interface{}) {
 		messageID, _ := event["messageId"].(string)
-		if strings.TrimSpace(messageID) == "" {
+		messageID = strings.TrimSpace(misc.SanitizeUnicode(messageID))
+		if messageID == "" {
 			event["messageId"] = uuid.New().String()
+		} else {
+			event["messageId"] = messageID
 		}
 	}
 
@@ -286,7 +289,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 
 	gw.requestSizeStat.Observe(float64(len(body)))
-	if req.reqType != "batch" && req.reqType != "replay" {
+	if req.reqType != "batch" && req.reqType != "replay" && req.reqType != "retl" {
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
 			err = errors.New(response.NotRudderEvent)
@@ -480,8 +483,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 }
 
 func (gw *Handle) isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
-	if eventType == extractEvent {
-		// extract event is allowed without user id and anonymous id
+	if eventType == extractEvent || eventType == rETLEvent {
+		// extract or rETL event is allowed without user id and anonymous id
 		return false
 	}
 	if anonIDFromReq == "" && userIDFromReq == "" {

@@ -80,6 +80,8 @@ func TestWorkerWriter(t *testing.T) {
 
 			payloads = append(payloads, p)
 		}
+		toEncode := make([]payload, len(payloads))
+		copy(toEncode, payloads)
 
 		t.Run("writes", func(t *testing.T) {
 			buf := bytes.NewBuffer(make([]byte, 0, 1024))
@@ -89,7 +91,7 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			require.NoError(t, w.encodeToParquet(buf, payloads))
+			require.NoError(t, w.encodeToParquet(buf, toEncode))
 
 			pr, err := reader.NewParquetReader(buffer.NewBufferFileFromBytes(buf.Bytes()), new(payload), 8)
 			require.NoError(t, err)
@@ -130,7 +132,7 @@ func TestWorkerWriter(t *testing.T) {
 			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
 			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
 
-			require.NoError(t, w.encodeToParquet(fw, payloads))
+			require.NoError(t, w.encodeToParquet(fw, toEncode))
 
 			t.Run("count all", func(t *testing.T) {
 				var count int64
@@ -145,7 +147,7 @@ func TestWorkerWriter(t *testing.T) {
 				require.EqualValues(t, 10, count)
 			})
 			t.Run("select all", func(t *testing.T) {
-				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1) ORDER BY failed_at DESC;", []interface{}{filePath})
+				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1) ORDER BY failed_at ASC;", []interface{}{filePath})
 
 				for i, failedMessage := range failedMessages {
 					require.Equal(t, payloads[i].MessageID, failedMessage.MessageID)
