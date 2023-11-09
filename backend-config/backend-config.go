@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -177,6 +178,9 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
+		if errors.Is(err, ErrIncrementalUpdateFailed) {
+			stats.Default.NewStat("config_backend.ErrIncrementalUpdateFailed", stats.CountType).Increment()
+		}
 
 		bc.initializedLock.RLock()
 		if bc.initialized {

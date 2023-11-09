@@ -195,6 +195,8 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
 				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
 			}`)
+		case 5: // new workspace, but it's update time is before the last request, so no updates
+			responseBody = []byte(`{"someWorkspaceID": null}`)
 		}
 
 		_, _ = w.Write(responseBody)
@@ -267,6 +269,14 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
 	require.Len(t, receivedUpdatedAfter, 4)
 	require.Equal(t, receivedUpdatedAfter[3], expectedUpdatedAt.Add(2*time.Minute), updatedAfterTimeFormat)
+
+	// send the request again, should receive the new workspace
+	// shouldn't panic and continue with the previous workspace config
+	c, err = client.Get(ctx)
+	require.ErrorIs(t, err, ErrIncrementalUpdateFailed)
+	require.Len(t, c, 0)
+	require.NotContains(t, c, "someNewWorkspaceID")
+	require.Equal(t, time.Time{}, client.lastUpdatedAt)
 }
 
 type backendConfigServer struct {

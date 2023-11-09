@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	jsonfast               = jsoniter.ConfigCompatibleWithStandardLibrary
-	updatedAfterTimeFormat = "2006-01-02T15:04:05.000Z"
+	jsonfast                   = jsoniter.ConfigCompatibleWithStandardLibrary
+	updatedAfterTimeFormat     = "2006-01-02T15:04:05.000Z"
+	ErrIncrementalUpdateFailed = errors.New("incremental update failed")
 )
 
 type namespaceConfig struct {
@@ -139,10 +140,16 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		if workspace == nil { // this workspace was not updated, populate it with the previous config
 			previousConfig, ok := nc.workspacesConfig[workspaceID]
 			if !ok {
-				panic(fmt.Errorf(
-					"workspace %q was not updated but was not present in previous config: %+v",
-					workspaceID, req,
-				))
+				nc.logger.Errorw(
+					"workspace was not updated but was not present in previous config",
+					"workspaceID", workspaceID,
+					"req", req,
+				)
+				// reset state here
+				nc.lastUpdatedAt = time.Time{}
+				// return `ErrIncrementalUpdateFailed`
+				// full sync will be triggered on next request
+				return configOnError, ErrIncrementalUpdateFailed
 			}
 			workspace = &previousConfig
 		} else {
