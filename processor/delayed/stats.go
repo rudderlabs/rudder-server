@@ -1,20 +1,30 @@
-package processorstats
+package delayed
 
 import (
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type DelayedEventStats struct {
+type eventStats struct {
 	Stats     stats.Stats
 	Threshold time.Duration
 }
 
-func (s *DelayedEventStats) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+func NewEventStats(stats stats.Stats, config *config.Config) *eventStats {
+	threshold := config.GetDuration("processor.delayed_events.threshold", 10*24, time.Hour)
+
+	return &eventStats{
+		Stats:     stats,
+		Threshold: threshold,
+	}
+}
+
+func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
 	statusCount := map[string]int{}
 
 	for _, event := range events {

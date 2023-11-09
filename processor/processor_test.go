@@ -47,6 +47,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type mockObserver struct {
+	calls []struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}
+}
+
+func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+	m.calls = append(m.calls, struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}{source: source, events: events})
+}
+
 type testContext struct {
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -59,6 +73,7 @@ type testContext struct {
 	mockArchivalDB        *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
+	MockObserver          *mockObserver
 	MockRsourcesService   *rsources.MockJobService
 }
 
@@ -1646,6 +1661,8 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
+			Expect(c.MockObserver.calls).To(HaveLen(3))
+
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
@@ -1675,6 +1692,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			processor.dedup = c.MockDedup
+			processor.sourceObservers = []sourceObserver{c.MockObserver}
 			handlePendingGatewayJobs(processor)
 		})
 	})

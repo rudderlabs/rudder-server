@@ -32,11 +32,11 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
-	processorstats "github.com/rudderlabs/rudder-server/processor/stats"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -148,7 +148,6 @@ type Handle struct {
 		eventSchemaV2Enabled      bool
 		archivalEnabled           misc.ValueLoader[bool]
 		eventAuditEnabled         map[string]bool
-		delayedEventsThreshold    misc.ValueLoader[time.Duration]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -194,7 +193,6 @@ type processorStats struct {
 	processJobThroughput          stats.Measurement
 	transformationsThroughput     stats.Measurement
 	DBWriteThroughput             stats.Measurement
-	delayedEvents                 stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -457,11 +455,7 @@ func (proc *Handle) Setup(
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
-	proc.sourceObservers = []sourceObserver{&processorstats.DelayedEventStats{
-		Stats:     stats.Default,
-		Threshold: config.GetDuration("Processor.delayedEventsThreshold", 24*10, time.Hour),
-	}}
-
+	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(stats.Default, config.Default)}
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
