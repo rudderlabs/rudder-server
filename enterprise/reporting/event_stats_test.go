@@ -156,7 +156,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"status":          "aborted",
 	}).LastValue(), float64(50))
-	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -165,8 +165,8 @@ func TestEventStatsReporter(t *testing.T) {
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
 		"status":          "migrated",
-	}), nil)
-	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+	}))
+	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -175,7 +175,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
 		"status":          "non-terminal",
-	}), nil)
+	}))
 
 	t.Cleanup(func() {
 		cancel()
