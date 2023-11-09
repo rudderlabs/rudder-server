@@ -7,7 +7,6 @@ package rsources
 import (
 	context "context"
 	sql "database/sql"
-	json "encoding/json"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -74,7 +73,7 @@ func (m *MockJobService) EXPECT() *MockJobServiceMockRecorder {
 }
 
 // AddFailedRecords mocks base method.
-func (m *MockJobService) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error {
+func (m *MockJobService) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddFailedRecords", ctx, tx, jobRunId, key, records)
 	ret0, _ := ret[0].(error)
@@ -144,10 +143,10 @@ func (mr *MockJobServiceMockRecorder) DeleteJobStatus(ctx, jobRunId, filter inte
 }
 
 // GetFailedRecords mocks base method.
-func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error) {
+func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV2, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter, paging)
-	ret0, _ := ret[0].(JobFailedRecords)
+	ret0, _ := ret[0].(JobFailedRecordsV2)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -156,6 +155,21 @@ func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, 
 func (mr *MockJobServiceMockRecorder) GetFailedRecords(ctx, jobRunId, filter, paging interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecords", reflect.TypeOf((*MockJobService)(nil).GetFailedRecords), ctx, jobRunId, filter, paging)
+}
+
+// GetFailedRecordsV1 mocks base method.
+func (m *MockJobService) GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFailedRecordsV1", ctx, jobRunId, filter, paging)
+	ret0, _ := ret[0].(JobFailedRecordsV1)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFailedRecordsV1 indicates an expected call of GetFailedRecordsV1.
+func (mr *MockJobServiceMockRecorder) GetFailedRecordsV1(ctx, jobRunId, filter, paging interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFailedRecordsV1", reflect.TypeOf((*MockJobService)(nil).GetFailedRecordsV1), ctx, jobRunId, filter, paging)
 }
 
 // GetStatus mocks base method.

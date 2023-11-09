@@ -103,28 +103,35 @@ func (npt *NextPageToken) String() string {
 	return base64.URLEncoding.EncodeToString(s)
 }
 
-type JobFailedRecords struct {
-	ID     string              `json:"id"`
-	Tasks  []TaskFailedRecords `json:"tasks"`
-	Paging *PagingInfo         `json:"paging,omitempty"`
+type (
+	JobFailedRecordsV2      JobFailedRecords[FailedRecord]
+	JobFailedRecordsV1      JobFailedRecords[json.RawMessage]
+	JobFailedRecords[R any] struct {
+		ID     string                 `json:"id"`
+		Tasks  []TaskFailedRecords[R] `json:"tasks"`
+		Paging *PagingInfo            `json:"paging,omitempty"`
+	}
+)
+
+type TaskFailedRecords[R any] struct {
+	ID      string                   `json:"id"`
+	Sources []SourceFailedRecords[R] `json:"sources"`
 }
 
-type TaskFailedRecords struct {
-	ID      string                `json:"id"`
-	Sources []SourceFailedRecords `json:"sources"`
+type SourceFailedRecords[R any] struct {
+	ID           string                        `json:"id"`
+	Records      []R                           `json:"records"`
+	Destinations []DestinationFailedRecords[R] `json:"destinations"`
 }
 
-type SourceFailedRecords struct {
-	ID           string                     `json:"id"`
-	Records      FailedRecords              `json:"records"`
-	Destinations []DestinationFailedRecords `json:"destinations"`
+type DestinationFailedRecords[R any] struct {
+	ID      string `json:"id"`
+	Records []R    `json:"records"`
 }
-
-type DestinationFailedRecords struct {
-	ID      string        `json:"id"`
-	Records FailedRecords `json:"records"`
+type FailedRecord struct {
+	Record json.RawMessage `json:"record"`
+	Code   int             `json:"code"`
 }
-type FailedRecords []json.RawMessage
 
 // ErrStatusNotFound sentinel error indicating that status cannot be found
 var ErrStatusNotFound = errors.New("Status not found")
@@ -169,10 +176,13 @@ type JobService interface {
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
 
 	// AddFailedRecords adds failed records to the database as part of a transaction
-	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
+	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error
 
 	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
-	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error)
+	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV2, error)
+
+	// GetFailedRecordsV1 gets the failed records for a jobRunID, with filters on taskRunId and sourceId
+	GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
@@ -243,12 +253,16 @@ func (*noopService) IncrementStats(_ context.Context, _ *sql.Tx, _ string, _ Job
 	return nil
 }
 
-func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ []json.RawMessage) error {
+func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ []FailedRecord) error {
 	return nil
 }
 
-func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecords, error) {
-	return JobFailedRecords{}, nil
+func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecordsV2, error) {
+	return JobFailedRecordsV2{}, nil
+}
+
+func (*noopService) GetFailedRecordsV1(_ context.Context, _ string, _ JobFilter, _ PagingInfo) (JobFailedRecordsV1, error) {
+	return JobFailedRecordsV1{}, nil
 }
 
 func (*noopService) CleanupLoop(ctx context.Context) error {
