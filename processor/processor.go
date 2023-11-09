@@ -61,16 +61,16 @@ const (
 	EventFilter        = "EVENT_FILTER"
 )
 
-type sourceObserver interface {
-	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
-}
-
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 	h := &Handle{transformer: transformer, conf: c}
 	h.loadConfig()
 	return h
+}
+
+type sourceObserver interface {
+	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
 }
 
 // Handle is a handle to the processor module

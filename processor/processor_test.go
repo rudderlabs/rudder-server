@@ -103,6 +103,7 @@ func (c *testContext) Setup() {
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
+	c.MockObserver = &mockObserver{}
 }
 
 func (c *testContext) Finish() {
@@ -682,6 +683,8 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -874,6 +877,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should skip writing events belonging to transient sources in archival DB", func() {
@@ -1023,6 +1028,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -1684,8 +1691,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
-			Expect(c.MockObserver.calls).To(HaveLen(3))
-
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
@@ -1715,7 +1720,6 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			processor.dedup = c.MockDedup
-			processor.sourceObservers = []sourceObserver{c.MockObserver}
 			handlePendingGatewayJobs(processor)
 		})
 	})
@@ -3888,6 +3892,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
+	processor.sourceObservers = []sourceObserver{c.MockObserver}
 }
 
 func handlePendingGatewayJobs(processor *Handle) {

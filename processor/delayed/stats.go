@@ -11,16 +11,16 @@ import (
 )
 
 type eventStats struct {
-	Stats     stats.Stats
-	Threshold time.Duration
+	stats     stats.Stats
+	threshold time.Duration
 }
 
 func NewEventStats(stats stats.Stats, config *config.Config) *eventStats {
 	threshold := config.GetDuration("processor.delayed_events.threshold", 10*24, time.Hour)
 
 	return &eventStats{
-		Stats:     stats,
-		Threshold: threshold,
+		stats:     stats,
+		threshold: threshold,
 	}
 }
 
@@ -40,7 +40,7 @@ func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events [
 			continue
 		}
 
-		if sentAt.Sub(originalTimestamp) > s.Threshold {
+		if sentAt.Sub(originalTimestamp) > s.threshold {
 			statusCount["late"]++
 		} else {
 			statusCount["ok"]++
@@ -48,7 +48,7 @@ func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events [
 	}
 
 	for status, count := range statusCount {
-		s.Stats.NewTaggedStat("processor.delayed_events", stats.CountType, stats.Tags{
+		s.stats.NewTaggedStat("processor.delayed_events", stats.CountType, stats.Tags{
 			"sourceId":    source.ID,
 			"sourceType":  source.SourceDefinition.Category,
 			"workspaceId": source.WorkspaceID,
