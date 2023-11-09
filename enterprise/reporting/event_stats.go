@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -24,14 +25,14 @@ const EventsProcessedMetricName = "events_processed_total"
 
 func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 	for index := range metrics {
-		if metrics[index].PUDetails.TerminalPU == true && metrics[index].StatusDetail.Status != "migrated" {
+		if metrics[index].PUDetails.TerminalPU == true && metrics[index].StatusDetail.Status != jobsdb.Migrated.State {
 			tags := stats.Tags{
 				"workspaceId":     es.configSubscriber.WorkspaceIDFromSource(metrics[index].ConnectionDetails.SourceID),
 				"sourceId":        metrics[index].ConnectionDetails.SourceID,
 				"destinationId":   metrics[index].ConnectionDetails.DestinationID,
 				"reportedBy":      metrics[index].PUDetails.PU,
 				"sourceCategory":  metrics[index].ConnectionDetails.SourceCategory,
-				"status_code":     strconv.Itoa(metrics[index].StatusDetail.StatusCode),
+				"statusCode":      strconv.Itoa(metrics[index].StatusDetail.StatusCode),
 				"destinationType": es.configSubscriber.GetDestDetail(metrics[index].ConnectionDetails.DestinationID).destType,
 				"status":          metrics[index].StatusDetail.Status,
 			}

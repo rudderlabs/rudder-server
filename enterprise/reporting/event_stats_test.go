@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -81,7 +82,7 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 			StatusDetail: &types.StatusDetail{
 				Count:      10,
-				Status:     "succeeded",
+				Status:     jobsdb.Succeeded.State,
 				StatusCode: 200,
 			},
 		},
@@ -97,7 +98,7 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 			StatusDetail: &types.StatusDetail{
 				Count:      50,
-				Status:     "aborted",
+				Status:     jobsdb.Aborted.State,
 				StatusCode: 500,
 			},
 		},
@@ -113,7 +114,7 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 			StatusDetail: &types.StatusDetail{
 				Count:      50,
-				Status:     "migrated",
+				Status:     jobsdb.Migrated.State,
 				StatusCode: 500,
 			},
 		},
@@ -142,9 +143,9 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"status_code":     "200",
+		"statusCode":      "200",
 		"destinationType": "test-destination-name",
-		"status":          "succeeded",
+		"status":          jobsdb.Succeeded.State,
 	}).LastValue(), float64(10))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -152,9 +153,9 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"status_code":     "500",
+		"statusCode":      "500",
 		"destinationType": "test-destination-name",
-		"status":          "aborted",
+		"status":          jobsdb.Aborted.State,
 	}).LastValue(), float64(50))
 	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -162,9 +163,9 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"status_code":     "500",
+		"statusCode":      "500",
 		"destinationType": "test-destination-name",
-		"status":          "migrated",
+		"status":          jobsdb.Migrated.State,
 	}))
 	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -172,7 +173,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"status_code":     "500",
+		"statusCode":      "500",
 		"destinationType": "test-destination-name",
 		"status":          "non-terminal",
 	}))
