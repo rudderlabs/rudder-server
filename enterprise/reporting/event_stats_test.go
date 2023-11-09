@@ -44,7 +44,7 @@ func TestEventStatsReporter(t *testing.T) {
 									DestinationDefinition: backendconfig.DestinationDefinitionT{
 										Name: "test-destination-name",
 									},
-								}, // Added a comma here
+								},
 							},
 						},
 					},
@@ -113,7 +113,7 @@ func TestEventStatsReporter(t *testing.T) {
 				TerminalPU: true,
 			},
 			StatusDetail: &types.StatusDetail{
-				Count:      50,
+				Count:      150,
 				Status:     jobsdb.Migrated.State,
 				StatusCode: 500,
 			},
@@ -159,7 +159,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Aborted.State,
 	}).LastValue(), float64(50))
-	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -169,7 +169,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "true",
 		"status":          jobsdb.Migrated.State,
-	}))
+	}).LastValue(), float64(150))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
