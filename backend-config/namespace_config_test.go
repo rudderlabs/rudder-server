@@ -151,7 +151,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		receivedUpdatedAfter []time.Time
 	)
 
-	responseBody, err := os.ReadFile("./testdata/sample_namespace.json")
+	responseBodyFromFile, err := os.ReadFile("./testdata/sample_namespace.json")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +164,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		var (
 			err              error
 			updatedAfterTime time.Time
+			responseBody     []byte
 		)
 		for k, v := range r.URL.Query() {
 			if k != "updatedAfter" {
@@ -178,6 +179,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 
 		switch requestNumber {
 		case 0: // 1st request, return file content as is
+			responseBody = responseBodyFromFile
 		case 1: // 2nd request, return new workspace, no updates for the other 2
 			responseBody = []byte(fmt.Sprintf(`{
 				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"foo"},{"versionId":"bar"}]},
@@ -197,6 +199,8 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 			}`)
 		case 5: // new workspace, but it's update time is before the last request, so no updates
 			responseBody = []byte(`{"someWorkspaceID": null}`)
+		default:
+			responseBody = responseBodyFromFile
 		}
 
 		_, _ = w.Write(responseBody)
@@ -275,8 +279,19 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	c, err = client.Get(ctx)
 	require.ErrorIs(t, err, ErrIncrementalUpdateFailed)
 	require.Len(t, c, 0)
+	require.Len(t, receivedUpdatedAfter, 5)
 	require.NotContains(t, c, "someNewWorkspaceID")
 	require.Equal(t, time.Time{}, client.lastUpdatedAt)
+
+	// send the request again
+	// shouldn't have an updated after (essentially a full sync)
+	// in this case, the config server just returns the same config as in the file
+	c, err = client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, c, 2)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Len(t, receivedUpdatedAfter, 5, "The request should not have updatedAfter in the query params")
 }
 
 type backendConfigServer struct {
