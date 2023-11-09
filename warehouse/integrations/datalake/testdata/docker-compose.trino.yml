@@ -1,7 +1,7 @@
 version: '3.7'
 services:
   trino:
-    image: trinodb/trino:362
+    image: trinodb/trino:latest
     ports:
       - "8080"
     volumes:
@@ -13,6 +13,12 @@ services:
         limits:
           cpus: '1'
           memory: 1G
+    healthcheck:
+      test: [ "CMD-SHELL", "/usr/lib/trino/bin/health-check" ]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 25
 
   hive-metastore:
     image: rudderstack/hive-metastore:latest
