@@ -208,17 +208,18 @@ func TestBackoff(t *testing.T) {
 				RetryTime:  time.Now().Add(-1 * time.Hour),
 			},
 		}
-
+		barrier := eventorder.NewBarrier()
 		r := &Handle{
 			logger:                logger.NOP,
 			backgroundCtx:         context.Background(),
 			noOfWorkers:           1,
 			workerInputBufferSize: 3,
+			barrier:               barrier,
 		}
 		workers := []*worker{{
 			logger:  logger.NOP,
 			input:   make(chan workerJob, 3),
-			barrier: eventorder.NewBarrier(),
+			barrier: barrier,
 		}}
 		t.Run("eventorder disabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = false

@@ -369,6 +369,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	)
 	srvMux.Route("/internal", func(r chi.Router) {
 		r.Post("/v1/extract", gw.webExtractHandler())
+		r.Post("/v1/retl", gw.webRetlHandler())
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())

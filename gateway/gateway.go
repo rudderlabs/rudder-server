@@ -16,6 +16,7 @@ const (
 	delimiter                 = "<<>>"
 	eventStreamSourceCategory = "eventStream"
 	extractEvent              = "extract"
+	rETLEvent                 = "record"
 	customVal                 = "GW"
 )
 
