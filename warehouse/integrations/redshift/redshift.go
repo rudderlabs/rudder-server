@@ -833,26 +833,24 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	}
 	defer rs.dropStagingTables(ctx, []string{stagingTableName})
 
-	if rs.shouldMerge() {
-		primaryKey := "id"
-		query = fmt.Sprintf(`DELETE FROM %[1]s.%[2]q USING %[1]s.%[3]q _source
+	primaryKey := "id"
+	query = fmt.Sprintf(`DELETE FROM %[1]s.%[2]q USING %[1]s.%[3]q _source
 			WHERE _source.%[4]s = %[1]s.%[2]s.%[4]s;`,
-			rs.Namespace,
-			warehouseutils.UsersTable,
-			stagingTableName,
-			primaryKey,
-		)
+		rs.Namespace,
+		warehouseutils.UsersTable,
+		stagingTableName,
+		primaryKey,
+	)
 
-		if _, err = txn.ExecContext(ctx, query); err != nil {
-			_ = txn.Rollback()
+	if _, err = txn.ExecContext(ctx, query); err != nil {
+		_ = txn.Rollback()
 
-			rs.logger.Warnw("deleting from users table for dedup", append(logFields,
-				logfield.Query, query,
-				logfield.Error, err.Error(),
-			)...)
-			return map[string]error{
-				warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
-			}
+		rs.logger.Warnw("deleting from users table for dedup", append(logFields,
+			logfield.Query, query,
+			logfield.Error, err.Error(),
+		)...)
+		return map[string]error{
+			warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
 		}
 	}
 
