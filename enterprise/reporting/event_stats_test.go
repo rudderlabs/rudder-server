@@ -93,11 +93,43 @@ func TestEventStatsReporter(t *testing.T) {
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
-				TerminalPU: false,
+				TerminalPU: true,
 			},
 			StatusDetail: &types.StatusDetail{
 				Count:      50,
 				Status:     "aborted",
+				StatusCode: 500,
+			},
+		},
+		{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:       sourceID,
+				DestinationID:  destinationID,
+				SourceCategory: sourceCategory,
+			},
+			PUDetails: types.PUDetails{
+				PU:         reportedBy,
+				TerminalPU: true,
+			},
+			StatusDetail: &types.StatusDetail{
+				Count:      50,
+				Status:     "migrated",
+				StatusCode: 500,
+			},
+		},
+		{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:       sourceID,
+				DestinationID:  destinationID,
+				SourceCategory: sourceCategory,
+			},
+			PUDetails: types.PUDetails{
+				PU:         reportedBy,
+				TerminalPU: false,
+			},
+			StatusDetail: &types.StatusDetail{
+				Count:      50,
+				Status:     "non-terminal",
 				StatusCode: 500,
 			},
 		},
@@ -110,7 +142,6 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"terminal":        "true",
 		"status_code":     "200",
 		"destinationType": "test-destination-name",
 		"status":          "succeeded",
@@ -121,11 +152,30 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationId":   destinationID,
 		"reportedBy":      reportedBy,
 		"sourceCategory":  sourceCategory,
-		"terminal":        "false",
 		"status_code":     "500",
 		"destinationType": "test-destination-name",
 		"status":          "aborted",
 	}).LastValue(), float64(50))
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"status_code":     "500",
+		"destinationType": "test-destination-name",
+		"status":          "migrated",
+	}), nil)
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  sourceCategory,
+		"status_code":     "500",
+		"destinationType": "test-destination-name",
+		"status":          "non-terminal",
+	}), nil)
 
 	t.Cleanup(func() {
 		cancel()
