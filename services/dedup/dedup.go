@@ -29,14 +29,8 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func WithWindow(window time.Duration) OptFn {
-	return func(db *badgerDB) {
-		db.window = misc.SingleValueLoader(window)
-	}
-}
-
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(path string, opts ...OptFn) Dedup {
+func New(path string) Dedup {
 	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 
 	log := logger.NewLogger().Child("dedup")
@@ -68,11 +62,6 @@ func New(path string, opts ...OptFn) Dedup {
 		window: dedupWindow,
 		opts:   badgerOpts,
 	}
-
-	for _, opt := range opts {
-		opt(db)
-	}
-
 	db.start()
 	return &dedup{
 		badgerDB: db,

@@ -13,6 +13,7 @@ import (
 const (
 	FilterEventCode   = 298
 	SuppressEventCode = 299
+	DrainEventCode    = 410
 )
 
 // SingularEventT single event structrue
@@ -21,12 +22,6 @@ type SingularEventT map[string]interface{}
 type SingularEventWithReceivedAt struct {
 	SingularEvent SingularEventT
 	ReceivedAt    time.Time
-}
-
-type SourceInfo struct {
-	SourceID    string
-	SourceType  string
-	WorkspaceID string
 }
 
 // GatewayBatchRequest batch request structure
