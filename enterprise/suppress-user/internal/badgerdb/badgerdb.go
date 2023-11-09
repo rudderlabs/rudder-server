@@ -20,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var ErrKeyNotFound = errors.New("key not found")
-
 // the key used in badgerdb to store the current token
 const tokenKey = "__token__"
 
@@ -146,7 +144,7 @@ func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Me
 	})
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil, ErrKeyNotFound
+			return nil, model.ErrKeyNotFound
 		}
 		return nil, err
 	}

@@ -442,7 +442,6 @@ func TestWorkerWriter(t *testing.T) {
 			defer errIndexDB.TearDown()
 
 			count := 100
-			payloads := make([]payload, 0, count)
 			jobs := make([]*jobsdb.JobT, 0, count)
 
 			for i := 0; i < count; i++ {
@@ -458,7 +457,6 @@ func TestWorkerWriter(t *testing.T) {
 				}
 				p.SetReceivedAt(receivedAt)
 				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
-				_ = append(payloads, p)
 
 				epJSON, err := json.Marshal(p)
 				require.NoError(t, err)

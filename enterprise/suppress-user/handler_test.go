@@ -1,7 +1,6 @@
 package suppression
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -12,11 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-)
-
-var (
-	ErrNoValueFound = errors.New("no value found")
-	ErrNilNil       = errors.New("both nil values returned")
 )
 
 func TestIsSuppressedConcurrency(t *testing.T) {

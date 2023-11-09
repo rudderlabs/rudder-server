@@ -399,10 +399,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
-	if rows.Err() != nil {
-		edr.log.Errorf("Rows error while querying: %v", rows.Err())
-		return []*types.EDReportsDB{}, queryMin.Int64
-	}
 	edr.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 	var metrics []*types.EDReportsDB
@@ -450,6 +446,10 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		metrics = append(metrics, dbEdMetric)
+	}
+	if rows.Err() != nil {
+		edr.log.Errorf("Rows error while querying: %v", rows.Err())
+		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	return metrics, queryMin.Int64
 }

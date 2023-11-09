@@ -197,12 +197,6 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	if err != nil {
 		panic(err)
 	}
-	for rows.Next() {
-	}
-	if err := rows.Err(); err != nil {
-		// Handle rows error
-		panic(err)
-	}
 
 	r.getReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
@@ -238,6 +232,10 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			panic(err)
 		}
 		metricReports = append(metricReports, &metricReport)
+	}
+	if err := rows.Err(); err != nil {
+		// Handle rows error
+		panic(err)
 	}
 
 	return metricReports, queryMin.Int64, err
