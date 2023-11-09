@@ -151,7 +151,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		receivedUpdatedAfter []time.Time
 	)
 
-	responseBody, err := os.ReadFile("./testdata/sample_namespace.json")
+	responseBodyFromFile, err := os.ReadFile("./testdata/sample_namespace.json")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +164,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		var (
 			err              error
 			updatedAfterTime time.Time
+			responseBody     []byte
 		)
 		for k, v := range r.URL.Query() {
 			if k != "updatedAfter" {
@@ -178,6 +179,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 
 		switch requestNumber {
 		case 0: // 1st request, return file content as is
+			responseBody = responseBodyFromFile
 		case 1: // 2nd request, return new workspace, no updates for the other 2
 			responseBody = []byte(fmt.Sprintf(`{
 				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"foo"},{"versionId":"bar"}]},
@@ -195,6 +197,10 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
 				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
 			}`)
+		case 5: // new workspace, but it's update time is before the last request, so no updates
+			responseBody = []byte(`{"someWorkspaceID": null}`)
+		default:
+			responseBody = responseBodyFromFile
 		}
 
 		_, _ = w.Write(responseBody)
@@ -267,6 +273,21 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
 	require.Len(t, receivedUpdatedAfter, 4)
 	require.Equal(t, receivedUpdatedAfter[3], expectedUpdatedAt.Add(2*time.Minute), updatedAfterTimeFormat)
+
+	// send the request again, should receive the new workspace
+	// should trigger a full update
+	c, err = client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, c, 2)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Len(t, receivedUpdatedAfter, 5)
+	require.NotContains(t, c, "someNewWorkspaceID")
+	expectedUpdatedAt, err = time.Parse(updatedAfterTimeFormat, "2022-07-20T10:00:00.000Z")
+	require.NoError(t, err)
+	require.Equal(t, receivedUpdatedAfter[0], expectedUpdatedAt, updatedAfterTimeFormat)
+	require.Equal(t, receivedUpdatedAfter[0], client.lastUpdatedAt, updatedAfterTimeFormat)
+	require.Equal(t, 7, requestNumber)
 }
 
 type backendConfigServer struct {
