@@ -458,7 +458,7 @@ func TestWorkerWriter(t *testing.T) {
 				}
 				p.SetReceivedAt(receivedAt)
 				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
-				payloads = append(payloads, p)
+				_ = append(payloads, p)
 
 				epJSON, err := json.Marshal(p)
 				require.NoError(t, err)
