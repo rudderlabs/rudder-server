@@ -129,7 +129,7 @@ func TestEventStatsReporter(t *testing.T) {
 				TerminalPU: false,
 			},
 			StatusDetail: &types.StatusDetail{
-				Count:      50,
+				Count:      100,
 				Status:     "non-terminal",
 				StatusCode: 500,
 			},
@@ -145,6 +145,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"sourceCategory":  sourceCategory,
 		"statusCode":      "200",
 		"destinationType": "test-destination-name",
+		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
 	}).LastValue(), float64(10))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
@@ -155,6 +156,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"sourceCategory":  sourceCategory,
 		"statusCode":      "500",
 		"destinationType": "test-destination-name",
+		"terminal":        "true",
 		"status":          jobsdb.Aborted.State,
 	}).LastValue(), float64(50))
 	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
@@ -165,9 +167,10 @@ func TestEventStatsReporter(t *testing.T) {
 		"sourceCategory":  sourceCategory,
 		"statusCode":      "500",
 		"destinationType": "test-destination-name",
+		"terminal":        "true",
 		"status":          jobsdb.Migrated.State,
 	}))
-	require.Empty(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
 		"sourceId":        sourceID,
 		"destinationId":   destinationID,
@@ -175,8 +178,9 @@ func TestEventStatsReporter(t *testing.T) {
 		"sourceCategory":  sourceCategory,
 		"statusCode":      "500",
 		"destinationType": "test-destination-name",
+		"terminal":        "false",
 		"status":          "non-terminal",
-	}))
+	}).LastValue(), float64(100))
 
 	t.Cleanup(func() {
 		cancel()
