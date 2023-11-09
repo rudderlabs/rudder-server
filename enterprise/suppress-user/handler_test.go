@@ -19,10 +19,6 @@ var (
 	ErrNilNil       = errors.New("both nil values returned")
 )
 
-func init() {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-}
-
 func TestIsSuppressedConcurrency(t *testing.T) {
 	log := &tLog{Logger: logger.NOP}
 	h := newHandler(&fakeSuppresser{}, log)
@@ -48,7 +44,7 @@ func (*fakeSuppresser) Suppressed(_, _, _ string) (*model.Metadata, error) {
 	if rand.New(rand.NewSource(time.Now().UnixNano())).Intn(2)%2 == 0 { // skipcq: GSC-G404
 		return nil, fmt.Errorf("some error")
 	} else {
-		return nil, ErrNilNil
+		return &model.Metadata{}, nil
 	}
 }
 
