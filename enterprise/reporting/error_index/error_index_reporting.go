@@ -282,10 +282,10 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 	for {
 		start := time.Now()
 		sources, err := errIndexDB.GetDistinctParameterValues(ctx, "source_id")
+		if err != nil && ctx.Err() != nil {
+			return nil //nolint:nilerr
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
 			return fmt.Errorf("getting distinct parameter values: %w", err)
 		}
 
