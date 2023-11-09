@@ -284,7 +284,6 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		sources, err := errIndexDB.GetDistinctParameterValues(ctx, "source_id")
 		if err != nil {
 			if ctx.Err() != nil {
-
 				return ctx.Err()
 			}
 			return fmt.Errorf("getting distinct parameter values: %w", err)
