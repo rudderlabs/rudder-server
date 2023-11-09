@@ -36,7 +36,7 @@ require (
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v2 v2.0.1
-	github.com/apache/pulsar-client-go v0.11.0
+	github.com/apache/pulsar-client-go v0.11.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.46.4
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
