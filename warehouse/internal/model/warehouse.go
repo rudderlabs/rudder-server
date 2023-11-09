@@ -35,6 +35,12 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 func (w *Warehouse) GetPreferAppendSetting() bool {
 	destConfig := w.Destination.Config
 	// defaulting to false if not defined for backwards compatibility with previous behaviour
-	value, _ := destConfig[PreferAppendSetting.string()].(bool)
+	value, ok := destConfig[PreferAppendSetting.string()].(bool)
+	if !ok {
+		if w.Type == "BQ" {
+			return true // defaulting to true for BQ
+		}
+		return false
+	}
 	return value
 }
