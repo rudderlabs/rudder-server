@@ -111,24 +111,13 @@ const (
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
 
-	SourceID3 = "source-id-3"
-	SourceID4 = "source-id-4"
-	WriteKey3 = "write-key-3"
-	WriteKey4 = "write-key-4"
-	DestID1   = "dest-id-1"
-	DestID2   = "dest-id-2"
-	DestID3   = "dest-id-3"
-	DestID4   = "dest-id-4"
-	DestID5   = "dest-id-5"
-	DestID6   = "dest-id-6"
-	DestID7   = "dest-id-7"
-	DestID8   = "dest-id-8"
-	DestID9   = "dest-id-9"
-	DestID10  = "dest-id-10"
-	DestID11  = "dest-id-11"
-	DestID12  = "dest-id-12"
-	DestID13  = "dest-id-13"
-	DestID14  = "dest-id-14"
+	SourceIDOneTrustConsent  = "source-id-oneTrust-consent"
+	SourceIDOneTrustConsent2 = "source-id-oneTrust-consent2"
+	WriteKeyOneTrustConsent  = "write-key-oneTrust-consent"
+	WriteKeyOneTrustConsent2 = "write-key-oneTrust-consent2"
+
+	SourceIDKetchConsent = "source-id-ketch-consent"
+	WriteKeyKetchConsent = "write-key-ketch-consent"
 )
 
 var (
@@ -323,13 +312,13 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:          SourceID3,
-			WriteKey:    WriteKey3,
+			ID:          SourceIDOneTrustConsent,
+			WriteKey:    WriteKeyOneTrustConsent,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
 				{
-					ID:                 DestID1,
+					ID:                 "dest-id-1",
 					Name:               "D1",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -348,7 +337,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID2,
+					ID:                 "dest-id-2",
 					Name:               "D2",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -366,7 +355,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID3,
+					ID:                 "dest-id-3",
 					Name:               "D3",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -386,7 +375,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID4,
+					ID:                 "dest-id-4",
 					Name:               "D4",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -422,13 +411,13 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:          SourceID4,
-			WriteKey:    WriteKey4,
+			ID:          SourceIDOneTrustConsent2,
+			WriteKey:    WriteKeyOneTrustConsent2,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
 				{
-					ID:                 DestID6,
+					ID:                 "dest-id-6",
 					Name:               "D6",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -466,7 +455,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID7,
+					ID:                 "dest-id-7",
 					Name:               "D7",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -500,7 +489,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID8,
+					ID:                 "dest-id-8",
 					Name:               "D8",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -523,7 +512,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID9,
+					ID:                 "dest-id-9",
 					Name:               "D9",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -544,7 +533,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID10,
+					ID:                 "dest-id-10",
 					Name:               "D10",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -559,7 +548,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID11,
+					ID:                 "dest-id-11",
 					Name:               "D11",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -583,7 +572,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID12,
+					ID:                 "dest-id-12",
 					Name:               "D12",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -607,7 +596,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID13,
+					ID:                 "dest-id-13",
 					Name:               "D13",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -631,7 +620,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID14,
+					ID:                 "dest-id-14",
 					Name:               "D14",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -644,6 +633,103 @@ var sampleBackendConfig = backendconfig.ConfigT{
 									{"consent": "custom consent category 3"},
 								},
 							},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceIDKetchConsent,
+			WriteKey:    WriteKeyKetchConsent,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 "dest-id-5",
+					Name:               "D5",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-6",
+					Name:               "D6",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-7",
+					Name:               "D7",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-8",
+					Name:               "D8",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose3"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-9",
+					Name:               "D9",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -2539,7 +2625,7 @@ var _ = Describe("Processor", Ordered, func() {
 	})
 
 	Context("isDestinationEnabled", func() {
-		It("should filter based on consent management preferences", func() {
+		It("should filter based on oneTrust consent management preferences", func() {
 			eventWithDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2718,83 +2804,132 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceID3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithDeniedConsents,
 					processor.getEnabledDestinations(
-						SourceID3,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(3)) // all except D1 and D3
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceID3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutDeniedConsents,
 					processor.getEnabledDestinations(
-						SourceID3,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(5)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceID3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
-						SourceID3,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(5)) // all
 
 			// Generic consent management tests
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceID4)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
-						SourceID4,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithDeniedConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceID4,
+						SourceIDOneTrustConsent2,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(7)) // all except D7 and D8
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutDeniedConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceID4,
+						SourceIDOneTrustConsent2,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceID4)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithCustomConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceID4,
+						SourceIDOneTrustConsent2,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(5)) // all except D6, D12 and D14
+		})
+		It("should filter based on ketch consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
+
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			filteredDestinations := processor.filterDestinations(
+				event,
+				processor.getEnabledDestinations(
+					SourceIDKetchConsent,
+					"destination-definition-name-enabled",
+				),
+			)
+			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
 

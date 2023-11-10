@@ -33,27 +33,36 @@ type GenericConsentManagementProviderConfig struct {
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func GetConsentCategories(dest *backendconfig.DestinationT) []string {
-	config := dest.Config
-	cookieCategories, _ := misc.MapLookup(
-		config,
-		"oneTrustCookieCategories",
-	).([]interface{})
+func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
+	cookieCategories, _ := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]interface{})
 	if len(cookieCategories) == 0 {
 		return nil
 	}
-	return lo.FilterMap(
-		cookieCategories,
-		func(cookieCategory interface{}, _ int) (string, bool) {
-			switch category := cookieCategory.(type) {
-			case map[string]interface{}:
-				cCategory, ok := category["oneTrustCookieCategory"].(string)
-				return cCategory, ok && cCategory != ""
-			default:
-				return "", false
-			}
-		},
-	)
+	return lo.FilterMap(cookieCategories, func(cookieCategory interface{}, _ int) (string, bool) {
+		switch category := cookieCategory.(type) {
+		case map[string]interface{}:
+			cCategory, ok := category["oneTrustCookieCategory"].(string)
+			return cCategory, ok && cCategory != ""
+		default:
+			return "", false
+		}
+	})
+}
+
+func GetKetchConsentCategories(dest *backendconfig.DestinationT) []string {
+	consentPurposes, _ := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]interface{})
+	if len(consentPurposes) == 0 {
+		return nil
+	}
+	return lo.FilterMap(consentPurposes, func(consentPurpose interface{}, _ int) (string, bool) {
+		switch t := consentPurpose.(type) {
+		case map[string]interface{}:
+			purpose, ok := t["purpose"].(string)
+			return purpose, ok && purpose != ""
+		default:
+			return "", false
+		}
+	})
 }
 
 func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]GenericConsentManagementProviderData {

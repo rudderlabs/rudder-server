@@ -129,7 +129,8 @@ type Handle struct {
 		sourceIdSourceMap                map[string]backendconfig.SourceT
 		workspaceLibrariesMap            map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap           map[string]string
-		destConsentCategories            map[string][]string
+		oneTrustConsentCategoriesMap     map[string][]string
+		ketchConsentCategoriesMap        map[string][]string
 		destGenericConsentManagementData map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData
 		batchDestinations                []string
 		configSubscriberLock             sync.RWMutex
@@ -735,7 +736,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
-			destConsentCategories            = make(map[string][]string)
+			oneTrustConsentCategoriesMap     = make(map[string][]string)
+			ketchConsentCategoriesMap        = make(map[string][]string)
 			destGenericConsentManagementData = make(map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData)
 			workspaceLibrariesMap            = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap           = make(map[string][]backendconfig.DestinationT)
@@ -752,7 +754,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						destConsentCategories[destination.ID] = consentmanagementfilter.GetConsentCategories(destination)
+						oneTrustConsentCategoriesMap[destination.ID] = consentmanagementfilter.GetOneTrustConsentCategories(destination)
+						ketchConsentCategoriesMap[destination.ID] = consentmanagementfilter.GetKetchConsentCategories(destination)
 						destGenericConsentManagementData[destination.ID] = consentmanagementfilter.GetGenericConsentManagementData(destination)
 					}
 				}
@@ -761,7 +764,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
 		}
 		proc.config.configSubscriberLock.Lock()
-		proc.config.destConsentCategories = destConsentCategories
+		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
+		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
 		proc.config.destGenericConsentManagementData = destGenericConsentManagementData
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
@@ -774,31 +778,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			proc.config.asyncInit.Done()
 		}
 	}
-}
-
-func (proc *Handle) getConsentManagementData(destinationID string) []string {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	return proc.config.destConsentCategories[destinationID]
-}
-
-// returns the consent management data for a destination and provider
-func (proc *Handle) getGCMData(destinationID, provider string) consentmanagementfilter.GenericConsentManagementProviderData {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-
-	defRetVal := consentmanagementfilter.GenericConsentManagementProviderData{}
-	destinationData, ok := proc.config.destGenericConsentManagementData[destinationID]
-	if !ok {
-		return defRetVal
-	}
-
-	providerData, ok := destinationData[provider]
-	if !ok {
-		return defRetVal
-	}
-
-	return providerData
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -2883,42 +2862,6 @@ func filterConfig(eventCopy *transformer.TransformerEvent) {
 
 func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
 	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
-}
-
-func (proc *Handle) filterDestinations(
-	event types.SingularEventT,
-	dests []backendconfig.DestinationT,
-) []backendconfig.DestinationT {
-	consentManagementInfo := consentmanagementfilter.GetConsentManagementInfo(event)
-	if len(consentManagementInfo.DeniedConsentIds) == 0 && len(consentManagementInfo.AllowedConsentIds) == 0 {
-		return dests
-	}
-
-	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
-		// This field differentiates legacy and generic consent management
-		if consentManagementInfo.Provider != "" {
-			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
-
-				finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
-				if consentManagementInfo.Provider == "custom" {
-					finalResolutionStrategy = cmpData.ResolutionStrategy
-				}
-
-				switch finalResolutionStrategy {
-				case "or":
-					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds)) > 0
-				default: // "and"
-					return slices.Equal(cmpData.Consents, lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds))
-				}
-			}
-		} else {
-			// Legacy consent management
-			if configuredConsentIds := proc.getConsentManagementData(dest.ID); len(configuredConsentIds) > 0 {
-				return len(lo.Intersect(configuredConsentIds, consentManagementInfo.DeniedConsentIds)) == 0
-			}
-		}
-		return true
-	})
 }
 
 // check if event has eligible destinations to send to

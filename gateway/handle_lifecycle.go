@@ -359,9 +359,18 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs
-	rsourcesHandler := rsources_http.NewHandler(
+	rsourcesHandler := rsources_http.NewV1Handler(
 		gw.rsourcesService,
-		gw.logger.Child("rsources"))
+		gw.logger.Child("rsources"),
+	)
+	failedKeysHandler := rsources_http.FailedKeysHandler(
+		gw.rsourcesService,
+		gw.logger.Child("rsources_failed_keys"),
+	)
+	jobStatusHandler := rsources_http.JobStatusHandler(
+		gw.rsourcesService,
+		gw.logger.Child("rsources_job_status"),
+	)
 	srvMux.Use(
 		chiware.StatMiddleware(ctx, stats.Default, component),
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
@@ -374,6 +383,8 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
+		r.Mount("/v2/failed-keys", withContentType("application/json; charset=utf-8", failedKeysHandler.ServeHTTP))
+		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", jobStatusHandler.ServeHTTP))
 	})
 	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
