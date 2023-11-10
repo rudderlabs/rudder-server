@@ -3,9 +3,9 @@ package reporting
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"golang.org/x/sync/errgroup"
 
@@ -23,6 +23,7 @@ type Mediator struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	reporters []types.Reporting
+	stats     stats.Stats
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -31,6 +32,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 
 	rm := &Mediator{
 		log:    log,
+		stats:  stats.Default,
 		g:      g,
 		ctx:    ctx,
 		cancel: cancel,
@@ -48,7 +50,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	})
 
 	// default reporting implementation
-	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber)
+	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation
@@ -62,6 +64,8 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 		errorIndexReporter := erridx.NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default, stats.Default)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}
+	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
+	rm.reporters = append(rm.reporters, eventStatsReporter)
 
 	return rm
 }
