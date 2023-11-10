@@ -466,7 +466,7 @@ func (proc *Handle) Setup(
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
-	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(stats.Default, config.Default)}
+	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -1445,7 +1445,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		var gatewayBatchEvent types.GatewayBatchRequest
 		err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
 		if err != nil {
-			proc.logger.Warnf("json parsing of event payload for %d: %v", batchEvent.JobID, err)
+			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
 		var eventParams types.EventParams
