@@ -12,15 +12,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -67,7 +65,8 @@ func (pg *Postgres) loadTable(
 		logfield.TableName, tableName,
 		logfield.ShouldMerge, pg.shouldMerge(),
 	)
-	log.Infow("started loading")
+	// NOTE: ignore the above, consider only the next line as a showcase
+	log.Infon("started loading", labels.DestinationId(pg.Warehouse.Destination.ID))
 	defer log.Infow("completed loading")
 
 	log.Debugw("setting search path")
