@@ -2842,7 +2842,7 @@ var _ = Describe("Processor", Ordered, func() {
 			).To(Equal(5)) // all
 
 			// Generic consent management tests
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent2)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutConsentManagementData,
