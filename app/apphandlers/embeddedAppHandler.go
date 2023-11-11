@@ -31,6 +31,7 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -129,6 +130,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return err
 	}
+
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		FeaturesRetryMaxAttempts: 10,
+	})
 
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
@@ -257,6 +264,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		transientSources,
 		fileUploaderProvider,
 		rsourcesService,
+		transformerFeaturesService,
 		destinationHandle,
 		transformationhandle,
 		enrichers,
@@ -319,7 +327,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
-		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
+		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
