@@ -394,7 +394,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID5,
+					ID:                 "dest-id-5",
 					Name:               "D5",
 					Enabled:            true,
 					IsProcessorEnabled: true,

@@ -12,76 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-func TestDeniedConsentCategories(t *testing.T) {
-	testCases := []struct {
-		name     string
-		event    types.SingularEventT
-		expected []string
-	}{
-		{
-			name:     "no context",
-			event:    types.SingularEventT{},
-			expected: nil,
-		},
-		{
-			name: "no consentManagement",
-			event: types.SingularEventT{
-				"context": map[string]interface{}{},
-			},
-			expected: nil,
-		},
-		{
-			name: "no deniedConsentIds",
-			event: types.SingularEventT{
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{},
-				},
-			},
-			expected: nil,
-		},
-		{
-			name: "invalid deniedConsentIds",
-			event: types.SingularEventT{
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": "foo",
-					},
-				},
-			},
-			expected: nil,
-		},
-		{
-			name: "empty deniedConsentIds",
-			event: types.SingularEventT{
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{},
-					},
-				},
-			},
-			expected: nil,
-		},
-		{
-			name: "some deniedConsentIds",
-			event: types.SingularEventT{
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"foo", 123},
-					},
-				},
-			},
-			expected: []string{"foo"},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			require.EqualValues(t, tc.expected, deniedConsentCategories(tc.event))
-		})
-	}
-}
-
-func TestOneTrustConsentCategories(t *testing.T) {
+func TestGetOneTrustConsentCategories(t *testing.T) {
 	testCases := []struct {
 		name     string
 		dest     *backendconfig.DestinationT
@@ -122,12 +53,12 @@ func TestOneTrustConsentCategories(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.EqualValues(t, tc.expected, oneTrustConsentCategories(tc.dest))
+			require.EqualValues(t, tc.expected, GetOneTrustConsentCategories(tc.dest))
 		})
 	}
 }
 
-func TestKetchConsentCategories(t *testing.T) {
+func TestGetKetchConsentCategories(t *testing.T) {
 	testCases := []struct {
 		name     string
 		dest     *backendconfig.DestinationT
@@ -167,7 +98,7 @@ func TestKetchConsentCategories(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.EqualValues(t, tc.expected, ketchConsentCategories(tc.dest))
+			require.EqualValues(t, tc.expected, GetKetchConsentCategories(tc.dest))
 		})
 	}
 }
@@ -361,8 +292,8 @@ func TestHandle_FilterDestinations(t *testing.T) {
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
 
 			for _, dest := range tc.destinations {
-				proc.config.oneTrustConsentCategoriesMap[dest.ID] = oneTrustConsentCategories(&dest)
-				proc.config.ketchConsentCategoriesMap[dest.ID] = ketchConsentCategories(&dest)
+				proc.config.oneTrustConsentCategoriesMap[dest.ID] = GetOneTrustConsentCategories(&dest)
+				proc.config.ketchConsentCategoriesMap[dest.ID] = GetKetchConsentCategories(&dest)
 			}
 
 			filteredDestinations := proc.filterDestinations(tc.event, tc.destinations)
@@ -370,6 +301,419 @@ func TestHandle_FilterDestinations(t *testing.T) {
 			require.EqualValues(t, tc.expectedDestIDs, lo.Map(filteredDestinations, func(dest backendconfig.DestinationT, _ int) string {
 				return dest.ID
 			}))
+		})
+	}
+}
+
+func TestGetConsentManagementInfo(t *testing.T) {
+	type testCaseT struct {
+		description string
+		input       types.SingularEventT
+		expected    ConsentManagementInfo
+	}
+
+	defConsentManagementInfo := ConsentManagementInfo{}
+	testCases := []testCaseT{
+		{
+			description: "should return empty consent management info when no context is sent",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return empty consent management info when no consent management data is sent",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return default values for allowed consent IDs when it is missing in the event",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider": "custom",
+						"allowedConsentIds": []string{
+							"consent category 1",
+							"consent category 2",
+						},
+					},
+				},
+			},
+			expected: ConsentManagementInfo{
+				Provider: "",
+				AllowedConsentIds: []string{
+					"consent category 1",
+					"consent category 2",
+				},
+				DeniedConsentIds:   []string{},
+				ResolutionStrategy: "",
+			},
+		},
+		{
+			description: "should return default values for denied consent IDs when it is missing in the event",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider": "custom",
+						"deniedConsentIds": []string{
+							"consent category 1",
+							"consent category 2",
+						},
+					},
+				},
+			},
+			expected: ConsentManagementInfo{
+				Provider: "",
+				DeniedConsentIds: []string{
+					"consent category 1",
+					"consent category 2",
+				},
+				AllowedConsentIds:  []string{},
+				ResolutionStrategy: "",
+			},
+		},
+		{
+			description: "should return default values for allowed consent IDs when it is malformed",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":          "custom",
+						"allowedConsentIds": "dummy",
+					},
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return default values for denied consent IDs when it is malformed",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":         "custom",
+						"deniedConsentIds": "dummy",
+					},
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return empty consent management info when consent management data is not a valid object",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": "not an object",
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return empty consent management info when consent management data is malformed",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider": make(chan int),
+					},
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return empty consent management info when consent management data is not as per the expected structure",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"allowedConsentIds": map[string]interface{}{ // this should have been an array
+							"consent": "consent category 1",
+						},
+					},
+				},
+			},
+			expected: defConsentManagementInfo,
+		},
+		{
+			description: "should return consent management info when consent management data is sent correctly",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider": "custom",
+						"allowedConsentIds": []string{
+							"consent category 1",
+							"consent category 2",
+							"",
+							"",
+						},
+						"deniedConsentIds": []string{
+							"consent category 3",
+							"",
+							"consent category 4",
+							"",
+						},
+						"resolutionStrategy": "and",
+						"extra":              "extra field",
+					},
+				},
+			},
+			expected: ConsentManagementInfo{
+				Provider: "custom",
+				AllowedConsentIds: []string{
+					"consent category 1",
+					"consent category 2",
+				},
+				DeniedConsentIds: []string{
+					"consent category 3",
+					"consent category 4",
+				},
+				ResolutionStrategy: "and",
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			actual := GetConsentManagementInfo(testCase.input)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestGetGenericConsentManagementData(t *testing.T) {
+	type testCaseT struct {
+		description string
+		input       *backendconfig.DestinationT
+		expected    map[string]GenericConsentManagementProviderData
+	}
+
+	defGenericConsentManagementData := make(map[string]GenericConsentManagementProviderData)
+	testCases := []testCaseT{
+		{
+			description: "should return empty generic consent management data when no consent management config is present",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+			},
+			expected: defGenericConsentManagementData,
+		},
+		{
+			description: "should return empty generic consent management data when consent management config is malformed",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"consentManagement": make(chan int),
+				},
+			},
+			expected: defGenericConsentManagementData,
+		},
+		{
+			description: "should return empty generic consent management data when consent management config is not as per the expected structure",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"consentManagement": map[string]interface{}{ // this should be an array
+						"provider": "dummy",
+					},
+				},
+			},
+			expected: defGenericConsentManagementData,
+		},
+		{
+			description: "should return empty generic consent management data when consent management config entries count is 0",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"consentManagement": []interface{}{},
+				},
+			},
+			expected: defGenericConsentManagementData,
+		},
+		{
+			description: "should return generic consent management data when consent management config entries are properly defined",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"consentManagement": []interface{}{
+						map[string]interface{}{
+							"provider": "oneTrust",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "consent category 1",
+								},
+								{
+									"consent": "",
+								},
+								{
+									"consent": "consent category 2",
+								},
+							},
+						},
+						map[string]interface{}{
+							"provider": "ketch",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "purpose 1",
+								},
+								{
+									"consent": "",
+								},
+								{
+									"consent": "purpose 2",
+								},
+							},
+						},
+						map[string]interface{}{
+							"provider": "custom",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "custom consent 1",
+								},
+								{
+									"consent": "",
+								},
+								{
+									"consent": "custom consent 2",
+								},
+								{
+									"consent": "",
+								},
+							},
+							"resolutionStrategy": "or",
+						},
+					},
+				},
+			},
+			expected: map[string]GenericConsentManagementProviderData{
+				"oneTrust": {
+					Consents: []string{
+						"consent category 1",
+						"consent category 2",
+					},
+				},
+				"ketch": {
+					Consents: []string{
+						"purpose 1",
+						"purpose 2",
+					},
+				},
+				"custom": {
+					Consents: []string{
+						"custom consent 1",
+						"custom consent 2",
+					},
+					ResolutionStrategy: "or",
+				},
+			},
+		},
+		{
+			description: "should return generic consent management data excluding the providers with empty consents",
+			input: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"consentManagement": []interface{}{
+						map[string]interface{}{
+							"provider": "oneTrust",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "consent category 1",
+								},
+								{
+									"consent": "",
+								},
+								{
+									"consent": "consent category 2",
+								},
+							},
+						},
+						map[string]interface{}{
+							"provider": "ketch",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "",
+								},
+							},
+						},
+						map[string]interface{}{
+							"provider": "custom",
+							"consents": []map[string]interface{}{
+								{
+									"consent": "",
+								},
+								{
+									"consent": "",
+								},
+							},
+							"resolutionStrategy": "or",
+						},
+					},
+				},
+			},
+			expected: map[string]GenericConsentManagementProviderData{
+				"oneTrust": {
+					Consents: []string{
+						"consent category 1",
+						"consent category 2",
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			actual := GetGenericConsentManagementData(testCase.input)
+			require.Equal(t, testCase.expected, actual)
 		})
 	}
 }

@@ -32,7 +32,6 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/consentmanagementfilter"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
@@ -131,7 +130,7 @@ type Handle struct {
 		destinationIDtoTypeMap           map[string]string
 		oneTrustConsentCategoriesMap     map[string][]string
 		ketchConsentCategoriesMap        map[string][]string
-		destGenericConsentManagementData map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData
+		destGenericConsentManagementData map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations                []string
 		configSubscriberLock             sync.RWMutex
 		enableEventSchemasFeature        bool
@@ -738,7 +737,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			oneTrustConsentCategoriesMap     = make(map[string][]string)
 			ketchConsentCategoriesMap        = make(map[string][]string)
-			destGenericConsentManagementData = make(map[string]map[string]consentmanagementfilter.GenericConsentManagementProviderData)
+			destGenericConsentManagementData = make(map[string]map[string]GenericConsentManagementProviderData)
 			workspaceLibrariesMap            = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap           = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap                = map[string]backendconfig.SourceT{}
@@ -754,9 +753,9 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						oneTrustConsentCategoriesMap[destination.ID] = consentmanagementfilter.GetOneTrustConsentCategories(destination)
-						ketchConsentCategoriesMap[destination.ID] = consentmanagementfilter.GetKetchConsentCategories(destination)
-						destGenericConsentManagementData[destination.ID] = consentmanagementfilter.GetGenericConsentManagementData(destination)
+						oneTrustConsentCategoriesMap[destination.ID] = GetOneTrustConsentCategories(destination)
+						ketchConsentCategoriesMap[destination.ID] = GetKetchConsentCategories(destination)
+						destGenericConsentManagementData[destination.ID] = GetGenericConsentManagementData(destination)
 					}
 				}
 			}
