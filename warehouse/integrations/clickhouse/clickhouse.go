@@ -793,7 +793,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = `'/clickhouse/{cluster}/tables/{uuid}/{database}/{table}', '{replica}'`
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	ch.logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -835,7 +835,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = `'/clickhouse/{cluster}/tables/{uuid}/{database}/{table}', '{replica}'`
 	}
 	var orderByClause string
 	if len(sortKeyFields) > 0 {
