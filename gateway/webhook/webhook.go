@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -85,9 +86,9 @@ type webhookStatsT struct {
 }
 
 type batchWebhookTransformerT struct {
-	webhook              *HandleT
-	stats                *webhookStatsT
-	sourceTransformerURL string
+	webhook                *HandleT
+	stats                  *webhookStatsT
+	sourceTransformAdapter func(ctx context.Context) (sourceTransformAdapter, error)
 }
 
 type batchTransformerOption func(bt *batchWebhookTransformerT)
@@ -262,6 +263,28 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
+
+		// If unable to fetch features from transformer, send GatewayTimeout to all requests
+		// TODO: Remove timeout from here after timeout handler is added in gateway
+		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
+		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
+		if err != nil {
+			for _, req := range breq.batchRequest {
+				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
+			}
+			cancel()
+			continue
+		}
+		cancel()
+
+		transformerURL, err := sourceTransformAdapter.getTransformerURL(breq.sourceType)
+		if err != nil {
+			for _, req := range breq.batchRequest {
+				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.ServiceUnavailable), Err: response.GetStatus(response.ServiceUnavailable)}
+			}
+			continue
+		}
+
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
@@ -297,7 +320,14 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			payloadArr = append(payloadArr, body)
+			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, body)
+			if err != nil {
+				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidWebhookSource)}
+				continue
+			}
+
+			payloadArr = append(payloadArr, payload)
+
 			webRequests = append(webRequests, req)
 		}
 
@@ -313,7 +343,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
 
 		transformStart := time.Now()
-		batchResponse := bt.transform(payloadArr, breq.sourceType)
+		batchResponse := bt.transform(payloadArr, transformerURL)
 
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
@@ -449,12 +479,14 @@ func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.Aut
 }
 
 func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*webhookT, statusCode int) {
-	reqsGroupedBySource := lo.GroupBy(reqs, func(request *webhookT) gwtypes.AuthRequestContext {
-		return *request.authContext
+	authCtxs := lo.SliceToMap(reqs, func(request *webhookT) (string, *gwtypes.AuthRequestContext) {
+		return request.authContext.WriteKey, request.authContext
 	})
-
-	for si, reqs := range reqsGroupedBySource {
-		webhook.countWebhookErrors(sourceType, &si, reason, statusCode, len(reqs))
+	reqsGroupedBySource := lo.GroupBy(reqs, func(request *webhookT) string {
+		return request.authContext.WriteKey
+	})
+	for writeKey, reqs := range reqsGroupedBySource {
+		webhook.countWebhookErrors(sourceType, authCtxs[writeKey], reason, statusCode, len(reqs))
 	}
 }
 

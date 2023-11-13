@@ -7,13 +7,78 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
+
+type sourceTransformAdapter interface {
+	getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error)
+	getTransformerURL(sourceType string) (string, error)
+}
+
+type v0Adapter struct{}
+
+type v1Adapter struct{}
+
+type V1TransformerEvent struct {
+	Event  json.RawMessage       `json:"event"`
+	Source backendconfig.SourceT `json:"source"`
+}
+
+func (v0 *v0Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
+	return body, nil
+}
+
+func (v0 *v0Adapter) getTransformerURL(sourceType string) (string, error) {
+	return getTransformerURL(transformer.V0, sourceType)
+}
+
+func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
+	source := authCtx.Source
+
+	v1TransformerEvent := V1TransformerEvent{
+		Event: body,
+		Source: backendconfig.SourceT{
+			ID:               source.ID,
+			OriginalID:       source.OriginalID,
+			Name:             source.Name,
+			SourceDefinition: source.SourceDefinition,
+			Config:           source.Config,
+			Enabled:          source.Enabled,
+			WorkspaceID:      source.WorkspaceID,
+			WriteKey:         source.WriteKey,
+			Transient:        source.Transient,
+		},
+	}
+
+	return json.Marshal(v1TransformerEvent)
+}
+
+func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
+	return getTransformerURL(transformer.V1, sourceType)
+}
+
+func newSourceTransformAdapter(version string) sourceTransformAdapter {
+	switch version {
+	case "v1":
+		return &v1Adapter{}
+	}
+
+	return &v0Adapter{}
+}
+
+func getTransformerURL(version, sourceType string) (string, error) {
+	baseURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	return url.JoinPath(baseURL, version, "sources", sourceType)
+}
 
 type outputToSource struct {
 	Body        []byte `json:"body"`
@@ -45,17 +110,16 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 	return resp
 }
 
-func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
+func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformerURL string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	transformStart := time.Now()
 
 	payload := misc.MakeJSONArray(events)
-	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
-	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
+	resp, err := bt.webhook.netClient.Post(sourceTransformerURL, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
 	bt.stats.transformTimerStat.Since(transformStart)
 	if err != nil {
-		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
+		err := fmt.Errorf("JS HTTP connection to source transformer (URL: %q): %w", sourceTransformerURL, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
 	}
 
