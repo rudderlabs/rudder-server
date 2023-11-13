@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -77,7 +78,7 @@ func newSourceTransformAdapter(version string) sourceTransformAdapter {
 
 func getTransformerURL(version, sourceType string) (string, error) {
 	baseURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	return url.JoinPath(baseURL, version, "sources", sourceType)
+	return url.JoinPath(baseURL, version, "sources", strings.ToLower(sourceType))
 }
 
 type outputToSource struct {
