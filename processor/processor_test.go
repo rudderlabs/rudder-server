@@ -418,7 +418,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
 				{
-					ID:                 "dest-id-6",
+					ID:                 "gcm-dest-id-6",
 					Name:               "D6",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -457,7 +457,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 "dest-id-7",
+					ID:                 "gcm-dest-id-7",
 					Name:               "D7",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -491,7 +491,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 "dest-id-8",
+					ID:                 "gcm-dest-id-8",
 					Name:               "D8",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -535,7 +535,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 "dest-id-10",
+					ID:                 "gcm-dest-id-10",
 					Name:               "D10",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -550,7 +550,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 "dest-id-11",
+					ID:                 "gcm-dest-id-11",
 					Name:               "D11",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -574,7 +574,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 "dest-id-12",
+					ID:                 "gcm-dest-id-12",
 					Name:               "D12",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -2992,16 +2992,16 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(8)) // all except D13
 
-			// Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
-			// Expect(
-			// 	len(processor.filterDestinations(
-			// 		eventWithDeniedConsentsGCM,
-			// 		processor.getEnabledDestinations(
-			// 			SourceIDGCM,
-			// 			"destination-definition-name-enabled",
-			// 		),
-			// 	)),
-			// ).To(Equal(7)) // all except D6 and D7
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithDeniedConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceIDGCM,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(7)) // all except D6 and D7
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
 			Expect(
