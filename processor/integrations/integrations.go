@@ -45,11 +45,6 @@ type PostParametersT struct {
 type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }
-type TransResponseT struct {
-	Message             string      `json:"message"`
-	DestinationResponse interface{} `json:"destinationResponse"`
-	AuthErrorCategory   string      `json:"authErrorCategory"`
-}
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT

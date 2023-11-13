@@ -23,6 +23,7 @@ type FeaturesServiceConfig struct {
 type FeaturesService interface {
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	TransformerProxyVersion() string
 	Wait() chan struct{}
 }
 
@@ -53,6 +54,10 @@ func NewNoOpService() FeaturesService {
 type noopService struct{}
 
 func (*noopService) SourceTransformerVersion() string {
+	return V0
+}
+
+func (*noopService) TransformerProxyVersion() string {
 	return V0
 }
 
