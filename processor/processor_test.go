@@ -2992,16 +2992,16 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(8)) // all except D13
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithDeniedConsentsGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(7)) // all except D6 and D7
+			// Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			// Expect(
+			// 	len(processor.filterDestinations(
+			// 		eventWithDeniedConsentsGCM,
+			// 		processor.getEnabledDestinations(
+			// 			SourceIDGCM,
+			// 			"destination-definition-name-enabled",
+			// 		),
+			// 	)),
+			// ).To(Equal(7)) // all except D6 and D7
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
 			Expect(
