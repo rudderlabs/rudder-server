@@ -113,9 +113,9 @@ const (
 	DestinationIDDisabled = "disabled-destination"
 
 	SourceIDOneTrustConsent = "source-id-oneTrust-consent"
-	SourceIDGCM             = "source-id-oneTrust-consent2"
+	SourceIDGCM             = "source-id-gcm"
 	WriteKeyOneTrustConsent = "write-key-oneTrust-consent"
-	WriteKeyGCM             = "write-key-oneTrust-consent2"
+	WriteKeyGCM             = "write-key-gcm"
 
 	SourceIDKetchConsent = "source-id-ketch-consent"
 	WriteKeyKetchConsent = "write-key-ketch-consent"

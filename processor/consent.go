@@ -34,14 +34,14 @@ type GenericConsentManagementProviderConfig struct {
 func (proc *Handle) filterDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
 	// If there are no deniedConsentIds, then return all destinations
 	consentManagementInfo := GetConsentManagementInfo(event)
-	if len(consentManagementInfo.DeniedConsentIds) == 0 && len(consentManagementInfo.AllowedConsentIds) == 0 {
+	if len(consentManagementInfo.DeniedConsentIds) == 0 {
 		return destinations
 	}
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// This field differentiates legacy and generic consent management
 		if consentManagementInfo.Provider != "" {
-			if cmpData := proc.GetGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
+			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
 				finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 				if consentManagementInfo.Provider == "custom" {
@@ -71,8 +71,20 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 	})
 }
 
+func (proc *Handle) getOneTrustConsentData(destinationID string) []string {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.oneTrustConsentCategoriesMap[destinationID]
+}
+
+func (proc *Handle) getKetchConsentData(destinationID string) []string {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.ketchConsentCategoriesMap[destinationID]
+}
+
 // returns the consent management data for a destination and provider
-func (proc *Handle) GetGCMData(destinationID, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 
@@ -88,18 +100,6 @@ func (proc *Handle) GetGCMData(destinationID, provider string) GenericConsentMan
 	}
 
 	return providerData
-}
-
-func (proc *Handle) getOneTrustConsentData(destinationID string) []string {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	return proc.config.oneTrustConsentCategoriesMap[destinationID]
-}
-
-func (proc *Handle) getKetchConsentData(destinationID string) []string {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	return proc.config.ketchConsentCategoriesMap[destinationID]
 }
 
 func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
