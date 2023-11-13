@@ -615,7 +615,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{},
@@ -629,7 +629,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-4"},
@@ -643,7 +643,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -657,7 +657,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -672,7 +672,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -688,7 +688,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider": "custom",
+								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},

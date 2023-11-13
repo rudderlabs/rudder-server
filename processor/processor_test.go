@@ -434,7 +434,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"consent": "purpose 1"},
+									{"consent": "purpose 4"},
 									{"consent": "purpose 2"},
 								},
 							},
@@ -477,7 +477,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
 									{"consent": "purpose 1"},
-									{"consent": "purpose 2"},
+									{"consent": "purpose 3"},
 								},
 							},
 						},
@@ -2805,6 +2805,29 @@ var _ = Describe("Processor", Ordered, func() {
 		})
 
 		It("should filter based on generic consent management preferences", func() {
+			eventWithoutConsentManagementData := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context":           map[string]interface{}{},
+				"type":              "track",
+				"channel":           "mobile",
+				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			Expect(err3).To(BeNil())
+
 			eventWithDeniedConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2865,29 +2888,6 @@ var _ = Describe("Processor", Ordered, func() {
 			_, err5 := json.Marshal(eventWithoutDeniedConsentsGCM)
 			Expect(err5).To(BeNil())
 
-			eventWithoutConsentManagementData := types.SingularEventT{
-				"originalTimestamp": "2019-03-10T10:10:10.10Z",
-				"event":             "Demo Track",
-				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context":           map[string]interface{}{},
-				"type":              "track",
-				"channel":           "mobile",
-				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
-					"label":    "",
-					"value":    float64(1),
-					"testMap":  nil,
-					"category": "",
-					"floatVal": 4.51,
-				},
-				"integrations": map[string]interface{}{
-					"All": true,
-				},
-			}
-			_, err3 := json.Marshal(eventWithoutConsentManagementData)
-			Expect(err3).To(BeNil())
-
 			eventWithCustomConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2917,6 +2917,66 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 			_, err6 := json.Marshal(eventWithCustomConsentsGCM)
 			Expect(err6).To(BeNil())
+
+			eventWithDeniedConsentsGCMKetch := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "ketch",
+						"resolutionStrategy": "or",
+						"allowedConsentIds":  []interface{}{"consent category 2"},
+						"deniedConsentIds":   []interface{}{"purpose 1", "purpose 3"},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err7 := json.Marshal(eventWithDeniedConsentsGCMKetch)
+			Expect(err7).To(BeNil())
+
+			eventWithCustomConsentsGCMAND := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "custom",
+						"resolutionStrategy": "and",
+						"allowedConsentIds":  []interface{}{"consent category 1"},
+						"deniedConsentIds":   []interface{}{"consent category 2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "mobile",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err8 := json.Marshal(eventWithCustomConsentsGCMAND)
+			Expect(err8).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
@@ -2966,6 +3026,28 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.filterDestinations(
 					eventWithDeniedConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceIDGCM,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(7)) // all except D6 and D7
+
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithDeniedConsentsGCMKetch,
+					processor.getEnabledDestinations(
+						SourceIDGCM,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(7)) // all D7
+
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCMAND, SourceIDGCM)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithCustomConsentsGCMAND,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
