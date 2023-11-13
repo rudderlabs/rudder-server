@@ -2847,7 +2847,7 @@ var _ = Describe("Processor", Ordered, func() {
 				len(processor.filterDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
+						SourceIDOneTrustConsent2,
 						"destination-definition-name-enabled",
 					),
 				)),
