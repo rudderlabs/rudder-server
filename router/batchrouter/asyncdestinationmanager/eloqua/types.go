@@ -31,11 +31,9 @@ type EloquaBulkUploader struct {
 	successStatusCode []string
 }
 type DestinationConfig struct {
-	CompanyName              string   `json:"companyName"`
-	Password                 string   `json:"password"`
-	UserName                 string   `json:"userName"`
-	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
-	RudderAccountID          string   `json:"rudderAccountId"`
+	CompanyName string `json:"companyName"`
+	Password    string `json:"password"`
+	UserName    string `json:"userName"`
 }
 
 type HttpRequestData struct {

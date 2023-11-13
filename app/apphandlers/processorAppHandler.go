@@ -33,6 +33,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -136,6 +137,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if err != nil {
 		return err
 	}
+
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		FeaturesRetryMaxAttempts: 10,
+	})
 
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
@@ -247,6 +254,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		transientSources,
 		fileUploaderProvider,
 		rsourcesService,
+		transformerFeaturesService,
 		destinationHandle,
 		transformationhandle,
 		enrichers,

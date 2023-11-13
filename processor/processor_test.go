@@ -39,6 +39,7 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -127,12 +128,11 @@ const (
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
 
-	SourceID3 = "source-id-3"
-	WriteKey3 = "write-key-3"
-	DestID1   = "dest-id-1"
-	DestID2   = "dest-id-2"
-	DestID3   = "dest-id-3"
-	DestID4   = "dest-id-4"
+	SourceIDOneTrustConsent = "source-id-oneTrust-consent"
+	WriteKeyOneTrustConsent = "write-key-oneTrust-consent"
+
+	SourceIDKetchConsent = "source-id-ketch-consent"
+	WriteKeyKetchConsent = "write-key-ketch-consent"
 )
 
 var (
@@ -327,13 +327,13 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:          SourceID3,
-			WriteKey:    WriteKey3,
+			ID:          SourceIDOneTrustConsent,
+			WriteKey:    WriteKeyOneTrustConsent,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
 				{
-					ID:                 DestID1,
+					ID:                 "dest-id-1",
 					Name:               "D1",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -352,7 +352,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID2,
+					ID:                 "dest-id-2",
 					Name:               "D2",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -370,7 +370,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID3,
+					ID:                 "dest-id-3",
 					Name:               "D3",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -385,13 +385,110 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID4,
+					ID:                 "dest-id-4",
 					Name:               "D4",
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
 						"oneTrustCookieCategories": []interface{}{
 							map[string]interface{}{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceIDKetchConsent,
+			WriteKey:    WriteKeyKetchConsent,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 "dest-id-5",
+					Name:               "D5",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-6",
+					Name:               "D6",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-7",
+					Name:               "D7",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-8",
+					Name:               "D8",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose3"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-9",
+					Name:               "D9",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -1086,6 +1183,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -1115,6 +1213,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -1149,6 +1248,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2198,7 +2298,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2212,6 +2311,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				getMockTransformerService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2238,7 +2338,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Consistently(func() bool {
 				select {
-				case <-processor.config.asyncInit.Wait():
+				case <-processor.transformerFeaturesService.Wait():
 					return true
 				default:
 					return false
@@ -2256,7 +2356,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2270,6 +2369,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2293,7 +2393,7 @@ var _ = Describe("Processor", Ordered, func() {
 	})
 
 	Context("isDestinationEnabled", func() {
-		It("should filter based on consent management preferences", func() {
+		It("should filter based on oneTrust consent management preferences", func() {
 			event := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2336,12 +2436,61 @@ var _ = Describe("Processor", Ordered, func() {
 				len(processor.filterDestinations(
 					event,
 					processor.getEnabledDestinations(
-						SourceID3,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(3)) // all except dest-1
-			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(event, SourceIDOneTrustConsent)).To(BeTrue())
+		})
+		It("should filter based on ketch consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
+
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			filteredDestinations := processor.filterDestinations(
+				event,
+				processor.getEnabledDestinations(
+					SourceIDKetchConsent,
+					"destination-definition-name-enabled",
+				),
+			)
+			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
 
@@ -3887,6 +4036,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,
+		transformerFeaturesService.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
@@ -4243,4 +4393,22 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+}
+
+func getMockTransformerService() transformerFeaturesService.FeaturesService {
+	return &mockTransformerService{}
+}
+
+type mockTransformerService struct{}
+
+func (*mockTransformerService) SourceTransformerVersion() string {
+	return "random-version"
+}
+
+func (*mockTransformerService) Wait() chan struct{} {
+	return make(chan struct{})
+}
+
+func (*mockTransformerService) RouterTransform(destType string) bool {
+	return false
 }

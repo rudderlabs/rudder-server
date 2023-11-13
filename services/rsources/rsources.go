@@ -132,6 +132,9 @@ var ErrStatusNotFound = errors.New("Status not found")
 // ErrSourceNotCompleted sentinel error indicating that a source is not completed
 var ErrSourceNotCompleted = errors.New("Source not completed")
 
+// ErrFailedRecordsNotFound sentinel error indicating that failed records cannot be found
+var ErrFailedRecordsNotFound = errors.New("Failed records not found")
+
 // StatsIncrementer increments stats
 type StatsIncrementer interface {
 	// IncrementStats increments the existing statistic counters
@@ -155,6 +158,12 @@ type JobService interface {
 
 	// Delete deletes all relevant information for a given jobRunId
 	Delete(ctx context.Context, jobRunId string, filter JobFilter) error
+
+	// DeleteJobStatus deletes the status for a given jobRunId
+	DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error
+
+	// DeleteFailedRecords deletes all failed records for a given jobRunId
+	DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error
 
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
@@ -215,6 +224,14 @@ func NewNoOpService() JobService {
 type noopService struct{}
 
 func (*noopService) Delete(_ context.Context, _ string, _ JobFilter) error {
+	return nil
+}
+
+func (*noopService) DeleteJobStatus(_ context.Context, _ string, _ JobFilter) error {
+	return nil
+}
+
+func (*noopService) DeleteFailedRecords(_ context.Context, _ string, _ JobFilter) error {
 	return nil
 }
 
