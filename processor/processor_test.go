@@ -112,10 +112,10 @@ const (
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
 
-	SourceIDOneTrustConsent  = "source-id-oneTrust-consent"
-	SourceIDOneTrustConsent2 = "source-id-oneTrust-consent2"
-	WriteKeyOneTrustConsent  = "write-key-oneTrust-consent"
-	WriteKeyOneTrustConsent2 = "write-key-oneTrust-consent2"
+	SourceIDOneTrustConsent = "source-id-oneTrust-consent"
+	SourceIDGCM             = "source-id-oneTrust-consent2"
+	WriteKeyOneTrustConsent = "write-key-oneTrust-consent"
+	WriteKeyGCM             = "write-key-oneTrust-consent2"
 
 	SourceIDKetchConsent = "source-id-ketch-consent"
 	WriteKeyKetchConsent = "write-key-ketch-consent"
@@ -412,8 +412,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:          SourceIDOneTrustConsent2,
-			WriteKey:    WriteKeyOneTrustConsent2,
+			ID:          SourceIDGCM,
+			WriteKey:    WriteKeyGCM,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
@@ -2707,6 +2707,102 @@ var _ = Describe("Processor", Ordered, func() {
 			_, err3 := json.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+
+			Setup(processor, c, false, false)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithDeniedConsents,
+					processor.getEnabledDestinations(
+						SourceIDOneTrustConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(3)) // all except D1 and D3
+
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutDeniedConsents,
+					processor.getEnabledDestinations(
+						SourceIDOneTrustConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
+
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithoutConsentManagementData,
+					processor.getEnabledDestinations(
+						SourceIDOneTrustConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
+		})
+
+		It("should filter based on ketch consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
+
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			filteredDestinations := processor.filterDestinations(
+				event,
+				processor.getEnabledDestinations(
+					SourceIDKetchConsent,
+					"destination-definition-name-enabled",
+				),
+			)
+			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
+		})
+
+		It("should filter based on generic consent management preferences", func() {
 			eventWithDeniedConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2767,6 +2863,29 @@ var _ = Describe("Processor", Ordered, func() {
 			_, err5 := json.Marshal(eventWithoutDeniedConsentsGCM)
 			Expect(err5).To(BeNil())
 
+			eventWithoutConsentManagementData := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context":           map[string]interface{}{},
+				"type":              "track",
+				"channel":           "mobile",
+				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"label":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			Expect(err3).To(BeNil())
+
 			eventWithCustomConsentsGCM := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2808,132 +2927,49 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithDeniedConsents,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(3)) // all except D1 and D3
-
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithoutDeniedConsents,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(5)) // all
-
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(5)) // all
-
-			// Generic consent management tests
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent2)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithoutConsentManagementData,
-					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent2,
+						SourceIDGCM,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithDeniedConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent2,
+						SourceIDGCM,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(7)) // all except D7 and D8
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithoutDeniedConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent2,
+						SourceIDGCM,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDOneTrustConsent2)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
 					eventWithCustomConsentsGCM,
 					processor.getEnabledDestinations(
-						SourceIDOneTrustConsent2,
+						SourceIDGCM,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(5)) // all except D6, D12 and D14
-		})
-		It("should filter based on ketch consent management preferences", func() {
-			event := types.SingularEventT{
-				"originalTimestamp": "2019-03-10T10:10:10.10Z",
-				"event":             "Demo Track",
-				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
-					},
-				},
-				"type":      "track",
-				"channel":   "android-srk",
-				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
-					"lbael":    "",
-					"value":    float64(1),
-					"testMap":  nil,
-					"category": "",
-					"floatVal": 4.51,
-				},
-				"integrations": map[string]interface{}{
-					"All": true,
-				},
-			}
-			_, err := json.Marshal(event)
-			Expect(err).To(BeNil())
-
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-
-			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
-
-			Setup(processor, c, false, false)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-
-			filteredDestinations := processor.filterDestinations(
-				event,
-				processor.getEnabledDestinations(
-					SourceIDKetchConsent,
-					"destination-definition-name-enabled",
-				),
-			)
-			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
-			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
 

@@ -1,8 +1,6 @@
 package processor
 
 import (
-	"slices"
-
 	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -43,7 +41,7 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// This field differentiates legacy and generic consent management
 		if consentManagementInfo.Provider != "" {
-			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
+			if cmpData := proc.GetGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
 				finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 				if consentManagementInfo.Provider == "custom" {
@@ -52,20 +50,20 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 
 				switch finalResolutionStrategy {
 				case "or":
-					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds)) > 0
+					return !lo.Every(consentManagementInfo.DeniedConsentIds, cmpData.Consents)
 				default: // "and"
-					return slices.Equal(cmpData.Consents, lo.Intersect(cmpData.Consents, consentManagementInfo.AllowedConsentIds))
+					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIds)) == 0
 				}
 			}
 		} else {
 			// Legacy consent management
 			// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
-			if oneTrustCategories := proc.GetOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
+			if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
 				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIds)) == 0
 			}
 
 			// If the destination has ketchConsentPurposes, returns false if all ketchCategories are present in deniedCategories
-			if ketchCategories := proc.GetKetchConsentData(dest.ID); len(ketchCategories) > 0 {
+			if ketchCategories := proc.getKetchConsentData(dest.ID); len(ketchCategories) > 0 {
 				return !lo.Every(consentManagementInfo.DeniedConsentIds, ketchCategories)
 			}
 		}
@@ -74,12 +72,12 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 }
 
 // returns the consent management data for a destination and provider
-func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) GetGCMData(destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 
 	defRetVal := GenericConsentManagementProviderData{}
-	destinationData, ok := proc.config.destGenericConsentManagementData[destinationID]
+	destinationData, ok := proc.config.destGenericConsentManagementMap[destinationID]
 	if !ok {
 		return defRetVal
 	}
@@ -92,13 +90,13 @@ func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentMan
 	return providerData
 }
 
-func (proc *Handle) GetOneTrustConsentData(destinationID string) []string {
+func (proc *Handle) getOneTrustConsentData(destinationID string) []string {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.oneTrustConsentCategoriesMap[destinationID]
 }
 
-func (proc *Handle) GetKetchConsentData(destinationID string) []string {
+func (proc *Handle) getKetchConsentData(destinationID string) []string {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.ketchConsentCategoriesMap[destinationID]

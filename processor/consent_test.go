@@ -14,17 +14,17 @@ import (
 
 func TestGetOneTrustConsentCategories(t *testing.T) {
 	testCases := []struct {
-		name     string
-		dest     *backendconfig.DestinationT
-		expected []string
+		description string
+		dest        *backendconfig.DestinationT
+		expected    []string
 	}{
 		{
-			name:     "no oneTrustCookieCategories",
-			dest:     &backendconfig.DestinationT{},
-			expected: nil,
+			description: "no oneTrustCookieCategories",
+			dest:        &backendconfig.DestinationT{},
+			expected:    nil,
 		},
 		{
-			name: "empty oneTrustCookieCategories",
+			description: "empty oneTrustCookieCategories",
 			dest: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"oneTrustCookieCategories": []interface{}{},
@@ -33,7 +33,7 @@ func TestGetOneTrustConsentCategories(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "some oneTrustCookieCategories",
+			description: "some oneTrustCookieCategories",
 			dest: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"oneTrustCookieCategories": []interface{}{
@@ -52,7 +52,7 @@ func TestGetOneTrustConsentCategories(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.description, func(t *testing.T) {
 			require.EqualValues(t, tc.expected, GetOneTrustConsentCategories(tc.dest))
 		})
 	}
@@ -60,17 +60,17 @@ func TestGetOneTrustConsentCategories(t *testing.T) {
 
 func TestGetKetchConsentCategories(t *testing.T) {
 	testCases := []struct {
-		name     string
-		dest     *backendconfig.DestinationT
-		expected []string
+		description string
+		dest        *backendconfig.DestinationT
+		expected    []string
 	}{
 		{
-			name:     "no ketchConsentPurposes",
-			dest:     &backendconfig.DestinationT{},
-			expected: nil,
+			description: "no ketchConsentPurposes",
+			dest:        &backendconfig.DestinationT{},
+			expected:    nil,
 		},
 		{
-			name: "empty ketchConsentPurposes",
+			description: "empty ketchConsentPurposes",
 			dest: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"ketchConsentPurposes": []interface{}{},
@@ -79,7 +79,7 @@ func TestGetKetchConsentCategories(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "some ketchConsentPurposes",
+			description: "some ketchConsentPurposes",
 			dest: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"ketchConsentPurposes": []interface{}{
@@ -97,25 +97,25 @@ func TestGetKetchConsentCategories(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.description, func(t *testing.T) {
 			require.EqualValues(t, tc.expected, GetKetchConsentCategories(tc.dest))
 		})
 	}
 }
 
-func TestHandle_FilterDestinations(t *testing.T) {
+func TestFilterDestinations(t *testing.T) {
 	testCases := []struct {
-		name            string
+		description     string
 		event           types.SingularEventT
 		destinations    []backendconfig.DestinationT
 		expectedDestIDs []string
 	}{
 		{
-			name:  "no denied consent categories",
-			event: types.SingularEventT{},
+			description: "no denied consent categories",
+			event:       types.SingularEventT{},
 			destinations: []backendconfig.DestinationT{
 				{
-					ID: "foo",
+					ID: "destID-1",
 					Config: map[string]interface{}{
 						"oneTrustCookieCategories": []interface{}{
 							map[string]interface{}{
@@ -125,10 +125,10 @@ func TestHandle_FilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			expectedDestIDs: []string{"foo"},
+			expectedDestIDs: []string{"destID-1"},
 		},
 		{
-			name: "filter out destination with oneTrustCookieCategories",
+			description: "filter out destination with oneTrustCookieCategories",
 			event: types.SingularEventT{
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
@@ -194,15 +194,31 @@ func TestHandle_FilterDestinations(t *testing.T) {
 						},
 					},
 				},
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{
+								"oneTrustCookieCategory": "foo-1",
+							},
+							map[string]interface{}{
+								"oneTrustCookieCategory": "foo-1",
+							},
+							map[string]interface{}{
+								"oneTrustCookieCategory": "foo-1",
+							},
+						},
+					},
+				},
 			},
 			expectedDestIDs: []string{"destID-1", "destID-2"},
 		},
 		{
-			name: "filter out destination with ketchConsentPurposes",
+			description: "filter out destination with ketchConsentPurposes",
 			event: types.SingularEventT{
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3", "foo-1", "foo-2", "foo-3"},
+						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3"},
 					},
 				},
 			},
@@ -264,7 +280,6 @@ func TestHandle_FilterDestinations(t *testing.T) {
 						},
 					},
 				},
-
 				{
 					ID: "destID-6",
 					Config: map[string]interface{}{
@@ -284,16 +299,420 @@ func TestHandle_FilterDestinations(t *testing.T) {
 			},
 			expectedDestIDs: []string{"destID-1", "destID-2", "destID-4"},
 		},
+		{
+			description: "filter out destination with generic consent management (Ketch)",
+			event: types.SingularEventT{
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "ketch",
+						"resolutionStrategy": "or",
+						"deniedConsentIds":   []interface{}{"foo-1", "foo-2", "foo-3"},
+					},
+				},
+			},
+			destinations: []backendconfig.DestinationT{
+				{
+					ID: "destID-1",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-2",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"purpose": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-3",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"purpose": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-4",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"purpose": "foo-1"},
+									{"purpose": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-5",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"purpose": "foo-1"},
+									{"purpose": "foo-2"},
+									{"purpose": "foo-3"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "ketch",
+								"consents": []map[string]interface{}{
+									{"purpose": "foo-1"},
+									{"purpose": "foo-1"},
+									{"purpose": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedDestIDs: []string{"destID-1", "destID-2", "destID-4"},
+		},
+		{
+			description: "filter out destination with generic consent management (OneTrust)",
+			event: types.SingularEventT{
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":           "oneTrust",
+						"resolutionStrategy": "and",
+						"deniedConsentIds":   []interface{}{"foo-1", "foo-2", "foo-3"},
+					},
+				},
+			},
+			destinations: []backendconfig.DestinationT{
+				{
+					ID: "destID-1",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-2",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-3",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-4",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-5",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-2"},
+									{"consent": "foo-3"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider": "oneTrust",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedDestIDs: []string{"destID-1", "destID-2"},
+		},
+		{
+			description: "filter out destination with generic consent management (Custom - AND)",
+			event: types.SingularEventT{
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":         "custom",
+						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3"},
+					},
+				},
+			},
+			destinations: []backendconfig.DestinationT{
+				{
+					ID: "destID-1",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-2",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-3",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-4",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-5",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-2"},
+									{"consent": "foo-3"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "and",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedDestIDs: []string{"destID-1", "destID-2"},
+		},
+		{
+			description: "filter out destination with generic consent management (Custom - OR)",
+			event: types.SingularEventT{
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"provider":         "custom",
+						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3"},
+					},
+				},
+			},
+			destinations: []backendconfig.DestinationT{
+				{
+					ID: "destID-1",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-2",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-3",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-4",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-4"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-5",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-2"},
+									{"consent": "foo-3"},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "destID-6",
+					Config: map[string]interface{}{
+						"consentManagement": []interface{}{
+							map[string]interface{}{
+								"provider":           "custom",
+								"resolutionStrategy": "or",
+								"consents": []map[string]interface{}{
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedDestIDs: []string{"destID-1", "destID-2"},
+		},
 	}
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.description, func(t *testing.T) {
 			proc := &Handle{}
 			proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
+			proc.config.destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
 
 			for _, dest := range tc.destinations {
 				proc.config.oneTrustConsentCategoriesMap[dest.ID] = GetOneTrustConsentCategories(&dest)
 				proc.config.ketchConsentCategoriesMap[dest.ID] = GetKetchConsentCategories(&dest)
+				proc.config.destGenericConsentManagementMap[dest.ID] = GetGenericConsentManagementData(&dest)
 			}
 
 			filteredDestinations := proc.filterDestinations(tc.event, tc.destinations)
@@ -359,7 +778,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 				},
 			},
 			expected: ConsentManagementInfo{
-				Provider: "",
+				Provider: "custom",
 				AllowedConsentIds: []string{
 					"consent category 1",
 					"consent category 2",
@@ -388,7 +807,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 				},
 			},
 			expected: ConsentManagementInfo{
-				Provider: "",
+				Provider: "custom",
 				DeniedConsentIds: []string{
 					"consent category 1",
 					"consent category 2",
@@ -413,7 +832,12 @@ func TestGetConsentManagementInfo(t *testing.T) {
 					},
 				},
 			},
-			expected: defConsentManagementInfo,
+			expected: ConsentManagementInfo{
+				Provider:           "custom",
+				DeniedConsentIds:   []string{},
+				AllowedConsentIds:  []string{},
+				ResolutionStrategy: "",
+			},
 		},
 		{
 			description: "should return default values for denied consent IDs when it is malformed",
@@ -431,7 +855,12 @@ func TestGetConsentManagementInfo(t *testing.T) {
 					},
 				},
 			},
-			expected: defConsentManagementInfo,
+			expected: ConsentManagementInfo{
+				Provider:           "custom",
+				DeniedConsentIds:   []string{},
+				AllowedConsentIds:  []string{},
+				ResolutionStrategy: "",
+			},
 		},
 		{
 			description: "should return empty consent management info when consent management data is not a valid object",
