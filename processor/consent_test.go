@@ -899,8 +899,8 @@ func TestFilterDestinations(t *testing.T) {
 								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
-									{"consent": "consent category 3"},
-									{"consent": "custom consent category 1"},
+									{"consent": "consent category 2"},
+									{"consent": "someOtherCategory"},
 								},
 							},
 						},
@@ -924,7 +924,7 @@ func TestFilterDestinations(t *testing.T) {
 								"provider": "custom",
 								"consents": []map[string]interface{}{
 									{"consent": "someOtherCategory"},
-									{"consent": "consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
@@ -946,9 +946,10 @@ func TestFilterDestinations(t *testing.T) {
 						"consentManagement": []interface{}{
 							map[string]interface{}{
 								"provider":           "custom",
-								"resolutionStrategy": "or",
+								"resolutionStrategy": "and",
 								"consents": []map[string]interface{}{
 									{"consent": "custom consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
@@ -973,8 +974,8 @@ func TestFilterDestinations(t *testing.T) {
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
 						"provider":           "custom",
-						"allowedConsentIds":  []interface{}{"consent category 1"},
-						"deniedConsentIds":   []interface{}{"consent category 2", "someOtherCategory"},
+						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2"},
+						"deniedConsentIds":   []interface{}{"someOtherCategory", "consent category 3"},
 					},
 				},
 				"type":      "track",
@@ -1224,7 +1225,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			expectedDestIDs: []string{"dest-id-6", "dest-id-7", "dest-id-8", "dest-id-9", "dest-id-10", "dest-id-11", "dest-id-14"},
+			expectedDestIDs: []string{"dest-id-6", "dest-id-7", "dest-id-8", "dest-id-9", "dest-id-10", "dest-id-11", "dest-id-12", "dest-id-14"},
 		},
 		{
 			description: "test ketch with denied consents",
@@ -1423,8 +1424,8 @@ func TestFilterDestinations(t *testing.T) {
 								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
-									{"consent": "consent category 3"},
-									{"consent": "custom consent category 1"},
+									{"consent": "consent category 2"},
+									{"consent": "someOtherCategory"},
 								},
 							},
 						},
@@ -1448,7 +1449,7 @@ func TestFilterDestinations(t *testing.T) {
 								"provider": "custom",
 								"consents": []map[string]interface{}{
 									{"consent": "someOtherCategory"},
-									{"consent": "consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
@@ -1470,9 +1471,10 @@ func TestFilterDestinations(t *testing.T) {
 						"consentManagement": []interface{}{
 							map[string]interface{}{
 								"provider":           "custom",
-								"resolutionStrategy": "or",
+								"resolutionStrategy": "and",
 								"consents": []map[string]interface{}{
 									{"consent": "custom consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
