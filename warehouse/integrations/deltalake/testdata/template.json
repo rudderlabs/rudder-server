@@ -39,7 +39,7 @@
             "syncFrequency": "30",
             "eventDelivery": false,
             "eventDeliveryTS": 1648195480174,
-            "preferAppend": {{.preferAppend}}
+            "enableMerge": {{.enableMerge}}
           },
           "liveEventsConfig": {
             "eventDelivery": false,

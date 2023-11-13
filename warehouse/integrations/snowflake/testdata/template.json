@@ -40,7 +40,7 @@
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "enableMerge": {{.enableMerge}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -165,7 +165,7 @@
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "enableMerge": {{.enableMerge}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -291,7 +291,7 @@
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "enableMerge": {{.enableMerge}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -442,7 +442,7 @@
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "enableMerge": {{.enableMerge}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},

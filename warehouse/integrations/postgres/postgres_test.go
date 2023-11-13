@@ -571,8 +571,9 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("merge", func(t *testing.T) {
+			tableName := "merge_test_table"
+
 			t.Run("without dedup", func(t *testing.T) {
-				tableName := "merge_without_dedup_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
@@ -581,62 +582,11 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
 
 				pg := postgres.New(c, logger.NOP, memstats.New())
-				err := pg.Setup(ctx, appendWarehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = pg.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := pg.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				loadTableStat, err = pg.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
-					fmt.Sprintf(`
-					SELECT
-					  id,
-					  received_at,
-					  test_bool,
-					  test_datetime,
-					  test_float,
-					  test_int,
-					  test_string
-					FROM
-					  %q.%q
-					ORDER BY
-					  id;
-					`,
-						namespace,
-						tableName,
-					),
-				)
-				require.Equal(t, records, whth.AppendTestRecords())
-			})
-			t.Run("with dedup", func(t *testing.T) {
-				tableName := "merge_with_dedup_test_table"
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
-
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
-
-				c := config.New()
-				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
-
-				pg := postgres.New(config.New(), logger.NOP, memstats.New())
-				err := pg.Setup(ctx, warehouse, mockUploader)
+				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = pg.CreateSchema(ctx)
@@ -674,6 +624,54 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
+				require.Equal(t, records, whth.SampleTestRecords())
+			})
+			t.Run("with dedup", func(t *testing.T) {
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				c := config.New()
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
+
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
+				pg := postgres.New(config.New(), logger.NOP, memstats.New())
+				err := pg.Setup(ctx, mergeWarehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = pg.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = pg.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := pg.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := whth.RetrieveRecordsFromWarehouse(t, pg.DB.DB,
+					fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %q.%q
+					ORDER BY
+					  id;
+					`,
+						namespace,
+						tableName,
+					),
+				)
 				require.Equal(t, records, whth.DedupTestRecords())
 			})
 		})
@@ -688,11 +686,8 @@ func TestIntegration(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.postgres.skipDedupDestinationIDs", destinationID)
 
-			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
 			pg := postgres.New(c, logger.NOP, memstats.New())
-			err := pg.Setup(ctx, appendWarehouse, mockUploader)
+			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = pg.CreateSchema(ctx)

@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	th "github.com/rudderlabs/rudder-server/testhelper"
-
 	"github.com/golang/mock/gomock"
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -30,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
+	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -471,11 +470,8 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
 				d := redshift.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, appendWarehouse, mockUploader)
+				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
@@ -519,8 +515,11 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
 				d := redshift.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, warehouse, mockUploader)
+				err := d.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
@@ -564,12 +563,15 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
 				c := config.New()
 				c.Set("Warehouse.redshift.dedupWindow", true)
 				c.Set("Warehouse.redshift.dedupWindowInHours", 999999)
 
 				d := redshift.New(c, logger.NOP, memstats.New())
-				err := d.Setup(ctx, warehouse, mockUploader)
+				err := d.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
@@ -613,12 +615,15 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
+				mergeWarehouse := th.Clone(t, warehouse)
+				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+
 				c := config.New()
 				c.Set("Warehouse.redshift.dedupWindow", true)
 				c.Set("Warehouse.redshift.dedupWindowInHours", 0)
 
 				d := redshift.New(c, logger.NOP, memstats.New())
-				err := d.Setup(ctx, warehouse, mockUploader)
+				err := d.Setup(ctx, mergeWarehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
@@ -667,11 +672,8 @@ func TestIntegration(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{destinationID})
 
-			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
 			rs := redshift.New(c, logger.NOP, memstats.New())
-			err := rs.Setup(ctx, appendWarehouse, mockUploader)
+			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = rs.CreateSchema(ctx)
