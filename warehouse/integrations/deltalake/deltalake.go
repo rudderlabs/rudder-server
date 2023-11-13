@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
@@ -20,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -44,6 +45,9 @@ const (
 	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
 	partitionNotFound    = "SHOW PARTITIONS is not allowed on a table that is not partitioned"
 	columnsAlreadyExists = "already exists in root"
+
+	mergeMode  = "MERGE"
+	appendMode = "APPEND"
 
 	rudderStagingTableRegex    = "^rudder_staging_.*$"       // matches rudder_staging_* tables
 	nonRudderStagingTableRegex = "^(?!rudder_staging_.*$).*" // matches tables that do not start with rudder_staging_
@@ -121,7 +125,7 @@ type Deltalake struct {
 	stats          stats.Stats
 
 	config struct {
-		allowMerge             bool
+		loadTableStrategy      string
 		enablePartitionPruning bool
 		slowQueryThreshold     time.Duration
 		maxRetries             int
@@ -137,7 +141,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.logger = log.Child("integration").Child("deltalake")
 	dl.stats = stat
 
-	dl.config.allowMerge = conf.GetBool("Warehouse.deltalake.allowMerge", true)
+	dl.config.loadTableStrategy = conf.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
 	dl.config.enablePartitionPruning = conf.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
 	dl.config.slowQueryThreshold = conf.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
 	dl.config.maxRetries = conf.GetInt("Warehouse.deltalake.maxRetries", 10)
@@ -240,7 +244,6 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
 			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 			logfield.Namespace, d.Namespace,
-			logfield.ShouldMerge, d.ShouldMerge(),
 			logfield.Error, err.Error(),
 		)
 		return
@@ -583,7 +586,7 @@ func (d *Deltalake) loadTable(
 		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 		logfield.Namespace, d.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, d.ShouldMerge(),
+		logfield.LoadTableStrategy, d.config.loadTableStrategy,
 	)
 	log.Infow("started loading")
 
@@ -614,7 +617,7 @@ func (d *Deltalake) loadTable(
 	}
 
 	var loadTableStat *types.LoadTableStats
-	if !d.ShouldMerge() {
+	if d.ShouldAppend() {
 		log.Infow("inserting data from staging table to main table")
 		loadTableStat, err = d.insertIntoLoadTable(
 			ctx, tableName, stagingTableName,
@@ -1107,7 +1110,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	if !d.ShouldMerge() {
+	if d.ShouldAppend() {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
@@ -1169,7 +1172,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		inserted int64
 	)
 
-	if !d.ShouldMerge() {
+	if d.ShouldAppend() {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
@@ -1382,10 +1385,9 @@ func (*Deltalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPar
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-// ShouldMerge returns true if:
-// * the uploader says we cannot append
-// * the user opted in to merging and we allow merging
-func (d *Deltalake) ShouldMerge() bool {
-	return !d.Uploader.CanAppend() ||
-		(d.config.allowMerge && d.Warehouse.GetBoolDestinationConfig(model.EnableMergeSetting))
+// ShouldAppend returns true if:
+// * the load table strategy is "append" mode
+// * the uploader says we can append
+func (d *Deltalake) ShouldAppend() bool {
+	return d.config.loadTableStrategy == appendMode && d.Uploader.CanAppend()
 }

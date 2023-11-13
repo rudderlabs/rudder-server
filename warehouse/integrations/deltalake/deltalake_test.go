@@ -13,6 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -20,21 +25,17 @@ import (
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
-	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -94,11 +95,53 @@ func TestIntegration(t *testing.T) {
 	sourceID := warehouseutils.RandHex()
 	destinationID := warehouseutils.RandHex()
 	writeKey := warehouseutils.RandHex()
+
 	destType := warehouseutils.DELTALAKE
-	namespace := whth.RandSchema(destType)
+
+	namespace := testhelper.RandSchema(destType)
 
 	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
+
+	templateConfigurations := map[string]any{
+		"workspaceID":   workspaceID,
+		"sourceID":      sourceID,
+		"destinationID": destinationID,
+		"writeKey":      writeKey,
+		"host":          deltaLakeCredentials.Host,
+		"port":          deltaLakeCredentials.Port,
+		"path":          deltaLakeCredentials.Path,
+		"token":         deltaLakeCredentials.Token,
+		"namespace":     namespace,
+		"containerName": deltaLakeCredentials.ContainerName,
+		"accountName":   deltaLakeCredentials.AccountName,
+		"accountKey":    deltaLakeCredentials.AccountKey,
+	}
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+
+	testhelper.EnhanceWithDefaultEnvs(t)
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
+
+	svcDone := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		r := runner.New(runner.ReleaseInfo{})
+		_ = r.Run(ctx, []string{"deltalake-integration-test"})
+
+		close(svcDone)
+	}()
+	t.Cleanup(func() { <-svcDone })
+
+	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	port, err := strconv.Atoi(deltaLakeCredentials.Port)
 	require.NoError(t, err)
@@ -117,62 +160,17 @@ func TestIntegration(t *testing.T) {
 	db := sql.OpenDB(connector)
 	require.NoError(t, db.Ping())
 
-	bootstrapSvc := func(t *testing.T, enableMerge bool) {
-		templateConfigurations := map[string]any{
-			"workspaceID":   workspaceID,
-			"sourceID":      sourceID,
-			"destinationID": destinationID,
-			"writeKey":      writeKey,
-			"host":          deltaLakeCredentials.Host,
-			"port":          deltaLakeCredentials.Port,
-			"path":          deltaLakeCredentials.Path,
-			"token":         deltaLakeCredentials.Token,
-			"namespace":     namespace,
-			"containerName": deltaLakeCredentials.ContainerName,
-			"accountName":   deltaLakeCredentials.AccountName,
-			"accountKey":    deltaLakeCredentials.AccountKey,
-			"enableMerge":   enableMerge,
-		}
-		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-		whth.EnhanceWithDefaultEnvs(t)
-		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-		t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
-
-		svcDone := make(chan struct{})
-		ctx, cancel := context.WithCancel(context.Background())
-
-		go func() {
-			r := runner.New(runner.ReleaseInfo{})
-			_ = r.Run(ctx, []string{"deltalake-integration-test"})
-			close(svcDone)
-		}()
-
-		t.Cleanup(func() { <-svcDone })
-		t.Cleanup(cancel)
-
-		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-		health.WaitUntilReady(ctx, t,
-			serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint",
-		)
-	}
-
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB := whth.JobsDB(t, jobsDBPort)
+		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		t.Cleanup(func() {
-			require.Eventually(t,
-				func() bool {
-					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace)); err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
 				time.Minute,
 				time.Second,
 			)
@@ -185,8 +183,8 @@ func TestIntegration(t *testing.T) {
 			sourceID            string
 			destinationID       string
 			messageID           string
-			warehouseEventsMap  whth.EventsCountMap
-			enableMerge         bool
+			warehouseEventsMap  testhelper.EventsCountMap
+			loadTableStrategy   string
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
 			jobRunID            string
@@ -198,7 +196,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				enableMerge:         true,
+				loadTableStrategy:   "MERGE",
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-merge-mode",
 				jobRunID:            misc.FastUUID().String(),
@@ -210,7 +208,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  appendEventsMap(),
-				enableMerge:         false,
+				loadTableStrategy:   "APPEND",
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
@@ -224,7 +222,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				enableMerge:         true,
+				loadTableStrategy:   "MERGE",
 				useParquetLoadFiles: true,
 				stagingFilePrefix:   "testdata/upload-job-parquet",
 				jobRunID:            misc.FastUUID().String(),
@@ -233,8 +231,9 @@ func TestIntegration(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
+
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.enableMerge)
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_LOAD_TABLE_STRATEGY", tc.loadTableStrategy)
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
 				sqlClient := &warehouseclient.Client{
@@ -254,14 +253,14 @@ func TestIntegration(t *testing.T) {
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 				t.Log("verifying test case 1")
-				ts1 := whth.TestConfig{
+				ts1 := testhelper.TestConfig{
 					WriteKey:      writeKey,
 					Schema:        tc.schema,
 					Tables:        tables,
 					SourceID:      tc.sourceID,
 					DestinationID: tc.destinationID,
 					JobRunID:      tc.jobRunID,
-					WarehouseEventsMap: whth.EventsCountMap{
+					WarehouseEventsMap: testhelper.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -278,12 +277,12 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
 					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
-					UserID:          whth.GetUserId(destType),
+					UserID:          testhelper.GetUserId(destType),
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				ts2 := whth.TestConfig{
+				ts2 := testhelper.TestConfig{
 					WriteKey:           writeKey,
 					Schema:             tc.schema,
 					Tables:             tables,
@@ -307,14 +306,13 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Validation", func(t *testing.T) {
 		t.Cleanup(func() {
-			require.Eventually(t,
-				func() bool {
-					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace)); err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
 				time.Minute,
 				time.Second,
 			)
@@ -374,17 +372,15 @@ func TestIntegration(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
+
 			t.Run(tc.name, func(t *testing.T) {
-				t.Setenv(
-					"RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES",
-					strconv.FormatBool(tc.useParquetLoadFiles),
-				)
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
 				for k, v := range tc.conf {
 					dest.Config[k] = v
 				}
 
-				whth.VerifyConfigurationTest(t, dest)
+				testhelper.VerifyConfigurationTest(t, dest)
 			})
 		}
 	})
@@ -396,22 +392,20 @@ func TestIntegration(t *testing.T) {
 			workspaceID   = "test_workspace_id"
 		)
 
-		ctx := context.Background()
-		namespace := whth.RandSchema(destType)
-		cleanupSchema := func() {
-			require.Eventually(t,
-				func() bool {
-					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
-					if err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
+		namespace := testhelper.RandSchema(destType)
+
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
 				time.Minute,
 				time.Second,
 			)
-		}
+		})
 
 		schemaInUpload := model.TableSchema{
 			"test_bool":     "boolean",
@@ -476,7 +470,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -492,7 +486,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("table does not exists", func(t *testing.T) {
 			tableName := "table_not_exists_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -503,7 +497,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
 			require.Error(t, err)
@@ -513,7 +506,7 @@ func TestIntegration(t *testing.T) {
 			tableName := "merge_test_table"
 
 			t.Run("without dedup", func(t *testing.T) {
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -524,7 +517,6 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -539,7 +531,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -549,40 +541,40 @@ func TestIntegration(t *testing.T) {
 						  test_float,
 						  test_int,
 						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
+						FROM
+						  %s.%s
+						ORDER BY
+						  id;
+						`,
 						namespace,
 						tableName,
 					),
 				)
-				require.Equal(t, records, whth.SampleTestRecords())
+				require.Equal(t, records, testhelper.SampleTestRecords())
 			})
 			t.Run("with dedup use new record", func(t *testing.T) {
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
-
-				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, true, "2022-12-15T06:53:49.640Z")
 
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, mergeWarehouse, mockUploader)
+				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
 
 				loadTableStat, err := d.LoadTable(ctx, tableName)
 				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				retrieveRecordsSQL := fmt.Sprintf(`
+				records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+					fmt.Sprintf(`
 						SELECT
 						  id,
 						  received_at,
@@ -591,38 +583,29 @@ func TestIntegration(t *testing.T) {
 						  test_float,
 						  test_int,
 						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
-					namespace,
-					tableName,
+						FROM
+						  %s.%s
+						ORDER BY
+						  id;
+						`,
+						namespace,
+						tableName,
+					),
 				)
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB, retrieveRecordsSQL)
-				require.Equal(t, records, whth.DedupTestRecords())
-
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(0))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
-
-				records = whth.RetrieveRecordsFromWarehouse(t, d.DB.DB, retrieveRecordsSQL)
-				require.Equal(t, records, whth.DedupTestRecords())
+				require.Equal(t, records, testhelper.DedupTestRecords())
 			})
 			t.Run("with no overlapping partition", func(t *testing.T) {
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-11-15T06:53:49.640Z")
 
-				mergeWarehouse := th.Clone(t, warehouse)
-				mergeWarehouse.Destination.Config[string(model.EnableMergeSetting)] = true
-
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
-				err := d.Setup(ctx, mergeWarehouse, mockUploader)
+				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -632,45 +615,45 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(14))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-							id,
-							received_at,
-							test_bool,
-							test_datetime,
-							test_float,
-							test_int,
-							test_string
-						FROM %s.%s
-						ORDER BY id;`,
+				records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %s.%s
+						ORDER BY
+						  id;
+						`,
 						namespace,
 						tableName,
 					),
 				)
-				require.Equal(t, records, whth.DedupTwiceTestRecords())
+				require.Equal(t, records, testhelper.DedupTwiceTestRecords())
 			})
 		})
 		t.Run("append", func(t *testing.T) {
 			tableName := "append_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			c := config.New()
+			c.Set("Warehouse.deltalake.loadTableStrategy", "APPEND")
+
+			d := deltalake.New(c, logger.NOP, memstats.New())
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -685,23 +668,26 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-				fmt.Sprintf(
-					`SELECT
-						id,
-						received_at,
-						test_bool,
-						test_datetime,
-						test_float,
-						test_int,
-						test_string
-					FROM %s.%s
-					ORDER BY id;`,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+				  	  %s.%s
+					ORDER BY
+					  id;
+					`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.AppendTestRecords())
+			require.Equal(t, records, testhelper.AppendTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
@@ -717,7 +703,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -729,7 +714,7 @@ func TestIntegration(t *testing.T) {
 		t.Run("mismatch in number of columns", func(t *testing.T) {
 			tableName := "mismatch_columns_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -740,7 +725,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -750,28 +734,31 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-				fmt.Sprintf(
-					`SELECT
-						id,
-						received_at,
-						test_bool,
-						test_datetime,
-						test_float,
-						test_int,
-						test_string
-					FROM %s.%s
-					ORDER BY id;`,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+				  	  %s.%s
+					ORDER BY
+					  id;
+					`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.SampleTestRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("mismatch in schema", func(t *testing.T) {
 			tableName := "mismatch_schema_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -782,7 +769,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -792,28 +778,31 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-				fmt.Sprintf(
-					`SELECT
-						id,
-						received_at,
-						test_bool,
-						test_datetime,
-						test_float,
-						test_int,
-						test_string
-					FROM %s.%s
-					ORDER BY id;`,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+				  	  %s.%s
+					ORDER BY
+					  id;
+					`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.MismatchSchemaTestRecords())
+			require.Equal(t, records, testhelper.MismatchSchemaTestRecords())
 		})
 		t.Run("discards", func(t *testing.T) {
 			tableName := warehouseutils.DiscardsTable
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -824,7 +813,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
 			require.NoError(t, err)
@@ -834,27 +822,29 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-				fmt.Sprintf(
-					`SELECT
-						column_name,
-						column_value,
-						received_at,
-						row_id,
-						table_name,
-						uuid_ts
-					FROM %s.%s
-					ORDER BY row_id ASC;`,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  column_name,
+					  column_value,
+					  received_at,
+					  row_id,
+					  table_name,
+					  uuid_ts
+					FROM
+				  	  %s.%s
+					ORDER BY row_id ASC;
+					`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.DiscardTestRecords())
+			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
 		t.Run("parquet", func(t *testing.T) {
 			tableName := "parquet_test_table"
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
+			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeParquet, false, false, "2022-12-15T06:53:49.640Z")
@@ -865,7 +855,6 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -875,29 +864,32 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-				fmt.Sprintf(
-					`SELECT
-						id,
-						received_at,
-						test_bool,
-						test_datetime,
-						test_float,
-						test_int,
-						test_string
-					FROM %s.%s
-					ORDER BY id;`,
+			records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM
+				  	  %s.%s
+					ORDER BY
+					  id;
+					`,
 					namespace,
 					tableName,
 				),
 			)
-			require.Equal(t, records, whth.SampleTestRecords())
+			require.Equal(t, records, testhelper.SampleTestRecords())
 		})
 		t.Run("partition pruning", func(t *testing.T) {
 			t.Run("not partitioned", func(t *testing.T) {
 				tableName := "not_partitioned_test_table"
 
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -908,26 +900,26 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
 
-				_, err = d.DB.QueryContext(ctx,
-					`CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
-						extra_test_bool BOOLEAN,
-						extra_test_datetime TIMESTAMP,
-						extra_test_float DOUBLE,
-						extra_test_int BIGINT,
-						extra_test_string STRING,
-						id STRING,
-						received_at TIMESTAMP,
-						event_date DATE GENERATED ALWAYS AS (
-							CAST(received_at AS DATE)
-						),
-						test_bool BOOLEAN,
-						test_datetime TIMESTAMP,
-						test_float DOUBLE,
-						test_int BIGINT,
-						test_string STRING
-					) USING DELTA;`)
+				_, err = d.DB.QueryContext(ctx, `
+					CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
+					  extra_test_bool BOOLEAN,
+					  extra_test_datetime TIMESTAMP,
+					  extra_test_float DOUBLE,
+					  extra_test_int BIGINT,
+					  extra_test_string STRING,
+					  id STRING,
+					  received_at TIMESTAMP,
+					  event_date DATE GENERATED ALWAYS AS (
+						CAST(received_at AS DATE)
+					  ),
+					  test_bool BOOLEAN,
+					  test_datetime TIMESTAMP,
+					  test_float DOUBLE,
+					  test_int BIGINT,
+					  test_string STRING
+					) USING DELTA;
+				`)
 				require.NoError(t, err)
 
 				loadTableStat, err := d.LoadTable(ctx, tableName)
@@ -935,28 +927,31 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(14))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-							id,
-							received_at,
-							test_bool,
-							test_datetime,
-							test_float,
-							test_int,
-							test_string
-						FROM %s.%s
-						ORDER BY id;`,
+				records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+				  			%s.%s
+						ORDER BY
+						  id;
+						`,
 						namespace,
 						tableName,
 					),
 				)
-				require.Equal(t, records, whth.SampleTestRecords())
+				require.Equal(t, records, testhelper.SampleTestRecords())
 			})
 			t.Run("event_date is not in partition", func(t *testing.T) {
 				tableName := "not_event_date_partition_test_table"
 
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
@@ -967,26 +962,26 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
 
-				_, err = d.DB.QueryContext(ctx,
-					`CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
-						extra_test_bool BOOLEAN,
-						extra_test_datetime TIMESTAMP,
-						extra_test_float DOUBLE,
-						extra_test_int BIGINT,
-						extra_test_string STRING,
-						id STRING,
-						received_at TIMESTAMP,
-						event_date DATE GENERATED ALWAYS AS (
-							CAST(received_at AS DATE)
-						),
-						test_bool BOOLEAN,
-						test_datetime TIMESTAMP,
-						test_float DOUBLE,
-						test_int BIGINT,
-						test_string STRING
-					) USING DELTA PARTITIONED BY(id);`)
+				_, err = d.DB.QueryContext(ctx, `
+					CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
+					  extra_test_bool BOOLEAN,
+					  extra_test_datetime TIMESTAMP,
+					  extra_test_float DOUBLE,
+					  extra_test_int BIGINT,
+					  extra_test_string STRING,
+					  id STRING,
+					  received_at TIMESTAMP,
+					  event_date DATE GENERATED ALWAYS AS (
+						CAST(received_at AS DATE)
+					  ),
+					  test_bool BOOLEAN,
+					  test_datetime TIMESTAMP,
+					  test_float DOUBLE,
+					  test_int BIGINT,
+					  test_string STRING
+					) USING DELTA PARTITIONED BY(id);
+				`)
 				require.NoError(t, err)
 
 				loadTableStat, err := d.LoadTable(ctx, tableName)
@@ -994,23 +989,26 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(14))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-							id,
-							received_at,
-							test_bool,
-							test_datetime,
-							test_float,
-							test_int,
-							test_string
-						FROM %s.%s
-						ORDER BY id;`,
+				records := testhelper.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %s.%s
+						ORDER BY
+						  id;
+					`,
 						namespace,
 						tableName,
 					),
 				)
-				require.Equal(t, records, whth.SampleTestRecords())
+				require.Equal(t, records, testhelper.SampleTestRecords())
 			})
 		})
 	})
@@ -1049,66 +1047,62 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 			c.Set("Warehouse.deltalake.maxErrorLength", len(tempError.Error())*25)
 
 			d := deltalake.New(c, logger.NOP, memstats.New())
-			require.Equal(t, tc.expectedError, d.TrimErrorMessage(tc.inputError))
+			require.Equal(t, d.TrimErrorMessage(tc.inputError), tc.expectedError)
 		})
 	}
 }
 
-func TestDeltalake_ShouldMerge(t *testing.T) {
+func TestDeltalake_ShouldAppend(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		enableMerge           bool
+		loadTableStrategy     string
 		uploaderCanAppend     bool
 		uploaderExpectedCalls int
 		expected              bool
 	}{
 		{
-			name:                  "uploader says we can append and merge is not enabled",
-			enableMerge:           false,
+			name:                  "uploader says we can append and we are in append mode",
+			loadTableStrategy:     "APPEND",
 			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 1,
+			expected:              true,
+		},
+		{
+			name:                  "uploader says we cannot append and we are in append mode",
+			loadTableStrategy:     "APPEND",
+			uploaderCanAppend:     false,
 			uploaderExpectedCalls: 1,
 			expected:              false,
 		},
 		{
-			name:                  "uploader says we can append and merge is enabled",
-			enableMerge:           true,
+			name:                  "uploader says we can append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
 			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			uploaderExpectedCalls: 0,
+			expected:              false,
 		},
 		{
-			name:                  "uploader says we cannot append so enableMerge false is ignored",
-			enableMerge:           false,
+			name:                  "uploader says we cannot append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
 			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              true,
-		},
-		{
-			name:                  "uploader says we cannot append so enableMerge true is ignored",
-			enableMerge:           true,
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			uploaderExpectedCalls: 0,
+			expected:              false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
-			d.Warehouse = model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]any{
-						string(model.EnableMergeSetting): tc.enableMerge,
-					},
-				},
-			}
+			c := config.New()
+			c.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
+
+			d := deltalake.New(c, logger.NOP, memstats.New())
 
 			mockCtrl := gomock.NewController(t)
 			uploader := mockuploader.NewMockUploader(mockCtrl)
 			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
 
 			d.Uploader = uploader
-			require.Equal(t, d.ShouldMerge(), tc.expected)
+			require.Equal(t, d.ShouldAppend(), tc.expected)
 		})
 	}
 }
@@ -1148,8 +1142,8 @@ func newMockUploader(
 	return mockUploader
 }
 
-func mergeEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
+func mergeEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
 		"identifies":    1,
 		"users":         1,
 		"tracks":        1,
@@ -1161,8 +1155,8 @@ func mergeEventsMap() whth.EventsCountMap {
 	}
 }
 
-func appendEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
+func appendEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
 		"identifies":    2,
 		"users":         2,
 		"tracks":        2,

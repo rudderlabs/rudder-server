@@ -38,8 +38,7 @@
             "accountKey": "{{.accountKey}}",
             "syncFrequency": "30",
             "eventDelivery": false,
-            "eventDeliveryTS": 1648195480174,
-            "enableMerge": {{.enableMerge}}
+            "eventDeliveryTS": 1648195480174
           },
           "liveEventsConfig": {
             "eventDelivery": false,

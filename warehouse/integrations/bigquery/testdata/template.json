@@ -31,8 +31,7 @@
             "credentials": "{{.credentials}}",
             "prefix": "",
             "namespace": "{{.namespace}}",
-            "syncFrequency": "30",
-            "enableMerge": {{.enableMerge}}
+            "syncFrequency": "30"
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -99,7 +98,7 @@
         "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
         "name": "HTTP",
         "displayName": "HTTP",
-        "category": "singer-protocol",
+        "category": "",
         "createdAt": "2020-06-12T06:35:35.962Z",
         "updatedAt": "2020-06-12T06:35:35.962Z"
       },
@@ -160,8 +159,7 @@
             "credentials": "{{.credentials}}",
             "prefix": "",
             "namespace": "{{.sourcesNamespace}}",
-            "syncFrequency": "30",
-            "enableMerge": {{.enableMerge}}
+            "syncFrequency": "30"
           },
           "liveEventsConfig": {},
           "secretConfig": {},

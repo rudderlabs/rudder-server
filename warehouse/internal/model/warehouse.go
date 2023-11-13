@@ -2,17 +2,6 @@ package model
 
 import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-type DestinationConfigSetting interface{ string() string }
-
-type destConfSetting string
-
-func (s destConfSetting) string() string { return string(s) }
-
-const (
-	EnableMergeSetting      destConfSetting = "enableMerge"
-	UseRudderStorageSetting destConfSetting = "useRudderStorage"
-)
-
 type Warehouse struct {
 	WorkspaceID string
 	Source      backendconfig.SourceT
@@ -22,10 +11,10 @@ type Warehouse struct {
 	Identifier  string
 }
 
-func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool {
+func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
-	if destConfig[key.string()] != nil {
-		if val, ok := destConfig[key.string()].(bool); ok {
+	if destConfig[key] != nil {
+		if val, ok := destConfig[key].(bool); ok {
 			return val
 		}
 	}

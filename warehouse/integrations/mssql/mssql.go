@@ -294,9 +294,11 @@ func (ms *MSSQL) loadTable(
 	// - Refer to Microsoft's documentation on temporary tables at
 	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
 	log.Debugw("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(
-		`SELECT TOP 0 * INTO %[1]s.%[2]s
-		FROM %[1]s.%[3]s;`,
+	createStagingTableStmt := fmt.Sprintf(`
+		SELECT
+		  TOP 0 * INTO %[1]s.%[2]s
+		FROM
+		  %[1]s.%[3]s;`,
 		ms.Namespace,
 		stagingTableName,
 		tableName,
@@ -469,7 +471,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
-func (ms *MSSQL) ProcessColumnValue(
+func (as *MSSQL) ProcessColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
