@@ -66,3 +66,6 @@ linters-settings:
         deny:
           - pkg: "github.com/gofrs/uuid"
             desc: 'use github.com/google/uuid instead'
+          - pkg: "golang.org/x/exp/slices"
+            desc: 'use "slices" instead'
+
