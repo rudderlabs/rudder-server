@@ -72,3 +72,15 @@ func (b *SourceBuilder) WithGeoenrichmentEnabled(enabled bool) *SourceBuilder {
 	b.v.GeoEnrichment.Enabled = enabled
 	return b
 }
+
+// WithSourceCategory sets the source definition category
+func (b *SourceBuilder) WithSourceCategory(category string) *SourceBuilder {
+	b.v.SourceDefinition.Category = category
+	return b
+}
+
+// WithSourceType sets the source type
+func (b *SourceBuilder) WithSourceType(sourceType string) *SourceBuilder {
+	b.v.SourceDefinition.Name = sourceType
+	return b
+}
