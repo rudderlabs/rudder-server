@@ -584,8 +584,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
-									{"consent": "consent category 3"},
-									{"consent": "custom consent category 1"},
+									{"consent": "consent category 2"},
+									{"consent": "someOtherCategory"},
 								},
 							},
 						},
@@ -609,7 +609,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 								"provider": "custom",
 								"consents": []map[string]interface{}{
 									{"consent": "someOtherCategory"},
-									{"consent": "consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
@@ -631,9 +631,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
 								"provider":           "custom",
-								"resolutionStrategy": "or",
+								"resolutionStrategy": "and",
 								"consents": []map[string]interface{}{
 									{"consent": "custom consent category 3"},
+									{"consent": "consent category 4"},
 								},
 							},
 						},
@@ -2630,7 +2631,7 @@ var _ = Describe("Processor", Ordered, func() {
 		})
 	})
 
-	Context("isDestinationEnabled", func() {
+	Context("filterDestinations", func() {
 		It("should filter based on oneTrust consent management preferences", func() {
 			eventWithDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -2895,7 +2896,6 @@ var _ = Describe("Processor", Ordered, func() {
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
 						"provider":           "custom",
-						"resolutionStrategy": "or",
 						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2"},
 						"deniedConsentIds":   []interface{}{"someOtherCategory", "consent category 3"},
 					},
@@ -2948,36 +2948,6 @@ var _ = Describe("Processor", Ordered, func() {
 			_, err7 := json.Marshal(eventWithDeniedConsentsGCMKetch)
 			Expect(err7).To(BeNil())
 
-			eventWithCustomConsentsGCMAND := types.SingularEventT{
-				"originalTimestamp": "2019-03-10T10:10:10.10Z",
-				"event":             "Demo Track",
-				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"provider":           "custom",
-						"resolutionStrategy": "and",
-						"allowedConsentIds":  []interface{}{"consent category 1"},
-						"deniedConsentIds":   []interface{}{"consent category 2", "someOtherCategory"},
-					},
-				},
-				"type":      "track",
-				"channel":   "mobile",
-				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
-					"label":    "",
-					"value":    float64(1),
-					"testMap":  nil,
-					"category": "",
-					"floatVal": 4.51,
-				},
-				"integrations": map[string]interface{}{
-					"All": true,
-				},
-			}
-			_, err8 := json.Marshal(eventWithCustomConsentsGCMAND)
-			Expect(err8).To(BeNil())
-
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -3020,7 +2990,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all except D13
+			).To(Equal(7)) // all except D12 & D13
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
@@ -3042,18 +3012,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(7)) // all D7
-
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCMAND, SourceIDGCM)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithCustomConsentsGCMAND,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(7)) // all except D6 and D7
+			).To(Equal(8)) // all except D7
 		})
 	})
 
