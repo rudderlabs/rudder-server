@@ -1,13 +1,10 @@
 package processor
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -45,8 +42,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -75,75 +72,74 @@ type Handle struct {
 	transformer   transformer.Transformer
 	lastJobID     int64
 
-	gatewayDB     jobsdb.JobsDB
-	routerDB      jobsdb.JobsDB
-	batchRouterDB jobsdb.JobsDB
-	readErrorDB   jobsdb.JobsDB
-	writeErrorDB  jobsdb.JobsDB
-	eventSchemaDB jobsdb.JobsDB
-	archivalDB    jobsdb.JobsDB
-
-	logger                    logger.Logger
-	eventSchemaHandler        types.EventSchemasI
-	enrichers                 []enricher.PipelineEnricher
-	dedup                     dedup.Dedup
-	reporting                 types.Reporting
-	reportingEnabled          bool
-	backgroundWait            func() error
-	backgroundCancel          context.CancelFunc
-	transformerFeatures       json.RawMessage
-	statsFactory              stats.Stats
-	stats                     processorStats
-	payloadLimit              misc.ValueLoader[int64]
-	jobsDBCommandTimeout      misc.ValueLoader[time.Duration]
-	jobdDBQueryRequestTimeout misc.ValueLoader[time.Duration]
-	jobdDBMaxRetries          misc.ValueLoader[int]
-	transientSources          transientsource.Service
-	fileuploader              fileuploader.Provider
-	rsourcesService           rsources.JobService
-	destDebugger              destinationdebugger.DestinationDebugger
-	transDebugger             transformationdebugger.TransformationDebugger
-	isolationStrategy         isolation.Strategy
-	limiter                   struct {
+	gatewayDB                  jobsdb.JobsDB
+	routerDB                   jobsdb.JobsDB
+	batchRouterDB              jobsdb.JobsDB
+	readErrorDB                jobsdb.JobsDB
+	writeErrorDB               jobsdb.JobsDB
+	eventSchemaDB              jobsdb.JobsDB
+	archivalDB                 jobsdb.JobsDB
+	logger                     logger.Logger
+	eventSchemaHandler         types.EventSchemasI
+	enrichers                  []enricher.PipelineEnricher
+	dedup                      dedup.Dedup
+	reporting                  types.Reporting
+	reportingEnabled           bool
+	backgroundWait             func() error
+	backgroundCancel           context.CancelFunc
+	statsFactory               stats.Stats
+	stats                      processorStats
+	payloadLimit               misc.ValueLoader[int64]
+	jobsDBCommandTimeout       misc.ValueLoader[time.Duration]
+	jobdDBQueryRequestTimeout  misc.ValueLoader[time.Duration]
+	jobdDBMaxRetries           misc.ValueLoader[int]
+	transientSources           transientsource.Service
+	fileuploader               fileuploader.Provider
+	rsourcesService            rsources.JobService
+	transformerFeaturesService transformerFeaturesService.FeaturesService
+	destDebugger               destinationdebugger.DestinationDebugger
+	transDebugger              transformationdebugger.TransformationDebugger
+	isolationStrategy          isolation.Strategy
+	limiter                    struct {
 		read       kitsync.Limiter
 		preprocess kitsync.Limiter
 		transform  kitsync.Limiter
 		store      kitsync.Limiter
 	}
 	config struct {
-		isolationMode             isolation.Mode
-		mainLoopTimeout           time.Duration
-		featuresRetryMaxAttempts  int
-		enablePipelining          bool
-		pipelineBufferedItems     int
-		subJobSize                int
-		pingerSleep               misc.ValueLoader[time.Duration]
-		readLoopSleep             misc.ValueLoader[time.Duration]
-		maxLoopSleep              misc.ValueLoader[time.Duration]
-		storeTimeout              misc.ValueLoader[time.Duration]
-		maxEventsToProcess        misc.ValueLoader[int]
-		transformBatchSize        misc.ValueLoader[int]
-		userTransformBatchSize    misc.ValueLoader[int]
-		sourceIdDestinationMap    map[string][]backendconfig.DestinationT
-		sourceIdSourceMap         map[string]backendconfig.SourceT
-		workspaceLibrariesMap     map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap    map[string]string
-		destConsentCategories     map[string][]string
-		batchDestinations         []string
-		configSubscriberLock      sync.RWMutex
-		enableEventSchemasFeature bool
-		enableEventSchemasAPIOnly misc.ValueLoader[bool]
-		enableDedup               bool
-		enableEventCount          misc.ValueLoader[bool]
-		transformTimesPQLength    int
-		captureEventNameStats     misc.ValueLoader[bool]
-		transformerURL            string
-		pollInterval              time.Duration
-		GWCustomVal               string
-		asyncInit                 *misc.AsyncInit
-		eventSchemaV2Enabled      bool
-		archivalEnabled           misc.ValueLoader[bool]
-		eventAuditEnabled         map[string]bool
+		isolationMode                isolation.Mode
+		mainLoopTimeout              time.Duration
+		enablePipelining             bool
+		pipelineBufferedItems        int
+		subJobSize                   int
+		pingerSleep                  misc.ValueLoader[time.Duration]
+		readLoopSleep                misc.ValueLoader[time.Duration]
+		maxLoopSleep                 misc.ValueLoader[time.Duration]
+		storeTimeout                 misc.ValueLoader[time.Duration]
+		maxEventsToProcess           misc.ValueLoader[int]
+		transformBatchSize           misc.ValueLoader[int]
+		userTransformBatchSize       misc.ValueLoader[int]
+		sourceIdDestinationMap       map[string][]backendconfig.DestinationT
+		sourceIdSourceMap            map[string]backendconfig.SourceT
+		workspaceLibrariesMap        map[string]backendconfig.LibrariesT
+		destinationIDtoTypeMap       map[string]string
+		oneTrustConsentCategoriesMap map[string][]string
+		ketchConsentCategoriesMap    map[string][]string
+		batchDestinations            []string
+		configSubscriberLock         sync.RWMutex
+		enableEventSchemasFeature    bool
+		enableEventSchemasAPIOnly    misc.ValueLoader[bool]
+		enableDedup                  bool
+		enableEventCount             misc.ValueLoader[bool]
+		transformTimesPQLength       int
+		captureEventNameStats        misc.ValueLoader[bool]
+		transformerURL               string
+		pollInterval                 time.Duration
+		GWCustomVal                  string
+		asyncInit                    *misc.AsyncInit
+		eventSchemaV2Enabled         bool
+		archivalEnabled              misc.ValueLoader[bool]
+		eventAuditEnabled            map[string]bool
 	}
 
 	drainConfig struct {
@@ -192,13 +188,6 @@ type processorStats struct {
 	transformationsThroughput     stats.Measurement
 	DBWriteThroughput             stats.Measurement
 }
-
-var defaultTransformerFeatures = `{
-	"routerTransform": {
-	  "MARKETO": true,
-	  "HS": true
-	}
-  }`
 
 type DestStatT struct {
 	numEvents               stats.Measurement
@@ -364,6 +353,7 @@ func (proc *Handle) Setup(
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
+	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
@@ -391,6 +381,8 @@ func (proc *Handle) Setup(
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 	proc.enrichers = enrichers
+
+	proc.transformerFeaturesService = transformerFeaturesService
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -466,14 +458,9 @@ func (proc *Handle) Setup(
 	proc.backgroundWait = g.Wait
 	proc.backgroundCancel = cancel
 
-	proc.config.asyncInit = misc.NewAsyncInit(2)
+	proc.config.asyncInit = misc.NewAsyncInit(1)
 	g.Go(misc.WithBugsnag(func() error {
 		proc.backendConfigSubscriber(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		proc.syncTransformerFeatureJson(ctx)
 		return nil
 	}))
 
@@ -549,6 +536,16 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 		proc.logger.Info("Async init group done")
 
+		// waiting for init group
+		proc.logger.Info("Waiting for transformer features")
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-proc.transformerFeaturesService.Wait():
+			// proceed
+		}
+		proc.logger.Info("Transformer features received")
+
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
 		defer pool.Shutdown()
@@ -602,7 +599,6 @@ func (proc *Handle) Shutdown() {
 
 func (proc *Handle) loadConfig() {
 	proc.config.mainLoopTimeout = 200 * time.Millisecond
-	proc.config.featuresRetryMaxAttempts = 10
 
 	defaultSubJobSize := 2000
 	defaultMaxEventsToProcess := 10000
@@ -654,114 +650,19 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 }
 
-// syncTransformerFeatureJson polls the transformer feature json endpoint,
-//
-//	updates the transformer feature map.
-//
-// It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
-func (proc *Handle) syncTransformerFeatureJson(ctx context.Context) {
-	var initDone bool
-	proc.logger.Infof("Fetching transformer features from %s", proc.config.transformerURL)
-	for {
-		for i := 0; i < proc.config.featuresRetryMaxAttempts; i++ {
-
-			if ctx.Err() != nil {
-				return
-			}
-
-			retry := proc.makeFeaturesFetchCall()
-			if retry {
-				proc.logger.Infof("Fetched transformer features from %s (retry: %v)", proc.config.transformerURL, retry)
-			}
-			if retry {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(200 * time.Millisecond):
-					continue
-				}
-			}
-			break
-		}
-
-		if proc.transformerFeatures != nil && !initDone {
-			initDone = true
-			proc.config.asyncInit.Done()
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(proc.config.pollInterval):
-		}
-	}
-}
-
-func (proc *Handle) makeFeaturesFetchCall() bool {
-	url := proc.config.transformerURL + "/features"
-	req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
-	if err != nil {
-		proc.logger.Error("error creating request - %s", err)
-		return true
-	}
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second)}
-	res, err := client.Do(req)
-	if err != nil {
-		proc.logger.Error("error sending request - %s", err)
-		return true
-	}
-
-	defer func() { httputil.CloseResponse(res) }()
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return true
-	}
-
-	if res.StatusCode == 200 {
-		proc.transformerFeatures = body
-	} else if res.StatusCode == 404 {
-		proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-	}
-
-	return false
-}
-
-func getConsentCategories(dest *backendconfig.DestinationT) []string {
-	config := dest.Config
-	cookieCategories, _ := misc.MapLookup(
-		config,
-		"oneTrustCookieCategories",
-	).([]interface{})
-	if len(cookieCategories) == 0 {
-		return nil
-	}
-	return lo.FilterMap(
-		cookieCategories,
-		func(cookieCategory interface{}, _ int) (string, bool) {
-			switch category := cookieCategory.(type) {
-			case map[string]interface{}:
-				cCategory, ok := category["oneTrustCookieCategory"].(string)
-				return cCategory, ok && cCategory != ""
-			default:
-				return "", false
-			}
-		},
-	)
-}
-
 func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	var initDone bool
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
-			destConsentCategories  = make(map[string][]string)
-			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
-			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
-			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap = make(map[string]string)
-			eventAuditEnabled      = make(map[string]bool)
+			oneTrustConsentCategoriesMap = make(map[string][]string)
+			ketchConsentCategoriesMap    = make(map[string][]string)
+			workspaceLibrariesMap        = make(map[string]backendconfig.LibrariesT, len(config))
+			sourceIdDestinationMap       = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap            = map[string]backendconfig.SourceT{}
+			destinationIDtoTypeMap       = make(map[string]string)
+			eventAuditEnabled            = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -772,7 +673,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						destConsentCategories[destination.ID] = getConsentCategories(destination)
+						oneTrustConsentCategoriesMap[destination.ID] = oneTrustConsentCategories(destination)
+						ketchConsentCategoriesMap[destination.ID] = ketchConsentCategories(destination)
 					}
 				}
 			}
@@ -780,7 +682,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
 		}
 		proc.config.configSubscriberLock.Lock()
-		proc.config.destConsentCategories = destConsentCategories
+		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
+		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
@@ -792,12 +695,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			proc.config.asyncInit.Done()
 		}
 	}
-}
-
-func (proc *Handle) getConsentCategories(destinationID string) []string {
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	return proc.config.destConsentCategories[destinationID]
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -2334,7 +2231,7 @@ func (proc *Handle) transformSrcDest(
 	if transformAtOverrideFound {
 		transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 	}
-	transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
+	transformAtFromFeaturesFile := proc.transformerFeaturesService.RouterTransform(destination.DestinationDefinition.Name)
 
 	// Filtering events based on the supported message types - START
 	s := time.Now()
@@ -2408,7 +2305,7 @@ func (proc *Handle) transformSrcDest(
 	// a. transformAt is processor
 	// OR
 	// b. transformAt is router and transformer doesn't support router transform
-	if transformAt == "processor" || (transformAt == "router" && transformAtFromFeaturesFile == "") {
+	if transformAt == "processor" || (transformAt == "router" && !transformAtFromFeaturesFile) {
 		trace.WithRegion(ctx, "Dest Transform", func() {
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
@@ -2884,22 +2781,6 @@ func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue
 	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
-func (proc *Handle) filterDestinations(
-	event types.SingularEventT,
-	dests []backendconfig.DestinationT,
-) []backendconfig.DestinationT {
-	deniedCategories := deniedConsentCategories(event)
-	if len(deniedCategories) == 0 {
-		return dests
-	}
-	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
-		if consentCategories := proc.getConsentCategories(dest.ID); len(consentCategories) > 0 {
-			return len(lo.Intersect(consentCategories, deniedCategories)) == 0
-		}
-		return true
-	})
-}
-
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
@@ -2929,19 +2810,6 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 	}
 
 	return true
-}
-
-func deniedConsentCategories(se types.SingularEventT) []string {
-	if deniedConsents, _ := misc.MapLookup(se, "context", "consentManagement", "deniedConsentIds").([]interface{}); len(deniedConsents) > 0 {
-		return lo.FilterMap(
-			deniedConsents,
-			func(consent interface{}, _ int) (string, bool) {
-				consentStr, ok := consent.(string)
-				return consentStr, ok && consentStr != ""
-			},
-		)
-	}
-	return nil
 }
 
 // pipelineDelayStats reports the delay of the pipeline as a range:

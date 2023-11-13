@@ -273,6 +273,46 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 	return tx.Commit()
 }
 
+func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
+	filters, filterParams := sqlFilters(jobRunId, filter)
+	tx, err := sh.localDB.Begin()
+	if err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
+	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	if err != nil {
+		return err
+	}
+	for _, target := range jobStatus.TasksStatus {
+		for _, source := range target.SourcesStatus {
+			if !source.Completed {
+				return ErrSourceNotCompleted
+			}
+		}
+	}
+	filters, filterParams := sqlFilters(jobRunId, filter)
+	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
+	if _, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 	err := sh.doCleanupTables(ctx)
 	if err != nil {

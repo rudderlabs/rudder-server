@@ -38,6 +38,7 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -208,10 +209,10 @@ func TestDynamicClusterManager(t *testing.T) {
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
 		rsources.NewNoOpService(),
+		transformer.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
-		processor.WithFeaturesRetryMaxAttempts(0),
 	)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
