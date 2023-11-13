@@ -1737,7 +1737,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		if len(events) == 0 {
 			continue
 		}
-		source, _ := proc.getSourceBySourceID(string(sourceID))
+		source, err := proc.getSourceBySourceID(string(sourceID))
+		if err != nil {
+			continue
+		}
 
 		for _, obs := range proc.sourceObservers {
 			obs.ObserveSourceEvents(source, events)
