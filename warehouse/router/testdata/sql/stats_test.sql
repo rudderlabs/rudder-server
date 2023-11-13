@@ -40,25 +40,25 @@ VALUES
   (
     1, 1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
-    'POSTGRES', 'test-table', 1, NOW(),
+    'POSTGRES', 'test-table', 1, NOW() + INTERVAL '1 seconds',
     '{}'
   ),
   (
     2, 2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
-    'POSTGRES', 'test-table', 1, NOW(),
+    'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '2 seconds',
     '{}'
   ),
   (
     3, 3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
-    'POSTGRES', 'test-table', 1, NOW(),
+    'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '3 seconds',
     '{}'
   ),
   (
     4, 4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
-    'POSTGRES', 'test-table', 1, NOW(),
+    'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '4 seconds',
     '{}'
   );
 INSERT INTO wh_table_uploads (
