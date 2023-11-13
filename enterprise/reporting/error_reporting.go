@@ -340,18 +340,21 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				continue
 			}
 			deleteReportsStart := time.Now()
-			_, err = dbHandle.ExecContext(ctx, `DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
+			var delRows *sql.Rows
+			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
-				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+				edr.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
+			delRows.Close()
+		}
 
-			mainLoopTimer.Since(loopStart)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(edr.mainLoopSleepInterval.Load()):
-			}
+		mainLoopTimer.Since(loopStart)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(edr.mainLoopSleepInterval.Load()):
+
 		}
 	}
 }
@@ -446,10 +449,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		metrics = append(metrics, dbEdMetric)
-	}
-	if rows.Err() != nil {
-		edr.log.Errorf("Rows error while querying: %v", rows.Err())
-		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	return metrics, queryMin.Int64
 }
