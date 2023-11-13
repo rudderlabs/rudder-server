@@ -832,12 +832,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 					},
 				},
 			},
-			expected: ConsentManagementInfo{
-				Provider:           "custom",
-				DeniedConsentIds:   []string(nil),
-				AllowedConsentIds:  []string(nil),
-				ResolutionStrategy: "",
-			},
+			expected: defConsentManagementInfo,
 		},
 		{
 			description: "should return default values for denied consent IDs when it is malformed",
@@ -855,12 +850,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 					},
 				},
 			},
-			expected: ConsentManagementInfo{
-				Provider:           "custom",
-				DeniedConsentIds:   []string(nil),
-				AllowedConsentIds:  []string(nil),
-				ResolutionStrategy: "",
-			},
+			expected: defConsentManagementInfo,
 		},
 		{
 			description: "should return empty consent management info when consent management data is not a valid object",
