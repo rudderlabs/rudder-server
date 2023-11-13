@@ -2895,9 +2895,9 @@ var _ = Describe("Processor", Ordered, func() {
 				"sentAt":            "2019-03-10T10:10:10.10Z",
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
-						"provider":           "custom",
-						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2"},
-						"deniedConsentIds":   []interface{}{"someOtherCategory", "consent category 3"},
+						"provider":          "custom",
+						"allowedConsentIds": []interface{}{"consent category 1", "consent category 2"},
+						"deniedConsentIds":  []interface{}{"someOtherCategory", "consent category 3"},
 					},
 				},
 				"type":      "track",
