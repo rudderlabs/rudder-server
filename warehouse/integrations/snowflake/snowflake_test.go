@@ -296,7 +296,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
 			},
 			{
-				name:          "Async Job with Sources",
+				name:          "Source Job with Sources",
 				writeKey:      sourcesWriteKey,
 				schema:        sourcesNamespace,
 				tables:        []string{"tracks", "google_sheet"},
