@@ -331,7 +331,7 @@ func TestFilterDestinations(t *testing.T) {
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"purpose": "foo-4"},
+									{"consent": "foo-4"},
 								},
 							},
 						},
@@ -344,7 +344,7 @@ func TestFilterDestinations(t *testing.T) {
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"purpose": "foo-1"},
+									{"consent": "foo-1"},
 								},
 							},
 						},
@@ -357,8 +357,8 @@ func TestFilterDestinations(t *testing.T) {
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"purpose": "foo-1"},
-									{"purpose": "foo-4"},
+									{"consent": "foo-1"},
+									{"consent": "foo-4"},
 								},
 							},
 						},
@@ -371,9 +371,9 @@ func TestFilterDestinations(t *testing.T) {
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"purpose": "foo-1"},
-									{"purpose": "foo-2"},
-									{"purpose": "foo-3"},
+									{"consent": "foo-1"},
+									{"consent": "foo-2"},
+									{"consent": "foo-3"},
 								},
 							},
 						},
@@ -386,9 +386,9 @@ func TestFilterDestinations(t *testing.T) {
 							map[string]interface{}{
 								"provider": "ketch",
 								"consents": []map[string]interface{}{
-									{"purpose": "foo-1"},
-									{"purpose": "foo-1"},
-									{"purpose": "foo-1"},
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
+									{"consent": "foo-1"},
 								},
 							},
 						},
@@ -603,8 +603,9 @@ func TestFilterDestinations(t *testing.T) {
 			event: types.SingularEventT{
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
-						"provider":         "custom",
-						"deniedConsentIds": []interface{}{"foo-1", "foo-2", "foo-3"},
+						"provider":           "custom",
+						"resolutionStrategy": "or",
+						"deniedConsentIds":   []interface{}{"foo-1", "foo-2", "foo-3"},
 					},
 				},
 			},
@@ -614,7 +615,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{},
@@ -628,7 +629,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-4"},
@@ -642,7 +643,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -656,7 +657,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -671,7 +672,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -687,7 +688,7 @@ func TestFilterDestinations(t *testing.T) {
 					Config: map[string]interface{}{
 						"consentManagement": []interface{}{
 							map[string]interface{}{
-								"provider":           "custom",
+								"provider": "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
 									{"consent": "foo-1"},
@@ -699,7 +700,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			expectedDestIDs: []string{"destID-1", "destID-2"},
+			expectedDestIDs: []string{"destID-1", "destID-2", "destID-4"},
 		},
 	}
 	for _, tc := range testCases {

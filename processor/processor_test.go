@@ -427,7 +427,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 							map[string]interface{}{
 								"provider": "oneTrust",
 								"consents": []map[string]interface{}{
-									{"consent": "consent category 1"},
+									{"consent": "consent category 2"},
+									{"consent": "someOtherCategory"},
 								},
 							},
 							map[string]interface{}{
@@ -583,6 +584,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 								"provider":           "custom",
 								"resolutionStrategy": "or",
 								"consents": []map[string]interface{}{
+									{"consent": "consent category 3"},
 									{"consent": "custom consent category 1"},
 								},
 							},
@@ -606,8 +608,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 							map[string]interface{}{
 								"provider": "custom",
 								"consents": []map[string]interface{}{
-									{"consent": "custom consent category 1"},
-									{"consent": "custom consent category 2"},
+									{"consent": "someOtherCategory"},
+									{"consent": "consent category 3"},
 								},
 							},
 						},
@@ -2958,7 +2960,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(5)) // all except D6, D12 and D14
+			).To(Equal(8)) // all except D13
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
@@ -2969,7 +2971,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(7)) // all except D7 and D8
+			).To(Equal(7)) // all except D6 and D7
 		})
 	})
 
