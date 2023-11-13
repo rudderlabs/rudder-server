@@ -37,10 +37,7 @@ func (w *Warehouse) GetPreferAppendSetting() bool {
 	// defaulting to false if not defined for backwards compatibility with previous behaviour
 	value, ok := destConfig[PreferAppendSetting.string()].(bool)
 	if !ok {
-		if w.Type == "BQ" {
-			return true // defaulting to true for BQ
-		}
-		return false
+		return w.Type == "BQ" // defaulting to true for BQ, false for other destination types
 	}
 	return value
 }
