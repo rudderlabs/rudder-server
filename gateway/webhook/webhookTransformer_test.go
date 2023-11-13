@@ -18,9 +18,10 @@ func TestV0Adapter(t *testing.T) {
 
 	t.Run("should return the right url", func(t *testing.T) {
 		testSrcType := "testSrcType"
+		testSrcTypeLower := "testsrctype"
 		url, err := v0Adapter.getTransformerURL(testSrcType)
 		require.Nil(t, err)
-		require.True(t, strings.HasSuffix(url, fmt.Sprintf("/%s/sources/%s", transformer.V0, testSrcType)))
+		require.True(t, strings.HasSuffix(url, fmt.Sprintf("/%s/sources/%s", transformer.V0, testSrcTypeLower)))
 	})
 
 	t.Run("should return the body as is", func(t *testing.T) {
@@ -35,9 +36,11 @@ func TestV1Adapter(t *testing.T) {
 	t.Run("should return the right url", func(t *testing.T) {
 		v1Adapter := newSourceTransformAdapter(transformer.V1)
 		testSrcType := "testSrcType"
+		testSrcTypeLower := "testsrctype"
+
 		url, err := v1Adapter.getTransformerURL(testSrcType)
 		require.Nil(t, err)
-		require.True(t, strings.HasSuffix(url, fmt.Sprintf("/%s/sources/%s", transformer.V1, testSrcType)))
+		require.True(t, strings.HasSuffix(url, fmt.Sprintf("/%s/sources/%s", transformer.V1, testSrcTypeLower)))
 	})
 
 	t.Run("should return the body in v1 format", func(t *testing.T) {
