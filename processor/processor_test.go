@@ -2938,17 +2938,6 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
-			Expect(
-				len(processor.filterDestinations(
-					eventWithDeniedConsentsGCM,
-					processor.getEnabledDestinations(
-						SourceIDGCM,
-						"destination-definition-name-enabled",
-					),
-				)),
-			).To(Equal(7)) // all except D7 and D8
-
 			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
 				len(processor.filterDestinations(
@@ -2970,6 +2959,17 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 				)),
 			).To(Equal(5)) // all except D6, D12 and D14
+
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(
+				len(processor.filterDestinations(
+					eventWithDeniedConsentsGCM,
+					processor.getEnabledDestinations(
+						SourceIDGCM,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(7)) // all except D7 and D8
 		})
 	})
 
