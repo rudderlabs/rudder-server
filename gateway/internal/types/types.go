@@ -1,6 +1,9 @@
 package types
 
-import "github.com/rudderlabs/rudder-server/utils/misc"
+import (
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+)
 
 type ContextKey string
 
@@ -23,6 +26,7 @@ type AuthRequestContext struct {
 	ReplaySource    bool
 	SourceJobRunID  string
 	SourceTaskRunID string
+	Source          backendconfig.SourceT
 }
 
 func (arctx *AuthRequestContext) SourceTag() string {
