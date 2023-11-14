@@ -52,6 +52,7 @@ func Test_LoadFiles(t *testing.T) {
 
 		for i := range loadFiles {
 			loadFiles[i].ID = int64(i + 1)
+			loadFiles[i].CreatedAt = now
 		}
 
 		expectedLoadFiles = loadFiles
@@ -109,7 +110,60 @@ func Test_LoadFiles(t *testing.T) {
 
 		require.Len(t, gotLoadFiles, 1)
 		lastLoadFile.ID = gotLoadFiles[0].ID
+		lastLoadFile.CreatedAt = gotLoadFiles[0].CreatedAt
 		require.Equal(t, lastLoadFile, gotLoadFiles[0])
+	})
+}
+
+func TestLoadFiles_GetByID(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	db := setupDB(t)
+
+	r := repo.NewLoadFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	loadFiles := lo.RepeatBy(10, func(i int) model.LoadFile {
+		return model.LoadFile{
+			TableName:             "table_name",
+			Location:              "s3://bucket/path/to/file",
+			TotalRows:             10,
+			ContentLength:         1000,
+			StagingFileID:         int64(i + 1),
+			DestinationRevisionID: "revision_id",
+			UseRudderStorage:      true,
+			SourceID:              "source_id",
+			DestinationID:         "destination_id",
+			DestinationType:       "RS",
+		}
+	})
+	require.NoError(t, r.Insert(ctx, loadFiles))
+
+	for i := range loadFiles {
+		loadFiles[i].ID = int64(i + 1)
+		loadFiles[i].CreatedAt = now
+	}
+
+	t.Run("found", func(t *testing.T) {
+		for _, loadFile := range loadFiles {
+			gotLoadFile, err := r.GetByID(ctx, loadFile.ID)
+			require.NoError(t, err)
+			require.EqualValues(t, loadFile, *gotLoadFile)
+		}
+	})
+	t.Run("not found", func(t *testing.T) {
+		loadFile, err := r.GetByID(ctx, -1)
+		require.ErrorIs(t, err, model.ErrLoadFileNotFound)
+		require.Nil(t, loadFile)
+	})
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		loadFile, err := r.GetByID(ctx, -1)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Nil(t, loadFile)
 	})
 }
 

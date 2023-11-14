@@ -1,7 +1,7 @@
 version: '3.7'
 services:
   spark-master:
-    image: bitnami/spark:3.2.4
+    image: bitnami/spark:latest
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -31,7 +31,7 @@ services:
           memory: 1G
 
   spark-worker:
-    image: bitnami/spark:3.2.4
+    image: bitnami/spark:latest
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077

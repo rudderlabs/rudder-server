@@ -32,7 +32,7 @@
             "prefix": "",
             "namespace": "{{.namespace}}",
             "syncFrequency": "30",
-            "enableMerge": {{.enableMerge}}
+            "preferAppend": {{.preferAppend}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -161,7 +161,7 @@
             "prefix": "",
             "namespace": "{{.sourcesNamespace}}",
             "syncFrequency": "30",
-            "enableMerge": {{.enableMerge}}
+            "preferAppend": {{.preferAppend}}
           },
           "liveEventsConfig": {},
           "secretConfig": {},
