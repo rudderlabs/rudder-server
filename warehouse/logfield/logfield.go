@@ -36,5 +36,4 @@ const (
 	IntervalInHours            = "intervalInHours"
 	StartTime                  = "startTime"
 	EndTime                    = "endTime"
-	ShouldMerge                = "shouldMerge"
 )

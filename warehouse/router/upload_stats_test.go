@@ -129,7 +129,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
 
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
+		mockMeasurement.EXPECT().SendTiming(3 * time.Second).Times(1)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),

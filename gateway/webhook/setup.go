@@ -9,14 +9,17 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -42,10 +45,8 @@ func newWebhookStats() *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
-
-	sourceTransformerURL := strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/sources"
 	// Number of incoming webhooks that are batched before calling source transformer
 	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
@@ -75,9 +76,16 @@ func Setup(gwHandle Gateway, stat stats.Stats, opts ...batchTransformerOption) *
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			bt := batchWebhookTransformerT{
-				webhook:              webhook,
-				stats:                newWebhookStats(),
-				sourceTransformerURL: sourceTransformerURL,
+				webhook: webhook,
+				stats:   newWebhookStats(),
+				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-transformerFeaturesService.Wait():
+						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion()), nil
+					}
+				},
 			}
 			for _, opt := range opts {
 				opt(&bt)

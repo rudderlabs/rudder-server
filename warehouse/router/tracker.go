@@ -29,6 +29,9 @@ func (r *Router) CronTracker(ctx context.Context) error {
 
 		for _, warehouse := range warehouses {
 			if err := r.Track(ctx, &warehouse, r.conf); err != nil {
+				if ctx.Err() != nil {
+					return nil //nolint:nilerr
+				}
 				return fmt.Errorf(
 					"cron tracker failed for source: %s, destination: %s with error: %w",
 					warehouse.Source.ID,

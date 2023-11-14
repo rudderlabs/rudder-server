@@ -2,17 +2,6 @@ package model
 
 import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-type DestinationConfigSetting interface{ string() string }
-
-type destConfSetting string
-
-func (s destConfSetting) string() string { return string(s) }
-
-const (
-	PreferAppendSetting     destConfSetting = "preferAppend"
-	UseRudderStorageSetting destConfSetting = "useRudderStorage"
-)
-
 type Warehouse struct {
 	WorkspaceID string
 	Source      backendconfig.SourceT
@@ -22,19 +11,12 @@ type Warehouse struct {
 	Identifier  string
 }
 
-func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool {
+func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
-	if destConfig[key.string()] != nil {
-		if val, ok := destConfig[key.string()].(bool); ok {
+	if destConfig[key] != nil {
+		if val, ok := destConfig[key].(bool); ok {
 			return val
 		}
 	}
 	return false
-}
-
-func (w *Warehouse) GetPreferAppendSetting() bool {
-	destConfig := w.Destination.Config
-	// defaulting to false if not defined for backwards compatibility with previous behaviour
-	value, _ := destConfig[PreferAppendSetting.string()].(bool)
-	return value
 }

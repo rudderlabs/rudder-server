@@ -58,6 +58,8 @@ const (
 	ContextDeadlineExceeded = "context deadline exceeded"
 	// GatewayTimeout - Gateway timeout
 	GatewayTimeout = "Gateway timeout"
+	// ServiceUnavailable - Service unavailable
+	ServiceUnavailable = "Service unavailable"
 	// NoSourceIdInHeader - Failed to read source id from header
 	NoSourceIdInHeader = "Failed to read source id from header"
 	// InvalidSourceID - Invalid source id
@@ -100,6 +102,8 @@ var statusMap = map[string]status{
 	ErrorInParseMultiform:                          {message: ErrorInParseMultiform, code: http.StatusBadRequest},
 	NotRudderEvent:                                 {message: NotRudderEvent, code: http.StatusBadRequest},
 	ContextDeadlineExceeded:                        {message: GatewayTimeout, code: http.StatusGatewayTimeout},
+	GatewayTimeout:                                 {message: GatewayTimeout, code: http.StatusGatewayTimeout},
+	ServiceUnavailable:                             {message: ServiceUnavailable, code: http.StatusServiceUnavailable},
 }
 
 // status holds the gateway response status message and code

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -122,11 +124,16 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return err
 	}
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		FeaturesRetryMaxAttempts: 10,
+	})
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
-		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
+		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)
