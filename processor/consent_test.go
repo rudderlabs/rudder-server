@@ -716,7 +716,7 @@ func TestFilterDestinations(t *testing.T) {
 				proc.config.destGenericConsentManagementMap[dest.ID] = GetGenericConsentManagementData(&dest)
 			}
 
-			filteredDestinations := proc.filterDestinations(tc.event, tc.destinations)
+			filteredDestinations := proc.getConsentFilteredDestinations(tc.event, tc.destinations)
 
 			require.EqualValues(t, tc.expectedDestIDs, lo.Map(filteredDestinations, func(dest backendconfig.DestinationT, _ int) string {
 				return dest.ID

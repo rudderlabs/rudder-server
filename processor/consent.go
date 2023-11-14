@@ -30,9 +30,13 @@ type GenericConsentManagementProviderConfig struct {
 	Consents           []GenericConsentsConfig `json:"consents"`
 }
 
-// filterDestinations filters destinations based on consent categories, supports oneTrustCookieCategories and ketchConsentPurposes
-func (proc *Handle) filterDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
-	// If there are no deniedConsentIds, then return all destinations
+/*
+Filters and returns destinations based on the consents configured for the destination and the user consents present in the event.
+
+Supports legacy and generic consent management.
+*/
+func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
+	// If the event does not have denied consent IDs, do not filter any destinations
 	consentManagementInfo := GetConsentManagementInfo(event)
 	if len(consentManagementInfo.DeniedConsentIds) == 0 {
 		return destinations
@@ -41,30 +45,38 @@ func (proc *Handle) filterDestinations(event types.SingularEventT, destinations 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// This field differentiates legacy and generic consent management
 		if consentManagementInfo.Provider != "" {
+			// Generic consent management
+
 			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
 				finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
+
+				// For custom provider, the resolution strategy is to be picked from the destination config
 				if consentManagementInfo.Provider == "custom" {
 					finalResolutionStrategy = cmpData.ResolutionStrategy
 				}
 
 				switch finalResolutionStrategy {
+				// The user must consent to at least one of the configured consents in the destination
 				case "or":
 					return !lo.Every(consentManagementInfo.DeniedConsentIds, cmpData.Consents)
+
+				// The user must consent to all of the configured consents in the destination
 				default: // "and"
 					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIds)) == 0
 				}
 			}
 		} else {
 			// Legacy consent management
+
 			// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
 			if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
 				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIds)) == 0
 			}
 
-			// If the destination has ketchConsentPurposes, returns false if all ketchCategories are present in deniedCategories
-			if ketchCategories := proc.getKetchConsentData(dest.ID); len(ketchCategories) > 0 {
-				return !lo.Every(consentManagementInfo.DeniedConsentIds, ketchCategories)
+			// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
+			if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
+				return !lo.Every(consentManagementInfo.DeniedConsentIds, ketchPurposes)
 			}
 		}
 		return true
@@ -83,7 +95,6 @@ func (proc *Handle) getKetchConsentData(destinationID string) []string {
 	return proc.config.ketchConsentCategoriesMap[destinationID]
 }
 
-// returns the consent management data for a destination and provider
 func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
@@ -176,15 +187,15 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 	return genericConsentManagementData
 }
 
-func GetConsentManagementInfo(se types.SingularEventT) ConsentManagementInfo {
+func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo {
 	consentManagementInfo := ConsentManagementInfo{}
-	if consentManagement, ok := misc.MapLookup(se, "context", "consentManagement").(map[string]interface{}); ok {
-		consentManagementStr, mErr := jsonfast.Marshal(consentManagement)
+	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
+		consentManagementObjBytes, mErr := jsonfast.Marshal(consentManagement)
 		if mErr != nil {
 			return consentManagementInfo
 		}
 
-		err := jsonfast.Unmarshal(consentManagementStr, &consentManagementInfo)
+		err := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
 		if err != nil {
 			return consentManagementInfo
 		}

@@ -2631,7 +2631,7 @@ var _ = Describe("Processor", Ordered, func() {
 		})
 	})
 
-	Context("filterDestinations", func() {
+	Context("getConsentFilteredDestinations", func() {
 		It("should filter based on oneTrust consent management preferences", func() {
 			eventWithDeniedConsents := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
@@ -2723,7 +2723,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsents,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
@@ -2734,7 +2734,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsents,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
@@ -2745,7 +2745,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
@@ -2794,7 +2794,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			filteredDestinations := processor.filterDestinations(
+			filteredDestinations := processor.getConsentFilteredDestinations(
 				event,
 				processor.getEnabledDestinations(
 					SourceIDKetchConsent,
@@ -2961,7 +2961,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
@@ -2972,7 +2972,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsentsGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
@@ -2983,7 +2983,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithCustomConsentsGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
@@ -2994,7 +2994,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
@@ -3005,7 +3005,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
 			Expect(
-				len(processor.filterDestinations(
+				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCMKetch,
 					processor.getEnabledDestinations(
 						SourceIDGCM,

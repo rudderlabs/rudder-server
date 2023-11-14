@@ -1643,7 +1643,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
-				enabledDestinationsList := proc.filterDestinations(
+				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
 					proc.getEnabledDestinations(sourceId, *destType),
 				)
@@ -2798,7 +2798,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 		return false
 	}
 
-	if enabledDestinationsList := proc.filterDestinations(
+	if enabledDestinationsList := proc.getConsentFilteredDestinations(
 		event,
 		lo.Flatten(
 			lo.Map(
