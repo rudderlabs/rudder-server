@@ -345,13 +345,13 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			if err != nil {
 				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
 			}
+		}
 
-			mainLoopTimer.Since(loopStart)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(edr.mainLoopSleepInterval.Load()):
-			}
+		mainLoopTimer.Since(loopStart)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(edr.mainLoopSleepInterval.Load()):
 		}
 	}
 }
