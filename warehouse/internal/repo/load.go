@@ -26,7 +26,8 @@ const (
 		destination_type,
 		table_name,
 		total_events,
-		metadata
+		metadata,
+		created_at
 `
 )
 
@@ -85,7 +86,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 
 		for _, loadFile := range loadFiles {
 			metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
-			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
+			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, lf.now(), metadata)
 			if err != nil {
 				return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 			}
@@ -134,48 +135,88 @@ func (lf *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int
 	}
 	defer func() { _ = rows.Close() }()
 
+	loadFiles, err := scanLoadFiles(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scanning load files: %w", err)
+	}
+	return loadFiles, nil
+}
+
+func scanLoadFiles(rows *sqlmiddleware.Rows) ([]model.LoadFile, error) {
+	var loadFiles []model.LoadFile
+	for rows.Next() {
+		var loadFile model.LoadFile
+		err := scanLoadFile(rows.Scan, &loadFile)
+		if err != nil {
+			return nil, fmt.Errorf("scanning load file: %w", err)
+		}
+		loadFiles = append(loadFiles, loadFile)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return loadFiles, nil
+}
+
+func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 	type metadataSchema struct {
 		DestinationRevisionID string `json:"destination_revision_id"`
 		ContentLength         int64  `json:"content_length"`
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
 
-	var loadFiles []model.LoadFile
-	for rows.Next() {
-		var loadFile model.LoadFile
+	var metadataRaw jsonstd.RawMessage
 
-		var metadataRaw jsonstd.RawMessage
-		err := rows.Scan(
-			&loadFile.ID,
-			&loadFile.StagingFileID,
-			&loadFile.Location,
-			&loadFile.SourceID,
-			&loadFile.DestinationID,
-			&loadFile.DestinationType,
-			&loadFile.TableName,
-			&loadFile.TotalRows,
-			&metadataRaw,
-		)
-		if err != nil {
-			return nil, fmt.Errorf(`scanning load files: %w`, err)
-		}
-
-		var metadata metadataSchema
-		if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
-			return nil, fmt.Errorf(`un-marshalling load files metadata: %w`, err)
-		}
-
-		loadFile.ContentLength = metadata.ContentLength
-		loadFile.DestinationRevisionID = metadata.DestinationRevisionID
-		loadFile.UseRudderStorage = metadata.UseRudderStorage
-
-		loadFiles = append(loadFiles, loadFile)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("querying load files: %w", err)
+	err := scan(
+		&loadFile.ID,
+		&loadFile.StagingFileID,
+		&loadFile.Location,
+		&loadFile.SourceID,
+		&loadFile.DestinationID,
+		&loadFile.DestinationType,
+		&loadFile.TableName,
+		&loadFile.TotalRows,
+		&metadataRaw,
+		&loadFile.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf(`scanning row: %w`, err)
 	}
 
-	return loadFiles, nil
+	var metadata metadataSchema
+	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+		return fmt.Errorf(`un-marshalling load file metadata: %w`, err)
+	}
+
+	loadFile.ContentLength = metadata.ContentLength
+	loadFile.DestinationRevisionID = metadata.DestinationRevisionID
+	loadFile.UseRudderStorage = metadata.UseRudderStorage
+	loadFile.CreatedAt = loadFile.CreatedAt.UTC()
+
+	return nil
+}
+
+// GetByID returns the load file matching the id.
+func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, error) {
+	row := lf.db.QueryRowContext(ctx, `
+		SELECT
+		`+loadTableColumns+`
+		FROM
+			`+loadTableName+`
+		WHERE
+			id = $1;
+	`,
+		id,
+	)
+	var loadFile model.LoadFile
+	err := scanLoadFile(row.Scan, &loadFile)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrLoadFileNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("scanning load file: %w", err)
+	}
+	return &loadFile, nil
 }
 
 // TotalExportedEvents returns the total number of events exported by the corresponding staging files.
