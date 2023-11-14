@@ -65,6 +65,7 @@ type DefaultReporter struct {
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 	maxConcurrentRequests                misc.ValueLoader[int]
+	autoVacuumCostLimit                  misc.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -84,6 +85,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
+	autoVacuumCostLimit := config.GetReloadableIntVar(2000, 1, "Reporting.autoVacuumCostLimit")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -110,6 +112,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 		stats:                                stats,
+		autoVacuumCostLimit:                  autoVacuumCostLimit,
 	}
 }
 
@@ -135,7 +138,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		MigrationsTable:            "reports_migrations",
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
-	err = m.Migrate("reports")
+	templateData := map[string]int{
+		"AutoVacuumCostLimit": r.autoVacuumCostLimit.Load(),
+	}
+	err = m.MigrateFromTemplates("reports", templateData)
 	if err != nil {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
