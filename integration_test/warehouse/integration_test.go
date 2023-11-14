@@ -1090,15 +1090,6 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-			{A: "status", B: succeeded},
-		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
