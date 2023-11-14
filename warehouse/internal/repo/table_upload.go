@@ -58,6 +58,10 @@ func NewTableUploads(db *sqlmiddleware.DB, opts ...Opt) *TableUploads {
 	return r
 }
 
+func (tu *TableUploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
+	return (*repo)(tu).WithTx(ctx, f)
+}
+
 func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
 	return (*repo)(tu).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
@@ -178,7 +182,9 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 	return nil
 }
 
-func (tu *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Context, uploadId int64, tableName string, stagingFileIDs []int64) error {
+// PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
+// by summing the 'total_events' from load files associated with specific staging file IDs.
+func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
 	subQuery := `
 		WITH row_numbered_load_files as (
 		  SELECT
@@ -218,7 +224,7 @@ func (tu *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Contex
 		tableName,
 		pq.Array(stagingFileIDs),
 	}
-	result, err := tu.db.ExecContext(
+	result, err := tx.ExecContext(
 		ctx,
 		query,
 		queryArgs...,

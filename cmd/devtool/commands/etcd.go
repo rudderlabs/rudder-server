@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -38,18 +37,6 @@ func ETCD() *cli.Command {
 					},
 				},
 				ArgsUsage: "[normal|degraded]",
-			},
-			{
-				Name:   "workspaces",
-				Usage:  "define workspaces for rudder-server",
-				Action: Workspace,
-				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:  "no-wait",
-						Usage: "do not wait for workspaces change to be acknowledged",
-					},
-				},
-				ArgsUsage: "[all|none|<comma-separated list of workspace ids>]",
 			},
 			{
 				Name:   "list",
@@ -96,68 +83,6 @@ func Mode(c *cli.Context) error {
 		return err
 	}
 	fmt.Printf("mode request sent: %s -> %s \n", modeRequestKey, payload)
-
-	if c.Bool("no-wait") {
-		return nil
-	}
-
-	fmt.Print("waiting for ack: ")
-
-	resp := <-ackCh
-
-	if resp.Err() != nil {
-		return resp.Err()
-	}
-
-	fmt.Printf("%s\n", resp.Events[0].Kv.Value)
-
-	return nil
-}
-
-func Workspace(c *cli.Context) error {
-	if c.Args().Len() == 0 {
-		return fmt.Errorf("need to specify: all, none or a comma-separated list of workspace ids")
-	}
-
-	workspaces := (strings.ToUpper(c.Args().Get(0)))
-
-	var workspaceIDs []string
-
-	switch strings.ToUpper(workspaces) {
-	case "ALL":
-		return fmt.Errorf("not implemented yet: use `none` for now")
-	case "NONE":
-		workspaceIDs = []string{}
-	default:
-		workspaceIDs = strings.Split(workspaces, ",")
-	}
-
-	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
-	etcdClient, err := etcd.New(etcd.Config{
-		Endpoints: endpoints,
-		DialOptions: []grpc.DialOption{
-			grpc.WithBlock(), // block until the underlying connection is up
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	releaseName := config.GetReleaseName()
-	serverIndex := misc.GetInstanceID()
-	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
-
-	ackKey := fmt.Sprintf("ack-devtool/%s", uuid.New().String())
-	ackCh := etcdClient.Watch(c.Context, ackKey)
-
-	requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", releaseName, serverIndex, appTypeStr)
-
-	payload := fmt.Sprintf(`{"workspaces": %q, "ack_key": %q}`, strings.Join(workspaceIDs, ","), ackKey)
-	_, err = etcdClient.Put(c.Context, requestKey, payload)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("mode request sent: %s -> %s \n", requestKey, payload)
 
 	if c.Bool("no-wait") {
 		return nil

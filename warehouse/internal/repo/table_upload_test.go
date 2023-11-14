@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	"github.com/samber/lo"
 
 	"github.com/stretchr/testify/require"
@@ -293,11 +295,11 @@ func TestTableUploadRepo(t *testing.T) {
 	})
 
 	t.Run("TotalEvents", func(t *testing.T) {
-		t.Run("PopulateTotalEventsFromStagingFileIDs", func(t *testing.T) {
+		t.Run("PopulateTotalEvents", func(t *testing.T) {
 			var (
 				loadFiles  []model.LoadFile
 				stagingIDs []int64
-				tablename  = tables[0]
+				tableName  = tables[0]
 			)
 
 			t.Log("insert load files")
@@ -315,10 +317,15 @@ func TestTableUploadRepo(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("populate total events")
-			for i, table := range tables {
-				err = r.PopulateTotalEventsFromStagingFileIDs(ctx, uploadID, table, stagingIDs)
-				require.NoError(t, err)
+			err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+				for _, table := range tables {
+					require.NoError(t, r.PopulateTotalEventsWithTx(ctx, tx, uploadID, table, stagingIDs))
+				}
+				return nil
+			})
+			require.NoError(t, err)
 
+			for i, table := range tables {
 				tableUpload, err := r.GetByUploadIDAndTableName(ctx, uploadID, table)
 				require.NoError(t, err)
 				require.Equal(t, uploadID, tableUpload.UploadID)
@@ -327,12 +334,16 @@ func TestTableUploadRepo(t *testing.T) {
 			}
 
 			t.Run("cancelled context", func(t *testing.T) {
-				err = r.PopulateTotalEventsFromStagingFileIDs(cancelledCtx, uploadID, tablename, stagingIDs)
+				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+					return r.PopulateTotalEventsWithTx(cancelledCtx, tx, uploadID, tableName, stagingIDs)
+				})
 				require.ErrorIs(t, err, context.Canceled)
 			})
 
 			t.Run("no rows affected", func(t *testing.T) {
-				err = r.PopulateTotalEventsFromStagingFileIDs(ctx, int64(-1), tablename, stagingIDs)
+				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+					return r.PopulateTotalEventsWithTx(ctx, tx, int64(-1), tableName, stagingIDs)
+				})
 				require.EqualError(t, err, fmt.Errorf("no rows affected").Error())
 			})
 		})

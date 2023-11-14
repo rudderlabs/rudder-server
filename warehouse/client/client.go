@@ -31,7 +31,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result.Columns, err = rows.Columns()
 	if err != nil {

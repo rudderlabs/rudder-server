@@ -172,6 +172,7 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		SourceCategory: s.SourceDefinition.Category,
 		SourceDefName:  s.SourceDefinition.Name,
 		ReplaySource:   s.IsReplaySource(),
+		Source:         s,
 	}
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory

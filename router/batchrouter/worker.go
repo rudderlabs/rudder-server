@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -48,20 +48,18 @@ func (w *worker) Work() bool {
 	if len(workerJobs) == 0 {
 		return false
 	}
-	brt.configSubscriberMu.RLock()
-	destinationsMap := brt.destinationsMap
-	brt.configSubscriberMu.RUnlock()
+
 	var jobsWg sync.WaitGroup
 	jobsWg.Add(len(workerJobs))
 	for _, workerJob := range workerJobs {
-		w.processJobAsync(&jobsWg, workerJob, destinationsMap)
+		w.processJobAsync(&jobsWg, workerJob)
 	}
 	jobsWg.Wait()
 	return true
 }
 
 // processJobAsync spawns a goroutine and processes the destination's jobs. The provided wait group is notified when the goroutine completes.
-func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *DestinationJobs, destinationsMap map[string]*router_utils.DestinationWithSources) {
+func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *DestinationJobs) {
 	brt := w.brt
 	rruntime.Go(func() {
 		defer brt.limiter.process.Begin(w.partition)()
@@ -71,30 +69,32 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		var statusList []*jobsdb.JobStatusT
 		var drainList []*jobsdb.JobStatusT
 		var drainJobList []*jobsdb.JobT
-		drainStatsbyDest := make(map[string]*router_utils.DrainStats)
+		drainStatsbyDest := make(map[string]*routerutils.DrainStats)
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
-			if drain, reason := router_utils.ToBeDrained(job, destWithSources.Destination.ID, brt.toAbortDestinationIDs.Load(), destinationsMap); drain {
+			if drain, reason := brt.drainer.Drain(
+				job,
+			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     router_utils.DRAIN_ERROR_CODE,
-					ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
+					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+					ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", reason),
 					Parameters:    []byte(`{}`), // check
 					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				// Enhancing job parameter with the drain reason.
-				job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
-				job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
+				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
+				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
 				drainList = append(drainList, &status)
 				drainJobList = append(drainJobList, job)
 				if _, ok := drainStatsbyDest[destWithSources.Destination.ID]; !ok {
-					drainStatsbyDest[destWithSources.Destination.ID] = &router_utils.DrainStats{
+					drainStatsbyDest[destWithSources.Destination.ID] = &routerutils.DrainStats{
 						Count:     0,
 						Reasons:   []string{},
 						Workspace: job.WorkspaceId,
