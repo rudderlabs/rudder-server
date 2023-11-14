@@ -1615,6 +1615,17 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	marshalTime := time.Since(marshalStart)
 	defer proc.stats.marshalSingularEvents.SendTiming(marshalTime)
 
+	for sourceID, events := range groupedEventsBySourceId {
+		source, err := proc.getSourceBySourceID(string(sourceID))
+		if err != nil {
+			continue
+		}
+
+		for _, obs := range proc.sourceObservers {
+			obs.ObserveSourceEvents(source, events)
+		}
+	}
+
 	// TRACKING PLAN - START
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
@@ -1629,20 +1640,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Appending validatedReportMetrics to reportMetrics
 	reportMetrics = append(reportMetrics, validatedReportMetrics...)
 	// TRACKING PLAN - END
-
-	for sourceID, events := range groupedEventsBySourceId {
-		if len(events) == 0 {
-			continue
-		}
-		source, err := proc.getSourceBySourceID(string(sourceID))
-		if err != nil {
-			continue
-		}
-
-		for _, obs := range proc.sourceObservers {
-			obs.ObserveSourceEvents(source, events)
-		}
-	}
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for sourceIdT, eventList := range validatedEventsBySourceId {
