@@ -39,8 +39,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -164,8 +163,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -290,8 +288,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -441,8 +438,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
