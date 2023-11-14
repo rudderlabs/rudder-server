@@ -1132,6 +1132,30 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	return m
 }
 
+func procFilteredCountStat(destType, pu, statusCode string) {
+	stats.Default.NewTaggedStat(
+		"proc_filtered_counts",
+		stats.CountType,
+		stats.Tags{
+			"destName":   destType,
+			"statusCode": statusCode,
+			"stage":      pu,
+		},
+	).Increment()
+}
+
+func procErrorCountsStat(destType, pu, statusCode string) {
+	stats.Default.NewTaggedStat(
+		"proc_error_counts",
+		stats.CountType,
+		stats.Tags{
+			"destName":   destType,
+			"statusCode": statusCode,
+			"stage":      pu,
+		},
+	).Increment()
+}
+
 func (proc *Handle) getTransformationMetrics(
 	transformerResponses []transformer.TransformerResponse,
 	state string,
@@ -1144,9 +1168,9 @@ func (proc *Handle) getTransformationMetrics(
 	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
 	countMap := make(map[string]int64)
 	var jobs []*jobsdb.JobT
-	isDropped := "false"
+	statFunc := procErrorCountsStat
 	if state == jobsdb.Filtered.State {
-		isDropped = "true"
+		statFunc = procFilteredCountStat
 	}
 	for i := range transformerResponses {
 		failedEvent := &transformerResponses[i]
@@ -1222,14 +1246,7 @@ func (proc *Handle) getTransformationMetrics(
 		}
 		jobs = append(jobs, &newFailedJob)
 
-		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
-			"destName":   commonMetaData.DestinationType,
-			"statusCode": strconv.Itoa(failedEvent.StatusCode),
-			"stage":      pu,
-			"isDropped":  isDropped,
-		})
-
-		procErrorStat.Increment()
+		statFunc(commonMetaData.DestinationType, pu, strconv.Itoa(failedEvent.StatusCode))
 	}
 
 	// REPORTING - START
