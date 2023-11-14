@@ -23,6 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -310,7 +312,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
