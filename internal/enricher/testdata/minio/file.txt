@@ -1,0 +1,1 @@
+// Dummy file to be uploaded to the minio object storage

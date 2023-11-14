@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -85,14 +84,14 @@ func (w *worker) workLoop() {
 			job := message.job
 			userID := job.UserID
 
-			var parameters JobParameters
+			var parameters routerutils.JobParameters
 			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
-			w.rt.destinationsMapMu.RLock()
-			abort, abortReason := routerutils.ToBeDrained(job, parameters.DestinationID, w.rt.reloadableConfig.toAbortDestinationIDs.Load(), w.rt.destinationsMap)
+			abort, abortReason := w.rt.drainer.Drain(
+				job,
+			)
 			abortTag := abortReason
-			w.rt.destinationsMapMu.RUnlock()
 			if !abort {
 				abort = w.retryLimitReached(&job.LastJobStatus)
 				abortReason = string(job.LastJobStatus.ErrorResponse)
@@ -178,25 +177,6 @@ func (w *worker) workLoop() {
 			batchDestination, ok := w.rt.destinationsMap[parameters.DestinationID]
 			w.rt.destinationsMapMu.RUnlock()
 			if !ok {
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Failed.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
-					Parameters:    routerutils.EmptyPayload,
-					JobParameters: job.Parameters,
-					WorkspaceId:   job.WorkspaceId,
-				}
-				if w.rt.guaranteeUserEventOrder {
-					orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
-					w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
-					if err := w.barrier.StateChanged(orderKey, job.JobID, status.JobState); err != nil {
-						panic(err)
-					}
-				}
-				w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
 				continue
 			}
 			destination := batchDestination.Destination
@@ -207,10 +187,9 @@ func (w *worker) workLoop() {
 					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
 					tokenStatusCode, accountSecretInfo := w.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
-						AccountId:       rudderAccountID,
-						WorkspaceId:     jobMetadata.WorkspaceID,
-						DestDefName:     destination.DestinationDefinition.Name,
-						EventNamePrefix: "fetch_token",
+						AccountId:   rudderAccountID,
+						WorkspaceId: jobMetadata.WorkspaceID,
+						DestDefName: destination.DestinationDefinition.Name,
 					})
 					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
 					if tokenStatusCode == http.StatusOK {
@@ -575,7 +554,10 @@ func (w *worker) processDestinationJobs() {
 
 		if !isJobTerminated(respStatusCode) {
 			for _, metadata := range destinationJob.JobMetadataArray {
-				failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+				orderKey := jobOrderKey(metadata.UserID, metadata.DestinationID)
+				if w.rt.guaranteeUserEventOrder && !w.barrier.Disabled(orderKey) { // if barrier is disabled, we shouldn't need to track the failed job
+					failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+				}
 			}
 		}
 
@@ -706,7 +688,8 @@ func (w *worker) canSendJobToDestination(prevRespStatusCode int, failedJobOrderK
 	// If the destinationJob has come through router transform,
 	// drop the request if it is of a failed user, else send
 	for i := range destinationJob.JobMetadataArray {
-		if _, ok := failedJobOrderKeys[jobOrderKey(destinationJob.JobMetadataArray[i].UserID, destinationJob.JobMetadataArray[i].DestinationID)]; ok {
+		orderKey := jobOrderKey(destinationJob.JobMetadataArray[i].UserID, destinationJob.JobMetadataArray[i].DestinationID)
+		if _, ok := failedJobOrderKeys[orderKey]; ok {
 			return false
 		}
 	}

@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
@@ -156,6 +156,7 @@ func (jf *JobsForwarder) Start() error {
 											JobState:      jobsdb.Succeeded.State,
 											ExecTime:      time.Now(),
 											Parameters:    []byte(`{}`),
+											ErrorResponse: []byte(`{}`),
 											JobParameters: job.Parameters,
 										})
 									}

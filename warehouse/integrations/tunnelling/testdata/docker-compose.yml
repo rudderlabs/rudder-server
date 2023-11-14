@@ -1,0 +1,37 @@
+version: "3.9"
+services:
+  openssh-server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      - PUBLIC_KEY_FILE=/test_key.pub
+      - SUDO_ACCESS=false
+      - PASSWORD_ACCESS=false
+      - USER_PASSWORD=password
+      - USER_NAME=linuxserver.io
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
+    ports:
+      - 2222
+    volumes:
+      - type: bind
+        source: ./test_key.pub
+        target: /test_key.pub
+        read_only: true
+    healthcheck:
+      test: [ "CMD", "grep", "Server listening on :: port 2222", "/config/logs/openssh/current" ]
+      interval: 1s
+      timeout: 1s
+      retries: 60
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      retries: 25

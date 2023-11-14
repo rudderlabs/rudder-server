@@ -7,12 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/exp/slices"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/golang/mock/gomock"
 
@@ -20,10 +21,8 @@ import (
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
@@ -198,7 +197,7 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap    testhelper.EventsCountMap
 			tableUploadsEventsMap testhelper.EventsCountMap
 			warehouseEventsMap    testhelper.EventsCountMap
-			asyncJob              bool
+			sourceJob             bool
 			stagingFilePrefix     string
 		}{
 			{
@@ -211,7 +210,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
-				name:                  "Async Job",
+				name:                  "Source Job",
 				writeKey:              sourcesWriteKey,
 				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
@@ -221,7 +220,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
@@ -293,7 +292,7 @@ func TestIntegration(t *testing.T) {
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -305,7 +304,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
-				if tc.asyncJob {
+				if tc.sourceJob {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
@@ -448,7 +447,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -464,7 +463,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -484,7 +483,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-				d := redshift.New(config.Default, logger.NOP, stats.Default)
+				d := redshift.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -531,7 +530,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-				d := redshift.New(config.Default, logger.NOP, stats.Default)
+				d := redshift.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -577,7 +576,7 @@ func TestIntegration(t *testing.T) {
 				c.Set("Warehouse.redshift.dedupWindow", true)
 				c.Set("Warehouse.redshift.dedupWindowInHours", 0)
 
-				d := redshift.New(c, logger.NOP, stats.Default)
+				d := redshift.New(c, logger.NOP, memstats.New())
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -625,7 +624,7 @@ func TestIntegration(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{destinationID})
 
-			rs := redshift.New(c, logger.NOP, stats.Default)
+			rs := redshift.New(c, logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -674,7 +673,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -696,7 +695,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -718,7 +717,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -740,7 +739,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -788,7 +787,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 			err = rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -897,7 +896,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New(config.Default, logger.NOP, stats.Default)
+			rs := redshift.New(config.New(), logger.NOP, memstats.New())
 
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace

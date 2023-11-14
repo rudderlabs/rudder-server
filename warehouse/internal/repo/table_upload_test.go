@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
+	"github.com/samber/lo"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -291,11 +295,11 @@ func TestTableUploadRepo(t *testing.T) {
 	})
 
 	t.Run("TotalEvents", func(t *testing.T) {
-		t.Run("PopulateTotalEventsFromStagingFileIDs", func(t *testing.T) {
+		t.Run("PopulateTotalEvents", func(t *testing.T) {
 			var (
 				loadFiles  []model.LoadFile
 				stagingIDs []int64
-				tablename  = tables[0]
+				tableName  = tables[0]
 			)
 
 			t.Log("insert load files")
@@ -313,10 +317,15 @@ func TestTableUploadRepo(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("populate total events")
-			for i, table := range tables {
-				err = r.PopulateTotalEventsFromStagingFileIDs(ctx, uploadID, table, stagingIDs)
-				require.NoError(t, err)
+			err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+				for _, table := range tables {
+					require.NoError(t, r.PopulateTotalEventsWithTx(ctx, tx, uploadID, table, stagingIDs))
+				}
+				return nil
+			})
+			require.NoError(t, err)
 
+			for i, table := range tables {
 				tableUpload, err := r.GetByUploadIDAndTableName(ctx, uploadID, table)
 				require.NoError(t, err)
 				require.Equal(t, uploadID, tableUpload.UploadID)
@@ -325,12 +334,16 @@ func TestTableUploadRepo(t *testing.T) {
 			}
 
 			t.Run("cancelled context", func(t *testing.T) {
-				err = r.PopulateTotalEventsFromStagingFileIDs(cancelledCtx, uploadID, tablename, stagingIDs)
+				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+					return r.PopulateTotalEventsWithTx(cancelledCtx, tx, uploadID, tableName, stagingIDs)
+				})
 				require.ErrorIs(t, err, context.Canceled)
 			})
 
 			t.Run("no rows affected", func(t *testing.T) {
-				err = r.PopulateTotalEventsFromStagingFileIDs(ctx, int64(-1), tablename, stagingIDs)
+				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+					return r.PopulateTotalEventsWithTx(ctx, tx, int64(-1), tableName, stagingIDs)
+				})
 				require.EqualError(t, err, fmt.Errorf("no rows affected").Error())
 			})
 		})
@@ -389,5 +402,79 @@ func TestTableUploadRepo(t *testing.T) {
 				require.Equal(t, expectedTotalEvents, totalEvents)
 			})
 		})
+	})
+}
+
+func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
+	const (
+		sourceID      = "test_source_id"
+		destinationID = "test_destination_id"
+		destType      = "test_destination_type"
+		workspaceID   = "test_workspace_id"
+		taskRunID     = "test_task_run_id"
+		jobRunID      = "test_job_run_id"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	upload := model.Upload{
+		WorkspaceID:     workspaceID,
+		Namespace:       "namespace",
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		DestinationType: destType,
+		Status:          model.ExportedData,
+		SourceTaskRunID: taskRunID,
+		SourceJobRunID:  jobRunID,
+	}
+
+	stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, upload, []*model.StagingFile{{
+		ID:              stagingID,
+		SourceID:        sourceID,
+		DestinationID:   destinationID,
+		SourceTaskRunID: taskRunID,
+		SourceJobRunID:  jobRunID,
+	}})
+	require.NoError(t, err)
+
+	tables := []string{"table1", "table2", "table3"}
+
+	err = repoTableUpload.Insert(ctx, uploadID, tables)
+	require.NoError(t, err)
+
+	t.Run("known", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, jobRunID, taskRunID)
+		require.NoError(t, err)
+		require.Len(t, tableUploads, len(tables))
+		require.Equal(t, tables, lo.Map(tableUploads, func(item model.TableUpload, index int) string {
+			return item.TableName
+		}))
+	})
+	t.Run("unknown", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, "some-other-job-run-id", "some-other-task-run-id")
+		require.NoError(t, err)
+		require.Empty(t, tableUploads)
+	})
+	t.Run("cancelled context", func(t *testing.T) {
+		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(cancelledCtx, sourceID, destinationID, jobRunID, taskRunID)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, tableUploads)
 	})
 }

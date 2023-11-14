@@ -3,7 +3,6 @@ package processor
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -13,28 +12,27 @@ import (
 	"testing"
 	"time"
 
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -220,11 +218,12 @@ func TestProcessorManager(t *testing.T) {
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
 		mockRsourcesService,
+		transformer.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		[]enricher.PipelineEnricher{},
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
-			m.Handle.config.featuresRetryMaxAttempts = 0
 		})
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
@@ -245,7 +244,6 @@ func TestProcessorManager(t *testing.T) {
 			},
 		)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-		processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 		processor.BackendConfig = mockBackendConfig
 		processor.Handle.transformer = mockTransformer
@@ -285,7 +283,6 @@ func TestProcessorManager(t *testing.T) {
 		)
 
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-		processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 
 		require.NoError(t, processor.Start())

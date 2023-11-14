@@ -13,17 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -31,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
@@ -39,12 +35,16 @@ import (
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -112,12 +112,11 @@ const (
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
 
-	SourceID3 = "source-id-3"
-	WriteKey3 = "write-key-3"
-	DestID1   = "dest-id-1"
-	DestID2   = "dest-id-2"
-	DestID3   = "dest-id-3"
-	DestID4   = "dest-id-4"
+	SourceIDOneTrustConsent = "source-id-oneTrust-consent"
+	WriteKeyOneTrustConsent = "write-key-oneTrust-consent"
+
+	SourceIDKetchConsent = "source-id-ketch-consent"
+	WriteKeyKetchConsent = "write-key-ketch-consent"
 )
 
 var (
@@ -312,13 +311,13 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:          SourceID3,
-			WriteKey:    WriteKey3,
+			ID:          SourceIDOneTrustConsent,
+			WriteKey:    WriteKeyOneTrustConsent,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
 			Destinations: []backendconfig.DestinationT{
 				{
-					ID:                 DestID1,
+					ID:                 "dest-id-1",
 					Name:               "D1",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -337,7 +336,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID2,
+					ID:                 "dest-id-2",
 					Name:               "D2",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -355,7 +354,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID3,
+					ID:                 "dest-id-3",
 					Name:               "D3",
 					Enabled:            true,
 					IsProcessorEnabled: true,
@@ -370,13 +369,110 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					},
 				},
 				{
-					ID:                 DestID4,
+					ID:                 "dest-id-4",
 					Name:               "D4",
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
 						"oneTrustCookieCategories": []interface{}{
 							map[string]interface{}{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceIDKetchConsent,
+			WriteKey:    WriteKeyKetchConsent,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 "dest-id-5",
+					Name:               "D5",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-6",
+					Name:               "D6",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-7",
+					Name:               "D7",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-8",
+					Name:               "D8",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose3"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 "dest-id-9",
+					Name:               "D9",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"ketchConsentPurposes": []interface{}{
+							map[string]interface{}{"purpose": "purpose1"},
+							map[string]interface{}{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -655,7 +751,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -847,7 +943,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Expect(jobs).To(HaveLen(2))
 				})
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -996,7 +1092,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1047,7 +1143,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -1065,8 +1161,10 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1076,7 +1174,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
@@ -1093,8 +1191,10 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1111,7 +1211,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("should only send proper stats, if not pending jobs are returned", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			processor.Setup(
 				c.mockBackendConfig,
@@ -1126,8 +1226,10 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1275,7 +1377,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
@@ -1329,7 +1431,30 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(nil) // one for newly stored jobs and one for dropped jobs
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{In: 2, Failed: 2},
+				).Times(1).Return(nil)
+
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{Out: 1},
+				).Times(1).Return(nil)
+
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -1483,7 +1608,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1664,7 +1789,7 @@ var _ = Describe("Processor", Ordered, func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, true, false)
 
@@ -1771,7 +1896,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1908,7 +2033,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -1995,7 +2120,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -2024,8 +2149,8 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
 
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
-				_ = f(&jobsdb.Tx{})
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *Tx) error) {
+				_ = f(&Tx{})
 			}).Return(nil).Times(0)
 
 			// One Store call is expected for all events
@@ -2034,17 +2159,123 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
+
+		It("should drop messages where jobRunID is cancelled", func() {
+			messages := map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+			}
+			payload := createBatchPayload(
+				WriteKeyEnabledNoUT2,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{
+					messages["message-1"],
+				},
+				createMessagePayload,
+			)
+			payload, _ = sjson.SetBytes(payload, "batch.0.type", "identify")
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  payload,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParametersWithSources(SourceIDEnabledNoUT2),
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+				CustomValFilters: gatewayCustomVal,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+			// Test transformer failure
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any()).Times(0)
+
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+				})
+
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut2",
+					},
+					rsources.Stats{Out: 1},
+				).Times(1)
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut2",
+					},
+					rsources.Stats{In: 1, Failed: 1},
+				).Times(1)
+
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(0)
+
+			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Return(nil).Times(0)
+
+			// One Store call is expected for all events
+			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(1))
+				})
+
+			config.Set("RSources.toAbortJobRunIDs", "job_run_id_1")
+			defer config.Reset()
+			processorSetupAndAssertJobHandling(processor, c)
+		})
 	})
 
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2058,8 +2289,10 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				getMockTransformerService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
@@ -2083,7 +2316,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Consistently(func() bool {
 				select {
-				case <-processor.config.asyncInit.Wait():
+				case <-processor.transformerFeaturesService.Wait():
 					return true
 				default:
 					return false
@@ -2097,11 +2330,10 @@ var _ = Describe("Processor", Ordered, func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
@@ -2115,8 +2347,10 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
+				transformerFeaturesService.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
+				[]enricher.PipelineEnricher{},
 			)
 			defer processor.Shutdown()
 
@@ -2137,7 +2371,7 @@ var _ = Describe("Processor", Ordered, func() {
 	})
 
 	Context("isDestinationEnabled", func() {
-		It("should filter based on consent management preferences", func() {
+		It("should filter based on oneTrust consent management preferences", func() {
 			event := types.SingularEventT{
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
@@ -2169,7 +2403,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2180,12 +2414,61 @@ var _ = Describe("Processor", Ordered, func() {
 				len(processor.filterDestinations(
 					event,
 					processor.getEnabledDestinations(
-						SourceID3,
+						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(3)) // all except dest-1
-			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(event, SourceIDOneTrustConsent)).To(BeTrue())
+		})
+		It("should filter based on ketch consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": 4.51,
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
+
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			filteredDestinations := processor.filterDestinations(
+				event,
+				processor.getEnabledDestinations(
+					SourceIDKetchConsent,
+					"destination-definition-name-enabled",
+				),
+			)
+			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
 		})
 	})
 
@@ -2208,7 +2491,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			Setup(processor, c, false, true)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2254,11 +2537,17 @@ var _ = Describe("Processor", Ordered, func() {
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				transformer.DestTransformerStage,
-				false,
-				false)
+				types.EVENT_FILTER,
+				types.DEST_TRANSFORMER,
+			)
 
-			key := fmt.Sprintf("%s!<<#>>!%s!<<#>>!%s!<<#>>!%s!<<#>>!%s", commonMetadata.SourceID, commonMetadata.DestinationID, commonMetadata.SourceJobRunID, commonMetadata.EventName, commonMetadata.EventType)
+			key := strings.Join([]string{
+				commonMetadata.SourceID,
+				commonMetadata.DestinationID,
+				commonMetadata.SourceJobRunID,
+				commonMetadata.EventName,
+				commonMetadata.EventType,
+			}, "!<<#>>!")
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
@@ -2318,7 +2607,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, false)
+			response := ConvertToFilteredTransformerResponse(events, false, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
 			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
 			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
@@ -2423,7 +2712,7 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("updateMetricMaps Tests", func() {
 		It("Should update metric maps", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.reportingEnabled = true
 			proc.reporting = &mockReportingTypes.MockReporting{}
 
@@ -2486,7 +2775,7 @@ var _ = Describe("Static Function Tests", func() {
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, transformer.TrackingPlanValidationStage, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, types.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))
@@ -2570,7 +2859,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2643,7 +2932,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2706,7 +2995,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 		It("Should allow all events when supportedMessageTypes is not an array", func() {
@@ -2770,7 +3059,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2841,7 +3130,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -2911,7 +3200,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3007,7 +3296,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3103,7 +3392,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3198,7 +3487,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3288,7 +3577,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3381,7 +3670,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -3477,7 +3766,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true)
+			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 	})
@@ -3725,8 +4014,10 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,
+		transformerFeaturesService.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
 }
@@ -3756,7 +4047,7 @@ var _ = Describe("TestJobSplitter", func() {
 	}
 	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
 		It("default subJobSize: 2k", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
@@ -3783,7 +4074,7 @@ var _ = Describe("TestJobSplitter", func() {
 			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.config.subJobSize = 1
 			expectedSubJobs := []subJob{
 				{
@@ -3830,7 +4121,7 @@ var _ = Describe("TestJobSplitter", func() {
 			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			proc := NewHandle(nil)
+			proc := NewHandle(config.Default, nil)
 			proc.config.subJobSize = 2
 			expectedSubJobs := []subJob{
 				{
@@ -4079,4 +4370,22 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+}
+
+func getMockTransformerService() transformerFeaturesService.FeaturesService {
+	return &mockTransformerService{}
+}
+
+type mockTransformerService struct{}
+
+func (*mockTransformerService) SourceTransformerVersion() string {
+	return "random-version"
+}
+
+func (*mockTransformerService) Wait() chan struct{} {
+	return make(chan struct{})
+}
+
+func (*mockTransformerService) RouterTransform(destType string) bool {
+	return false
 }

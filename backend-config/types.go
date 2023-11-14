@@ -69,6 +69,9 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
+	GeoEnrichment              struct {
+		Enabled bool
+	}
 }
 
 func (s *SourceT) IsReplaySource() bool {

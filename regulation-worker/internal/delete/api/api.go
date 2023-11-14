@@ -192,10 +192,9 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 		return oauthDetail{}, fmt.Errorf("[%v] Delete account ID key (%v) is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
 	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
-		AccountId:       id,
-		WorkspaceId:     workspaceId,
-		DestDefName:     destDetail.Name,
-		EventNamePrefix: "fetch_token",
+		AccountId:   id,
+		WorkspaceId: workspaceId,
+		DestDefName: destDetail.Name,
 	})
 	if tokenStatusCode != http.StatusOK {
 		return oauthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.ErrorMessage)
@@ -228,11 +227,10 @@ func (api *APIManager) inactivateAuthStatus(destination *model.Destination, job 
 
 func (api *APIManager) refreshOAuthToken(destination *model.Destination, job model.Job, oAuthDetail oauthDetail) error {
 	refTokenParams := &oauth.RefreshTokenParams{
-		Secret:          oAuthDetail.secretToken.Account.Secret,
-		WorkspaceId:     job.WorkspaceID,
-		AccountId:       oAuthDetail.id,
-		DestDefName:     destination.Name,
-		EventNamePrefix: "refresh_token",
+		Secret:      oAuthDetail.secretToken.Account.Secret,
+		WorkspaceId: job.WorkspaceID,
+		AccountId:   oAuthDetail.id,
+		DestDefName: destination.Name,
 	}
 	statusCode, refreshResponse := api.OAuth.RefreshToken(refTokenParams)
 	if statusCode != http.StatusOK {

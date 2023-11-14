@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {
@@ -47,7 +48,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var jobs []*jobsdb.JobT
 		for i := 0; i < 100; i++ {
-			params := JobParameters{
+			params := routerutils.JobParameters{
 				EventName:  "test",
 				EventType:  "track",
 				MessageID:  uuid.New().String(),
@@ -64,7 +65,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 
 		g := errgroup.Group{}
 		g.Go(func() error {
-			params := JobParameters{
+			params := routerutils.JobParameters{
 				EventName: "test",
 				EventType: "track",
 				MessageID: uuid.New().String(),
@@ -84,7 +85,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 		})
 		g.Go(func() error {
 			for i := range jobs {
-				var params JobParameters
+				var params routerutils.JobParameters
 				_ = json.Unmarshal(jobs[i].Parameters, &params)
 			}
 

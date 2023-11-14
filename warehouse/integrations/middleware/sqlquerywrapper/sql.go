@@ -11,6 +11,7 @@ import (
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/tx"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -82,7 +83,7 @@ func (r *Row) Err() error {
 }
 
 type Tx struct {
-	*sql.Tx
+	*tx.Tx
 	db *DB
 	context.CancelFunc
 }
@@ -270,10 +271,6 @@ func (db *DB) logQuery(query string, since time.Time) logQ {
 
 type logQ func()
 
-func (tx *Tx) GetTx() *sql.Tx {
-	return tx.Tx
-}
-
 // Begin starts a transaction.
 //
 // Use BeginTx to pass context and options to the underlying driver.
@@ -283,12 +280,12 @@ func (db *DB) Begin() (*Tx, error) {
 
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 	ctx, cancel := queryContextWithTimeout(ctx, db.transactionTimeout)
-	tx, err := db.DB.BeginTx(ctx, opts)
+	sqltx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {
 		defer cancel()
 		return nil, err
 	}
-	return &Tx{tx, db, cancel}, nil
+	return &Tx{&tx.Tx{Tx: sqltx}, db, cancel}, nil
 }
 
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {

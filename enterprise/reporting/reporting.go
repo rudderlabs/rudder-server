@@ -8,17 +8,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
-	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,6 +27,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -45,6 +47,8 @@ const (
 
 type DefaultReporter struct {
 	ctx                 context.Context
+	cancel              context.CancelFunc
+	g                   *errgroup.Group
 	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
 	syncers             map[string]*types.SyncSource
@@ -65,9 +69,10 @@ type DefaultReporter struct {
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
+	stats                     stats.Stats
 }
 
-func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber) *DefaultReporter {
+func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
@@ -84,8 +89,12 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 	return &DefaultReporter{
 		ctx:                                  ctx,
+		cancel:                               cancel,
+		g:                                    g,
 		log:                                  log,
 		configSubscriber:                     configSubscriber,
 		syncers:                              make(map[string]*types.SyncSource),
@@ -100,6 +109,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxOpenConnections:                   maxOpenConnections,
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
+		stats:                                stats,
 	}
 }
 
@@ -135,7 +145,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		return func() {}
 	}
 	return func() {
-		r.mainLoop(r.ctx, c)
+		r.g.Go(func() error {
+			r.mainLoop(r.ctx, c)
+			return nil
+		})
 	}
 }
 
@@ -186,6 +199,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	if err != nil {
 		panic(err)
 	}
+
 	r.getReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 
@@ -220,6 +234,10 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			panic(err)
 		}
 		metricReports = append(metricReports, &metricReport)
+	}
+	if err := rows.Err(); err != nil {
+		// Handle rows error
+		panic(err)
 	}
 
 	return metricReports, queryMin.Int64, err
@@ -319,16 +337,16 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(c.Label)
-	mainLoopTimer := stats.Default.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
-	getReportsTimer := stats.Default.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
-	getReportsCount := stats.Default.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
-	getAggregatedReportsTimer := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
-	getAggregatedReportsCount := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	mainLoopTimer := r.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
+	getReportsTimer := r.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
+	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
+	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
+	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
 
-	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
-	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
-	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
-	reportingLag := stats.Default.NewTaggedStat(
+	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
+	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
+	r.requestLatency = r.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+	reportingLag := r.stats.NewTaggedStat(
 		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
 	)
 
@@ -454,7 +472,7 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 		r.requestLatency.Since(httpRequestStart)
 		httpStatTags := r.getTags(label)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
+		r.stats.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
@@ -512,7 +530,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) error {
+func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -600,4 +618,9 @@ func (r *DefaultReporter) getTags(label string) stats.Tags {
 		"instanceId":  r.instanceID,
 		"clientName":  label,
 	}
+}
+
+func (r *DefaultReporter) Stop() {
+	r.cancel()
+	_ = r.g.Wait()
 }

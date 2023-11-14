@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
@@ -11,7 +12,14 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
-func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler {
+// Legacy handler for job status
+//
+// GET /v1/job-status/{job_run_id} - returns job status
+//
+// DELETE /v1/job-status/{job_run_id} - deletes job status AND failed records
+//
+// GET /v1/job-status/{job_run_id}/failed-records - returns failed records
+func NewV1Handler(service rsources.JobService, logger logger.Logger) http.Handler {
 	h := &handler{
 		service: service,
 		logger:  logger,
@@ -20,6 +28,37 @@ func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler 
 	srvMux.Get("/{job_run_id}", h.getStatus)
 	srvMux.Delete("/{job_run_id}", h.delete)
 	srvMux.Get("/{job_run_id}/failed-records", h.failedRecords)
+	return srvMux
+}
+
+// handler for failed keys
+//
+// GET /v2/failed-keys/{job_run_id}
+//
+// DELETE /v2/failed-keys/{job_run_id}
+func FailedKeysHandler(service rsources.JobService, logger logger.Logger) http.Handler {
+	h := &handler{
+		service: service,
+		logger:  logger,
+	}
+	srvMux := chi.NewRouter()
+	srvMux.Delete("/{job_run_id}", h.deleteFailedRecords)
+	return srvMux
+}
+
+// handler for job status
+//
+// GET /v2/job-status/{job_run_id}
+//
+// DELETE /v2/job-status/{job_run_id}
+func JobStatusHandler(service rsources.JobService, logger logger.Logger) http.Handler {
+	h := &handler{
+		service: service,
+		logger:  logger,
+	}
+	srvMux := chi.NewRouter()
+	srvMux.Get("/{job_run_id}", h.getStatus)
+	srvMux.Delete("/{job_run_id}", h.deleteJobStatus)
 	return srvMux
 }
 
@@ -88,6 +127,31 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *handler) deleteJobStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	jobRunId, taskRunId, sourceId := getQueryParams(r)
+	if jobRunId == "" {
+		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.service.DeleteJobStatus(
+		ctx,
+		jobRunId,
+		rsources.JobFilter{TaskRunID: taskRunId, SourceID: sourceId},
+	); err != nil {
+		httpStatus := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, rsources.ErrStatusNotFound):
+			httpStatus = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), httpStatus)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
@@ -98,16 +162,25 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
 		return
 	}
+	var paging rsources.PagingInfo
+	if pageSize, ok := r.URL.Query()["pageSize"]; ok && len(pageSize) > 0 {
+		paging.Size, _ = strconv.Atoi(pageSize[0])
+		if nextPageToken, ok := r.URL.Query()["pageToken"]; ok && len(nextPageToken) > 0 {
+			paging.NextPageToken = nextPageToken[0]
+		}
+	}
 
 	failedRecords, err := h.service.GetFailedRecords(
 		ctx, jobRunId, rsources.JobFilter{
 			TaskRunID: taskRunId,
 			SourceID:  sourceId,
 		},
+		paging,
 	)
 	if err != nil {
 		httpStatus := http.StatusInternalServerError
-		if errors.Is(err, rsources.ErrOperationNotSupported) {
+		if errors.Is(err, rsources.ErrOperationNotSupported) ||
+			errors.Is(err, rsources.ErrInvalidPaginationToken) {
 			httpStatus = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), httpStatus)
@@ -118,6 +191,26 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Errorf("error while marshalling and writing response body: %v", err)
 	}
+}
+
+func (h *handler) deleteFailedRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	jobRunId, taskRunId, sourceId := getQueryParams(r)
+	if jobRunId == "" {
+		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.service.DeleteFailedRecords(
+		ctx,
+		jobRunId,
+		rsources.JobFilter{TaskRunID: taskRunId, SourceID: sourceId},
+	); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string) {

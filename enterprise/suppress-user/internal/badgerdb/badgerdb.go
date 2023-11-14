@@ -144,7 +144,7 @@ func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Me
 	})
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil, nil
+			return nil, model.ErrKeyNotFound
 		}
 		return nil, err
 	}

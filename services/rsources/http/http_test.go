@@ -23,7 +23,7 @@ func TestDelete(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
+	handler := rsources_http.NewV1Handler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -109,7 +109,7 @@ func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
+	handler := rsources_http.NewV1Handler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -244,10 +244,11 @@ func TestGetStatus(t *testing.T) {
 }
 
 func TestGetFailedRecords(t *testing.T) {
+	var noPaging rsources.PagingInfo
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
+	handler := rsources_http.NewV1Handler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -314,13 +315,27 @@ func TestGetFailedRecords(t *testing.T) {
 			failedRecordsError: errors.New("failed to get failed records"),
 			respBody:           failedRecordsRespBody,
 		},
+		{
+			name:                 "get failed records with invalid pagination token",
+			jobID:                "123",
+			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: http.StatusBadRequest,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecords:      rsources.JobFailedRecords{ID: "123"},
+			failedRecordsError: rsources.ErrInvalidPaginationToken,
+			respBody:           rsources.ErrInvalidPaginationToken.Error() + "\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
 
 			filterArg := getArgumentFilter(tt.filter)
-			service.EXPECT().GetFailedRecords(gomock.Any(), tt.jobID, filterArg).Return(tt.failedRecords, tt.failedRecordsError).Times(1)
+			service.EXPECT().GetFailedRecords(gomock.Any(), tt.jobID, filterArg, noPaging).Return(tt.failedRecords, tt.failedRecordsError).Times(1)
 
 			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			url := withFilter(basicUrl, tt.filter)
@@ -343,9 +358,9 @@ func TestFailedRecordsDisabled(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
+	handler := rsources_http.NewV1Handler(service, mock_logger.NewMockLogger(mockCtrl))
 
-	service.EXPECT().GetFailedRecords(gomock.Any(), gomock.Any(), gomock.Any()).Return(rsources.JobFailedRecords{}, rsources.ErrOperationNotSupported).Times(1)
+	service.EXPECT().GetFailedRecords(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(rsources.JobFailedRecords{}, rsources.ErrOperationNotSupported).Times(1)
 
 	url := fmt.Sprintf("http://localhost:8080%s", prepURL("/{job_run_id}/failed-records", "123"))
 	req, err := http.NewRequest("GET", url, http.NoBody)

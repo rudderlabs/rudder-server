@@ -37,6 +37,6 @@ func CloseResponse(resp *http.Response) {
 	if resp != nil && resp.Body != nil {
 		const maxBodySlurpSize = 2 << 10 // 2KB
 		_, _ = io.CopyN(io.Discard, resp.Body, maxBodySlurpSize)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }

@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -58,7 +58,7 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+				if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
@@ -509,7 +509,7 @@ func (brt *Handle) getReportMetrics(statusList []*jobsdb.JobStatusT, parametersM
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	for _, status := range statusList {
-		var parameters JobParameters
+		var parameters routerutils.JobParameters
 		err := json.Unmarshal(parametersMap[status.JobID], &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(parametersMap[status.JobID]))
@@ -688,7 +688,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				if err = brt.reporting.Report(reportMetrics, tx.SqlTx()); err != nil {
+				if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}

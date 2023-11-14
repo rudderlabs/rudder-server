@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -346,7 +347,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -362,7 +363,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -382,7 +383,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+				az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 				err := az.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -429,7 +430,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+				az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 				err := az.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -474,7 +475,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -496,7 +497,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -518,7 +519,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -562,7 +563,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -629,7 +630,7 @@ func TestAzureSynapse_ProcessColumnValue(t *testing.T) {
 			name:          "valid float",
 			data:          "1.01",
 			dataType:      model.FloatDataType,
-			expectedValue: float64(1.01),
+			expectedValue: 1.01,
 		},
 		{
 			name:      "invalid boolean",
@@ -677,7 +678,7 @@ func TestAzureSynapse_ProcessColumnValue(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			az := azuresynapse.New(config.Default, logger.NOP, stats.Default)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
 
 			value, err := az.ProcessColumnValue(tc.data, tc.dataType)
 			if tc.wantError {

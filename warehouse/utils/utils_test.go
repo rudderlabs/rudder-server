@@ -979,7 +979,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						"k1": "true",
+						"useRudderStorage": "true",
 					},
 				},
 			},
@@ -989,7 +989,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						"k1": false,
+						"useRudderStorage": false,
 					},
 				},
 			},
@@ -999,7 +999,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						"k1": true,
+						"useRudderStorage": true,
 					},
 				},
 			},
@@ -1007,7 +1007,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		},
 	}
 	for idx, input := range inputs {
-		got := input.warehouse.GetBoolDestinationConfig("k1")
+		got := input.warehouse.GetBoolDestinationConfig("useRudderStorage")
 		want := input.expected
 		if got != want {
 			t.Errorf("got %t expected %t input %d", got, want, idx)

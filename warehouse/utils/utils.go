@@ -35,7 +35,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
 const (
@@ -741,26 +740,6 @@ type Tag struct {
 	Value string
 }
 
-func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module": WAREHOUSE,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
-}
-
-func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module": WAREHOUSE,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
-}
-
 func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,
@@ -933,16 +912,6 @@ func RandHex() string {
 	var buf [32]byte
 	hex.Encode(buf[:], u[:])
 	return string(buf[:])
-}
-
-func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) *tunnelling.TunnelInfo {
-	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
-		return nil
-	}
-
-	return &tunnelling.TunnelInfo{
-		Config: config,
-	}
 }
 
 func ReadAsBool(key string, config map[string]interface{}) bool {

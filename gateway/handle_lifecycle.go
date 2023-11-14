@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -50,7 +51,7 @@ func (gw *Handle) Setup(
 	config *config.Config, logger logger.Logger, stat stats.Stats,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
-	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
+	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gw.config = config
 	gw.logger = logger
@@ -118,7 +119,7 @@ func (gw *Handle) Setup(
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
 	gw.irh = &ImportRequestHandler{Handle: gw}
 	gw.rrh = &RegularRequestHandler{Handle: gw}
-	gw.webhook = webhook.Setup(gw, gw.stats)
+	gw.webhook = webhook.Setup(gw, transformerFeaturesService, gw.stats)
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {
 		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)
@@ -359,20 +360,32 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs
-	rsourcesHandler := rsources_http.NewHandler(
+	rsourcesHandler := rsources_http.NewV1Handler(
 		gw.rsourcesService,
-		gw.logger.Child("rsources"))
+		gw.logger.Child("rsources"),
+	)
+	failedKeysHandler := rsources_http.FailedKeysHandler(
+		gw.rsourcesService,
+		gw.logger.Child("rsources_failed_keys"),
+	)
+	jobStatusHandler := rsources_http.JobStatusHandler(
+		gw.rsourcesService,
+		gw.logger.Child("rsources_job_status"),
+	)
 	srvMux.Use(
-		chiware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		chiware.StatMiddleware(ctx, stats.Default, component),
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
 	srvMux.Route("/internal", func(r chi.Router) {
 		r.Post("/v1/extract", gw.webExtractHandler())
+		r.Post("/v1/retl", gw.webRetlHandler())
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
+		r.Mount("/v2/failed-keys", withContentType("application/json; charset=utf-8", failedKeysHandler.ServeHTTP))
+		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", jobStatusHandler.ServeHTTP))
 	})
 	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
