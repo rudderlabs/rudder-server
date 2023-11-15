@@ -92,7 +92,6 @@ func TestEventStats(t *testing.T) {
 			{
 				Name: "processor.delayed_events",
 				Tags: stats.Tags{
-
 					"sourceId":    "sourceID-1",
 					"sourceType":  "sourceType-1",
 					"workspaceId": "workspaceID-1",
