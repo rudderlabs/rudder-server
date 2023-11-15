@@ -1171,6 +1171,10 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			)
 			require.NoError(t, testhelper.WithConstantRetries(func() error {
 				_, err := clusterDB.Exec(sqlStatementCreateTable)
+				if err != nil {
+					t.Log(err)
+					t.Log(sqlStatementCreateTable)
+				}
 				return err
 			}))
 
@@ -1180,11 +1184,15 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			)
 			require.NoError(t, testhelper.WithConstantRetries(func() error {
 				_, err := clusterDB.Exec(sqlStatementDropTable)
+				t.Log(err)
+				t.Log(sqlStatementDropTable)
 				return err
 			}))
 
 			require.NoError(t, testhelper.WithConstantRetries(func() error {
 				_, err := clusterDB.Exec(sqlStatementCreateTable)
+				t.Log(err)
+				t.Log(sqlStatementCreateTable)
 				return err
 			}))
 
