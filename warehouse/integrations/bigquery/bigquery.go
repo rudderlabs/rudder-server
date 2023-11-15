@@ -10,11 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	"github.com/samber/lo"
-
 	"cloud.google.com/go/bigquery"
+	"github.com/samber/lo"
 	bqService "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -26,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -248,7 +246,8 @@ func (bq *BigQuery) schemaExists(ctx context.Context, _, _ string) (exists bool,
 	ds := bq.db.Dataset(bq.namespace)
 	_, err = ds.Metadata(ctx)
 	if err != nil {
-		if e, ok := err.(*googleapi.Error); ok && e.Code == 404 {
+		var e *googleapi.Error
+		if errors.As(err, &e) && e.Code == 404 {
 			bq.logger.Debugf("BQ: Dataset %s not found", bq.namespace)
 			return false, nil
 		}
@@ -282,7 +281,8 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 	bq.logger.Infof("BQ: Creating schema: %s ...", bq.namespace)
 	err = ds.Create(ctx, meta)
 	if err != nil {
-		if e, ok := err.(*googleapi.Error); ok && e.Code == 409 {
+		var e *googleapi.Error
+		if errors.As(err, &e) && e.Code == 409 {
 			bq.logger.Infof("BQ: Create schema %s failed as schema already exists", bq.namespace)
 			return nil
 		}
@@ -292,7 +292,8 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
-		if e, ok := err.(*googleapi.Error); ok {
+		var e *googleapi.Error
+		if errors.As(err, &e) {
 			// 409 is returned when we try to create a table that already exists
 			// 400 is returned for all kinds of invalid input - so we need to check the error message too
 			if e.Code == 409 || (e.Code == 400 && strings.Contains(e.Message, "already exists in schema")) {
@@ -854,14 +855,14 @@ func Connect(context context.Context, cred *BQCredentials) (*bigquery.Client, er
 		}
 		opts = append(opts, option.WithCredentialsJSON(credBytes))
 	}
-	client, err := bigquery.NewClient(context, cred.ProjectID, opts...)
-	return client, err
+	c, err := bigquery.NewClient(context, cred.ProjectID, opts...)
+	return c, err
 }
 
 func (bq *BigQuery) connect(ctx context.Context, cred BQCredentials) (*bigquery.Client, error) {
 	bq.logger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
-	client, err := Connect(ctx, &cred)
-	return client, err
+	c, err := Connect(ctx, &cred)
+	return c, err
 }
 
 func (bq *BigQuery) dedupEnabled() bool {
@@ -1044,7 +1045,8 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 
 	it, err := bq.getMiddleware().Read(ctx, query)
 	if err != nil {
-		if e, ok := err.(*googleapi.Error); ok && e.Code == 404 {
+		var e *googleapi.Error
+		if errors.As(err, &e) && e.Code == 404 {
 			// if dataset resource is not found, return empty schema
 			return schema, unrecognizedSchema, nil
 		}
@@ -1113,7 +1115,8 @@ func (bq *BigQuery) tableExists(ctx context.Context, tableName string) (exists b
 	if err == nil {
 		return true, nil
 	}
-	if e, ok := err.(*googleapi.Error); ok {
+	var e *googleapi.Error
+	if errors.As(err, &e) {
 		if e.Code == 404 {
 			return false, nil
 		}
