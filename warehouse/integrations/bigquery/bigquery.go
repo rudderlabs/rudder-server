@@ -222,12 +222,13 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	}
 
 	// assuming it has field named id upon which dedup is done in view
+	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
 			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
 			WHERE
 				_PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(
-					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000),
+					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 24 * 60 * 1000000),
 					DAY,
 					'UTC'
 				)
