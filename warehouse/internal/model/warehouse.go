@@ -1,12 +1,18 @@
 package model
 
-import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+import (
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+)
 
-type DestinationConfigSetting interface{ string() string }
+type DestinationConfigSetting interface {
+	String() string
+	protected()
+}
 
 type destConfSetting string
 
-func (s destConfSetting) string() string { return string(s) }
+func (destConfSetting) protected()       {}
+func (s destConfSetting) String() string { return string(s) }
 
 var (
 	PreferAppendSetting     DestinationConfigSetting = destConfSetting("preferAppend")
@@ -24,8 +30,8 @@ type Warehouse struct {
 
 func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool {
 	destConfig := w.Destination.Config
-	if destConfig[key.string()] != nil {
-		if val, ok := destConfig[key.string()].(bool); ok {
+	if destConfig[key.String()] != nil {
+		if val, ok := destConfig[key.String()].(bool); ok {
 			return val
 		}
 	}
@@ -34,7 +40,7 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 
 func (w *Warehouse) GetPreferAppendSetting() bool {
 	destConfig := w.Destination.Config
-	value, ok := destConfig[PreferAppendSetting.string()].(bool)
+	value, ok := destConfig[PreferAppendSetting.String()].(bool)
 	if !ok {
 		// when the value is not defined it is important we choose the right default
 		// in order to maintain backward compatibility for existing destinations
