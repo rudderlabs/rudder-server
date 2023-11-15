@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type LoadFile struct {
 	ID                    int64
 	TableName             string
@@ -12,4 +14,5 @@ type LoadFile struct {
 	SourceID              string
 	DestinationID         string
 	DestinationType       string
+	CreatedAt             time.Time
 }
