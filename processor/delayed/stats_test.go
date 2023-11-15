@@ -88,110 +88,171 @@ func TestEventStats(t *testing.T) {
 			},
 		}))
 
-		require.Equal(t, float64(2), s.Get("processor.delayed_events", stats.Tags{
-			"sourceId":    "sourceID-1",
-			"sourceType":  "sourceType-1",
-			"workspaceId": "workspaceID-1",
-			"status":      "on-time",
-			"sdkVersion":  "rudder-go/1.0.0",
-		}).LastValue())
-		require.Equal(t, float64(3), s.Get("processor.delayed_events", stats.Tags{
-			"sourceId":    "sourceID-1",
-			"sourceType":  "sourceType-1",
-			"workspaceId": "workspaceID-1",
-			"status":      "late",
-			"sdkVersion":  "rudder-go/1.0.0",
-		}).LastValue())
-		require.Equal(t, float64(2), s.Get("processor.delayed_events", stats.Tags{
-			"sourceId":    "sourceID-1",
-			"sourceType":  "sourceType-1",
-			"workspaceId": "workspaceID-1",
-			"status":      "missing_original_timestamp",
-			"sdkVersion":  "rudder-go/1.0.0",
-		}).LastValue())
-		require.Equal(t, float64(1), s.Get("processor.delayed_events", stats.Tags{
-			"sourceId":    "sourceID-1",
-			"sourceType":  "sourceType-1",
-			"workspaceId": "workspaceID-1",
-			"status":      "missing_sent_at",
-			"sdkVersion":  "rudder-go/1.0.0",
-		}).LastValue())
+		require.ElementsMatch(t, []memstats.Metric{
+			{
+				Name: "processor.delayed_events",
+				Tags: stats.Tags{
+
+					"sourceId":    "sourceID-1",
+					"sourceType":  "sourceType-1",
+					"workspaceId": "workspaceID-1",
+					"status":      "on-time",
+					"sdkVersion":  "rudder-go/1.0.0",
+				},
+				Value: 2,
+			},
+			{
+				Name: "processor.delayed_events",
+				Tags: stats.Tags{
+					"sourceId":    "sourceID-1",
+					"sourceType":  "sourceType-1",
+					"workspaceId": "workspaceID-1",
+					"status":      "late",
+					"sdkVersion":  "rudder-go/1.0.0",
+				},
+				Value: 3,
+			},
+			{
+				Name: "processor.delayed_events",
+				Tags: stats.Tags{
+					"sourceId":    "sourceID-1",
+					"sourceType":  "sourceType-1",
+					"workspaceId": "workspaceID-1",
+					"status":      "missing_original_timestamp",
+					"sdkVersion":  "rudder-go/1.0.0",
+				},
+				Value: 2,
+			},
+			{
+				Name: "processor.delayed_events",
+				Tags: stats.Tags{
+					"sourceId":    "sourceID-1",
+					"sourceType":  "sourceType-1",
+					"workspaceId": "workspaceID-1",
+					"status":      "missing_sent_at",
+					"sdkVersion":  "rudder-go/1.0.0",
+				},
+				Value: 1,
+			},
+		}, s.GetAll())
 	})
 
 	t.Run("extract SDK version", func(t *testing.T) {
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
+		testCases := []struct {
+			name               string
+			message            map[string]any
+			expectedSDKVersion string
+		}{
 			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
-				},
+				name:               "missing context",
+				message:            map[string]interface{}{},
+				expectedSDKVersion: "unknown",
 			},
-		})
-
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
 			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
-					"context":           map[string]interface{}{},
+				name: "missing context.library",
+				message: map[string]interface{}{
+					"context": map[string]interface{}{},
 				},
+				expectedSDKVersion: "unknown",
 			},
-		})
-
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
 			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
+				name: "missing context.library contents",
+				message: map[string]interface{}{
 					"context": map[string]interface{}{
 						"library": map[string]interface{}{},
 					},
 				},
+				expectedSDKVersion: "unknown",
 			},
-		})
-
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
 			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
-							"name": "rudder-go",
-						},
-					},
-				},
-			},
-		})
-
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
-			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
+				name: "missing context.library.name",
+				message: map[string]interface{}{
 					"context": map[string]interface{}{
 						"library": map[string]interface{}{
 							"version": "1.0.0",
 						},
 					},
 				},
+				expectedSDKVersion: "/1.0.0",
 			},
-		})
-
-		es.ObserveSourceEvents(source, []transformer.TransformerEvent{
 			{
-				Message: map[string]interface{}{
-					"originalTimestamp": "2020-01-01T00:00:00.000Z",
-					"sentAt":            "2020-01-01T00:10:00.000Z",
+				name: "missing context.library.version",
+				message: map[string]interface{}{
 					"context": map[string]interface{}{
 						"library": map[string]interface{}{
-							"version": 1,
+							"name": "rudder-go",
 						},
 					},
 				},
+				expectedSDKVersion: "rudder-go/",
 			},
-		})
+			{
+				name: " context.library.version not a string",
+				message: map[string]interface{}{
+					"context": map[string]interface{}{
+						"library": map[string]interface{}{
+							"name":    "rudder-go",
+							"version": 2,
+						},
+					},
+				},
+				expectedSDKVersion: "rudder-go/",
+			},
+			{
+				name: "context.library.name not a string",
+				message: map[string]interface{}{
+					"context": map[string]interface{}{
+						"library": map[string]interface{}{
+							"name": []string{"rudder-go"},
+						},
+					},
+				},
+				expectedSDKVersion: "unknown",
+			},
+			{
+				name: "parse context.library name and version",
+				message: map[string]interface{}{
+					"context": map[string]interface{}{
+						"library": map[string]interface{}{
+							"name":    "rudder-go",
+							"version": "1.0.0",
+						},
+					},
+				},
+				expectedSDKVersion: "rudder-go/1.0.0",
+			},
+		}
 
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				tc.message["originalTimestamp"] = "2020-01-01T00:00:00.000Z"
+				tc.message["sentAt"] = "2020-01-01T00:10:00.000Z"
+				events := []transformer.TransformerEvent{
+					{
+						Message: tc.message,
+					},
+				}
+
+				s := memstats.New()
+				es := delayed.NewEventStats(s, c)
+
+				es.ObserveSourceEvents(source, events)
+
+				require.Equal(t, []memstats.Metric{
+					{
+						Name: "processor.delayed_events",
+						Tags: stats.Tags{
+							"sourceId":    "sourceID-1",
+							"sourceType":  "sourceType-1",
+							"workspaceId": "workspaceID-1",
+							"status":      "on-time",
+							"sdkVersion":  tc.expectedSDKVersion,
+						},
+						Value: 1,
+					},
+				}, s.GetAll())
+			})
+		}
 	})
 }
 
@@ -203,6 +264,15 @@ func fromSDK(lib, version string, events []transformer.TransformerEvent) []trans
 				"version": version,
 			},
 		}
+	}
+
+	return events
+}
+
+func addTimestamps(sentAt, timestamp string, events []transformer.TransformerEvent) []transformer.TransformerEvent {
+	for i := range events {
+		events[i].Message["originalTimestamp"] = timestamp
+		events[i].Message["sentAt"] = sentAt
 	}
 
 	return events

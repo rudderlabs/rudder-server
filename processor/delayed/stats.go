@@ -43,7 +43,7 @@ func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events [
 				sdkLibVersion, _ := m["version"].(string)
 				sdkLibName, _ := m["name"].(string)
 
-				if sdkLibName != "" && sdkLibVersion != "" {
+				if sdkLibName != "" || sdkLibVersion != "" {
 					sdkVersion = fmt.Sprintf("%s/%s", sdkLibName, sdkLibVersion)
 				}
 			}
