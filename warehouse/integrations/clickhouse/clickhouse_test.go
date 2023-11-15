@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
@@ -1162,41 +1163,41 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 	}
 
 	for _, clusterDB := range clusterDBs {
-		for tableName := range tableColumnInfoMap {
-			sqlStatementCreateTable := fmt.Sprintf(`
-				CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = ReplicatedReplacingMergeTree(
-					'/clickhouse/{cluster}/tables/{uuid}/{database}/{table}', '{replica}',
-				);`,
-				tableName,
+		tableName := "test_table"
+		generateSqlStatement := func() string {
+			return fmt.Sprintf(`
+				CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" ("a" Int64,  "received_at" DateTime, "id" String) ENGINE = ReplicatedReplacingMergeTree(
+					'/clickhouse/{cluster}/tables/%[2]s/{database}/{table}', '{replica}')
+				ORDER BY ("received_at", "id") PARTITION BY toDate(received_at)
+				;`,
+				fmt.Sprintf("%s_cluster_distributed", tableName),
+				uuid.New().String(),
 			)
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := clusterDB.Exec(sqlStatementCreateTable)
-				if err != nil {
-					t.Log(err)
-					t.Log(sqlStatementCreateTable)
-				}
-				return err
-			}))
-
-			sqlStatementDropTable := fmt.Sprintf(`
-				DROP TABLE rudderdb.%[1]s`,
-				tableName,
-			)
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := clusterDB.Exec(sqlStatementDropTable)
-				t.Log(err)
-				t.Log(sqlStatementDropTable)
-				return err
-			}))
-
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := clusterDB.Exec(sqlStatementCreateTable)
-				t.Log(err)
-				t.Log(sqlStatementCreateTable)
-				return err
-			}))
-
 		}
+
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			sqlStatement := generateSqlStatement()
+			_, err := clusterDB.Exec(sqlStatement)
+			t.Log("Creating cluster table with sqlStatement: ", sqlStatement)
+			return err
+		}))
+
+		sqlStatementDropTable := fmt.Sprintf(`
+				DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster"`,
+			fmt.Sprintf("%s_cluster_distributed", tableName),
+		)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			_, err := clusterDB.Exec(sqlStatementDropTable)
+			return err
+		}))
+
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			sqlStatement := generateSqlStatement()
+			_, err := clusterDB.Exec(sqlStatement)
+			t.Log("Creating cluster table with sqlStatement: ", sqlStatement)
+			return err
+		}))
+
 	}
 
 	// Alter columns to all the cluster tables
