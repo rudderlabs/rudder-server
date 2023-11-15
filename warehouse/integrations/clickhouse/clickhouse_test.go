@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
@@ -22,7 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -1159,6 +1159,36 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			_, err := clusterDB.Exec(sqlStatement)
 			return err
 		}))
+	}
+
+	for _, clusterDB := range clusterDBs {
+		for tableName := range tableColumnInfoMap {
+			sqlStatementCreateTable := fmt.Sprintf(`
+				CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = ReplicatedReplacingMergeTree(
+					'/clickhouse/{cluster}/tables/{uuid}/{database}/{table}', '{replica}',
+				);`,
+				tableName,
+			)
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(sqlStatementCreateTable)
+				return err
+			}))
+
+			sqlStatementDropTable := fmt.Sprintf(`
+				DROP TABLE rudderdb.%[1]s`,
+				tableName,
+			)
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(sqlStatementDropTable)
+				return err
+			}))
+
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(sqlStatementCreateTable)
+				return err
+			}))
+
+		}
 	}
 
 	// Alter columns to all the cluster tables
