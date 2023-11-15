@@ -267,12 +267,3 @@ func fromSDK(lib, version string, events []transformer.TransformerEvent) []trans
 
 	return events
 }
-
-func addTimestamps(sentAt, timestamp string, events []transformer.TransformerEvent) []transformer.TransformerEvent {
-	for i := range events {
-		events[i].Message["originalTimestamp"] = timestamp
-		events[i].Message["sentAt"] = sentAt
-	}
-
-	return events
-}
