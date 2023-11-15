@@ -225,9 +225,16 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
-					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
-			)
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
+			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
+			WHERE
+				_PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(
+					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000),
+					DAY,
+					'UTC'
+				)
+				AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
+		)
 		WHERE __row_number = 1`
 	metaData := &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
