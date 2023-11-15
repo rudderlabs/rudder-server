@@ -9,7 +9,7 @@ on:
 jobs:
   integration:
     name: Integration
-    runs-on: 'ubuntu-20.04'
+    runs-on: [self-hosted, linux, x64]
     strategy:
       matrix:
         FEATURES: [ oss ,enterprise ]
@@ -107,7 +107,7 @@ jobs:
           path: coverage.txt
   package-unit:
     name: Package Unit
-    runs-on: 'ubuntu-20.04'
+    runs-on: [self-hosted, linux, x64]
     strategy:
       fail-fast: false
       matrix:
