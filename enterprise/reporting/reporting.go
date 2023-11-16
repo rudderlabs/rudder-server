@@ -140,9 +140,17 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
 	if config.IsSet("Reporting.autoVacuumCostLimit") {
-		_, err = dbHandle.ExecContext(r.ctx, fmt.Sprintf("ALTER TABLE reports SET (autovacuum_vacuum_cost_limit = %d);", config.MustGetInt("Reporting.autoVacuumCostLimit")))
-		if err != nil {
-			panic(err)
+		autoVacuumCostLimit := config.MustGetInt("Reporting.autoVacuumCostLimit")
+		m = &migrator.Migrator{
+			Handle:          dbHandle,
+			MigrationsTable: "reports_runalways_migrations",
+			RunAlways:       true,
+		}
+		templateData := map[string]interface{}{
+			"AutoVacuumCostLimit": autoVacuumCostLimit,
+		}
+		if err := m.MigrateFromTemplates("reports_always", templateData); err != nil {
+			panic(fmt.Errorf("could not run reports_always migrations: %w", err))
 		}
 	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
