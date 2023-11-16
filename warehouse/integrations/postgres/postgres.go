@@ -123,7 +123,6 @@ type Postgres struct {
 	LoadFileDownloader downloader.Downloader
 
 	config struct {
-		allowMerge                                bool
 		enableDeleteByJobs                        bool
 		numWorkersDownloadLoadFiles               int
 		slowQueryThreshold                        time.Duration
@@ -164,7 +163,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
-	pg.config.allowMerge = conf.GetBool("Warehouse.postgres.allowMerge", true)
 	pg.config.enableDeleteByJobs = conf.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	pg.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 	pg.config.slowQueryThreshold = conf.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
