@@ -42,8 +42,14 @@ func TestMigrate(t *testing.T) {
 				MigrationsTable: fmt.Sprintf("migrations_%s", dir),
 				Handle:          postgre.DB,
 			}
-
-			err := m.Migrate(dir)
+			var err error
+			if strings.HasPrefix(dir, "reports") {
+				err = m.MigrateFromTemplates(dir, map[string]int{
+					"AutoVacuumCostLimit": 200,
+				})
+			} else {
+				err = m.Migrate(dir)
+			}
 			require.NoError(t, err)
 		})
 	}
