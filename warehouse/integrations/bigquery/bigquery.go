@@ -602,8 +602,8 @@ func (bq *BigQuery) connect(ctx context.Context, cred BQCredentials) (*bigquery.
 	return c, err
 }
 
-func (bq *BigQuery) CrashRecover(ctx context.Context) {
-	bq.dropDanglingStagingTables(ctx)
+func (bq *BigQuery) CrashRecover(ctx context.Context) error {
+	return bq.dropDanglingStagingTables(ctx)
 }
 
 func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
