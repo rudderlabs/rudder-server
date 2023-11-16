@@ -64,7 +64,6 @@ type DefaultReporter struct {
 	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
-	autoVacuumCostLimit                  int
 	maxConcurrentRequests                misc.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
@@ -85,7 +84,6 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
-	autoVacuumCostLimit := config.GetIntVar(2000, 1, "Reporting.autoVacuumCostLimit")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -112,7 +110,6 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 		stats:                                stats,
-		autoVacuumCostLimit:                  autoVacuumCostLimit,
 	}
 }
 
@@ -138,12 +135,15 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		MigrationsTable:            "reports_migrations",
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
-	templateData := map[string]int{
-		"AutoVacuumCostLimit": r.autoVacuumCostLimit,
-	}
-	err = m.MigrateFromTemplates("reports", templateData)
+	err = m.Migrate("reports")
 	if err != nil {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
+	}
+	if config.IsSet("Reporting.autoVacuumCostLimit") {
+		_, err = dbHandle.ExecContext(r.ctx, fmt.Sprintf("ALTER TABLE reports SET (autovacuum_vacuum_cost_limit = %d);", config.MustGetInt("Reporting.autoVacuumCostLimit")))
+		if err != nil {
+			panic(err)
+		}
 	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
