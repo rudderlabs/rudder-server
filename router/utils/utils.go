@@ -117,11 +117,11 @@ func NewDrainer(
 	return &drainer{
 		destinationIDs: conf.GetReloadableStringSliceVar(
 			nil,
-			"Router.toAbortDestinationIDs",
+			"drain.destinationIDs",
 		),
 		jobRunIDs: conf.GetReloadableStringSliceVar(
 			nil,
-			"RSources.toAbortJobRunIDs",
+			"drain.jobRunIDs",
 		),
 		destinationResolver: destDrainFunc,
 	}

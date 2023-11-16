@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/config/drain_config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -246,6 +247,13 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Start rudder core
 	if r.canStartServer() {
+		g.Go(misc.WithBugsnag(func() (err error) {
+			drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, r.logger.Child("drain-config"))
+			if err != nil {
+				return fmt.Errorf("drain config manager setup: %w", err)
+			}
+			return drainConfigManager.DrainConfigRoutine(ctx)
+		}))
 		g.Go(misc.WithBugsnag(func() (err error) {
 			if err := r.appHandler.StartRudderCore(ctx, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
