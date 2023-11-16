@@ -1162,44 +1162,79 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		}))
 	}
 
-	for _, clusterDB := range clusterDBs {
-		tableName := "test_table"
-		generateSqlStatement := func() string {
-			return fmt.Sprintf(`
-				CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" ("a" Int64,  "received_at" DateTime, "id" String) ENGINE = ReplicatedReplacingMergeTree(
-					'/clickhouse/{cluster}/tables/%[2]s/{database}/{table}', '{replica}')
-				ORDER BY ("received_at", "id") PARTITION BY toDate(received_at)
-				;`,
-				fmt.Sprintf("%s_cluster_distributed", tableName),
-				uuid.New().String(),
-			)
-		}
+	t.Run("Create Drop Create", func(t *testing.T) {
+		clusterDB := connectClickhouseDB(ctx, t, fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			"localhost", clusterPort1, "rudderdb", "rudder-password", "rudder",
+		))
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
-			sqlStatement := generateSqlStatement()
-			_, err := clusterDB.Exec(sqlStatement)
-			t.Log("Creating cluster table with sqlStatement: ", sqlStatement)
-			return err
-		}))
+		t.Run("with UUID", func(t *testing.T) {
+			testTable := "test_table_with_uuid"
 
-		sqlStatementDropTable := fmt.Sprintf(`
-				DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster"`,
-			fmt.Sprintf("%s_cluster_distributed", tableName),
-		)
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
-			_, err := clusterDB.Exec(sqlStatementDropTable)
-			return err
-		}))
+			createTableSQLStatement := func() string {
+				return fmt.Sprintf(`
+					CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" (
+					  "id" String, "received_at" DateTime
+					) ENGINE = ReplicatedReplacingMergeTree(
+					  '/clickhouse/{cluster}/tables/%[2]s/{database}/{table}',
+					  '{replica}'
+					)
+					ORDER BY
+					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					testTable,
+					uuid.New().String(),
+				)
+			}
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
-			sqlStatement := generateSqlStatement()
-			_, err := clusterDB.Exec(sqlStatement)
-			t.Log("Creating cluster table with sqlStatement: ", sqlStatement)
-			return err
-		}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(fmt.Sprintf(`DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster";`, testTable))
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+		})
+		t.Run("without UUID", func(t *testing.T) {
+			testTable := "test_table_without_uuid"
 
-	}
+			createTableSQLStatement := func() string {
+				return fmt.Sprintf(`
+					CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" (
+					  "id" String, "received_at" DateTime
+					) ENGINE = ReplicatedReplacingMergeTree(
+					  '/clickhouse/{cluster}/tables/{database}/{table}',
+					  '{replica}'
+					)
+					ORDER BY
+					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					testTable,
+				)
+			}
 
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(fmt.Sprintf(`DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster";`, testTable))
+				return err
+			}))
+
+			err := testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			})
+			require.Error(t, err)
+
+			var clickhouseErr *clickhousestd.Exception
+			require.ErrorAs(t, err, &clickhouseErr)
+			require.Equal(t, int32(253), clickhouseErr.Code)
+		})
+	})
 	// Alter columns to all the cluster tables
 	for _, clusterDB := range clusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
