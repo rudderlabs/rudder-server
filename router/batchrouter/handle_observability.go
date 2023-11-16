@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -224,14 +221,7 @@ func (brt *Handle) updateRudderSourcesStats(
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	rsourcesStats.CollectFailedRecords(
-		lo.Filter(
-			jobStatuses,
-			func(status *jobsdb.JobStatusT, _ int) bool {
-				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
-			},
-		),
-	)
+	rsourcesStats.CollectFailedRecords(jobStatuses)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)
