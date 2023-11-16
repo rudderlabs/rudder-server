@@ -19,18 +19,16 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/rudderlabs/rudder-server/app"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
@@ -38,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -181,7 +180,9 @@ func TestKafkaBatching(t *testing.T) {
 			"RSERVER_WAREHOUSE_MODE=off",
 		)
 		if testing.Verbose() {
-			cmd.Env = append(cmd.Env, "LOG_LEVEL=debug")
+			cmd.Env = append(cmd.Env, "LOG_LEVEL=DEBUG")
+		} else {
+			cmd.Env = append(cmd.Env, "LOG_LEVEL=INFO")
 		}
 
 		stdout, err := cmd.StdoutPipe()
@@ -210,30 +211,10 @@ func TestKafkaBatching(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-done })
 
 	// Waiting for RS to become healthy
-	var (
-		resp           *http.Response
-		respBody       string
-		statusCode     int
-		healthEndpoint = fmt.Sprintf("http://localhost:%d/health", httpPort)
+	health.WaitUntilReady(context.Background(), t,
+		fmt.Sprintf("http://localhost:%d/health", httpPort),
+		2*time.Minute, time.Second, t.Name(),
 	)
-	require.Eventuallyf(t, func() bool {
-		resp, err = http.Get(healthEndpoint)
-		if err != nil {
-			return false
-		}
-		defer func() { httputil.CloseResponse(resp) }()
-
-		var buf []byte
-		buf, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return false
-		}
-		respBody = string(buf)
-		if statusCode = resp.StatusCode; statusCode != http.StatusOK {
-			return false
-		}
-		return true
-	}, time.Minute, 100*time.Millisecond, "RS did not become healthy in time (%s)[%d]: %v", respBody, statusCode, err)
 
 	noOfMessages := 10
 	for i := 0; i < noOfMessages; i++ {
@@ -279,7 +260,7 @@ func TestKafkaBatching(t *testing.T) {
 
 	var buf []byte
 	require.Eventuallyf(t, func() bool {
-		resp, err = http.Get(fmt.Sprintf("http://localhost:%d/metrics", prometheusPort))
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", prometheusPort))
 		require.NoError(t, err)
 		defer func() { httputil.CloseResponse(resp) }()
 
