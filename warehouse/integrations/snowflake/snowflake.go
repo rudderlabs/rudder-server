@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -43,6 +44,9 @@ const (
 	role               = "role"
 	password           = "password"
 	application        = "Rudderstack_Warehouse"
+
+	loadTableStrategyMergeMode  = "MERGE"
+	loadTableStrategyAppendMode = "APPEND"
 )
 
 var primaryKeyMap = map[string]string{
@@ -165,7 +169,7 @@ type Snowflake struct {
 	stats          stats.Stats
 
 	config struct {
-		allowMerge         bool
+		loadTableStrategy  string
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
 
@@ -182,7 +186,16 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 	sf.logger = log.Child("integrations").Child("snowflake")
 	sf.stats = stat
 
-	sf.config.allowMerge = conf.GetBool("Warehouse.snowflake.allowMerge", true)
+	loadTableStrategy := conf.GetString("Warehouse.snowflake.loadTableStrategy", loadTableStrategyMergeMode)
+	switch loadTableStrategy {
+	case loadTableStrategyMergeMode, loadTableStrategyAppendMode:
+		sf.config.loadTableStrategy = loadTableStrategy
+	default:
+		return nil, fmt.Errorf("loadTableStrategy out of the known domain [%+v]: %v",
+			[]string{loadTableStrategyMergeMode, loadTableStrategyAppendMode}, loadTableStrategy,
+		)
+	}
+
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
 	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
@@ -272,8 +285,7 @@ func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
 		// TODO: throw error if column already exists but of different type
-		var e *snowflake.SnowflakeError
-		if errors.As(err, &e) && e.SQLState == "42601" {
+		if e, ok := err.(*snowflake.SnowflakeError); ok && e.SQLState == "42601" {
 			return true
 		}
 		return false
@@ -300,8 +312,9 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 		)
 		log.Infow("Cleaning up the following tables in snowflake")
 
-		sqlStatement := fmt.Sprintf(
-			`DELETE FROM %[1]q.%[2]q
+		sqlStatement := fmt.Sprintf(`
+			DELETE FROM
+				%[1]q.%[2]q
 			WHERE
 				context_sources_job_run_id <> '%[3]s' AND
 				context_sources_task_run_id <> '%[4]s' AND
@@ -347,7 +360,7 @@ func (sf *Snowflake) loadTable(
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
 		lf.TableName, tableName,
-		lf.ShouldMerge, sf.ShouldMerge(),
+		lf.LoadTableStrategy, sf.config.loadTableStrategy,
 	)
 	log.Infow("started loading")
 
@@ -371,7 +384,7 @@ func (sf *Snowflake) loadTable(
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	if !sf.ShouldMerge() {
+	if sf.ShouldAppend() {
 		log.Infow("copying data into main table")
 		loadTableStats, err := sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName)
 		if err != nil {
@@ -538,17 +551,24 @@ func (sf *Snowflake) sampleDuplicateMessages(
 	mainTable := fmt.Sprintf("%s.%q", identifier, mainTableName)
 	stagingTable := fmt.Sprintf("%s.%q", identifier, stagingTableName)
 
-	rows, err := db.QueryContext(ctx,
-		`SELECT ID, RECEIVED_AT
-		FROM `+mainTable+`
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			ID,
+			RECEIVED_AT
+		FROM
+			`+mainTable+`
 		WHERE
 		  	RECEIVED_AT > (SELECT DATEADD(day,-?,current_date())) AND
 		  	ID IN (
-				SELECT ID
-				FROM `+stagingTable+`
+				SELECT
+			  		ID
+				FROM
+			  		`+stagingTable+`
 		  	)
         ORDER BY RECEIVED_AT ASC
-		LIMIT ?;`,
+		LIMIT
+		  ?;
+`,
 		sf.config.debugDuplicateIntervalInDays,
 		sf.config.debugDuplicateLimit,
 	)
@@ -823,13 +843,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-// ShouldMerge returns true if:
-// * the uploader says we cannot append
-// * the server configuration says we can merge
-// * the user opted-in
-func (sf *Snowflake) ShouldMerge() bool {
-	return !sf.Uploader.CanAppend() ||
-		(sf.config.allowMerge && !sf.Warehouse.GetPreferAppendSetting())
+// ShouldAppend returns true if:
+// * the load table strategy is "append" mode
+// * the uploader says we can append
+func (sf *Snowflake) ShouldAppend() bool {
+	return sf.config.loadTableStrategy == loadTableStrategyAppendMode && sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
@@ -854,7 +872,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
 		lf.TableName, whutils.UsersTable,
-		lf.ShouldMerge, sf.ShouldMerge(),
+		lf.LoadTableStrategy, sf.config.loadTableStrategy,
 	)
 	log.Infow("started loading for identifies and users tables")
 
@@ -871,7 +889,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	if !sf.ShouldMerge() {
+	if sf.ShouldAppend() {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
 			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
