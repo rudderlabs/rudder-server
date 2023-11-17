@@ -54,4 +54,20 @@ func TestMigrate(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+
+	t.Run("validate if autovacuum_vacuum_cost_limit is being set", func(t *testing.T) {
+		var costLimit string
+		config.Set("Reporting.autoVacuumCostLimit", 300)
+		m := migrator.Migrator{
+			MigrationsTable: "migrations_reports_always",
+			Handle:          postgre.DB,
+			RunAlways:       true,
+		}
+		m.MigrateFromTemplates("reports_always", map[string]interface{}{
+			"config": config.Default,
+		})
+		err = postgre.DB.QueryRow("select reloptions from pg_class where relname = 'reports';").Scan(&costLimit)
+		require.NoError(t, err)
+		require.Equal(t, "{autovacuum_vacuum_cost_limit=300}", costLimit)
+	})
 }
