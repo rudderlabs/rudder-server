@@ -56,18 +56,21 @@ func TestMigrate(t *testing.T) {
 	}
 
 	t.Run("validate if autovacuum_vacuum_cost_limit is being set", func(t *testing.T) {
-		var costLimit string
+		query := "select reloptions from pg_class where relname = 'reports';"
+		var value interface{}
+		require.NoError(t, postgre.DB.QueryRow(query).Scan(&value))
+		require.Nil(t, value) // value should be nil if config is not set
 		config.Set("Reporting.autoVacuumCostLimit", 300)
 		m := migrator.Migrator{
 			MigrationsTable: "migrations_reports_always",
 			Handle:          postgre.DB,
 			RunAlways:       true,
 		}
-		m.MigrateFromTemplates("reports_always", map[string]interface{}{
+		require.NoError(t, m.MigrateFromTemplates("reports_always", map[string]interface{}{
 			"config": config.Default,
-		})
-		err = postgre.DB.QueryRow("select reloptions from pg_class where relname = 'reports';").Scan(&costLimit)
-		require.NoError(t, err)
-		require.Equal(t, "{autovacuum_vacuum_cost_limit=300}", costLimit)
+		}))
+		var costLimit string
+		require.NoError(t, postgre.DB.QueryRow(query).Scan(&costLimit))
+		require.Equal(t, "{autovacuum_vacuum_cost_limit=300}", costLimit) // value should be set to 300
 	})
 }
