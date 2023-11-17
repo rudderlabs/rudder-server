@@ -455,7 +455,6 @@ func (rs *Redshift) loadTable(
 	tableSchemaInUpload,
 	tableSchemaAfterUpload model.TableSchema,
 	skipTempTableDelete bool,
-	isUsersTable bool,
 ) (*types.LoadTableStats, string, error) {
 	log := rs.logger.With(
 		logfield.SourceID, rs.Warehouse.Source.ID,
@@ -465,7 +464,7 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.shouldMerge(isUsersTable),
+		logfield.ShouldMerge, rs.shouldMerge(tableName),
 	)
 	log.Infow("started loading")
 
@@ -520,7 +519,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	var rowsDeleted int64
-	if rs.shouldMerge(isUsersTable) {
+	if rs.shouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -729,7 +728,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
-		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.shouldMerge(true),
+		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.shouldMerge(warehouseutils.UsersTable),
 		logfield.TableName, warehouseutils.UsersTable,
 	}
 	rs.logger.Infow("started loading for identifies and users tables", logFields...)
@@ -739,7 +738,6 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable),
 		rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable),
 		true,
-		false,
 	)
 	if err != nil {
 		return map[string]error{
@@ -761,7 +759,6 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 			rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
 			rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
 			false,
-			true,
 		)
 		if err != nil {
 			return map[string]error{
@@ -1263,7 +1260,6 @@ func (rs *Redshift) LoadTable(ctx context.Context, tableName string) (*types.Loa
 		rs.Uploader.GetTableSchemaInUpload(tableName),
 		rs.Uploader.GetTableSchemaInWarehouse(tableName),
 		false,
-		tableName == warehouseutils.UsersTable,
 	)
 	return loadTableStat, err
 }
@@ -1343,14 +1339,14 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.connectTimeout = timeout
 }
 
-func (rs *Redshift) shouldMerge(isUsersTable bool) bool {
+func (rs *Redshift) shouldMerge(tableName string) bool {
 	if !rs.config.allowMerge {
 		return false
 	}
 	if !rs.Uploader.CanAppend() {
 		return true
 	}
-	if isUsersTable {
+	if tableName == warehouseutils.UsersTable {
 		// If we are here it's because skipComputingUserLatestTraits is true.
 		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
 		// backwards compatibility.
