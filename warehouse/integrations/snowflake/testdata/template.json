@@ -25,6 +25,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.database}}",
             "warehouse": "{{.warehouse}}",
@@ -39,8 +40,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -150,6 +150,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.caseSensitiveDatabase}}",
             "warehouse": "{{.warehouse}}",
@@ -164,8 +165,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -275,6 +275,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.rbacAccount}}",
             "database": "{{.rbacDatabase}}",
             "warehouse": "{{.rbacWarehouse}}",
@@ -290,8 +291,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},
@@ -427,6 +427,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.database}}",
             "warehouse": "{{.warehouse}}",
@@ -441,8 +442,7 @@
             "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
-            "useRudderStorage": false,
-            "preferAppend": {{.preferAppend}}
+            "useRudderStorage": false
           },
           "liveEventsConfig": {},
           "secretConfig": {},

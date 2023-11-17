@@ -132,7 +132,11 @@ func TestIntegration(t *testing.T) {
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
-	bootstrapSvc := func(t testing.TB, preferAppend bool) {
+	bootstrapSvc := func(t testing.TB, preferAppend *bool) {
+		var preferAppendStr string
+		if preferAppend != nil {
+			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
+		}
 		templateConfigurations := map[string]any{
 			"workspaceID":                workspaceID,
 			"sourceID":                   sourceID,
@@ -170,7 +174,7 @@ func TestIntegration(t *testing.T) {
 			"rbacBucketName":             rbacCredentials.BucketName,
 			"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
 			"rbacAccessKey":              rbacCredentials.AccessKey,
-			"preferAppend":               preferAppend,
+			"preferAppend":               preferAppendStr,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -229,7 +233,7 @@ func TestIntegration(t *testing.T) {
 			sourceJob                     bool
 			stagingFilePrefix             string
 			emptyJobRunID                 bool
-			preferAppend                  bool
+			preferAppend                  *bool
 			customUserID                  string
 		}{
 			{
@@ -250,7 +254,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:     "Upload Job with Role",
@@ -270,7 +274,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-with-role",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:     "Upload Job with Case Sensitive Database",
@@ -290,7 +294,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:          "Source Job with Sources",
@@ -312,7 +316,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
-				preferAppend:          false,
+				preferAppend:          th.Ptr(false),
 			},
 			{
 				name:                          "Upload Job in append mode",
@@ -333,8 +337,28 @@ func TestIntegration(t *testing.T) {
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				emptyJobRunID: true,
-				preferAppend:  true,
+				preferAppend:  th.Ptr(true),
 				customUserID:  testhelper.GetUserId("append_test"),
+			},
+			{
+				name:     "Undefined preferAppend",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				sourceID:      sourceID,
+				destinationID: destinationID,
+				cred:          credentials,
+				database:      database,
+				stagingFilesEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				},
+				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				},
+				stagingFilePrefix: "testdata/upload-job-undefined-preferAppend-mode",
+				preferAppend:      nil, // not defined in backend config
 			},
 		}
 
