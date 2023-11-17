@@ -1,7 +1,7 @@
 package delayed
 
 import (
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -44,7 +44,7 @@ func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events [
 				sdkLibName, _ := m["name"].(string)
 
 				if sdkLibName != "" || sdkLibVersion != "" {
-					sdkVersion = fmt.Sprintf("%s/%s", sdkLibName, sdkLibVersion)
+					sdkVersion = strings.Join([]string{sdkLibName, sdkLibVersion}, "/")
 				}
 			}
 		}
