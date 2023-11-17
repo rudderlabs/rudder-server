@@ -1224,8 +1224,6 @@ func TestUploads(t *testing.T) {
 			<-done
 		})
 		t.Run("allowMerge=false", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1338,8 +1336,6 @@ func TestUploads(t *testing.T) {
 			<-done
 		})
 		t.Run("allowMerge=true,preferAppend=true", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1452,8 +1448,6 @@ func TestUploads(t *testing.T) {
 			<-done
 		})
 		t.Run("allowMerge=false,preferAppend=true", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1566,8 +1560,6 @@ func TestUploads(t *testing.T) {
 			<-done
 		})
 		t.Run("allowMerge=false,preferAppend=true,isSourceETL=true", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1677,14 +1669,12 @@ func TestUploads(t *testing.T) {
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 
 			cancel()
 			<-done
 		})
 		t.Run("allowMerge=false,preferAppend=true,IsReplaySource=true", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1792,14 +1782,12 @@ func TestUploads(t *testing.T) {
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 
 			cancel()
 			<-done
 		})
 		t.Run("allowMerge=false,preferAppend=true,sourceCategory=cloud", func(t *testing.T) {
-			t.Skipf("TODO: reintroduce with append vs merge")
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -1907,7 +1895,7 @@ func TestUploads(t *testing.T) {
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 
 			cancel()
 			<-done
