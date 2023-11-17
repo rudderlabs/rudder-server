@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	clickhousestd "github.com/ClickHouse/clickhouse-go"
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -39,9 +40,9 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	if os.Getenv("SLOW") != "1" {
-		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	}
+	//if os.Getenv("SLOW") != "1" {
+	//	t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	//}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
 	c.Start(context.Background())
@@ -161,7 +162,7 @@ func TestIntegration(t *testing.T) {
 			destinationID           string
 			warehouseEvents         testhelper.EventsCountMap
 			warehouseModifiedEvents testhelper.EventsCountMap
-			clusterSetup            func(t testing.TB)
+			clusterSetup            func(t *testing.T)
 			db                      *sql.DB
 			stagingFilePrefix       string
 		}{
@@ -189,9 +190,9 @@ func TestIntegration(t *testing.T) {
 					"aliases":       8,
 					"groups":        8,
 				},
-				clusterSetup: func(t testing.TB) {
+				clusterSetup: func(t *testing.T) {
 					t.Helper()
-					initializeClickhouseClusterMode(t, dbs[1:], tables)
+					initializeClickhouseClusterMode(t, dbs[1:], tables, clusterPort1)
 				},
 				stagingFilePrefix: "testdata/upload-cluster-job",
 			},
@@ -1019,7 +1020,9 @@ func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB 
 	defer cancel()
 
 	require.Eventually(t, func() bool {
-		return db.PingContext(ctx) == nil
+		err := db.PingContext(ctx)
+		t.Log(err)
+		return err == nil
 	}, time.Minute, time.Second)
 
 	err = db.PingContext(ctx)
@@ -1028,7 +1031,7 @@ func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB 
 	return db
 }
 
-func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int) {
 	t.Helper()
 
 	type ColumnInfoT struct {
@@ -1163,8 +1166,8 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 	}
 
 	t.Run("Create Drop Create", func(t *testing.T) {
-		clusterDB := connectClickhouseDB(ctx, t, fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-			"localhost", clusterPort1, "rudderdb", "rudder-password", "rudder",
+		clusterDB := connectClickhouseDB(context.Background(), t, fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			"localhost", clusterPost, "rudderdb", "rudder-password", "rudder",
 		))
 
 		t.Run("with UUID", func(t *testing.T) {
