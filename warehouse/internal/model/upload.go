@@ -66,6 +66,7 @@ func GetUserFriendlyJobErrorCategory(errorType JobErrorType) string {
 var (
 	ErrUploadNotFound     = errors.New("upload not found")
 	ErrSourcesJobNotFound = errors.New("sources job not found")
+	ErrLoadFileNotFound   = errors.New("load file not found")
 	ErrNoUploadsFound     = errors.New("no uploads found")
 )
 
