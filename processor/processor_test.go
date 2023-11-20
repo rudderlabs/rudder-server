@@ -48,6 +48,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type mockObserver struct {
+	calls []struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}
+}
+
+func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+	m.calls = append(m.calls, struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}{source: source, events: events})
+}
+
 type testContext struct {
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -60,6 +74,7 @@ type testContext struct {
 	mockArchivalDB        *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
+	MockObserver          *mockObserver
 	MockRsourcesService   *rsources.MockJobService
 }
 
@@ -89,6 +104,7 @@ func (c *testContext) Setup() {
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
+	c.MockObserver = &mockObserver{}
 }
 
 func (c *testContext) Finish() {
@@ -764,6 +780,8 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -956,6 +974,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should skip writing events belonging to transient sources in archival DB", func() {
@@ -1105,6 +1125,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -4020,6 +4042,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
+	processor.sourceObservers = []sourceObserver{c.MockObserver}
 }
 
 func handlePendingGatewayJobs(processor *Handle) {

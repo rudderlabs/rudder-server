@@ -29,6 +29,7 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
@@ -63,6 +64,10 @@ func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 	h := &Handle{transformer: transformer, conf: c}
 	h.loadConfig()
 	return h
+}
+
+type sourceObserver interface {
+	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
 }
 
 // Handle is a handle to the processor module
@@ -148,6 +153,8 @@ type Handle struct {
 
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
+
+	sourceObservers []sourceObserver
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -451,7 +458,7 @@ func (proc *Handle) Setup(
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
-
+	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -1335,7 +1342,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		var gatewayBatchEvent types.GatewayBatchRequest
 		err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
 		if err != nil {
-			proc.logger.Warnf("json parsing of event payload for %s: %v", batchEvent.JobID, err)
+			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
 		var eventParams types.EventParams
@@ -1512,7 +1519,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
 			}
 		}
-
 	}
 
 	g, groupCtx := errgroup.WithContext(context.Background())
@@ -1608,6 +1614,17 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 	marshalTime := time.Since(marshalStart)
 	defer proc.stats.marshalSingularEvents.SendTiming(marshalTime)
+
+	for sourceID, events := range groupedEventsBySourceId {
+		source, err := proc.getSourceBySourceID(string(sourceID))
+		if err != nil {
+			continue
+		}
+
+		for _, obs := range proc.sourceObservers {
+			obs.ObserveSourceEvents(source, events)
+		}
+	}
 
 	// TRACKING PLAN - START
 	// Placing the trackingPlan validation filters here.
