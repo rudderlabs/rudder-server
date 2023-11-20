@@ -25,17 +25,20 @@ type limiter interface {
 }
 
 type Factory struct {
-	Stats        stats.Stats
-	limiter      limiter
-	throttlers   map[string]*Throttler // map key is the destinationID
-	throttlersMu sync.Mutex
+	Stats                      stats.Stats
+	limiter                    limiter
+	throttlers                 map[string]*Throttler // map key is the destinationID
+	throttlersMu               sync.Mutex
+	limitReachedPerDestination chan string // channel to send destinationID when limit is reached
+	adaptiveRateLimiter        func(destName, destID string, limit int64) int64
 }
 
 // New constructs a new Throttler Factory
 func New(stats stats.Stats) (*Factory, error) {
 	f := Factory{
-		Stats:      stats,
-		throttlers: make(map[string]*Throttler),
+		Stats:                      stats,
+		throttlers:                 make(map[string]*Throttler),
+		limitReachedPerDestination: make(chan string),
 	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
@@ -52,11 +55,20 @@ func (f *Factory) Get(destName, destID string) *Throttler {
 
 	var conf throttlingConfig
 	conf.readThrottlingConfig(destName, destID)
+	if f.adaptiveRateLimiter != nil {
+		conf.limit = f.adaptiveRateLimiter(destName, destID, conf.limit)
+	}
 	f.throttlers[destID] = &Throttler{
 		limiter: f.limiter,
 		config:  conf,
 	}
 	return f.throttlers[destID]
+}
+
+func (f *Factory) SetLimitReached(destID string) {
+	f.throttlersMu.Lock()
+	defer f.throttlersMu.Unlock()
+	f.limitReachedPerDestination <- destID
 }
 
 func (f *Factory) initThrottlerFactory() error {
@@ -69,10 +81,17 @@ func (f *Factory) initThrottlerFactory() error {
 		})
 	}
 
-	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
-	if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
-		if redisClient == nil {
-			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
+	var throttlingAlgorithm string
+	adaptiveRateLimit := config.GetBool("Router.throttler.adaptiveRateLimit.enabled", false)
+	if adaptiveRateLimit {
+		throttlingAlgorithm = throttlingAlgoTypeGCRA
+		f.adaptiveRateLimiter = SetupRouterAdaptiveRateLimiter(context.Background(), f.limitReachedPerDestination)
+	} else {
+		throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
+		if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
+			if redisClient == nil {
+				return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
+			}
 		}
 	}
 

@@ -324,6 +324,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if workerJobStatus.status.AttemptNum == 1 {
 					sd.Count++
 				}
+				if workerJobStatus.status.ErrorCode == strconv.Itoa(http.StatusTooManyRequests) {
+					rt.throttlerFactory.SetLimitReached(parameters.DestinationID)
+				}
 			}
 		case jobsdb.Succeeded.State, jobsdb.Filtered.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
