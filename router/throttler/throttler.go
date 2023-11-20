@@ -50,6 +50,9 @@ func (f *Factory) Get(destName, destID string) *Throttler {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
 	if t, ok := f.throttlers[destID]; ok {
+		if f.adaptiveRateLimiter != nil {
+			t.config.limit = f.adaptiveRateLimiter(destName, destID, t.config.limit)
+		}
 		return t
 	}
 
@@ -81,10 +84,8 @@ func (f *Factory) initThrottlerFactory() error {
 		})
 	}
 
-	var throttlingAlgorithm string
-	adaptiveRateLimit := config.GetBool("Router.throttler.adaptiveRateLimit.enabled", false)
-	if adaptiveRateLimit {
-		throttlingAlgorithm = throttlingAlgoTypeGCRA
+	throttlingAlgorithm := throttlingAlgoTypeGCRA
+	if config.GetBool("Router.throttler.adaptiveRateLimit.enabled", false) {
 		f.adaptiveRateLimiter = SetupRouterAdaptiveRateLimiter(context.Background(), f.limitReachedPerDestination)
 	} else {
 		throttlingAlgorithm = config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
