@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/rudderlabs/rudder-server/compare/v1.17.0...v1.17.1) (2023-11-17)
+
+
+### Miscellaneous
+
+* revert data bricks sql client to 1.4.0 ([#4157](https://github.com/rudderlabs/rudder-server/issues/4157)) ([c42f289](https://github.com/rudderlabs/rudder-server/commit/c42f289d3efe6f864755aa5e9f3f4b97a8230bc2))
+
 ## [1.17.0](https://github.com/rudderlabs/rudder-server/compare/v1.16.2...v1.17.0) (2023-11-14)
 
 

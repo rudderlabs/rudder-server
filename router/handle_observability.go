@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -97,14 +94,7 @@ func (rt *Handle) updateRudderSourcesStats(
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
-	rsourcesStats.CollectFailedRecords(
-		lo.Filter(
-			jobStatuses,
-			func(status *jobsdb.JobStatusT, _ int) bool {
-				return status.ErrorCode == routerutils.DRAIN_ERROR_CODE
-			},
-		),
-	)
+	rsourcesStats.CollectFailedRecords(jobStatuses)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
