@@ -240,6 +240,34 @@ func TestIntegration(t *testing.T) {
 				useSameUserID: true,
 			},
 			{
+				name:     "Undefined preferAppend",
+				writeKey: writeKey,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				schema:        namespace,
+				sourceID:      sourceID,
+				destinationID: destinationID,
+				warehouseEventsMap2: whth.EventsCountMap{
+					// let's use the same data as "testdata/upload-job-append-mode"
+					// but then we expect 4 for each table instead of 8 due to the merge
+					"identifies":    4,
+					"users":         1,
+					"tracks":        4,
+					"product_track": 4,
+					"pages":         4,
+					"screens":       4,
+					"aliases":       4,
+					"groups":        4,
+				},
+				preferAppend:      nil, // not defined in backend config
+				stagingFilePrefix: "testdata/upload-job-append-mode",
+				// an empty jobRunID means that the source is not an ETL one
+				// see Uploader.CanAppend()
+				jobRunID:      "",
+				useSameUserID: true,
+			},
+			{
 				name:                  "Source Job",
 				writeKey:              sourcesWriteKey,
 				schema:                sourcesNamespace,
