@@ -47,17 +47,18 @@ func SetupRouterAdaptiveRateLimiter(ctx context.Context, errorCh <-chan string) 
 		if !enabled {
 			return limit
 		}
-		minLimit := config.GetInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.minLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minLimit`, destName), fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-		maxLimit := config.GetInt64Var(0, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.maxLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxLimit`, destName), fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+		minLimit := config.GetInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.minLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minLimit`, destName), `Router.throttler.adaptiveRateLimit.minLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+		maxLimit := config.GetInt64Var(250, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.maxLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxLimit`, destName), `Router.throttler.adaptiveRateLimit.maxLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
 		if minLimit > maxLimit {
 			return limit
 		}
-		changePercentage := config.GetInt64Var(0, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.changePercentage`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.changePercentage`, destName))
+		minChangePercentage := config.GetInt64Var(30, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.minChangePercentage`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minChangePercentage`, destName), `Router.throttler.adaptiveRateLimit.minChangePercentage`)
+		maxChangePercentage := config.GetInt64Var(10, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.maxChangePercentage`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxChangePercentage`, destName), `Router.throttler.adaptiveRateLimit.maxChangePercentage`)
 		if shortTimer.getLimitReached(destID) {
-			newLimit := limit - (limit * changePercentage / 100)
+			newLimit := limit - (limit * minChangePercentage / 100)
 			limit = max(minLimit, newLimit)
 		} else if !longTimer.getLimitReached(destID) {
-			newLimit := limit + (limit * changePercentage / 100)
+			newLimit := limit + (limit * maxChangePercentage / 100)
 			limit = min(maxLimit, newLimit)
 		}
 		return limit
