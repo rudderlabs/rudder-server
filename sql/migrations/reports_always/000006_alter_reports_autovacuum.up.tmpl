@@ -1,0 +1,3 @@
+{{ if .config.IsSet "Reporting.autoVacuumCostLimit" }}
+    ALTER TABLE reports SET (autovacuum_vacuum_cost_limit = {{ .config.MustGetInt "Reporting.autoVacuumCostLimit" }});
+{{ end }}

@@ -64,13 +64,13 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 
 	t.Run("non matching key", func(t *testing.T) {
 		metadata, err := repo.Suppressed("workspace3", "user3", "source2")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is not suppressed")
 	})
 
 	t.Run("non matching suppression", func(t *testing.T) {
 		metadata, err := repo.Suppressed("workspace2", "user2", "source2")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is suppressed for a different sourceID")
 	})
 
@@ -94,7 +94,7 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 		require.Equal(t, token2, rtoken)
 
 		metadata, err = repo.Suppressed("workspace1", "user1", "source1")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that was suppressed by a wildcard suppression after the suppression has been canceled")
 	})
 
@@ -135,7 +135,7 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 			},
 		}, token))
 		metadata, err = repo.Suppressed("workspaceX", "userX", "sourceX")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is no longer suppressed by a wildcard suppression")
 
 		metadata, err = repo.Suppressed("workspaceX", "userX", "source1")
@@ -151,7 +151,7 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 			},
 		}, token))
 		metadata, err = repo.Suppressed("workspaceX", "userX", "source1")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is no longer suppressed by an exact match suppression")
 
 		metadata, err = repo.Suppressed("workspaceX", "userX", "source2")
@@ -167,7 +167,7 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 			},
 		}, token))
 		metadata, err = repo.Suppressed("workspaceX", "userX", "source2")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata, "it should return nil when trying to suppress a user that is no longer suppressed by an exact match suppression")
 	})
 }

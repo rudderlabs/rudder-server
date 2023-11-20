@@ -3,6 +3,7 @@ package etcd
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	etcd "go.etcd.io/etcd/client/v3"
@@ -53,6 +54,7 @@ func Setup(pool *dockertest.Pool, cln cleaner) (*Resource, error) {
 			DialOptions: []grpc.DialOption{
 				grpc.WithBlock(), // block until the underlying connection is up
 			},
+			DialTimeout: 10 * time.Second,
 		})
 		return err
 	})

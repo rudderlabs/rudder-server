@@ -139,6 +139,18 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	if err != nil {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
+
+	m = &migrator.Migrator{
+		Handle:          dbHandle,
+		MigrationsTable: "reports_runalways_migrations",
+		RunAlways:       true,
+	}
+	templateData := map[string]interface{}{
+		"config": config.Default,
+	}
+	if err := m.MigrateFromTemplates("reports_always", templateData); err != nil {
+		panic(fmt.Errorf("could not run reports_always migrations: %w", err))
+	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
 	if !config.GetBool("Reporting.syncer.enabled", true) {
@@ -199,6 +211,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	if err != nil {
 		panic(err)
 	}
+
 	r.getReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 
@@ -233,6 +246,10 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			panic(err)
 		}
 		metricReports = append(metricReports, &metricReport)
+	}
+	if err := rows.Err(); err != nil {
+		// Handle rows error
+		panic(err)
 	}
 
 	return metricReports, queryMin.Int64, err

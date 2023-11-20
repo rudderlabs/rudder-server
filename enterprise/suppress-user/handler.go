@@ -25,7 +25,7 @@ type handler struct {
 func (h *handler) GetSuppressedUser(workspaceID, userID, sourceID string) *model.Metadata {
 	h.log.Debugf("GetSuppressedUser called for workspace: %s, user %s, source %s", workspaceID, userID, sourceID)
 	metadata, err := h.r.Suppressed(workspaceID, userID, sourceID)
-	if err != nil && !errors.Is(err, model.ErrRestoring) {
+	if err != nil && !errors.Is(err, model.ErrRestoring) && !errors.Is(err, model.ErrKeyNotFound) {
 		h.log.Errorf("Suppression check failed for workspace: %s, user: %s, source: %s: %w", workspaceID, userID, sourceID, err)
 	}
 	return metadata

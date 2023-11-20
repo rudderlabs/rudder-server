@@ -48,7 +48,7 @@ func TestBadgerRepository(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), metadata.CreatedAt) // should be the same as the one we added
 		metadata, err = repo.Suppressed("workspace2", "user1", "")
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata) // should be nil
 
 		// Add a suppression with a source ID
@@ -62,7 +62,7 @@ func TestBadgerRepository(t *testing.T) {
 		}, token)
 		require.NoError(t, err)
 		metadata, err = repo.Suppressed("workspace2", "user2", "source1") // wrong source ID
-		require.NoError(t, err)
+		require.Error(t, err)
 		require.Nil(t, metadata)
 		metadata, err = repo.Suppressed("workspace2", "user2", "source2") // wrong workspace and user ID and correct source ID
 		require.NoError(t, err)
