@@ -238,7 +238,7 @@ func TestIntegration(t *testing.T) {
 					Type: client.SQLClient,
 				}
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"bucketName":       rsTestCredentials.BucketName,
 					"accessKeyID":      rsTestCredentials.AccessKeyID,
 					"accessKey":        rsTestCredentials.AccessKey,

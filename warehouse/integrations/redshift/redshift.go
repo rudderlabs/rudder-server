@@ -1343,14 +1343,17 @@ func (rs *Redshift) shouldMerge(tableName string) bool {
 	if !rs.config.allowMerge {
 		return false
 	}
-	if !rs.Uploader.CanAppend() {
-		return true
-	}
 	if tableName == warehouseutils.UsersTable {
 		// If we are here it's because skipComputingUserLatestTraits is true.
 		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
 		// backwards compatibility.
 		return !slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
+	}
+	// It's important to check the ability to append after skipDedup to make sure that if both
+	// skipDedupDestinationIDs and skipComputingUserLatestTraits are set, we still merge.
+	// see hyperverge user table use case for more details.
+	if !rs.Uploader.CanAppend() {
+		return true
 	}
 	return !rs.Warehouse.GetPreferAppendSetting() &&
 		!slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
