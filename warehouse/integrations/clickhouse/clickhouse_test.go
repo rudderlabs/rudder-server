@@ -40,9 +40,9 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	//if os.Getenv("SLOW") != "1" {
-	//	t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	//}
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
 	c.Start(context.Background())
