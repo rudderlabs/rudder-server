@@ -20,6 +20,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "sshUser": "{{.tunnelledSSHUser}}",
             "sshHost": "{{.tunnelledSSHHost}}",
             "sshPort": "{{.tunnelledSSHPort}}",
@@ -150,6 +151,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "database": "{{.database}}",
             "user": "{{.user}}",
@@ -302,6 +304,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "database": "{{.database}}",
             "user": "{{.user}}",

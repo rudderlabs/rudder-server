@@ -553,14 +553,14 @@ func (pg *Postgres) shouldMerge(tableName string) bool {
 	if !pg.config.allowMerge {
 		return false
 	}
-	if !pg.Uploader.CanAppend() {
-		return true
-	}
 	if tableName == warehouseutils.UsersTable {
 		// If we are here it's because canSkipComputingLatestUserTraits is true.
 		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
 		// backwards compatibility.
 		return !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
+	}
+	if !pg.Uploader.CanAppend() {
+		return true
 	}
 	return !pg.Warehouse.GetPreferAppendSetting() &&
 		!slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
