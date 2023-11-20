@@ -25,7 +25,6 @@ const (
 	Retried                    = "retried"
 	Attempt                    = "attempt"
 	LoadFileType               = "loadFileType"
-	LoadTableStrategy          = "loadTableStrategy"
 	ShouldMerge                = "shouldMerge"
 	ErrorMapping               = "errorMapping"
 	DestinationCredsValid      = "destinationCredsValid"
