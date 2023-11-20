@@ -100,7 +100,7 @@ func TestIntegration(t *testing.T) {
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
 
-	bootstrapSvc := func(t testing.TB, preferAppend *bool) {
+	bootstrapSvc := func(t testing.TB, additionalEnvs map[string]string, preferAppend *bool) {
 		var preferAppendStr string
 		if preferAppend != nil {
 			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
@@ -155,6 +155,9 @@ func TestIntegration(t *testing.T) {
 		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
 		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
 		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+		for envKey, envValue := range additionalEnvs {
+			t.Setenv(envKey, envValue)
+		}
 
 		svcDone := make(chan struct{})
 
@@ -200,6 +203,7 @@ func TestIntegration(t *testing.T) {
 			preferAppend          *bool
 			jobRunID              string
 			useSameUserID         bool
+			additionalEnvs        map[string]string
 		}{
 			{
 				name:     "Upload Job",
@@ -250,7 +254,7 @@ func TestIntegration(t *testing.T) {
 				destinationID: destinationID,
 				warehouseEventsMap2: whth.EventsCountMap{
 					// let's use the same data as "testdata/upload-job-append-mode"
-					// but then we expect 4 for each table instead of 8 due to the merge
+					// but then for the 2nd sync we expect 4 for each table instead of 8 due to the merge
 					"identifies":    4,
 					"users":         1,
 					"tracks":        4,
@@ -266,6 +270,53 @@ func TestIntegration(t *testing.T) {
 				// see Uploader.CanAppend()
 				jobRunID:      "",
 				useSameUserID: true,
+			},
+			{
+				name:     "Append Users",
+				writeKey: writeKey,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				schema:        namespace,
+				sourceID:      sourceID,
+				destinationID: destinationID,
+				warehouseEventsMap: whth.EventsCountMap{
+					// In the first sync we get 4 events for each table, 1 for users
+					"identifies":    4,
+					"users":         1,
+					"tracks":        4,
+					"product_track": 4,
+					"pages":         4,
+					"screens":       4,
+					"aliases":       4,
+					"groups":        4,
+				},
+				warehouseEventsMap2: whth.EventsCountMap{
+					// WARNING: the uploader.CanAppend() method will return false due to the jobRunID
+					// We will still merge the other tables because of that but not the users table
+					// and that is because of these settings:
+					// * Warehouse.postgres.skipDedupDestinationIDs
+					// * Warehouse.postgres.skipComputingUserLatestTraits
+					// See hyperverge users use case
+					"identifies":    4,
+					"users":         2, // same data as "testdata/upload-job-append-mode" but we have to append users
+					"tracks":        4,
+					"product_track": 4,
+					"pages":         4,
+					"screens":       4,
+					"aliases":       4,
+					"groups":        4,
+				},
+				preferAppend:      th.Ptr(true),
+				stagingFilePrefix: "testdata/upload-job-append-mode",
+				// we set the jobRunID to make sure the uploader says we cannot append!
+				// same behaviour as redshift, see hyperverge users use case
+				jobRunID:      misc.FastUUID().String(),
+				useSameUserID: true,
+				additionalEnvs: map[string]string{
+					"RSERVER_WAREHOUSE_POSTGRES_SKIP_DEDUP_DESTINATION_IDS":        destinationID,
+					"RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS": "true",
+				},
 			},
 			{
 				name:                  "Source Job",
@@ -285,7 +336,6 @@ func TestIntegration(t *testing.T) {
 				sourceJob:         true,
 				stagingFilePrefix: "testdata/sources-job",
 				jobRunID:          misc.FastUUID().String(),
-				preferAppend:      th.Ptr(false),
 			},
 		}
 
@@ -293,7 +343,7 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.preferAppend)
+				bootstrapSvc(t, tc.additionalEnvs, tc.preferAppend)
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -366,7 +416,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
-		bootstrapSvc(t, nil)
+		bootstrapSvc(t, nil, nil)
 
 		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			tunnelledUser,
