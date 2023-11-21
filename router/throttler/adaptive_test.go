@@ -10,10 +10,11 @@ import (
 )
 
 func TestAdaptiveRateLimit(t *testing.T) {
+	config := config.Default // TODO: change to config.New()
 	config.Set("Router.throttler.adaptiveRateLimit.enabled", true)
 	config.Set("Router.throttler.adaptiveRateLimit.shortTimeFrequency", 1*time.Second)
 	config.Set("Router.throttler.adaptiveRateLimit.longTimeFrequency", 2*time.Second)
-	f, err := New(nil)
+	f, err := New(nil, config)
 	require.NoError(t, err)
 	require.Equal(t, int64(250), f.Get("destName", "dest1").config.limit)
 

@@ -349,7 +349,8 @@ func (rt *Handle) Shutdown() {
 	rt.logger.Infof("Shutting down router: %s", rt.destType)
 	rt.backgroundCancel()
 
-	<-rt.startEnded     // wait for all workers to stop first
+	<-rt.startEnded // wait for all workers to stop first
+	rt.throttlerFactory.ShutDown()
 	close(rt.responseQ) // now it is safe to close the response channel
 	_ = rt.backgroundWait()
 }

@@ -260,7 +260,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		enrichers,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.New(stats.Default)
+	throttlerFactory, err := throttler.New(stats.Default, config.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}

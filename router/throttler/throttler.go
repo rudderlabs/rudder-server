@@ -25,22 +25,20 @@ type limiter interface {
 }
 
 type Factory struct {
-	Stats                      stats.Stats
-	limiter                    limiter
-	throttlers                 map[string]*Throttler // map key is the destinationID
-	throttlersMu               sync.Mutex
-	limitReachedPerDestination chan string // channel to send destinationID when limit is reached
-	adaptiveRateLimiter        func(destName, destID string, limit int64) int64
+	Stats        stats.Stats
+	limiter      limiter
+	throttlers   map[string]*Throttler // map key is the destinationID
+	throttlersMu sync.Mutex
+	adaptive     *Adaptive
 }
 
 // New constructs a new Throttler Factory
-func New(stats stats.Stats) (*Factory, error) {
+func New(stats stats.Stats, config *config.Config) (*Factory, error) {
 	f := Factory{
-		Stats:                      stats,
-		throttlers:                 make(map[string]*Throttler),
-		limitReachedPerDestination: make(chan string),
+		Stats:      stats,
+		throttlers: make(map[string]*Throttler),
 	}
-	if err := f.initThrottlerFactory(); err != nil {
+	if err := f.initThrottlerFactory(config); err != nil {
 		return nil, err
 	}
 	return &f, nil
@@ -50,16 +48,16 @@ func (f *Factory) Get(destName, destID string) *Throttler {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
 	if t, ok := f.throttlers[destID]; ok {
-		if f.adaptiveRateLimiter != nil {
-			t.config.limit = f.adaptiveRateLimiter(destName, destID, t.config.limit)
+		if f.adaptive != nil {
+			t.config.limit = f.adaptive.Limit(destName, destID, t.config.limit)
 		}
 		return t
 	}
 
 	var conf throttlingConfig
 	conf.readThrottlingConfig(destName, destID)
-	if f.adaptiveRateLimiter != nil {
-		conf.limit = f.adaptiveRateLimiter(destName, destID, conf.limit)
+	if f.adaptive != nil {
+		conf.limit = f.adaptive.Limit(destName, destID, conf.limit)
 	}
 	f.throttlers[destID] = &Throttler{
 		limiter: f.limiter,
@@ -71,10 +69,16 @@ func (f *Factory) Get(destName, destID string) *Throttler {
 func (f *Factory) SetLimitReached(destID string) {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
-	f.limitReachedPerDestination <- destID
+	f.adaptive.SetLimitReached(destID)
 }
 
-func (f *Factory) initThrottlerFactory() error {
+func (f *Factory) ShutDown() {
+	if f.adaptive != nil {
+		f.adaptive.ShutDown()
+	}
+}
+
+func (f *Factory) initThrottlerFactory(config *config.Config) error {
 	var redisClient *redis.Client
 	if config.IsSet("Router.throttler.redis.addr") {
 		redisClient = redis.NewClient(&redis.Options{
@@ -86,7 +90,7 @@ func (f *Factory) initThrottlerFactory() error {
 
 	throttlingAlgorithm := throttlingAlgoTypeGCRA
 	if config.GetBool("Router.throttler.adaptiveRateLimit.enabled", false) {
-		f.adaptiveRateLimiter = SetupRouterAdaptiveRateLimiter(context.Background(), f.limitReachedPerDestination)
+		f.adaptive = NewAdaptive(config)
 	} else {
 		throttlingAlgorithm = config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
 		if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
