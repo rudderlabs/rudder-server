@@ -27,9 +27,9 @@ jobs:
       runs-on: ubuntu-latest
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
         - name: Run delete-old-branches-action
-          uses: beatlabs/delete-old-branches-action@v0.0.9
+          uses: beatlabs/delete-old-branches-action@v0.0.10
           with:
             repo_token: ${{ github.token }}
             date: '2 months ago'

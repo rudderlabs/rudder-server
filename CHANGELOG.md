@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.17.2](https://github.com/rudderlabs/rudder-server/compare/v1.17.1...v1.17.2) (2023-11-20)
+
+
+### Bug Fixes
+
+* gateway responds with http status 500 and body pq: invalid byte sequence for encoding UTF8: 0x00 ([#4161](https://github.com/rudderlabs/rudder-server/issues/4161)) ([2c168ef](https://github.com/rudderlabs/rudder-server/commit/2c168ef96308443206ec93e3527f401de1431eb4))
+
+## [1.17.1](https://github.com/rudderlabs/rudder-server/compare/v1.17.0...v1.17.1) (2023-11-17)
+
+
+### Miscellaneous
+
+* revert data bricks sql client to 1.4.0 ([#4157](https://github.com/rudderlabs/rudder-server/issues/4157)) ([c42f289](https://github.com/rudderlabs/rudder-server/commit/c42f289d3efe6f864755aa5e9f3f4b97a8230bc2))
+
 ## [1.17.0](https://github.com/rudderlabs/rudder-server/compare/v1.16.2...v1.17.0) (2023-11-14)
 
 

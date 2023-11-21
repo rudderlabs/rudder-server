@@ -324,8 +324,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 
-		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
-		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
+		anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
+		userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
 		eventTypeFromReq, _ := misc.MapLookup(
 			toSet,
 			"type",

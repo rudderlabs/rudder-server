@@ -15,7 +15,7 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Docker meta
         id: meta
@@ -34,7 +34,7 @@ jobs:
             type=semver,pattern={{major}}
       -
         name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Docker meta
         id: meta
@@ -75,7 +75,7 @@ jobs:
             type=semver,pattern={{major}}
       -
         name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -99,7 +99,7 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Docker meta
         id: meta
@@ -117,7 +117,7 @@ jobs:
             type=semver,pattern={{major}}
       -
         name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
