@@ -476,26 +476,40 @@ func (sh *sourcesHandler) init() error {
 			return time.After(config.GetDuration("Rsources.stats.cleanup.interval", 1, time.Hour))
 		}
 	}
-	sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
-	if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
-		return err
-	}
-	if err := migrateFailedKeysTable(ctx, sh.localDB); err != nil {
-		return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
-	}
-	sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
-	if sh.sharedDB != nil {
-		sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
-		if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
+
+	const lockId = 100020001
+
+	if err := withAdvisoryLock(ctx, sh.localDB, lockId, func(tx *sql.Tx) error {
+		sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
+		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
 		}
-		sh.log.Debugf("rsources tables for shared db %s setup successfully", sh.config.SharedConn)
-
-		sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
-		if err := sh.setupLogicalReplication(ctx); err != nil {
-			return fmt.Errorf("failed to setup rsources logical replication in %s: %w", sh.config.LocalHostname, err)
+		if err := migrateFailedKeysTable(ctx, tx); err != nil {
+			return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
 		}
-		sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
+		sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if sh.sharedDB != nil {
+		if err := withAdvisoryLock(ctx, sh.sharedDB, lockId, func(_ *sql.Tx) error {
+			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
+			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
+				return err
+			}
+			sh.log.Debugf("rsources tables for shared db %s setup successfully", sh.config.SharedConn)
+
+			sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
+			if err := sh.setupLogicalReplication(ctx); err != nil {
+				return fmt.Errorf("failed to setup rsources logical replication in %s: %w", sh.config.LocalHostname, err)
+			}
+			sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -511,15 +525,7 @@ func setupTables(ctx context.Context, db *sql.DB, defaultDbName string, log logg
 }
 
 // TODO: Remove this after a few releases
-func migrateFailedKeysTable(ctx context.Context, db *sql.DB) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(100020001)`); err != nil {
-		return fmt.Errorf("error while acquiring advisory lock for failed keys migration: %w", err)
-	}
+func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 	var previousTableExists bool
 	row := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`)
 	if err := row.Scan(&previousTableExists); err != nil {
@@ -597,7 +603,7 @@ func migrateFailedKeysTable(ctx context.Context, db *sql.DB) error {
 		if _, err := tx.ExecContext(ctx, `drop function if exists ksuid()`); err != nil {
 			return fmt.Errorf("failed to drop ksuid function: %w", err)
 		}
-		return tx.Commit()
+		return nil
 	}
 
 	return nil
@@ -802,4 +808,19 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 			}
 		}
 	}
+}
+
+func withAdvisoryLock(ctx context.Context, db *sql.DB, lockId int64, f func(tx *sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockId); err != nil {
+		return fmt.Errorf("error while acquiring advisory lock: %w", err)
+	}
+	if err := f(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

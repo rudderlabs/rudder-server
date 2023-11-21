@@ -199,6 +199,9 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 	if config.Log == nil {
 		config.Log = logger.NewLogger().Child("rsources")
 	}
+	if config.MaxPoolSize <= 2 {
+		config.MaxPoolSize = 2 // minimum 2 connections in the pool for proper startup
+	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
