@@ -461,7 +461,8 @@ func TestWithStats(t *testing.T) {
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
-	s := memstats.New()
+	s, err := memstats.New()
+	require.NoError(t, err)
 
 	qw := New(
 		pgResource.DB,

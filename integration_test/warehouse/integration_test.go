@@ -54,7 +54,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/app"
@@ -2080,7 +2080,7 @@ func runWarehouseServer(
 		conf.Set(override.A, override.B)
 	}
 
-	warehouseApp := warehouse.New(mainApp, conf, logger.NewLogger(), memstats.New(), mockBackendConfig, filemanager.New)
+	warehouseApp := warehouse.New(mainApp, conf, logger.NewLogger(), stats.NOP, mockBackendConfig, filemanager.New)
 	if err := warehouseApp.Setup(ctx); err != nil {
 		return fmt.Errorf("setting up warehouse: %w", err)
 	}

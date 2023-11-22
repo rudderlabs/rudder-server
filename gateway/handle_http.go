@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -92,12 +94,27 @@ func (gw *Handle) webHandler() http.HandlerFunc {
 // webRequestHandler - handles web requests containing rudder events as payload.
 // It parses the payload and calls the request handler to process the request.
 func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request) {
-	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
-	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+	ctx := r.Context()
+	reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
+	arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+
+	ctx, span := gw.tracer.Start(ctx, "webRequestHandler", stats.SpanKindServer,
+		stats.SpanWithTimestamp(time.Now()),
+		stats.SpanWithTags(stats.Tags{
+			"reqType":     reqType,
+			"path":        r.URL.Path,
+			"workspaceId": arctx.WorkspaceID,
+			"sourceId":    arctx.SourceID,
+		}),
+	)
+	r = r.WithContext(ctx)
+
 	gw.logger.LogRequest(r)
 	var errorMessage string
 	defer func() {
+		defer span.End()
 		if errorMessage != "" {
+			span.SetStatus(stats.SpanStatusError, errorMessage)
 			status := response.GetErrorStatusCode(errorMessage)
 			responseBody := response.GetStatus(errorMessage)
 			gw.logger.Infow("response",

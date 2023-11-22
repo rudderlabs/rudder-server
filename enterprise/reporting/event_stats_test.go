@@ -56,7 +56,8 @@ func TestEventStatsReporter(t *testing.T) {
 		return ch
 	}).AnyTimes()
 
-	statsStore := memstats.New()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

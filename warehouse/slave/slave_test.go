@@ -8,31 +8,24 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
 
 type mockSlaveNotifier struct {
@@ -103,9 +96,9 @@ func TestSlave(t *testing.T) {
 	slave := New(
 		config.New(),
 		logger.NOP,
-		memstats.New(),
+		stats.NOP,
 		slaveNotifier,
-		bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+		bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 		constraints.New(config.New()),
 		encoding.NewFactory(config.New()),
 	)

@@ -116,7 +116,8 @@ func TestRouter_Track(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx := context.Background()
-			store := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 			nowSQL := "'2022-12-06 15:40:00'::timestamp"
 
 			now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
@@ -157,7 +158,7 @@ func TestRouter_Track(t *testing.T) {
 					return now
 				},
 				nowSQL:       nowSQL,
-				statsFactory: store,
+				statsFactory: statsStore,
 				db:           sqlquerywrapper.New(pgResource.DB),
 				logger:       logger.NOP,
 			}
@@ -169,7 +170,7 @@ func TestRouter_Track(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			m := store.Get("warehouse_track_upload_missing", stats.Tags{
+			m := statsStore.Get("warehouse_track_upload_missing", stats.Tags{
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,
@@ -267,7 +268,7 @@ func TestRouter_CronTracker(t *testing.T) {
 				return now
 			},
 			nowSQL:       "ABC",
-			statsFactory: memstats.New(),
+			statsFactory: stats.NOP,
 			db:           sqlquerywrapper.New(pgResource.DB),
 			logger:       logger.NOP,
 			conf:         config.New(),

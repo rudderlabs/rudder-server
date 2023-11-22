@@ -374,7 +374,8 @@ func TestRecordWebhookErrors(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	statsStore := memstats.New()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
 	reqs := []*webhookT{
 		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},

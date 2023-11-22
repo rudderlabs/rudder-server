@@ -10,38 +10,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
-
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
-	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/stretchr/testify/require"
-
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -551,7 +542,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -567,7 +558,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -590,7 +581,7 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				pg := postgres.New(c, logger.NOP, memstats.New())
+				pg := postgres.New(c, logger.NOP, stats.NOP)
 				err := pg.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -640,7 +631,7 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				pg := postgres.New(config.New(), logger.NOP, memstats.New())
+				pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 				err := pg.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -688,7 +679,7 @@ func TestIntegration(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.postgres.skipDedupDestinationIDs", destinationID)
 
-			pg := postgres.New(c, logger.NOP, memstats.New())
+			pg := postgres.New(c, logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -737,7 +728,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -759,7 +750,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -781,7 +772,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -803,7 +794,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 

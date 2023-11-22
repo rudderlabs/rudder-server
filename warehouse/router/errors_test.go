@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
@@ -179,7 +179,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				m, err := manager.New(tc.destType, config.New(), logger.NOP, memstats.New())
+				m, err := manager.New(tc.destType, config.New(), logger.NOP, stats.NOP)
 				require.NoError(t, err)
 
 				er := &router.ErrorHandler{Mapper: m}
@@ -191,7 +191,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 	})
 
 	t.Run("UnKnown errors", func(t *testing.T) {
-		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, memstats.New())
+		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, stats.NOP)
 		require.NoError(t, err)
 
 		er := &router.ErrorHandler{Mapper: m}
@@ -206,7 +206,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 	})
 
 	t.Run("Nil error: ", func(t *testing.T) {
-		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, memstats.New())
+		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, stats.NOP)
 		require.NoError(t, err)
 
 		er := &router.ErrorHandler{Mapper: m}
