@@ -92,8 +92,12 @@ func (gw *Handle) webHandler() http.HandlerFunc {
 // webRequestHandler - handles web requests containing rudder events as payload.
 // It parses the payload and calls the request handler to process the request.
 func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request) {
-	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
-	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+	ctx := r.Context()
+	span := gw.stats.NewTracer("gateway").SpanFromContext(ctx)
+	defer span.End()
+
+	reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
+	arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	gw.logger.LogRequest(r)
 	var errorMessage string
 	defer func() {

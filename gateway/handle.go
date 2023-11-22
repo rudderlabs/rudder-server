@@ -16,6 +16,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -282,7 +283,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		}
 	}
 
-	jobData = &jobFromReq{}
+	jobData = &jobFromReq{
+		traceParent: req.traceParent,
+	}
 	if !gjson.ValidBytes(body) {
 		err = errors.New(response.InvalidJSON)
 		return
@@ -587,6 +590,27 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 	}
 	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, authContext: arctx, ipAddr: ipAddr, userIDHeader: userIDHeader}
+
+	mapCarrier := propagation.MapCarrier{}
+	tc := propagation.TraceContext{}
+	tc.Inject(req.Context(), mapCarrier)
+
+	var traceParent string
+	tp, ok := mapCarrier["traceparent"]
+	if ok {
+		traceParent = tp
+	} else {
+		gw.logger.Warn("traceparent not found in request")
+	}
+
+	webReq := webRequestT{
+		done:           done,
+		reqType:        reqType,
+		requestPayload: requestPayload,
+		authContext:    arctx,
+		traceParent:    traceParent,
+		ipAddr:         ipAddr,
+		userIDHeader:   userIDHeader,
+	}
 	userWebRequestWorker.webRequestQ <- &webReq
 }

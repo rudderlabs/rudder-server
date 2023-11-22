@@ -23,6 +23,7 @@ type webRequestT struct {
 	reqType        string
 	requestPayload []byte
 	authContext    *gwtypes.AuthRequestContext
+	traceParent    string
 	ipAddr         string
 	userIDHeader   string
 	errors         []string
@@ -60,8 +61,9 @@ type userWebRequestWorkerT struct {
 }
 
 type jobFromReq struct {
-	jobs      []*jobsdb.JobT
-	numEvents int
-	botEvents int
-	version   string
+	jobs        []*jobsdb.JobT
+	numEvents   int
+	botEvents   int
+	version     string
+	traceParent string
 }
