@@ -34,7 +34,7 @@ jobs:
       - name: install protoc compiler
         uses: arduino/setup-protoc@v2
         with:
-          version: '3.x'
+          version: '25.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: make proto
       - run: git diff -I '^\/\/\s+-?\s+protoc\s+v' --exit-code ## Ignore protoc version comment
