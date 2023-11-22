@@ -19,7 +19,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             name=rudderlabs/develop-rudder-server
@@ -61,7 +61,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             name=rudderstack/develop-rudder-server-enterprise
@@ -103,7 +103,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             name=rudderstack/develop-suppression-backup-service
