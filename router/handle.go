@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -156,11 +157,20 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
 
+	jobIteratorMaxQueries := config.GetIntVar(50, 1,
+		"Router."+rt.destType+"."+partition+".jobIterator.maxQueries",
+		"Router."+rt.destType+".jobIterator.maxQueries",
+		"Router.jobIterator.maxQueries")
+	jobIteratorDiscardedPercentageTolerance := config.GetIntVar(10, 1,
+		"Router."+rt.destType+"."+partition+".jobIterator.discardedPercentageTolerance",
+		"Router."+rt.destType+".jobIterator.discardedPercentageTolerance",
+		"Router.jobIterator.discardedPercentageTolerance")
+
 	iterator := jobiterator.New(
 		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize.Load()),
 		rt.getJobsFn(ctx),
-		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance.Load()),
-		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries.Load()),
+		jobiterator.WithDiscardedPercentageTolerance(jobIteratorDiscardedPercentageTolerance),
+		jobiterator.WithMaxQueries(jobIteratorMaxQueries),
 	)
 
 	if !iterator.HasNext() {
