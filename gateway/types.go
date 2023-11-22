@@ -61,9 +61,8 @@ type userWebRequestWorkerT struct {
 }
 
 type jobFromReq struct {
-	jobs        []*jobsdb.JobT
-	numEvents   int
-	botEvents   int
-	version     string
-	traceParent string
+	jobs      []*jobsdb.JobT
+	numEvents int
+	botEvents int
+	version   string
 }

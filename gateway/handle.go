@@ -283,9 +283,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		}
 	}
 
-	jobData = &jobFromReq{
-		traceParent: req.traceParent,
-	}
+	jobData = &jobFromReq{}
 	if !gjson.ValidBytes(body) {
 		err = errors.New(response.InvalidJSON)
 		return
@@ -478,6 +476,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			EventPayload: payload,
 			EventCount:   eventCount,
 			WorkspaceId:  workspaceId,
+			TraceParent:  req.traceParent,
 		})
 	}
 	err = nil
