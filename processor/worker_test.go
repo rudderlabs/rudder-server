@@ -189,16 +189,16 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 	return nil
 }
 
-func (m *mockWorkerHandle) handlePendingGatewayJobs(key string) bool {
-	jobs := m.getJobs(key)
+func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
+	jobs := m.getJobs(partition)
 	if len(jobs.Jobs) > 0 {
-		_ = m.markExecuting(jobs.Jobs)
+		_ = m.markExecuting(partition, jobs.Jobs)
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService())
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
-		m.Store(key,
-			m.transformations(key,
-				m.processJobsForDest(key, subJob),
+		m.Store(partition,
+			m.transformations(partition,
+				m.processJobsForDest(partition, subJob),
 			),
 		)
 	}
@@ -207,7 +207,9 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(key string) bool {
 
 func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{
-		DBReadThroughput: stats.Default.NewStat("db_read_throughput", stats.CountType),
+		DBReadThroughput: func(partition string) stats.Measurement {
+			return stats.Default.NewStat("db_read_throughput", stats.CountType)
+		},
 	}
 }
 
@@ -236,10 +238,9 @@ func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
 	}
 }
 
-func (m *mockWorkerHandle) markExecuting(jobs []*jobsdb.JobT) error {
+func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
-	partition := jobs[0].CustomVal
 	s := m.partitionStats[partition]
 	s.marked += len(jobs)
 	m.partitionStats[partition] = s

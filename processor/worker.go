@@ -130,12 +130,12 @@ func (w *worker) Work() (worked bool) {
 		}
 		worked = true
 
-		if err := w.handle.markExecuting(jobs.Jobs); err != nil {
+		if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
 			w.logger.Error(err)
 			panic(err)
 		}
 
-		w.handle.stats().DBReadThroughput.Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
+		w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
 
 		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService())
 		rsourcesStats.BeginProcessing(jobs.Jobs)
