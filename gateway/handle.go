@@ -271,6 +271,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// values retrieved from first event in batch
 		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
+
+		// tracing
+		traceParent = req.traceParent
 	)
 
 	fillMessageID := func(event map[string]interface{}) {
@@ -427,7 +430,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		"source_id":          sourceID,
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
-		"traceparent":        req.traceParent,
+		"traceparent":        traceParent,
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {
