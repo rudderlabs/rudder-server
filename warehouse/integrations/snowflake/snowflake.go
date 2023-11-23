@@ -304,7 +304,7 @@ func (sf *Snowflake) authString() string {
 	return auth
 }
 
-func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) (err error) {
+func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
 	for _, tb := range tableNames {
 		log := sf.logger.With(
 			lf.TableName, tb,
@@ -319,19 +319,23 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 				context_sources_job_run_id <> '%[3]s' AND
 				context_sources_task_run_id <> '%[4]s' AND
 				context_source_id = '%[5]s' AND
-				received_at < '%[6]s';`,
+				received_at < $1;`,
 			sf.Namespace,
 			tb,
 			params.JobRunId,
 			params.TaskRunId,
 			params.SourceId,
-			params.StartTime,
 		)
-
+		stmt, err := sf.DB.PrepareContext(ctx, sqlStatement)
+		if err != nil {
+			log.Errorw("Cannot prepare statement for deleting rows in snowflake table", lf.Error, err.Error())
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
 		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
 
 		if sf.config.enableDeleteByJobs {
-			_, err = sf.DB.ExecContext(ctx, sqlStatement)
+			_, err := stmt.ExecContext(ctx, params.StartTime)
 			if err != nil {
 				log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
 				return err

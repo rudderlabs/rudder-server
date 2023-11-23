@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -15,13 +16,13 @@ var (
 )
 
 type insertJobRequest struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-	StartTime     string `json:"start_time"`
-	JobRunID      string `json:"job_run_id"`
-	TaskRunID     string `json:"task_run_id"`
-	JobType       string `json:"async_job_type"`
-	WorkspaceID   string `json:"workspace_id"`
+	SourceID      string    `json:"source_id"`
+	DestinationID string    `json:"destination_id"`
+	StartTime     time.Time `json:"start_time"`
+	JobRunID      string    `json:"job_run_id"`
+	TaskRunID     string    `json:"task_run_id"`
+	JobType       string    `json:"async_job_type"`
+	WorkspaceID   string    `json:"workspace_id"`
 }
 
 type insertJobResponse struct {
