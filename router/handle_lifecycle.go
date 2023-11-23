@@ -350,7 +350,9 @@ func (rt *Handle) Shutdown() {
 	rt.backgroundCancel()
 
 	<-rt.startEnded // wait for all workers to stop first
-	rt.throttlerFactory.Shutdown()
+	if rt.throttlerFactory != nil {
+		rt.throttlerFactory.Shutdown()
+	}
 	close(rt.responseQ) // now it is safe to close the response channel
 	_ = rt.backgroundWait()
 }

@@ -299,7 +299,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if rt.throttlerFactory != nil {
 			rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
 		} else {
-			rt.logger.Debugf("[%v Router] :: ThrottlerFactory is nil. Not sending response code to throttler", rt.destType)
+			rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
+				rt.destType, parameters.DestinationID,
+			)
 		}
 		// Update metrics maps
 		// REPORTING - ROUTER - START
