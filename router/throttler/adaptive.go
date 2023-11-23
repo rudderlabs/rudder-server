@@ -3,122 +3,41 @@ package throttler
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
-type timer struct {
-	frequency    *config.Reloadable[time.Duration]
-	limitReached map[string]bool
-	mu           sync.Mutex
-	limitSet     bool
-	cancel       context.CancelFunc
+type adaptiveThrottler struct {
+	limiter   limiter
+	algorithm adaptiveAlgorithm
+	config    adaptiveConfig
 }
 
-type adaptiveConfig struct {
-	enabled             bool
-	minLimit            *config.Reloadable[int64]
-	maxLimit            *config.Reloadable[int64]
-	minChangePercentage *config.Reloadable[int64]
-	maxChangePercentage *config.Reloadable[int64]
-}
-
-type Adaptive struct {
-	shortTimer *timer
-	longTimer  *timer
-	config     adaptiveConfig
-}
-
-func NewAdaptive(config *config.Config) *Adaptive {
-	shortTimeFrequency := config.GetReloadableDurationVar(5, time.Second, "Router.throttler.adaptiveRateLimit.shortTimeFrequency")
-	longTimeFrequency := config.GetReloadableDurationVar(15, time.Second, "Router.throttler.adaptiveRateLimit.longTimeFrequency")
-
-	shortTimer := &timer{
-		frequency:    shortTimeFrequency,
-		limitReached: make(map[string]bool),
-	}
-	longTimer := &timer{
-		frequency:    longTimeFrequency,
-		limitReached: make(map[string]bool),
+// CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
+func (t *adaptiveThrottler) CheckLimitReached(key string, cost int64) (limited bool, retErr error) {
+	if t.config.minLimit.Load() > t.config.maxLimit.Load() {
+		return false, fmt.Errorf("minLimit %d is greater than maxLimit %d", t.config.minLimit.Load(), t.config.maxLimit.Load())
 	}
 
-	go shortTimer.run()
-	go longTimer.run()
-
-	return &Adaptive{
-		shortTimer: shortTimer,
-		longTimer:  longTimer,
+	ctx := context.TODO()
+	t.config.limit += int64(float64(t.config.limit) * t.algorithm.LimitFactor())
+	t.config.limit = max(t.config.minLimit.Load(), min(t.config.limit, t.config.maxLimit.Load()))
+	allowed, _, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
+	if err != nil {
+		return false, fmt.Errorf("could not limit: %w", err)
 	}
-}
-
-func (a *Adaptive) loadConfig(destName, destID string) {
-	a.config.enabled = config.GetBoolVar(true, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.enabled`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.enabled`, destName), `Router.throttler.adaptiveRateLimit.enabled`)
-	a.config.minLimit = config.GetReloadableInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.minLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minLimit`, destName), `Router.throttler.adaptiveRateLimit.minLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	a.config.maxLimit = config.GetReloadableInt64Var(250, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.maxLimit`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxLimit`, destName), `Router.throttler.adaptiveRateLimit.maxLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	a.config.minChangePercentage = config.GetReloadableInt64Var(30, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.minChangePercentage`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minChangePercentage`, destName), `Router.throttler.adaptiveRateLimit.minChangePercentage`)
-	a.config.maxChangePercentage = config.GetReloadableInt64Var(10, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.%s.maxChangePercentage`, destName, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxChangePercentage`, destName), `Router.throttler.adaptiveRateLimit.maxChangePercentage`)
-}
-
-func (a *Adaptive) Limit(destName, destID string, limit int64) int64 {
-	a.loadConfig(destName, destID)
-	if !a.config.enabled || a.config.minLimit.Load() > a.config.maxLimit.Load() {
-		return limit
+	if !allowed {
+		return true, nil // no token to return when limited
 	}
-	if limit <= 0 {
-		limit = a.config.maxLimit.Load()
-	}
-	newLimit := limit
-	if a.shortTimer.getLimitReached(destID) && !a.shortTimer.limitSet {
-		newLimit = limit - (limit * a.config.minChangePercentage.Load() / 100)
-		a.shortTimer.limitSet = true
-	} else if !a.longTimer.getLimitReached(destID) && !a.longTimer.limitSet {
-		newLimit = limit + (limit * a.config.maxChangePercentage.Load() / 100)
-		a.longTimer.limitSet = true
-	}
-	newLimit = max(a.config.minLimit.Load(), min(newLimit, a.config.maxLimit.Load()))
-	return newLimit
+	return false, nil
 }
 
-func (a *Adaptive) SetLimitReached(destID string) {
-	a.shortTimer.updateLimitReached(destID)
-	a.longTimer.updateLimitReached(destID)
+func (t *adaptiveThrottler) ResponseCodeReceived(code int) {
+	t.algorithm.ResponseCodeReceived(code)
 }
 
-func (a *Adaptive) ShutDown() {
-	a.shortTimer.cancel()
-	a.longTimer.cancel()
+func (t *adaptiveThrottler) ShutDown() {
+	t.algorithm.ShutDown()
 }
 
-func (t *timer) run() {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.cancel = cancel
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(t.frequency.Load()):
-			t.resetLimitReached()
-		}
-	}
-}
-
-func (t *timer) updateLimitReached(destID string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.limitReached[destID] = true
-}
-
-func (t *timer) getLimitReached(destID string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.limitReached[destID]
-}
-
-func (t *timer) resetLimitReached() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	clear(t.limitReached)
-	t.limitSet = false
+func (t *adaptiveThrottler) getLimit() int64 {
+	return t.config.limit
 }

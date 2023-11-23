@@ -21,7 +21,7 @@ type Factory struct {
 	ProcErrorDB      jobsdb.JobsDB
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
-	ThrottlerFactory *throttler.Factory
+	ThrottlerFactory throttler.Factory
 	Debugger         destinationdebugger.DestinationDebugger
 	AdaptiveLimit    func(int64) int64
 }

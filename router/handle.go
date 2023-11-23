@@ -49,7 +49,7 @@ type Handle struct {
 	// external dependencies
 	jobsDB           jobsdb.JobsDB
 	errorDB          jobsdb.JobsDB
-	throttlerFactory *rtThrottler.Factory
+	throttlerFactory rtThrottler.Factory
 	backendConfig    backendconfig.BackendConfig
 	Reporting        reporter
 	transientSources transientsource.Service
@@ -292,6 +292,15 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
 		}
+		errorCode, err := strconv.Atoi(workerJobStatus.status.ErrorCode)
+		if err != nil {
+			errorCode = 200
+		}
+		if rt.throttlerFactory != nil {
+			rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
+		} else {
+			rt.logger.Debugf("[%v Router] :: ThrottlerFactory is nil. Not sending response code to throttler", rt.destType)
+		}
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
@@ -306,10 +315,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			errorCode, err := strconv.Atoi(workerJobStatus.status.ErrorCode)
-			if err != nil {
-				errorCode = 200 // TODO handle properly
-			}
 			sampleEvent := workerJobStatus.job.EventPayload
 			if rt.transientSources.Apply(parameters.SourceID) {
 				sampleEvent = routerutils.EmptyPayload
@@ -323,9 +328,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			if workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) && workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
 				if workerJobStatus.status.AttemptNum == 1 {
 					sd.Count++
-				}
-				if workerJobStatus.status.ErrorCode == strconv.Itoa(http.StatusTooManyRequests) {
-					rt.throttlerFactory.SetLimitReached(parameters.DestinationID)
 				}
 			}
 		case jobsdb.Succeeded.State, jobsdb.Filtered.State:
