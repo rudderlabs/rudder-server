@@ -423,10 +423,11 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		return
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"source_id":          sourceID,
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
+		"traceparent":        req.traceParent,
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {
@@ -476,7 +477,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			EventPayload: payload,
 			EventCount:   eventCount,
 			WorkspaceId:  workspaceId,
-			TraceParent:  req.traceParent,
 		})
 	}
 	err = nil

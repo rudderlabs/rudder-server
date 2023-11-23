@@ -388,7 +388,6 @@ type JobT struct {
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
-	TraceParent   string          `json:"TraceParent"`
 }
 
 func (job *JobT) String() string {
