@@ -42,6 +42,7 @@ type Handle struct {
 	config          *config.Config
 	logger          logger.Logger
 	stats           stats.Stats
+	tracer          stats.Tracer
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
