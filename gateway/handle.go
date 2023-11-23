@@ -16,7 +16,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -591,15 +590,8 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
 
-	mapCarrier := propagation.MapCarrier{}
-	tc := propagation.TraceContext{}
-	tc.Inject(req.Context(), mapCarrier)
-
-	var traceParent string
-	tp, ok := mapCarrier["traceparent"]
-	if ok {
-		traceParent = tp
-	} else {
+	traceParent := stats.GetTraceParentFromContext(req.Context())
+	if traceParent == "" {
 		gw.logger.Warn("traceparent not found in request")
 	}
 
