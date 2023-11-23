@@ -14,6 +14,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -629,8 +630,9 @@ func (w *worker) processDestinationJobs() {
 			jobOrderKeyToJobIDMap[orderKey] = destinationJobMetadata.JobID
 		}
 
+		trimmedResponse := string(lo.Slice([]byte(routerJobResponse.respBody), 0, int(10*bytesize.KB)))
 		status.AttemptNum++
-		status.ErrorResponse = routerutils.EnhanceJSON(routerutils.EmptyPayload, "response", routerJobResponse.respBody)
+		status.ErrorResponse = routerutils.EnhanceJSON(routerutils.EmptyPayload, "response", trimmedResponse)
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
 		if isJobTerminated(respStatusCode) {
