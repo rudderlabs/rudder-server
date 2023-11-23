@@ -13,14 +13,14 @@ type adaptiveThrottler struct {
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
 func (t *adaptiveThrottler) CheckLimitReached(key string, cost int64) (limited bool, retErr error) {
+	if !t.config.enabled {
+		return false, nil
+	}
 	if t.config.minLimit.Load() > t.config.maxLimit.Load() {
 		return false, fmt.Errorf("minLimit %d is greater than maxLimit %d", t.config.minLimit.Load(), t.config.maxLimit.Load())
 	}
-
-	ctx := context.TODO()
-	t.config.limit += int64(float64(t.config.limit) * t.algorithm.LimitFactor())
-	t.config.limit = max(t.config.minLimit.Load(), min(t.config.limit, t.config.maxLimit.Load()))
-	allowed, _, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
+	t.computeLimit()
+	allowed, _, err := t.limiter.Allow(context.TODO(), cost, t.config.limit, getWindowInSecs(t.config.window.Load()), key)
 	if err != nil {
 		return false, fmt.Errorf("could not limit: %w", err)
 	}
@@ -28,6 +28,14 @@ func (t *adaptiveThrottler) CheckLimitReached(key string, cost int64) (limited b
 		return true, nil // no token to return when limited
 	}
 	return false, nil
+}
+
+func (t *adaptiveThrottler) computeLimit() {
+	if t.config.limit == 0 {
+		t.config.limit = t.config.maxLimit.Load()
+	}
+	t.config.limit += int64(float64(t.config.limit) * t.algorithm.LimitFactor())
+	t.config.limit = max(t.config.minLimit.Load(), min(t.config.limit, t.config.maxLimit.Load()))
 }
 
 func (t *adaptiveThrottler) ResponseCodeReceived(code int) {
@@ -39,5 +47,6 @@ func (t *adaptiveThrottler) ShutDown() {
 }
 
 func (t *adaptiveThrottler) getLimit() int64 {
+	t.computeLimit()
 	return t.config.limit
 }

@@ -12,6 +12,9 @@ type defaultThrottler struct {
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
 func (t *defaultThrottler) CheckLimitReached(key string, cost int64) (limited bool, retErr error) {
+	if !t.config.enabled {
+		return false, nil
+	}
 	ctx := context.TODO()
 	allowed, _, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {

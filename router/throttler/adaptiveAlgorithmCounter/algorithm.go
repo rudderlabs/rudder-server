@@ -10,7 +10,7 @@ import (
 )
 
 type timer struct {
-	frequency    *config.Reloadable[time.Duration]
+	frequency    time.Duration
 	limitReached bool
 	mu           sync.Mutex
 	limitSet     bool
@@ -18,13 +18,15 @@ type timer struct {
 }
 
 type Adaptive struct {
-	shortTimer *timer
-	longTimer  *timer
+	shortTimer               *timer
+	longTimer                *timer
+	decreaseLimitPercentage  *config.Reloadable[int64]
+	increaseChangePercentage *config.Reloadable[int64]
 }
 
 func New(config *config.Config) *Adaptive {
-	shortTimeFrequency := config.GetReloadableDurationVar(5, time.Second, "Router.throttler.adaptiveRateLimit.shortTimeFrequency")
-	longTimeFrequency := config.GetReloadableDurationVar(15, time.Second, "Router.throttler.adaptiveRateLimit.longTimeFrequency")
+	shortTimeFrequency := config.GetDuration("Router.throttler.adaptive.shortTimeFrequency", 5, time.Second)
+	longTimeFrequency := config.GetDuration("Router.throttler.adaptive.longTimeFrequency", 15, time.Second)
 
 	shortTimer := &timer{
 		frequency: shortTimeFrequency,
@@ -37,20 +39,20 @@ func New(config *config.Config) *Adaptive {
 	go longTimer.run()
 
 	return &Adaptive{
-		shortTimer: shortTimer,
-		longTimer:  longTimer,
+		shortTimer:               shortTimer,
+		longTimer:                longTimer,
+		decreaseLimitPercentage:  config.GetReloadableInt64Var(30, 1, "Router.throttler.adaptive.decreaseLimitPercentage"),
+		increaseChangePercentage: config.GetReloadableInt64Var(10, 1, "Router.throttler.adaptive.increaseLimitPercentage"),
 	}
 }
 
 func (a *Adaptive) LimitFactor() float64 {
-	decreaseLimitPercentage := config.GetInt64("Router.throttler.adaptiveRateLimit.decreaseLimitPercentage", 30)
-	increaseChangePercentage := config.GetInt64("Router.throttler.adaptiveRateLimit.increaseChangePercentage", 10)
 	if a.shortTimer.getLimitReached() && !a.shortTimer.limitSet {
 		a.shortTimer.limitSet = true
-		return float64(-decreaseLimitPercentage) / 100
+		return float64(-a.decreaseLimitPercentage.Load()) / 100
 	} else if !a.longTimer.getLimitReached() && !a.longTimer.limitSet {
 		a.longTimer.limitSet = true
-		return float64(increaseChangePercentage) / 100
+		return float64(a.increaseChangePercentage.Load()) / 100
 	}
 	return 0.0
 }
@@ -74,7 +76,7 @@ func (t *timer) run() {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(t.frequency.Load()):
+		case <-time.After(t.frequency):
 			t.resetLimitReached()
 		}
 	}

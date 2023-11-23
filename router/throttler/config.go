@@ -13,7 +13,7 @@ type normalConfig struct {
 	window  time.Duration
 }
 
-func (c *normalConfig) readThrottlingConfig(destName, destID string) {
+func (c *normalConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
 	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID)) {
 		c.limit = config.GetInt64(fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), 0)
 	} else {
@@ -33,13 +33,18 @@ func (c *normalConfig) readThrottlingConfig(destName, destID string) {
 }
 
 type adaptiveConfig struct {
-	normalConfig
+	enabled  bool
+	limit    int64
+	window   *config.Reloadable[time.Duration]
 	minLimit *config.Reloadable[int64]
 	maxLimit *config.Reloadable[int64]
 }
 
-func (c *adaptiveConfig) readThrottlingConfig(destName, destID string) {
-	c.normalConfig.readThrottlingConfig(destName, destID)
-	c.minLimit = config.GetReloadableInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minLimit`, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.minLimit`, destName), `Router.throttler.adaptiveRateLimit.minLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	c.maxLimit = config.GetReloadableInt64Var(250, 1, fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxLimit`, destID), fmt.Sprintf(`Router.throttler.adaptiveRateLimit.%s.maxLimit`, destName), `Router.throttler.adaptiveRateLimit.maxLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+func (c *adaptiveConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
+	c.window = config.GetReloadableDurationVar(1, time.Second, fmt.Sprintf(`Router.throttler.adaptive.%s.timeWindow`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.timeWindow`, destName), `Router.throttler.adaptive.timeWindow`, fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID), fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName))
+	c.minLimit = config.GetReloadableInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destName), `Router.throttler.adaptive.minLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+	c.maxLimit = config.GetReloadableInt64Var(250, 1, fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName), `Router.throttler.adaptive.maxLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+	if c.window.Load() > 0 {
+		c.enabled = true
+	}
 }

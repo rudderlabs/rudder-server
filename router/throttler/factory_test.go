@@ -1,7 +1,7 @@
 package throttler
 
 import (
-	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -13,86 +13,97 @@ import (
 func TestFactory(t *testing.T) {
 	config := config.New()
 	t.Run("when adaptive throttling is disabled", func(t *testing.T) {
-		config.Set("Router.throttler.adaptiveRateLimit.enabled", false)
+		config.Set("Router.throttler.adaptive.enabled", false)
 		ta := newAdaptiveAlgorithm(config)
 		_, ok := ta.(*noopAdaptiveAlgorithm)
 		require.True(t, ok)
 	})
 
 	t.Run("when adaptive throttling is enabled", func(t *testing.T) {
-		config.Set("Router.throttler.adaptiveRateLimit.enabled", true)
+		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptive.algorithm", throttlingAdaptiveAlgoTypeCounter)
+		config.Set("Router.throttler.adaptive.shortTimeFrequency", 1*time.Second)
+		config.Set("Router.throttler.adaptive.longTimeFrequency", 2*time.Second)
 		f, err := NewFactory(config, nil)
 		require.NoError(t, err)
 		defer f.Shutdown()
 		ta := f.Get("destName", "destID")
 
 		t.Run("when there is a 429s in the last shortTimeFrequency", func(t *testing.T) {
-			config.Set("Router.throttler.adaptiveRateLimit.shortTimeFrequency", 1*time.Second)
 			currentLimit := ta.getLimit()
+			require.NotZero(t, currentLimit)
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
-				fmt.Println(ta.getLimit(), currentLimit)
-				return float64(ta.getLimit()) == 0.7*float64(currentLimit) // reduces by 30% since there is an error in the last 1 second
+				return floatCheck(ta.getLimit(), currentLimit*7/10) // reduces by 30% since there is an error in the last 1 second
 			}, 2*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("when there are no 429s in the last longTimeFrequency", func(t *testing.T) {
-			config.Set("Router.throttler.adaptiveRateLimit.longTimeFrequency", 2*time.Second)
 			currentLimit := ta.getLimit()
 			require.Eventually(t, func() bool {
-				return float64(ta.getLimit()) == 1.1*float64(currentLimit) // increases by 10% since there is no error in the last 2 seconds
+				return floatCheck(ta.getLimit(), currentLimit*110/100) // increases by 10% since there is no error in the last 2 seconds
 			}, 3*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("min limit", func(t *testing.T) {
 			newLimit := ta.getLimit() * 9 / 10
-			config.Set("Router.throttler.adaptiveRateLimit.destName.dest1.minLimit", newLimit)
+			ta.ResponseCodeReceived(429)
+			config.Set("Router.throttler.adaptive.destID.minLimit", newLimit)
 			require.Eventually(t, func() bool {
-				return newLimit == ta.getLimit() // will not reduce below newLimit
-			}, 1*time.Second, 10*time.Millisecond)
+				return floatCheck(newLimit, ta.getLimit()) // will not reduce below newLimit
+			}, 2*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("max limit", func(t *testing.T) {
 			newLimit := ta.getLimit() * 105 / 100
-			config.Set("Router.throttler.adaptiveRateLimit.destName.dest1.maxLimit", newLimit)
+			config.Set("Router.throttler.adaptive.destID.maxLimit", newLimit)
 			require.Eventually(t, func() bool {
-				return newLimit == ta.getLimit() // will not increase above newLimit
-			}, 2*time.Second, 10*time.Millisecond)
+				return floatCheck(newLimit, ta.getLimit()) // will not increase above newLimit
+			}, 3*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("percentage decrease", func(t *testing.T) {
 			currentLimit := ta.getLimit()
-			config.Set("Router.throttler.adaptiveRateLimit.decreaseLimitPercentage", 50)
+			ta.ResponseCodeReceived(429)
+			config.Set("Router.throttler.adaptive.destID.minLimit", currentLimit*4/10)
+			config.Set("Router.throttler.adaptive.decreaseLimitPercentage", 50)
 			require.Eventually(t, func() bool {
-				return currentLimit*5/10 == ta.getLimit() // will reduce by 50% since there is an error in the last 1 second
-			}, 1*time.Second, 10*time.Millisecond)
+				return floatCheck(currentLimit*5/10, ta.getLimit()) // will reduce by 50% since there is an error in the last 1 second
+			}, 2*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("percentage increase", func(t *testing.T) {
 			currentLimit := ta.getLimit()
-			config.Set("Router.throttler.adaptiveRateLimit.increaseLimitPercentage", 20)
+			config.Set("Router.throttler.adaptive.destID.maxLimit", currentLimit*13/10)
+			config.Set("Router.throttler.adaptive.increaseLimitPercentage", 20)
 			require.Eventually(t, func() bool {
-				return currentLimit*6/5 == ta.getLimit() // will increase by 20% since there is no error in the last 2 seconds
-			}, 2*time.Second, 10*time.Millisecond)
+				return floatCheck(currentLimit*6/5, ta.getLimit()) // will increase by 20% since there is no error in the last 2 seconds
+			}, 3*time.Second, 10*time.Millisecond)
 		})
 
 		t.Run("adaptive rate limit back to disabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptiveRateLimit.enabled", false)
+			config.Set("Router.throttler.adaptive.enabled", false)
 			currentLimit := ta.getLimit()
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
-				return currentLimit == ta.getLimit() // will not change since adaptive rate limiter is disabled
+				return floatCheck(currentLimit, ta.getLimit()) // will not change since adaptive rate limiter is disabled
 			}, 2*time.Second, 10*time.Millisecond)
-			config.Set("Router.throttler.adaptiveRateLimit.enabled", true)
+			config.Set("Router.throttler.adaptive.enabled", true)
 		})
 
 		t.Run("adaptive rate limit back to enabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptiveRateLimit.enabled", true)
+			config.Set("Router.throttler.adaptive.enabled", true)
 			currentLimit := ta.getLimit()
+			config.Set("Router.throttler.adaptive.destID.minLimit", currentLimit*4/10)
+			config.Set("Router.throttler.adaptive.decreaseLimitPercentage", 30)
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
-				return float64(ta.getLimit()) == 0.7*float64(currentLimit) // reduces by 30% since there is an error in the last 1 second
+				return floatCheck(ta.getLimit(), currentLimit*7/10) // reduces by 30% since there is an error in the last 1 second
 			}, 2*time.Second, 10*time.Millisecond)
 		})
 	})
+}
+
+func floatCheck(a, b int64) bool {
+	return math.Abs(float64(a-b)) <= 1
 }

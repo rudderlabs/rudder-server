@@ -19,7 +19,7 @@ const (
 )
 
 func newAdaptiveAlgorithm(config *config.Config) adaptiveAlgorithm {
-	name := config.GetString("Router.throttler.adaptiveRateLimit.algorithm", "")
+	name := config.GetString("Router.throttler.adaptive.algorithm", "")
 	switch name {
 	case throttlingAdaptiveAlgoTypeCounter:
 		return adaptiveAlgorithmCounter.New(config)

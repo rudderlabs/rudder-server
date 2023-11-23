@@ -56,14 +56,14 @@ func (f *factory) Get(destName, destID string) Throttler {
 	}
 
 	var conf normalConfig
-	conf.readThrottlingConfig(destName, destID)
+	conf.readThrottlingConfig(f.config, destName, destID)
 	dt := &defaultThrottler{
 		limiter: f.limiter,
 		config:  conf,
 	}
 
 	var adaptiveConf adaptiveConfig
-	adaptiveConf.readThrottlingConfig(destName, destID)
+	adaptiveConf.readThrottlingConfig(f.config, destName, destID)
 	at := &adaptiveThrottler{
 		limiter:   f.adaptiveLimiter,
 		algorithm: newAdaptiveAlgorithm(f.config),
@@ -71,7 +71,7 @@ func (f *factory) Get(destName, destID string) Throttler {
 	}
 
 	f.throttlers[destID] = &switchingThrottler{
-		adaptiveEnabled: f.config.GetReloadableBoolVar(false, "Router.throttler."+destID+".adaptiveEnabled", "Router.throttler."+destName+".adaptiveEnabled", "Router.throttler.adaptiveEnabled"),
+		adaptiveEnabled: f.config.GetReloadableBoolVar(false, "Router.throttler."+destID+".adaptive.enabled", "Router.throttler."+destName+".adaptive.enabled", "Router.throttler.adaptive.enabled"),
 		normal:          dt,
 		adaptive:        at,
 	}
