@@ -157,43 +157,43 @@ type Handle struct {
 	sourceObservers []sourceObserver
 }
 type processorStats struct {
-	statGatewayDBR                stats.Measurement
-	statGatewayDBW                stats.Measurement
-	statRouterDBW                 stats.Measurement
-	statBatchRouterDBW            stats.Measurement
-	statProcErrDBW                stats.Measurement
-	statDBR                       stats.Measurement
-	statDBW                       stats.Measurement
-	statLoopTime                  stats.Measurement
-	eventSchemasTime              stats.Measurement
-	validateEventsTime            stats.Measurement
-	processJobsTime               stats.Measurement
-	statSessionTransform          stats.Measurement
-	statUserTransform             stats.Measurement
-	statDestTransform             stats.Measurement
-	marshalSingularEvents         stats.Measurement
-	destProcessing                stats.Measurement
-	pipeProcessing                stats.Measurement
-	statNumRequests               stats.Measurement
-	statNumEvents                 stats.Measurement
-	statDBReadRequests            stats.Measurement
-	statDBReadEvents              stats.Measurement
-	statDBReadPayloadBytes        stats.Measurement
-	statDBReadOutOfOrder          stats.Measurement
-	statDBReadOutOfSequence       stats.Measurement
-	statMarkExecuting             stats.Measurement
-	statDBWriteStatusTime         stats.Measurement
-	statDBWriteJobsTime           stats.Measurement
-	statDBWriteRouterPayloadBytes stats.Measurement
-	statDBWriteBatchPayloadBytes  stats.Measurement
-	statDBWriteRouterEvents       stats.Measurement
-	statDBWriteBatchEvents        stats.Measurement
-	statDestNumOutputEvents       stats.Measurement
-	statBatchDestNumOutputEvents  stats.Measurement
-	DBReadThroughput              stats.Measurement
-	processJobThroughput          stats.Measurement
-	transformationsThroughput     stats.Measurement
-	DBWriteThroughput             stats.Measurement
+	statGatewayDBR                func(partition string) stats.Measurement
+	statGatewayDBW                func(partition string) stats.Measurement
+	statRouterDBW                 func(partition string) stats.Measurement
+	statBatchRouterDBW            func(partition string) stats.Measurement
+	statProcErrDBW                func(partition string) stats.Measurement
+	statDBR                       func(partition string) stats.Measurement
+	statDBW                       func(partition string) stats.Measurement
+	statLoopTime                  func(partition string) stats.Measurement
+	eventSchemasTime              func(partition string) stats.Measurement
+	validateEventsTime            func(partition string) stats.Measurement
+	processJobsTime               func(partition string) stats.Measurement
+	statSessionTransform          func(partition string) stats.Measurement
+	statUserTransform             func(partition string) stats.Measurement
+	statDestTransform             func(partition string) stats.Measurement
+	marshalSingularEvents         func(partition string) stats.Measurement
+	destProcessing                func(partition string) stats.Measurement
+	pipeProcessing                func(partition string) stats.Measurement
+	statNumRequests               func(partition string) stats.Measurement
+	statNumEvents                 func(partition string) stats.Measurement
+	statDBReadRequests            func(partition string) stats.Measurement
+	statDBReadEvents              func(partition string) stats.Measurement
+	statDBReadPayloadBytes        func(partition string) stats.Measurement
+	statDBReadOutOfOrder          func(partition string) stats.Measurement
+	statDBReadOutOfSequence       func(partition string) stats.Measurement
+	statMarkExecuting             func(partition string) stats.Measurement
+	statDBWriteStatusTime         func(partition string) stats.Measurement
+	statDBWriteJobsTime           func(partition string) stats.Measurement
+	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement
+	statDBWriteBatchPayloadBytes  func(partition string) stats.Measurement
+	statDBWriteRouterEvents       func(partition string) stats.Measurement
+	statDBWriteBatchEvents        func(partition string) stats.Measurement
+	statDestNumOutputEvents       func(partition string) stats.Measurement
+	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
+	DBReadThroughput              func(partition string) stats.Measurement
+	processJobThroughput          func(partition string) stats.Measurement
+	transformationsThroughput     func(partition string) stats.Measurement
+	DBWriteThroughput             func(partition string) stats.Measurement
 }
 
 type DestStatT struct {
@@ -398,60 +398,197 @@ func (proc *Handle) Setup(
 
 	// Stats
 	proc.statsFactory = stats.Default
-	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
-	proc.stats.statGatewayDBW = proc.statsFactory.NewStat("processor.gateway_db_write", stats.CountType)
-	proc.stats.statRouterDBW = proc.statsFactory.NewStat("processor.router_db_write", stats.CountType)
-	proc.stats.statBatchRouterDBW = proc.statsFactory.NewStat("processor.batch_router_db_write", stats.CountType)
-	proc.stats.statDBR = proc.statsFactory.NewStat("processor.gateway_db_read_time", stats.TimerType)
-	proc.stats.statDBW = proc.statsFactory.NewStat("processor.gateway_db_write_time", stats.TimerType)
-	proc.stats.statProcErrDBW = proc.statsFactory.NewStat("processor.proc_err_db_write", stats.CountType)
-	proc.stats.statLoopTime = proc.statsFactory.NewStat("processor.loop_time", stats.TimerType)
-	proc.stats.statMarkExecuting = proc.statsFactory.NewStat("processor.mark_executing", stats.TimerType)
-	proc.stats.eventSchemasTime = proc.statsFactory.NewStat("processor.event_schemas_time", stats.TimerType)
-	proc.stats.validateEventsTime = proc.statsFactory.NewStat("processor.validate_events_time", stats.TimerType)
-	proc.stats.processJobsTime = proc.statsFactory.NewStat("processor.process_jobs_time", stats.TimerType)
-	proc.stats.statSessionTransform = proc.statsFactory.NewStat("processor.session_transform_time", stats.TimerType)
-	proc.stats.statUserTransform = proc.statsFactory.NewStat("processor.user_transform_time", stats.TimerType)
-	proc.stats.statDestTransform = proc.statsFactory.NewStat("processor.dest_transform_time", stats.TimerType)
-	proc.stats.marshalSingularEvents = proc.statsFactory.NewStat("processor.marshal_singular_events", stats.TimerType)
-	proc.stats.destProcessing = proc.statsFactory.NewStat("processor.dest_processing", stats.TimerType)
-	proc.stats.pipeProcessing = proc.statsFactory.NewStat("processor.pipe_processing", stats.TimerType)
-	proc.stats.statNumRequests = proc.statsFactory.NewStat("processor.num_requests", stats.CountType)
-	proc.stats.statNumEvents = proc.statsFactory.NewStat("processor.num_events", stats.CountType)
-
-	proc.stats.statDBReadRequests = proc.statsFactory.NewStat("processor.db_read_requests", stats.HistogramType)
-	proc.stats.statDBReadEvents = proc.statsFactory.NewStat("processor.db_read_events", stats.HistogramType)
-	proc.stats.statDBReadPayloadBytes = proc.statsFactory.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
-
-	proc.stats.statDBReadOutOfOrder = proc.statsFactory.NewStat("processor.db_read_out_of_order", stats.CountType)
-	proc.stats.statDBReadOutOfSequence = proc.statsFactory.NewStat("processor.db_read_out_of_sequence", stats.CountType)
-
-	proc.stats.statDBWriteJobsTime = proc.statsFactory.NewStat("processor.db_write_jobs_time", stats.TimerType)
-	proc.stats.statDBWriteStatusTime = proc.statsFactory.NewStat("processor.db_write_status_time", stats.TimerType)
-	proc.stats.statDBWriteRouterPayloadBytes = proc.statsFactory.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
-		"module": "router",
-	})
-	proc.stats.statDBWriteBatchPayloadBytes = proc.statsFactory.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
-		"module": "batch_router",
-	})
-	proc.stats.statDBWriteRouterEvents = proc.statsFactory.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
-		"module": "router",
-	})
-	proc.stats.statDBWriteBatchEvents = proc.statsFactory.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
-		"module": "batch_router",
-	})
-
-	// Add a separate tag for batch router
-	proc.stats.statDestNumOutputEvents = proc.statsFactory.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
-		"module": "router",
-	})
-	proc.stats.statBatchDestNumOutputEvents = proc.statsFactory.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
-		"module": "batch_router",
-	})
-	proc.stats.DBReadThroughput = proc.statsFactory.NewStat("processor.db_read_throughput", stats.CountType)
-	proc.stats.processJobThroughput = proc.statsFactory.NewStat("processor.processJob_thoughput", stats.CountType)
-	proc.stats.transformationsThroughput = proc.statsFactory.NewStat("processor.transformations_throughput", stats.CountType)
-	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
+	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statGatewayDBW = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statRouterDBW = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_router_db_write", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statBatchRouterDBW = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_batch_router_db_write", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBR = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBW = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statProcErrDBW = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_proc_err_db_write", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statLoopTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_loop_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statMarkExecuting = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_mark_executing", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.eventSchemasTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_event_schemas_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.validateEventsTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_validate_events_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.processJobsTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_process_jobs_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statSessionTransform = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_session_transform_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statUserTransform = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_user_transform_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDestTransform = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_dest_transform_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.marshalSingularEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_marshal_singular_events", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.destProcessing = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_dest_processing", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.pipeProcessing = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_pipe_processing", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statNumRequests = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_requests", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statNumEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_events", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBReadRequests = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_requests", stats.HistogramType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBReadEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_events", stats.HistogramType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBReadPayloadBytes = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_payload_bytes", stats.HistogramType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBReadOutOfOrder = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_order", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBReadOutOfSequence = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_sequence", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteJobsTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_jobs_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteStatusTime = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_status_time", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteRouterPayloadBytes = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
+			"module":    "router",
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteBatchPayloadBytes = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
+			"module":    "batch_router",
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteRouterEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_events", stats.HistogramType, stats.Tags{
+			"module":    "router",
+			"partition": partition,
+		})
+	}
+	proc.stats.statDBWriteBatchEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_events", stats.HistogramType, stats.Tags{
+			"module":    "batch_router",
+			"partition": partition,
+		})
+	}
+	proc.stats.statDestNumOutputEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
+			"module":    "router",
+			"partition": partition,
+		})
+	}
+	proc.stats.statBatchDestNumOutputEvents = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_output_events", stats.CountType, stats.Tags{
+			"module":    "batch_router",
+			"partition": partition,
+		})
+	}
+	proc.stats.DBReadThroughput = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_read_throughput", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.processJobThroughput = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_processJob_thoughput", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.transformationsThroughput = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_transformations_throughput", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.DBWriteThroughput = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_db_write_throughput", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
 	if proc.config.enableEventSchemasFeature {
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
@@ -479,7 +616,7 @@ func (proc *Handle) Setup(
 			case <-ctx.Done():
 				return nil
 			case <-time.After(15 * time.Second):
-				proc.stats.statGatewayDBW.Count(0)
+				proc.stats.statGatewayDBW("").Count(0)
 			}
 		}
 	}))
@@ -1288,7 +1425,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 			"writeKey":   source.WriteKey,
 			"event_type": eventType,
 		}
-		statEventType := proc.statsFactory.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
+		statEventType := proc.statsFactory.NewSampledTaggedStat("processor_event_type", stats.CountType, tags)
 		statEventType.Count(1)
 		if proc.config.captureEventNameStats.Load() {
 			if eventType != "track" {
@@ -1305,7 +1442,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 				"event_type": eventType,
 				"event_name": eventName,
 			}
-			statEventTypeDetailed := proc.statsFactory.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tagsDetailed)
+			statEventTypeDetailed := proc.statsFactory.NewSampledTaggedStat("processor_event_type_detailed", stats.CountType, tagsDetailed)
 			statEventTypeDetailed.Count(1)
 		}
 	}
@@ -1362,7 +1499,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	jobList := subJobs.subJobs
 	start := time.Now()
 
-	proc.stats.statNumRequests.Count(len(jobList))
+	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEvents := make(map[string][]transformer.TransformerEvent)
@@ -1671,10 +1808,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	}
 	// REPORTING - GATEWAY metrics - END
 
-	proc.stats.statNumEvents.Count(totalEvents)
+	proc.stats.statNumEvents(partition).Count(totalEvents)
 
 	marshalTime := time.Since(marshalStart)
-	defer proc.stats.marshalSingularEvents.SendTiming(marshalTime)
+	defer proc.stats.marshalSingularEvents(partition).SendTiming(marshalTime)
 
 	for sourceID, events := range groupedEventsBySourceId {
 		source, err := proc.getSourceBySourceID(string(sourceID))
@@ -1693,7 +1830,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	validateEventsStart := time.Now()
 	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsBySourceId, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
-	defer proc.stats.validateEventsTime.SendTiming(validateEventsTime)
+	defer proc.stats.validateEventsTime(partition).SendTiming(validateEventsTime)
 
 	// Appending validatedErrorJobs to procErrorJobs
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
@@ -1765,10 +1902,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
 	processTime := time.Since(start)
-	proc.stats.processJobsTime.SendTiming(processTime)
+	proc.stats.processJobsTime(partition).SendTiming(processTime)
 	processJobThroughput := throughputPerSecond(totalEvents, processTime)
 	// processJob throughput per second.
-	proc.stats.processJobThroughput.Count(processJobThroughput)
+	proc.stats.processJobThroughput(partition).Count(processJobThroughput)
 	return &transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -1835,6 +1972,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 			defer wg.Done()
 			chOut <- proc.transformSrcDest(
 				ctx,
+				partition,
 
 				srcAndDestKey, eventList,
 
@@ -1861,11 +1999,11 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	}
 
 	destProcTime := time.Since(destProcStart)
-	defer proc.stats.destProcessing.SendTiming(destProcTime)
+	defer proc.stats.destProcessing(partition).SendTiming(destProcTime)
 
 	// this tells us how many transformations we are doing per second.
 	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
-	proc.stats.transformationsThroughput.Count(transformationsThroughput)
+	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
 		in.statusList,
@@ -1981,9 +2119,9 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
-		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
-		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
-		proc.stats.statDBWriteBatchPayloadBytes.Observe(
+		proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
+		proc.stats.statDBWriteBatchEvents(partition).Observe(float64(len(batchDestJobs)))
+		proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
 			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 		)
 	}
@@ -2035,9 +2173,9 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			}
 			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
-			proc.stats.statDestNumOutputEvents.Count(len(destJobs))
-			proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-			proc.stats.statDBWriteRouterPayloadBytes.Observe(
+			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
+			proc.stats.statDBWriteRouterEvents(partition).Observe(float64(len(destJobs)))
+			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
 		}()
@@ -2093,27 +2231,27 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		panic(err)
 	}
 	if proc.config.enableDedup {
-		proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
+		proc.updateSourceStats(in.sourceDupStats, "processor_write_key_duplicate_events")
 		if len(in.dedupKeys) > 0 {
 			if err := proc.dedup.Commit(lo.Keys(in.dedupKeys)); err != nil {
 				panic(err)
 			}
 		}
 	}
-	proc.stats.statDBW.Since(beforeStoreStatus)
+	proc.stats.statDBW(partition).Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
 	// DB write throughput per second.
 	dbWriteThroughput := throughputPerSecond(len(destJobs)+len(batchDestJobs), dbWriteTime)
-	proc.stats.DBWriteThroughput.Count(dbWriteThroughput)
-	proc.stats.statDBWriteJobsTime.SendTiming(writeJobsTime)
-	proc.stats.statDBWriteStatusTime.Since(txnStart)
+	proc.stats.DBWriteThroughput(partition).Count(dbWriteThroughput)
+	proc.stats.statDBWriteJobsTime(partition).SendTiming(writeJobsTime)
+	proc.stats.statDBWriteStatusTime(partition).Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	// XX: End of transaction
 
-	proc.stats.statGatewayDBW.Count(len(statusList))
-	proc.stats.statRouterDBW.Count(len(destJobs))
-	proc.stats.statBatchRouterDBW.Count(len(batchDestJobs))
-	proc.stats.statProcErrDBW.Count(len(in.procErrorJobs))
+	proc.stats.statGatewayDBW(partition).Count(len(statusList))
+	proc.stats.statRouterDBW(partition).Count(len(destJobs))
+	proc.stats.statBatchRouterDBW(partition).Count(len(batchDestJobs))
+	proc.stats.statProcErrDBW(partition).Count(len(in.procErrorJobs))
 }
 
 // getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
@@ -2143,6 +2281,7 @@ type transformSrcDestOutput struct {
 
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
+	partition string,
 	// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEvent,
 
@@ -2151,7 +2290,7 @@ func (proc *Handle) transformSrcDest(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
-	defer proc.stats.pipeProcessing.Since(time.Now())
+	defer proc.stats.pipeProcessing(partition).Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := &eventList[0].Destination
@@ -2688,15 +2827,15 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 
 		if job.JobID <= proc.lastJobID {
 			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfOrder.Count(1)
+			proc.stats.statDBReadOutOfOrder(partition).Count(1)
 		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
 			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfSequence.Count(1)
+			proc.stats.statDBReadOutOfSequence(partition).Count(1)
 		}
 		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
-	defer proc.stats.statDBR.SendTiming(dbReadTime)
+	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
 
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
@@ -2720,21 +2859,21 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 		}
 	}
 	eventSchemasTime := time.Since(eventSchemasStart)
-	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
+	defer proc.stats.eventSchemasTime(partition).SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
-	proc.stats.statGatewayDBR.Count(len(unprocessedList.Jobs))
+	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
 
-	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList.Jobs)))
-	proc.stats.statDBReadEvents.Observe(float64(unprocessedList.EventsCount))
-	proc.stats.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
+	proc.stats.statDBReadRequests(partition).Observe(float64(len(unprocessedList.Jobs)))
+	proc.stats.statDBReadEvents(partition).Observe(float64(unprocessedList.EventsCount))
+	proc.stats.statDBReadPayloadBytes(partition).Observe(float64(totalPayloadBytes))
 
 	return unprocessedList
 }
 
-func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
+func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 	start := time.Now()
-	defer proc.stats.statMarkExecuting.Since(start)
+	defer proc.stats.statMarkExecuting(partition).Since(start)
 
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
@@ -2786,7 +2925,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 			),
 		),
 	)
-	proc.stats.statLoopTime.Since(s)
+	proc.stats.statLoopTime(partition).Since(s)
 
 	return true
 }
