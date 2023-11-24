@@ -206,6 +206,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	// Identify jobs which can be processed
+	var iterationInterrupted bool
 	for iterator.HasNext() {
 		if ctx.Err() != nil {
 			return 0, false
@@ -240,6 +241,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
+				iterationInterrupted = true
 				break
 			}
 		}
@@ -251,11 +253,12 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	flush()
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
-	limitsReached = iteratorStats.LimitsReached
+	limitsReached = iteratorStats.LimitsReached && !iterationInterrupted
+	eligibleForFailingJobsPenalty := iteratorStats.LimitsReached || iterationInterrupted
 	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
 	// If the discarded ratio is greater than the penalty threshold,
 	// sleep for a while to avoid having a loop running continuously without producing events
-	if limitsReached && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold.Load() {
+	if eligibleForFailingJobsPenalty && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold.Load() {
 		limiterEnd() // exit the limiter before sleeping
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep.Load())
 	}
