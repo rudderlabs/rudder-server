@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -323,12 +324,27 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	if err != nil {
+		return fmt.Errorf("drain config manager setup: %v", err)
+	}
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.DrainConfigRoutine(ctx)
+	}))
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.CleanupRoutine(ctx)
+	}))
 	gw := gateway.Handle{}
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gateway.WithInternalHttpHandlers(
+			map[string]http.Handler{
+				"/drainConfig": drainConfigManager.DrainConfigHttpHandler(),
+			},
+		),
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)

@@ -20,21 +20,17 @@ const (
 	defaultPollFrequency      = 5
 	defaultPollFrequencyUnits = time.Second
 
-	defaultAge      = 24
-	defaultAgeUnits = time.Hour
+	defaultCleanupFrequency      = 24
+	defaultCleanupFrequencyUnits = time.Hour
+
+	defaultMaxAge      = 24
+	defaultMaxAgeUnits = time.Hour
 
 	// drain configurations
-	destinationID             = "drain.destinationIDs"
-	routerAbortDestinationsID = "Router.toAbortDestinationIDs"
 
 	jobRunID       = "drain.jobRunIDs"
 	configJobRunID = "RSources.toAbortJobRunIDs"
 )
-
-var configVariableMap = map[string]string{
-	routerAbortDestinationsID: destinationID,
-	configJobRunID:            jobRunID,
-}
 
 type drainConfigManager struct {
 	log  logger.Logger
@@ -59,21 +55,42 @@ func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfig
 	}, nil
 }
 
+func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
+	for {
+		maxAgeInMinutes := d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits) / time.Minute
+		if _, err := d.db.ExecContext(
+			ctx,
+			"DELETE FROM drain_config WHERE created_at < NOW() - $1 * interval '1 MIN'",
+			maxAgeInMinutes,
+		); err != nil {
+			d.log.Errorw("db cleanup", "error", err)
+			return fmt.Errorf("db cleanup: %v", err)
+		}
+		if err := misc.SleepCtx(
+			ctx,
+			d.conf.GetDuration(
+				"drainConfig.cleanupFrequency",
+				defaultCleanupFrequency,
+				defaultCleanupFrequencyUnits,
+			),
+		); err != nil {
+			return err
+		}
+	}
+}
+
 func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 	// map to hold the config values
 	configMap := make(map[string][]string)
 	for {
-		var discardID int64 // last id older than maxAge
 		// holds the config values fetched from the db
 		dbConfigMap := make(map[string][]string)
-		maxAge := d.conf.GetDuration(
-			"drain.age",
-			defaultAge,
-			defaultAgeUnits,
-		)
 
 		// fetch the config values from the db
-		rows, err := d.db.QueryContext(ctx, "SELECT * FROM drain_config order by id asc")
+		rows, err := d.db.QueryContext(
+			ctx, "SELECT id, created_at, value FROM drain_config where key=$1 order by id asc",
+			jobRunID,
+		)
 		if err != nil {
 			d.log.Errorw("db query", "error", err)
 			return fmt.Errorf("db query: %v", err)
@@ -81,23 +98,18 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		for rows.Next() {
 			var (
 				id        int64
-				key       string
 				value     string
 				createdAt time.Time
 			)
-			if err := rows.Scan(&id, &key, &createdAt, &value); err != nil {
+			if err := rows.Scan(&id, &createdAt, &value); err != nil {
 				d.log.Errorw("db scan", "error", err)
 				return fmt.Errorf("db scan: %v", err)
 			}
 
-			if time.Since(createdAt) > maxAge {
-				discardID = id
+			if value == "" || time.Since(createdAt) > defaultMaxAge*defaultMaxAgeUnits {
 				continue
 			}
-			if value == "" {
-				continue
-			}
-			dbConfigMap[key] = append(dbConfigMap[key], separateAndTrim(value)...)
+			dbConfigMap[jobRunID] = append(dbConfigMap[jobRunID], separateAndTrim(value)...)
 		}
 		if err := rows.Err(); err != nil {
 			d.log.Errorw("db rows", "error", err)
@@ -109,27 +121,13 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		}
 
 		// compare config values, if different set the config
-		for key, value := range configVariableMap {
-			configVals := separateAndTrim(d.conf.GetString(key, ""))
-			if slices.Equal(
-				configMap[value],
-				append(dbConfigMap[value], configVals...),
-			) {
-				continue
-			}
-			configMap[value] = append(dbConfigMap[value], configVals...)
-			d.conf.Set(value, configMap[value])
-		}
-
-		if discardID > 0 {
-			if _, err := d.db.ExecContext(
-				ctx,
-				"DELETE FROM drain_config WHERE id <= $1",
-				discardID,
-			); err != nil {
-				d.log.Errorw("db cleanup", "error", err)
-				return fmt.Errorf("db cleanup: %v", err)
-			}
+		configVals := append(dbConfigMap[jobRunID], d.conf.GetStringSlice(configJobRunID, nil)...)
+		if !slices.Equal(
+			configMap[jobRunID],
+			configVals,
+		) {
+			configMap[jobRunID] = configVals
+			d.conf.Set(jobRunID, configVals)
 		}
 
 		if err := misc.SleepCtx(

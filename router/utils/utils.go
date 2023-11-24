@@ -117,7 +117,7 @@ func NewDrainer(
 	return &drainer{
 		destinationIDs: conf.GetReloadableStringSliceVar(
 			nil,
-			"drain.destinationIDs",
+			"Router.toAbortDestinationIDs",
 		),
 		jobRunIDs: conf.GetReloadableStringSliceVar(
 			nil,
