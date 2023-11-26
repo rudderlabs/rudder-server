@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -156,11 +157,20 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
 
+	jobIteratorMaxQueries := config.GetIntVar(50, 1,
+		"Router."+rt.destType+"."+partition+".jobIterator.maxQueries",
+		"Router."+rt.destType+".jobIterator.maxQueries",
+		"Router.jobIterator.maxQueries")
+	jobIteratorDiscardedPercentageTolerance := config.GetIntVar(10, 1,
+		"Router."+rt.destType+"."+partition+".jobIterator.discardedPercentageTolerance",
+		"Router."+rt.destType+".jobIterator.discardedPercentageTolerance",
+		"Router.jobIterator.discardedPercentageTolerance")
+
 	iterator := jobiterator.New(
 		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize.Load()),
 		rt.getJobsFn(ctx),
-		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance.Load()),
-		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries.Load()),
+		jobiterator.WithDiscardedPercentageTolerance(jobIteratorDiscardedPercentageTolerance),
+		jobiterator.WithMaxQueries(jobIteratorMaxQueries),
 	)
 
 	if !iterator.HasNext() {
@@ -206,6 +216,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	// Identify jobs which can be processed
+	var iterationInterrupted bool
 	for iterator.HasNext() {
 		if ctx.Err() != nil {
 			return 0, false
@@ -240,6 +251,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
+				iterationInterrupted = true
 				break
 			}
 		}
@@ -251,11 +263,12 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	flush()
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
-	limitsReached = iteratorStats.LimitsReached
+	limitsReached = iteratorStats.LimitsReached && !iterationInterrupted
+	eligibleForFailingJobsPenalty := iteratorStats.LimitsReached || iterationInterrupted
 	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
 	// If the discarded ratio is greater than the penalty threshold,
 	// sleep for a while to avoid having a loop running continuously without producing events
-	if limitsReached && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold.Load() {
+	if eligibleForFailingJobsPenalty && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold.Load() {
 		limiterEnd() // exit the limiter before sleeping
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep.Load())
 	}
