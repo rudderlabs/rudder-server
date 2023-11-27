@@ -197,6 +197,8 @@ func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo 
 
 		err := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
 		if err != nil {
+			// Log the unmarshalling error for debugging purposes
+			log.Errorf("Error unmarshalling consentManagementInfo: %v", err)
 			return consentManagementInfo
 		}
 
@@ -209,4 +211,5 @@ func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo 
 	}
 
 	return consentManagementInfo
+}
 }
