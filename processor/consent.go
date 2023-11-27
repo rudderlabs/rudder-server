@@ -154,6 +154,8 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 
 	consentManagementConfigBytes, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
 	if mErr != nil {
+		// Log the marshalling error for debugging purposes
+		log.Errorf("Error marshalling consentManagementConfig: %v", mErr)
 		return genericConsentManagementData
 	}
 
@@ -185,6 +187,7 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 	}
 
 	return genericConsentManagementData
+}
 }
 
 func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo {
