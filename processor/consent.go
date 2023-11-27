@@ -114,7 +114,11 @@ func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentMan
 }
 
 func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
-	cookieCategories, _ := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]interface{})
+	cookieCategories, ok := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]interface{})
+	if !ok {
+		// Handle the case where oneTrustCookieCategories is not a slice
+		return nil
+	}
 	if len(cookieCategories) == 0 {
 		return nil
 	}
