@@ -477,15 +477,15 @@ func (sh *sourcesHandler) init() error {
 		}
 	}
 
-	const lockId = 100020001
+	const lockID = 100020001
 
-	if err := withAdvisoryLock(ctx, sh.localDB, lockId, func(tx *sql.Tx) error {
+	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx *sql.Tx) error {
 		sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
 		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
 		}
 		if err := migrateFailedKeysTable(ctx, tx); err != nil {
-			return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
+			return fmt.Errorf("migrating rsources_failed_keys table: %w", err)
 		}
 		sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
 		return nil
@@ -494,7 +494,7 @@ func (sh *sourcesHandler) init() error {
 	}
 
 	if sh.sharedDB != nil {
-		if err := withAdvisoryLock(ctx, sh.sharedDB, lockId, func(_ *sql.Tx) error {
+		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
 			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
 			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
 				return err
@@ -503,7 +503,7 @@ func (sh *sourcesHandler) init() error {
 
 			sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
 			if err := sh.setupLogicalReplication(ctx); err != nil {
-				return fmt.Errorf("failed to setup rsources logical replication in %s: %w", sh.config.LocalHostname, err)
+				return fmt.Errorf("logical replication in %q: %w", sh.config.LocalHostname, err)
 			}
 			sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
 			return nil
@@ -817,7 +817,7 @@ func withAdvisoryLock(ctx context.Context, db *sql.DB, lockId int64, f func(tx *
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockId); err != nil {
-		return fmt.Errorf("error while acquiring advisory lock: %w", err)
+		return fmt.Errorf("acquiring advisory lock: %w", err)
 	}
 	if err := f(tx); err != nil {
 		return err
