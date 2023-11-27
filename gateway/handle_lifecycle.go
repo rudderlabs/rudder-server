@@ -360,17 +360,13 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs
-	rsourcesHandler := rsources_http.NewV1Handler(
+	rsourcesHandlerV1 := rsources_http.NewV1Handler(
 		gw.rsourcesService,
 		gw.logger.Child("rsources"),
 	)
-	failedKeysHandler := rsources_http.FailedKeysHandler(
+	rsourcesHandlerV2 := rsources_http.NewV2Handler(
 		gw.rsourcesService,
 		gw.logger.Child("rsources_failed_keys"),
-	)
-	jobStatusHandler := rsources_http.JobStatusHandler(
-		gw.rsourcesService,
-		gw.logger.Child("rsources_job_status"),
 	)
 	srvMux.Use(
 		chiware.StatMiddleware(ctx, stats.Default, component),
@@ -383,11 +379,15 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
-		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
-		r.Mount("/v2/failed-keys", withContentType("application/json; charset=utf-8", failedKeysHandler.ServeHTTP))
-		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", jobStatusHandler.ServeHTTP))
+
+		// TODO: delete this handler once we are ready to remove support for the v1 api
+		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
+
+		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
 	})
-	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
+
+	// TODO: delete this handler once we are ready to remove support for the v1 api
+	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
 
 	srvMux.Route("/v1", func(r chi.Router) {
 		r.Post("/alias", gw.webAliasHandler())

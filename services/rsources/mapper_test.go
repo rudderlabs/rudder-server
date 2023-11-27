@@ -208,19 +208,19 @@ func TestStatusFromQueryResult(t *testing.T) {
 
 func TestFailedRecordsFromQueryResult(t *testing.T) {
 	t.Run("no failed records", func(t *testing.T) {
-		res := failedRecordsFromQueryResult("jobRunId", map[JobTargetKey]FailedRecords{})
-		require.Equal(t, JobFailedRecords{ID: "jobRunId"}, res, "should return an empty JobFailedRecords")
+		res := failedRecordsFromQueryResult("jobRunId", map[JobTargetKey][]json.RawMessage{})
+		require.Equal(t, JobFailedRecords[json.RawMessage]{ID: "jobRunId"}, res, "should return an empty JobFailedRecords")
 	})
 
 	t.Run("failed records for single source", func(t *testing.T) {
-		input := map[JobTargetKey]FailedRecords{
-			{TaskRunID: "task-1", SourceID: "source-1"}: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
+		input := map[JobTargetKey][]json.RawMessage{
+			{TaskRunID: "task-1", SourceID: "source-1"}: {[]byte(`"key1"`), []byte(`"key2"`)},
 		}
-		expected := JobFailedRecords{
+		expected := JobFailedRecords[json.RawMessage]{
 			ID: "jobRunId",
-			Tasks: []TaskFailedRecords{{
+			Tasks: []TaskFailedRecords[json.RawMessage]{{
 				ID: "task-1",
-				Sources: []SourceFailedRecords{{
+				Sources: []SourceFailedRecords[json.RawMessage]{{
 					ID:      "source-1",
 					Records: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
 				}},
@@ -230,16 +230,16 @@ func TestFailedRecordsFromQueryResult(t *testing.T) {
 	})
 
 	t.Run("failed records for single destination", func(t *testing.T) {
-		input := map[JobTargetKey]FailedRecords{
-			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
+		input := map[JobTargetKey][]json.RawMessage{
+			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: {[]byte(`"key1"`), []byte(`"key2"`)},
 		}
-		expected := JobFailedRecords{
+		expected := JobFailedRecords[json.RawMessage]{
 			ID: "jobRunId",
-			Tasks: []TaskFailedRecords{{
+			Tasks: []TaskFailedRecords[json.RawMessage]{{
 				ID: "task-1",
-				Sources: []SourceFailedRecords{{
+				Sources: []SourceFailedRecords[json.RawMessage]{{
 					ID: "source-1",
-					Destinations: []DestinationFailedRecords{{
+					Destinations: []DestinationFailedRecords[json.RawMessage]{{
 						ID:      "destination-1",
 						Records: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
 					}},
@@ -250,18 +250,18 @@ func TestFailedRecordsFromQueryResult(t *testing.T) {
 	})
 
 	t.Run("failed records for single source and destination", func(t *testing.T) {
-		input := map[JobTargetKey]FailedRecords{
-			{TaskRunID: "task-1", SourceID: "source-1"}:                                 []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
-			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: []json.RawMessage{[]byte(`"key3"`), []byte(`"key4"`)},
+		input := map[JobTargetKey][]json.RawMessage{
+			{TaskRunID: "task-1", SourceID: "source-1"}:                                 {[]byte(`"key1"`), []byte(`"key2"`)},
+			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: {[]byte(`"key3"`), []byte(`"key4"`)},
 		}
-		expected := JobFailedRecords{
+		expected := JobFailedRecords[json.RawMessage]{
 			ID: "jobRunId",
-			Tasks: []TaskFailedRecords{{
+			Tasks: []TaskFailedRecords[json.RawMessage]{{
 				ID: "task-1",
-				Sources: []SourceFailedRecords{{
+				Sources: []SourceFailedRecords[json.RawMessage]{{
 					ID:      "source-1",
 					Records: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
-					Destinations: []DestinationFailedRecords{{
+					Destinations: []DestinationFailedRecords[json.RawMessage]{{
 						ID:      "destination-1",
 						Records: []json.RawMessage{[]byte(`"key3"`), []byte(`"key4"`)},
 					}},
@@ -272,21 +272,21 @@ func TestFailedRecordsFromQueryResult(t *testing.T) {
 	})
 
 	t.Run("failed records for two tasks with same source and destination", func(t *testing.T) {
-		input := map[JobTargetKey]FailedRecords{
-			{TaskRunID: "task-1", SourceID: "source-1"}:                                 []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
-			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: []json.RawMessage{[]byte(`"key3"`), []byte(`"key4"`)},
-			{TaskRunID: "task-2", SourceID: "source-1"}:                                 []json.RawMessage{[]byte(`"key5"`), []byte(`"key6"`)},
-			{TaskRunID: "task-2", SourceID: "source-1", DestinationID: "destination-1"}: []json.RawMessage{[]byte(`"key7"`), []byte(`"key8"`)},
+		input := map[JobTargetKey][]json.RawMessage{
+			{TaskRunID: "task-1", SourceID: "source-1"}:                                 {[]byte(`"key1"`), []byte(`"key2"`)},
+			{TaskRunID: "task-1", SourceID: "source-1", DestinationID: "destination-1"}: {[]byte(`"key3"`), []byte(`"key4"`)},
+			{TaskRunID: "task-2", SourceID: "source-1"}:                                 {[]byte(`"key5"`), []byte(`"key6"`)},
+			{TaskRunID: "task-2", SourceID: "source-1", DestinationID: "destination-1"}: {[]byte(`"key7"`), []byte(`"key8"`)},
 		}
-		expected := JobFailedRecords{
+		expected := JobFailedRecords[json.RawMessage]{
 			ID: "jobRunId",
-			Tasks: []TaskFailedRecords{
+			Tasks: []TaskFailedRecords[json.RawMessage]{
 				{
 					ID: "task-1",
-					Sources: []SourceFailedRecords{{
+					Sources: []SourceFailedRecords[json.RawMessage]{{
 						ID:      "source-1",
 						Records: []json.RawMessage{[]byte(`"key1"`), []byte(`"key2"`)},
-						Destinations: []DestinationFailedRecords{{
+						Destinations: []DestinationFailedRecords[json.RawMessage]{{
 							ID:      "destination-1",
 							Records: []json.RawMessage{[]byte(`"key3"`), []byte(`"key4"`)},
 						}},
@@ -294,10 +294,10 @@ func TestFailedRecordsFromQueryResult(t *testing.T) {
 				},
 				{
 					ID: "task-2",
-					Sources: []SourceFailedRecords{{
+					Sources: []SourceFailedRecords[json.RawMessage]{{
 						ID:      "source-1",
 						Records: []json.RawMessage{[]byte(`"key5"`), []byte(`"key6"`)},
-						Destinations: []DestinationFailedRecords{{
+						Destinations: []DestinationFailedRecords[json.RawMessage]{{
 							ID:      "destination-1",
 							Records: []json.RawMessage{[]byte(`"key7"`), []byte(`"key8"`)},
 						}},

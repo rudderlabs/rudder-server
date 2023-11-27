@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -2573,8 +2574,11 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
-			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(400))
-			Expect(m.failedMetrics[1].StatusDetail.StatusCode).To(Equal(299))
+			slices.SortFunc(m.failedMetrics, func(a, b *types.PUReportedMetric) int {
+				return a.StatusDetail.StatusCode - b.StatusDetail.StatusCode
+			})
+			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(299))
+			Expect(m.failedMetrics[1].StatusDetail.StatusCode).To(Equal(400))
 			Expect(int(m.failedCountMap[key])).To(Equal(2))
 
 			Expect(len(m.filteredJobs)).To(Equal(1))
