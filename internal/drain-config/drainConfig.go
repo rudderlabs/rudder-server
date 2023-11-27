@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lib/pq"
@@ -38,8 +39,8 @@ type drainConfigManager struct {
 	conf *config.Config
 	db   *sql.DB
 
-	doneChan chan struct{}
-	wg       sync.WaitGroup
+	done *atomic.Bool
+	wg   sync.WaitGroup
 }
 
 func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
@@ -57,7 +58,7 @@ func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfig
 		conf: conf,
 		db:   db,
 
-		doneChan: make(chan struct{}),
+		done: &atomic.Bool{},
 	}, nil
 }
 
@@ -65,6 +66,9 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 	d.wg.Add(1)
 	defer d.wg.Done()
 	for {
+		if d.done.Load() {
+			return nil
+		}
 		if _, err := d.db.ExecContext(
 			ctx,
 			"DELETE FROM drain_config WHERE created_at < $1",
@@ -75,8 +79,6 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 		}
 
 		select {
-		case <-d.doneChan:
-			return nil
 		case <-ctx.Done():
 			return nil
 		case <-time.After(
@@ -96,6 +98,9 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 	// map to hold the config values
 	configMap := make(map[string][]string)
 	for {
+		if d.done.Load() {
+			return nil
+		}
 		// holds the config values fetched from the db
 		dbConfigMap := make(map[string][]string)
 
@@ -147,8 +152,6 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		}
 
 		select {
-		case <-d.doneChan:
-			return nil
 		case <-ctx.Done():
 			return nil
 		case <-time.After(
@@ -163,7 +166,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 }
 
 func (d *drainConfigManager) Stop() {
-	close(d.doneChan)
+	d.done.Store(true)
 	_ = d.db.Close()
 	d.wg.Wait()
 }
