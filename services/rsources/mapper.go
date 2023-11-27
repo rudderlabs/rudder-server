@@ -1,6 +1,8 @@
 package rsources
 
-import "sort"
+import (
+	"sort"
+)
 
 func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobStatus {
 	status := JobStatus{
@@ -61,8 +63,8 @@ func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobS
 	return status
 }
 
-func failedRecordsFromQueryResult(jobRunId string, recordsMap map[JobTargetKey]FailedRecords) JobFailedRecords {
-	result := JobFailedRecords{
+func failedRecordsFromQueryResult[T any](jobRunId string, recordsMap map[JobTargetKey][]T) JobFailedRecords[T] {
+	result := JobFailedRecords[T]{
 		ID: jobRunId,
 	}
 
@@ -81,7 +83,7 @@ func failedRecordsFromQueryResult(jobRunId string, recordsMap map[JobTargetKey]F
 		var ok bool
 		if taskIdx, ok = taskRunIdIndex[key.TaskRunID]; !ok {
 			taskIdx = len(taskRunIdIndex)
-			result.Tasks = append(result.Tasks, TaskFailedRecords{
+			result.Tasks = append(result.Tasks, TaskFailedRecords[T]{
 				ID: key.TaskRunID,
 			})
 			taskRunIdIndex[key.TaskRunID] = taskIdx
@@ -91,13 +93,13 @@ func failedRecordsFromQueryResult(jobRunId string, recordsMap map[JobTargetKey]F
 		if sourceIdx, ok = sourceIdIndex[key.TaskRunID][key.SourceID]; !ok {
 			sourceIdx = len(result.Tasks[taskIdx].Sources)
 			sourceIdIndex[key.TaskRunID][key.SourceID] = sourceIdx
-			result.Tasks[taskIdx].Sources = append(result.Tasks[taskIdx].Sources, SourceFailedRecords{ID: key.SourceID})
+			result.Tasks[taskIdx].Sources = append(result.Tasks[taskIdx].Sources, SourceFailedRecords[T]{ID: key.SourceID})
 		}
 
 		if key.DestinationID == "" {
 			result.Tasks[taskIdx].Sources[sourceIdx].Records = append(result.Tasks[taskIdx].Sources[sourceIdx].Records, records...)
 		} else {
-			result.Tasks[taskIdx].Sources[sourceIdx].Destinations = append(result.Tasks[taskIdx].Sources[sourceIdx].Destinations, DestinationFailedRecords{ID: key.DestinationID, Records: records})
+			result.Tasks[taskIdx].Sources[sourceIdx].Destinations = append(result.Tasks[taskIdx].Sources[sourceIdx].Destinations, DestinationFailedRecords[T]{ID: key.DestinationID, Records: records})
 		}
 	}
 
