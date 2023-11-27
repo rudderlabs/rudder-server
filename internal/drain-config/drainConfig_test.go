@@ -24,41 +24,36 @@ func TestDrainConfigRoutine(t *testing.T) {
 	conf, db := testSetup(t)
 	conf.Set("drainConfig.pollFrequency", "100ms")
 	conf.Set("drainConfig.cleanupFrequency", "50ms")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 	log := logger.NOP
 
 	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log)
-	require.NoError(t, err, "failed to create drain config manager")
-	closeChan := make(chan struct{})
+	require.NoError(t, err, "should create drain config manager")
 	go func() {
-		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "should exit on context cancellation")
-		closeChan <- struct{}{}
+		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "drain config routine should exit")
 	}()
 	go func() {
-		require.NoError(t, drainConfigManager.CleanupRoutine(ctx), "should exit on context cancellation")
-		closeChan <- struct{}{}
+		require.NoError(t, drainConfigManager.CleanupRoutine(ctx), "cleanup routine should exit")
 	}()
 
 	_, err = db.ExecContext(ctx, "INSERT INTO drain_config (key, value) VALUES ('drain.jobRunIDs', '123')")
-	require.NoError(t, err, "failed to insert into config table")
+	require.NoError(t, err, "should insert into config table")
 	require.Eventually(t, func() bool {
 		return slices.Equal([]string{"123"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "failed to read from drain config table")
+	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
 
 	conf.Set("drain.age", "1ms")
 	require.Eventually(t, func() bool {
 		return slices.Equal(nil, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "failed to read from drain config table")
+	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
 	require.Nil(t, conf.GetStringSlice("drain.jobRunIDs", nil))
 
 	conf.Set("RSources.toAbortJobRunIDs", "abc def ghi")
 	require.Eventually(t, func() bool {
 		return slices.Equal([]string{"abc", "def", "ghi"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "failed to read from drain config table")
+	}, 1*time.Second, 100*time.Millisecond, "should eventually read from drain config table")
 
-	cancel()
-	<-closeChan
-	<-closeChan
+	drainConfigManager.Stop()
 }
 
 func TestDrainConfigHttpHandler(t *testing.T) {
@@ -68,15 +63,12 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 	log := logger.NOP
 
 	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log)
-	require.NoError(t, err, "failed to create drain config manager")
-	closeChan := make(chan struct{})
+	require.NoError(t, err, "should create drain config manager")
 	go func() {
-		_ = drainConfigManager.DrainConfigRoutine(ctx)
-		closeChan <- struct{}{}
+		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "drain config routine should exit")
 	}()
 	go func() {
-		_ = drainConfigManager.CleanupRoutine(ctx)
-		closeChan <- struct{}{}
+		require.NoError(t, drainConfigManager.CleanupRoutine(ctx), "cleanup routine should exit")
 	}()
 
 	req, err := http.NewRequest("PUT", "http://localhost:8080/job/randomJobRunID", http.NoBody)
@@ -84,13 +76,13 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	drainConfigManager.DrainConfigHttpHandler().ServeHTTP(resp, req)
-	require.Equal(t, http.StatusCreated, resp.Code, "required error expected to be 201")
+	require.Equal(t, http.StatusCreated, resp.Code, "expected status code to be 201")
 	require.Eventually(t, func() bool {
 		return slices.Equal([]string{"randomJobRunID"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "failed to read from drain config table")
+	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
+
 	cancel()
-	<-closeChan
-	<-closeChan
+	drainConfigManager.Stop()
 }
 
 func testSetup(t *testing.T) (*config.Config, *sql.DB) {

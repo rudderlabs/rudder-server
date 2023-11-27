@@ -9,13 +9,13 @@ import (
 
 func (dcm *drainConfigManager) DrainConfigHttpHandler() http.Handler {
 	srvMux := chi.NewRouter()
-	srvMux.Put("/job/{JobRunId}", dcm.drainJob)
+	srvMux.Put("/job/{job_run_id}", dcm.drainJob)
 	return srvMux
 }
 
 func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	jobRunID := getQueryParams(r)
+	jobRunID := getJobRunIDParam(r)
 	if jobRunID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -29,8 +29,8 @@ func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func getQueryParams(r *http.Request) string {
-	return chi.URLParam(r, "JobRunId")
+func getJobRunIDParam(r *http.Request) string {
+	return chi.URLParam(r, "job_run_id")
 }
 
 func (dcm *drainConfigManager) insert(ctx context.Context, jobRunID string) error {

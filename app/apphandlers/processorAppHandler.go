@@ -245,6 +245,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
+	defer drainConfigManager.Stop()
 	g.Go(misc.WithBugsnag(func() (err error) {
 		return drainConfigManager.DrainConfigRoutine(ctx)
 	}))

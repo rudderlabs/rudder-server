@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -35,6 +36,9 @@ type drainConfigManager struct {
 	log  logger.Logger
 	conf *config.Config
 	db   *sql.DB
+
+	doneChan chan struct{}
+	wg       sync.WaitGroup
 }
 
 func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
@@ -51,10 +55,14 @@ func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfig
 		log:  log,
 		conf: conf,
 		db:   db,
+
+		doneChan: make(chan struct{}),
 	}, nil
 }
 
 func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
+	d.wg.Add(1)
+	defer d.wg.Done()
 	for {
 		if _, err := d.db.ExecContext(
 			ctx,
@@ -74,10 +82,18 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 		); err != nil {
 			return nil
 		}
+
+		select {
+		case <-d.doneChan:
+			return nil
+		default:
+		}
 	}
 }
 
 func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
+	d.wg.Add(1)
+	defer d.wg.Done()
 	// map to hold the config values
 	configMap := make(map[string][]string)
 	for {
@@ -144,7 +160,19 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		); err != nil {
 			return nil
 		}
+
+		select {
+		case <-d.doneChan:
+			return nil
+		default:
+		}
 	}
+}
+
+func (d *drainConfigManager) Stop() {
+	close(d.doneChan)
+	_ = d.db.Close()
+	d.wg.Wait()
 }
 
 func migrate(db *sql.DB) error {
