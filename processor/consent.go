@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"fmt"
+
 	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -163,7 +165,7 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 	consentManagementConfigBytes, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
 	if mErr != nil {
 		// Log the marshalling error for debugging purposes
-		log.Errorf("Error marshalling consentManagementConfig: %v", mErr)
+		fmt.Errorf("Error marshalling consentManagementConfig: %v", mErr)
 		return genericConsentManagementData
 	}
 
@@ -208,7 +210,7 @@ func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo 
 		err := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
 		if err != nil {
 			// Log the unmarshalling error for debugging purposes
-			log.Errorf("Error unmarshalling consentManagementInfo: %v", err)
+			fmt.Errorf("Error unmarshalling consentManagementInfo: %v", err)
 			return consentManagementInfo
 		}
 
@@ -221,5 +223,4 @@ func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo 
 	}
 
 	return consentManagementInfo
-}
 }
