@@ -31,18 +31,18 @@ func TestDrainConfigRoutine(t *testing.T) {
 	require.NoError(t, err, "failed to create drain config manager")
 	closeChan := make(chan struct{})
 	go func() {
-		_ = drainConfigManager.DrainConfigRoutine(ctx)
+		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "should exit on context cancellation")
 		closeChan <- struct{}{}
 	}()
 	go func() {
-		_ = drainConfigManager.CleanupRoutine(ctx)
+		require.NoError(t, drainConfigManager.CleanupRoutine(ctx), "should exit on context cancellation")
 		closeChan <- struct{}{}
 	}()
 
-	_, err = db.ExecContext(ctx, "INSERT INTO drain_config (key, value) VALUES ('drain.jobRunIDs', '1,2,3')")
+	_, err = db.ExecContext(ctx, "INSERT INTO drain_config (key, value) VALUES ('drain.jobRunIDs', '123')")
 	require.NoError(t, err, "failed to insert into config table")
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{"1", "2", "3"}, conf.GetStringSlice("drain.jobRunIDs", nil))
+		return slices.Equal([]string{"123"}, conf.GetStringSlice("drain.jobRunIDs", nil))
 	}, 1*time.Second, 100*time.Millisecond, "failed to read from drain config table")
 
 	conf.Set("drain.age", "1ms")
@@ -79,7 +79,7 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 		closeChan <- struct{}{}
 	}()
 
-	req, err := http.NewRequest("GET", "http://localhost:8080/set?job_run_id=randomJobRunID", http.NoBody)
+	req, err := http.NewRequest("PUT", "http://localhost:8080/job/randomJobRunID", http.NoBody)
 	require.NoError(t, err, "create http request")
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()

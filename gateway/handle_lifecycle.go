@@ -136,6 +136,10 @@ func (gw *Handle) Setup(
 		gw.eventSchemaHandler = event_schema.GetInstance()
 	}
 
+	for _, opt := range opts {
+		opt(gw)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 	gw.backgroundCancel = cancel
@@ -163,9 +167,6 @@ func (gw *Handle) Setup(
 		gw.collectMetrics(ctx)
 		return nil
 	}))
-	for _, opt := range opts {
-		opt(gw)
-	}
 	return nil
 }
 

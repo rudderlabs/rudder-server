@@ -342,7 +342,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
-				"/drainConfig": drainConfigManager.DrainConfigHttpHandler(),
+				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
 		),
 	)

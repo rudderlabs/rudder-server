@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/samber/lo"
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -17,10 +16,10 @@ import (
 )
 
 const (
-	defaultPollFrequency      = 5
+	defaultPollFrequency      = 10
 	defaultPollFrequencyUnits = time.Second
 
-	defaultCleanupFrequency      = 24
+	defaultCleanupFrequency      = 1
 	defaultCleanupFrequencyUnits = time.Hour
 
 	defaultMaxAge      = 24
@@ -39,7 +38,7 @@ type drainConfigManager struct {
 }
 
 func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
-	db, err := setupDBConn(misc.GetConnectionString(conf))
+	db, err := setupDBConn(conf)
 	if err != nil {
 		log.Errorw("db setup", "error", err)
 		return nil, fmt.Errorf("db setup: %v", err)
@@ -57,12 +56,11 @@ func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfig
 
 func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 	for {
-		maxAgeInMinutes := d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits) / time.Minute
 		if _, err := d.db.ExecContext(
 			ctx,
-			"DELETE FROM drain_config WHERE created_at < NOW() - $1 * interval '1 MIN'",
-			maxAgeInMinutes,
-		); err != nil {
+			"DELETE FROM drain_config WHERE created_at < $1",
+			time.Now().Add(-d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
+		); err != nil && ctx.Err() == nil {
 			d.log.Errorw("db cleanup", "error", err)
 			return fmt.Errorf("db cleanup: %v", err)
 		}
@@ -74,7 +72,7 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 				defaultCleanupFrequencyUnits,
 			),
 		); err != nil {
-			return err
+			return nil
 		}
 	}
 }
@@ -86,38 +84,44 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		// holds the config values fetched from the db
 		dbConfigMap := make(map[string][]string)
 
-		// fetch the config values from the db
-		rows, err := d.db.QueryContext(
-			ctx, "SELECT id, created_at, value FROM drain_config where key=$1 order by id asc",
-			jobRunID,
-		)
-		if err != nil {
-			d.log.Errorw("db query", "error", err)
-			return fmt.Errorf("db query: %v", err)
-		}
-		for rows.Next() {
-			var (
-				id        int64
-				value     string
-				createdAt time.Time
+		collectFromDB := func() error {
+			// fetch the config values from the db
+			rows, err := d.db.QueryContext(
+				ctx, "SELECT key, value FROM drain_config where key = ANY($1) and created_at > $2 ORDER BY key, value ASC",
+				pq.Array([]string{jobRunID}),
+				time.Now().Add(-1*d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
 			)
-			if err := rows.Scan(&id, &createdAt, &value); err != nil {
-				d.log.Errorw("db scan", "error", err)
-				return fmt.Errorf("db scan: %v", err)
+			if err != nil {
+				d.log.Errorw("db query", "error", err)
+				return fmt.Errorf("db query: %v", err)
 			}
+			for rows.Next() {
+				var (
+					key   string
+					value string
+				)
+				if err := rows.Scan(&key, &value); err != nil {
+					d.log.Errorw("db scan", "error", err)
+					return fmt.Errorf("db scan: %v", err)
+				}
 
-			if value == "" || time.Since(createdAt) > defaultMaxAge*defaultMaxAgeUnits {
-				continue
+				if value == "" {
+					continue
+				}
+				dbConfigMap[key] = append(dbConfigMap[key], value)
 			}
-			dbConfigMap[jobRunID] = append(dbConfigMap[jobRunID], separateAndTrim(value)...)
+			if err := rows.Err(); err != nil {
+				d.log.Errorw("db rows", "error", err)
+				return fmt.Errorf("db rows: %v", err)
+			}
+			if err := rows.Close(); err != nil {
+				d.log.Errorw("db rows close", "error", err)
+				return fmt.Errorf("db rows close: %v", err)
+			}
+			return nil
 		}
-		if err := rows.Err(); err != nil {
-			d.log.Errorw("db rows", "error", err)
-			return fmt.Errorf("db rows: %v", err)
-		}
-		if err := rows.Close(); err != nil {
-			d.log.Errorw("db rows close", "error", err)
-			return fmt.Errorf("db rows close: %v", err)
+		if err := collectFromDB(); err != nil && ctx.Err() == nil {
+			return err
 		}
 
 		// compare config values, if different set the config
@@ -138,7 +142,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 				defaultPollFrequencyUnits,
 			),
 		); err != nil {
-			return err
+			return nil
 		}
 	}
 }
@@ -154,7 +158,13 @@ func migrate(db *sql.DB) error {
 }
 
 // setupDBConn sets up the database connection
-func setupDBConn(psqlInfo string) (*sql.DB, error) {
+func setupDBConn(conf *config.Config) (*sql.DB, error) {
+	var psqlInfo string
+	if conf.IsSet("SharedDB.dsn") {
+		psqlInfo = conf.GetString("SharedDB.dsn", "")
+	} else {
+		psqlInfo = misc.GetConnectionString(conf)
+	}
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return nil, fmt.Errorf("db open: %v", err)
@@ -163,17 +173,4 @@ func setupDBConn(psqlInfo string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db ping: %v", err)
 	}
 	return db, nil
-}
-
-// separateAndTrim splits the string by comma and trims the values
-//
-// returns slice of non empty strings
-func separateAndTrim(s string) []string {
-	return lo.FilterMap(
-		strings.Split(s, ","),
-		func(val string, _ int) (string, bool) {
-			trimmed := strings.TrimSpace(val)
-			return trimmed, trimmed != ""
-		},
-	)
 }

@@ -134,6 +134,12 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.DrainConfigRoutine(ctx)
+	}))
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.CleanupRoutine(ctx)
+	}))
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
@@ -141,7 +147,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
-				"/drain-config": drainConfigManager.DrainConfigHttpHandler(),
+				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
 		),
 	)
