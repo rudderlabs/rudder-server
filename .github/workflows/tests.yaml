@@ -76,7 +76,7 @@ jobs:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: make test-warehouse package=./${{ matrix.package }}/...
+        run: make test-warehouse package=${{ matrix.package }}
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
@@ -123,8 +123,13 @@ jobs:
           - regulation-worker
           - router
           - services
+          - services/rsources
           - suppression-backup-service
           - warehouse
+        include:
+          - package: services
+            exclude: services/rsources
+          
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
@@ -143,7 +148,7 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-        run: make test package=./${{ matrix.package }}/...
+        run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
