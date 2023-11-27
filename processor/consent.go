@@ -130,7 +130,11 @@ func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
 }
 
 func GetKetchConsentCategories(dest *backendconfig.DestinationT) []string {
-	consentPurposes, _ := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]interface{})
+	consentPurposes, ok := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]interface{})
+	if !ok {
+		// Handle the case where ketchConsentPurposes is not a slice
+		return nil
+	}
 	if len(consentPurposes) == 0 {
 		return nil
 	}
