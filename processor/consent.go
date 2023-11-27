@@ -196,7 +196,6 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 
 	return genericConsentManagementData
 }
-}
 
 func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo {
 	consentManagementInfo := ConsentManagementInfo{}
