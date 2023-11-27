@@ -51,7 +51,7 @@ var _ = Describe("Using sources handler", func() {
 			Out:    4,
 			Failed: 6,
 		}
-		BeforeAll(func() {
+		BeforeEach(func() {
 			var err error
 			pool, err = dockertest.NewPool("")
 			Expect(err).NotTo(HaveOccurred())
@@ -65,7 +65,7 @@ var _ = Describe("Using sources handler", func() {
 			sh = createService(config)
 		})
 
-		AfterAll(func() {
+		AfterEach(func() {
 			purgeResources(pool, resource.resource)
 		})
 
@@ -655,7 +655,7 @@ var _ = Describe("Using sources handler", func() {
 			serviceA, serviceB JobService
 		)
 
-		BeforeAll(func() {
+		BeforeEach(func() {
 			var err error
 			pool, err = dockertest.NewPool("")
 			Expect(err).NotTo(HaveOccurred())
@@ -700,7 +700,7 @@ var _ = Describe("Using sources handler", func() {
 			serviceB = createService(configB)
 		})
 
-		AfterAll(func() {
+		AfterEach(func() {
 			purgeResources(pool, pgA.resource, pgB.resource, pgC.resource)
 			if network != nil {
 				_ = pool.Client.RemoveNetwork(network.ID)
@@ -888,7 +888,7 @@ var _ = Describe("Using sources handler", func() {
 			serviceA JobService
 		)
 
-		BeforeAll(func() {
+		BeforeEach(func() {
 			var err error
 			pool, err = dockertest.NewPool("")
 			Expect(err).NotTo(HaveOccurred())
@@ -918,7 +918,7 @@ var _ = Describe("Using sources handler", func() {
 			serviceA = createService(configA)
 		})
 
-		AfterAll(func() {
+		AfterEach(func() {
 			purgeResources(pool, pgA.resource, pgB.resource)
 			if network != nil {
 				_ = pool.Client.RemoveNetwork(network.ID)
