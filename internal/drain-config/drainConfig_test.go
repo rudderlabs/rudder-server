@@ -46,7 +46,7 @@ func TestDrainConfigRoutine(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return slices.Equal(nil, conf.GetStringSlice("drain.jobRunIDs", nil))
 	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
-	require.Nil(t, conf.GetStringSlice("drain.jobRunIDs", nil))
+	require.Equal(t, []string{}, conf.GetStringSlice("drain.jobRunIDs", nil))
 
 	conf.Set("RSources.toAbortJobRunIDs", "abc def ghi")
 	require.Eventually(t, func() bool {

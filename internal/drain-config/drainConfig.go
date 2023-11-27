@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -72,21 +73,19 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 			d.log.Errorw("db cleanup", "error", err)
 			return fmt.Errorf("db cleanup: %v", err)
 		}
-		if err := misc.SleepCtx(
-			ctx,
+
+		select {
+		case <-d.doneChan:
+			return nil
+		case <-ctx.Done():
+			return nil
+		case <-time.After(
 			d.conf.GetDuration(
 				"drainConfig.cleanupFrequency",
 				defaultCleanupFrequency,
 				defaultCleanupFrequencyUnits,
 			),
-		); err != nil {
-			return nil
-		}
-
-		select {
-		case <-d.doneChan:
-			return nil
-		default:
+		):
 		}
 	}
 }
@@ -128,7 +127,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 			}
 			if err := rows.Err(); err != nil {
 				d.log.Errorw("db rows", "error", err)
-				return fmt.Errorf("db rows: %v", err)
+				return fmt.Errorf("db rows.Err: %v", err)
 			}
 			if err := rows.Close(); err != nil {
 				d.log.Errorw("db rows close", "error", err)
@@ -137,34 +136,28 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 			return nil
 		}
 		if err := collectFromDB(); err != nil && ctx.Err() == nil {
-			return err
+			return fmt.Errorf("read from db: %v", err)
 		}
 
 		// compare config values, if different set the config
-		configVals := append(dbConfigMap[jobRunID], d.conf.GetStringSlice(configJobRunID, nil)...)
-		if !slices.Equal(
-			configMap[jobRunID],
-			configVals,
-		) {
+		configVals := lo.Uniq(append(dbConfigMap[jobRunID], d.conf.GetStringSlice(configJobRunID, nil)...))
+		if !slices.Equal(configMap[jobRunID], configVals) {
 			configMap[jobRunID] = configVals
 			d.conf.Set(jobRunID, configVals)
-		}
-
-		if err := misc.SleepCtx(
-			ctx,
-			d.conf.GetDuration(
-				"drainConfig.pollFrequency",
-				defaultPollFrequency,
-				defaultPollFrequencyUnits,
-			),
-		); err != nil {
-			return nil
 		}
 
 		select {
 		case <-d.doneChan:
 			return nil
-		default:
+		case <-ctx.Done():
+			return nil
+		case <-time.After(
+			d.conf.GetDuration(
+				"drainConfig.pollFrequency",
+				defaultPollFrequency,
+				defaultPollFrequencyUnits,
+			),
+		):
 		}
 	}
 }
