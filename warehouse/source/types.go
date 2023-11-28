@@ -31,7 +31,7 @@ type CustomTime struct {
 	time.Time
 }
 
-const ctLayout = "01-02-2006 15:04:05"
+const CustomTimeLayout = "01-02-2006 15:04:05"
 
 func (ct *CustomTime) UnmarshalJSON(b []byte) (err error) {
 	s := strings.Trim(string(b), "\"")
@@ -39,7 +39,7 @@ func (ct *CustomTime) UnmarshalJSON(b []byte) (err error) {
 		ct.Time = time.Time{}
 		return
 	}
-	ct.Time, err = time.Parse(ctLayout, s)
+	ct.Time, err = time.Parse(CustomTimeLayout, s)
 	return
 }
 
@@ -47,7 +47,7 @@ func (ct *CustomTime) MarshalJSON() ([]byte, error) {
 	if ct.Time.IsZero() {
 		return []byte("null"), nil
 	}
-	return []byte(fmt.Sprintf("\"%s\"", ct.Time.Format(ctLayout))), nil
+	return []byte(fmt.Sprintf("\"%s\"", ct.Time.Format(CustomTimeLayout))), nil
 }
 
 type insertJobResponse struct {
