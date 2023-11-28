@@ -316,26 +316,22 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			DELETE FROM
 				%[1]q.%[2]q
 			WHERE
-				context_sources_job_run_id <> '%[3]s' AND
-				context_sources_task_run_id <> '%[4]s' AND
-				context_source_id = '%[5]s' AND
-				received_at < $1;`,
+				context_sources_job_run_id <> $1 AND
+				context_sources_task_run_id <> $2 AND
+				context_source_id = $3 AND
+				received_at < $4;`,
 			sf.Namespace,
 			tb,
-			params.JobRunId,
-			params.TaskRunId,
-			params.SourceId,
 		)
-		stmt, err := sf.DB.PrepareContext(ctx, sqlStatement)
-		if err != nil {
-			log.Errorw("Cannot prepare statement for deleting rows in snowflake table", lf.Error, err.Error())
-			return err
-		}
-		defer func() { _ = stmt.Close() }()
 		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
 
 		if sf.config.enableDeleteByJobs {
-			_, err := stmt.ExecContext(ctx, params.StartTime)
+			_, err := sf.DB.ExecContext(ctx,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime,
+			)
 			if err != nil {
 				log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
 				return err

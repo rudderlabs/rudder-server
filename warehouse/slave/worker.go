@@ -490,7 +490,7 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequ
 			SourceId:  sourceJob.SourceID,
 			TaskRunId: metadata.TaskRunId,
 			JobRunId:  metadata.JobRunId,
-			StartTime: metadata.StartTime,
+			StartTime: metadata.StartTime.Time,
 		})
 	default:
 		err = errors.New("invalid sourceJob type")
