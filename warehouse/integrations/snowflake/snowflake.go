@@ -319,7 +319,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 				context_sources_job_run_id <> $1 AND
 				context_sources_task_run_id <> $2 AND
 				context_source_id = $3 AND
-				received_at < $4;`,
+				received_at < TO_TIMESTAMP($4,'MM-DD-YYYY HH:MI:SS');`,
 			sf.Namespace,
 			tb,
 		)
