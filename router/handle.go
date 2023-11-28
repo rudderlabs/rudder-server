@@ -227,7 +227,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			firstJob = job
 		}
 		lastJob = job
-		slot, err := rt.findWorkerSlot(workers, job, blockedOrderKeys)
+		slot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
 		if err == nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -305,17 +305,8 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
 		}
-		errorCode, err := strconv.Atoi(workerJobStatus.status.ErrorCode)
-		if err != nil {
-			errorCode = 200
-		}
-		if rt.throttlerFactory != nil {
-			rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
-		} else {
-			rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
-				rt.destType, parameters.DestinationID,
-			)
-		}
+		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
+		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
@@ -493,7 +484,7 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 	return params
 }
 
-func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
@@ -522,7 +513,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		if rt.shouldBackoff(job) {
 			return nil, types.ErrJobBackoff
 		}
-		if rt.shouldThrottle(job, parameters) {
+		if rt.shouldThrottle(ctx, job, parameters) {
 			return nil, types.ErrDestinationThrottled
 		}
 
@@ -563,7 +554,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if rt.shouldThrottle(job, parameters) {
+	if rt.shouldThrottle(ctx, job, parameters) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -577,7 +568,7 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
@@ -590,7 +581,7 @@ func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobPar
 	throttler := rt.throttlerFactory.Get(rt.destType, parameters.DestinationID)
 	throttlingCost := rt.getThrottlingCost(job)
 
-	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(ctx, parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		rt.throttlingErrorStat.Count(1)

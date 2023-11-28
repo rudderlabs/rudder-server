@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -45,9 +46,11 @@ func (rt *Handle) Setup(
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
+	throttlerFactory throttler.Factory,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
+	rt.throttlerFactory = throttlerFactory
 
 	destType := destinationDefinition.Name
 	rt.logger = log.Child(destType)
@@ -348,9 +351,7 @@ func (rt *Handle) Shutdown() {
 	rt.backgroundCancel()
 
 	<-rt.startEnded // wait for all workers to stop first
-	if rt.throttlerFactory != nil {
-		rt.throttlerFactory.Shutdown()
-	}
+	rt.throttlerFactory.Shutdown()
 	close(rt.responseQ) // now it is safe to close the response channel
 	_ = rt.backgroundWait()
 }

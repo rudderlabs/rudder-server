@@ -11,9 +11,9 @@ import (
 
 type timer struct {
 	frequency    time.Duration
-	limitReached bool
+	limitReached bool // set when a 429 is received
 	mu           sync.Mutex
-	limitSet     bool
+	limitSet     bool // set when the limit is set by the timer
 	cancel       context.CancelFunc
 }
 
@@ -64,7 +64,7 @@ func (a *Adaptive) ResponseCodeReceived(code int) {
 	}
 }
 
-func (a *Adaptive) ShutDown() {
+func (a *Adaptive) Shutdown() {
 	a.shortTimer.cancel()
 	a.longTimer.cancel()
 }

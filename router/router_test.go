@@ -33,6 +33,7 @@ import (
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -225,23 +226,23 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = false
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 		})
@@ -250,23 +251,23 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, map[string]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 
-			slot, err = r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 		})
@@ -275,7 +276,7 @@ func TestBackoff(t *testing.T) {
 			defer func() { r.backgroundCtx = context.Background() }()
 			r.backgroundCtx, r.backgroundCancel = context.WithCancel(context.Background())
 			r.backgroundCancel()
-			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrContextCancelled)
 		})
@@ -290,7 +291,7 @@ func TestBackoff(t *testing.T) {
 					RetryTime:  time.Now().Add(1 * time.Hour),
 				},
 			}
-			slot, err := r.findWorkerSlot(workers, invalidJob, map[string]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, invalidJob, map[string]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrParamsUnmarshal)
 		})
@@ -305,7 +306,7 @@ func TestBackoff(t *testing.T) {
 					RetryTime:  time.Now().Add(1 * time.Hour),
 				},
 			}
-			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{jobOrderKey(job.UserID, "destination"): {}})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, map[string]struct{}{jobOrderKey(job.UserID, "destination"): {}})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
@@ -337,7 +338,7 @@ var _ = Describe("router", func() {
 				Reporting: &reporting.NOOP{},
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 		})
 	})
 
@@ -354,7 +355,7 @@ var _ = Describe("router", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -445,7 +446,7 @@ var _ = Describe("router", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
@@ -532,7 +533,7 @@ var _ = Describe("router", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
 
@@ -610,7 +611,7 @@ var _ = Describe("router", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
 
@@ -689,7 +690,7 @@ var _ = Describe("router", func() {
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.netHandle = mockNetHandle
 
 			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.retryTimeWindow.Load())
@@ -790,7 +791,7 @@ var _ = Describe("router", func() {
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.netHandle = mockNetHandle
 
 			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.sourcesRetryTimeWindow.Load())
@@ -887,7 +888,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
@@ -1018,7 +1019,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
@@ -1117,7 +1118,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
 			router.transformer = mockTransformer
 
@@ -1262,7 +1263,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
 			// we have a job that has failed once(toRetryJobsList), it should abort when picked up next
 			// Because we only allow one failure per job with this
@@ -1439,7 +1440,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
@@ -1649,7 +1650,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
@@ -1817,7 +1818,7 @@ var _ = Describe("router", func() {
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 

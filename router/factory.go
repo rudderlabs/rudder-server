@@ -28,9 +28,8 @@ type Factory struct {
 
 func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 	r := &Handle{
-		Reporting:        f.Reporting,
-		throttlerFactory: f.ThrottlerFactory,
-		adaptiveLimit:    f.AdaptiveLimit,
+		Reporting:     f.Reporting,
+		adaptiveLimit: f.AdaptiveLimit,
 	}
 	r.Setup(
 		destination.DestinationDefinition,
@@ -42,6 +41,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		f.TransientSources,
 		f.RsourcesService,
 		f.Debugger,
+		f.ThrottlerFactory,
 	)
 	return r
 }

@@ -12,9 +12,9 @@ const (
 )
 
 type Throttler interface {
-	CheckLimitReached(key string, cost int64) (limited bool, retErr error)
+	CheckLimitReached(ctx context.Context, key string, cost int64) (limited bool, retErr error)
 	ResponseCodeReceived(code int)
-	ShutDown()
+	Shutdown()
 	getLimit() int64
 }
 
