@@ -39,7 +39,12 @@ Supports legacy and generic consent management.
 */
 func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
 	// If the event does not have denied consent IDs, do not filter any destinations
-	consentManagementInfo := GetConsentManagementInfo(event)
+	consentManagementInfo, err := GetConsentManagementInfo(event)
+	if err != nil {
+		// Log the error for debugging purposes
+		proc.logger.Error(err)
+	}
+
 	if len(consentManagementInfo.DeniedConsentIds) == 0 {
 		return destinations
 	}
@@ -155,25 +160,23 @@ func GetKetchConsentCategories(dest *backendconfig.DestinationT) []string {
 	})
 }
 
-func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[string]GenericConsentManagementProviderData {
+func GetGenericConsentManagementData(dest *backendconfig.DestinationT) (map[string]GenericConsentManagementProviderData, error) {
 	genericConsentManagementData := make(map[string]GenericConsentManagementProviderData)
 
 	if _, ok := dest.Config["consentManagement"]; !ok {
-		return genericConsentManagementData
+		return genericConsentManagementData, nil
 	}
 
 	consentManagementConfigBytes, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
 	if mErr != nil {
-		// Log the marshalling error for debugging purposes
-		fmt.Errorf("Error marshalling consentManagementConfig: %v", mErr)
-		return genericConsentManagementData
+		return genericConsentManagementData, fmt.Errorf("error marshalling consentManagement: %v for destination ID: %s", mErr, dest.ID)
 	}
 
 	consentManagementConfig := make([]GenericConsentManagementProviderConfig, 0)
-	err := jsonfast.Unmarshal(consentManagementConfigBytes, &consentManagementConfig)
+	unmErr := jsonfast.Unmarshal(consentManagementConfigBytes, &consentManagementConfig)
 
-	if err != nil || len(consentManagementConfig) == 0 {
-		return genericConsentManagementData
+	if unmErr != nil {
+		return genericConsentManagementData, fmt.Errorf("error unmarshalling consentManagementConfig: %v for destination ID: %s", unmErr, dest.ID)
 	}
 
 	for _, providerConfig := range consentManagementConfig {
@@ -196,22 +199,20 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) map[strin
 		}
 	}
 
-	return genericConsentManagementData
+	return genericConsentManagementData, nil
 }
 
-func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo {
+func GetConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
 		consentManagementObjBytes, mErr := jsonfast.Marshal(consentManagement)
 		if mErr != nil {
-			return consentManagementInfo
+			return consentManagementInfo, fmt.Errorf("error marshalling consentManagement: %v", mErr)
 		}
 
-		err := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
-		if err != nil {
-			// Log the unmarshalling error for debugging purposes
-			fmt.Errorf("Error unmarshalling consentManagementInfo: %v", err)
-			return consentManagementInfo
+		unmErr := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
+		if unmErr != nil {
+			return consentManagementInfo, fmt.Errorf("error unmarshalling consentManagementInfo: %v", unmErr)
 		}
 
 		filterPredicate := func(consent string, _ int) (string, bool) {
@@ -222,5 +223,5 @@ func GetConsentManagementInfo(event types.SingularEventT) ConsentManagementInfo 
 		consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, filterPredicate)
 	}
 
-	return consentManagementInfo
+	return consentManagementInfo, nil
 }

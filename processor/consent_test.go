@@ -5,6 +5,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/stretchr/testify/require"
@@ -709,11 +710,12 @@ func TestFilterDestinations(t *testing.T) {
 			proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
 			proc.config.destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
+			proc.logger = logger.NewLogger().Child("processor")
 
 			for _, dest := range tc.destinations {
 				proc.config.oneTrustConsentCategoriesMap[dest.ID] = GetOneTrustConsentCategories(&dest)
 				proc.config.ketchConsentCategoriesMap[dest.ID] = GetKetchConsentCategories(&dest)
-				proc.config.destGenericConsentManagementMap[dest.ID] = GetGenericConsentManagementData(&dest)
+				proc.config.destGenericConsentManagementMap[dest.ID], _ = GetGenericConsentManagementData(&dest)
 			}
 
 			filteredDestinations := proc.getConsentFilteredDestinations(tc.event, tc.destinations)
@@ -950,7 +952,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			actual := GetConsentManagementInfo(testCase.input)
+			actual, _ := GetConsentManagementInfo(testCase.input)
 			require.Equal(t, testCase.expected, actual)
 		})
 	}
@@ -1132,7 +1134,7 @@ func TestGetGenericConsentManagementData(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			actual := GetGenericConsentManagementData(testCase.input)
+			actual, _ := GetGenericConsentManagementData(testCase.input)
 			require.Equal(t, testCase.expected, actual)
 		})
 	}
