@@ -326,7 +326,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
 
 		if sf.config.enableDeleteByJobs {
-			_, err := sf.DB.ExecContext(ctx,
+			_, err := sf.DB.ExecContext(ctx, sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
