@@ -99,7 +99,7 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 	metadataJson, err := json.Marshal(metadata{
 		JobRunID:  payload.JobRunID,
 		TaskRunID: payload.TaskRunID,
-		StartTime: payload.StartTime,
+		StartTime: payload.StartTime.Time,
 		JobType:   string(notifier.JobTypeAsync),
 	})
 	if err != nil {

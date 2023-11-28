@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -16,13 +18,36 @@ var (
 )
 
 type insertJobRequest struct {
-	SourceID      string    `json:"source_id"`
-	DestinationID string    `json:"destination_id"`
-	StartTime     time.Time `json:"start_time"`
-	JobRunID      string    `json:"job_run_id"`
-	TaskRunID     string    `json:"task_run_id"`
-	JobType       string    `json:"async_job_type"`
-	WorkspaceID   string    `json:"workspace_id"`
+	SourceID      string     `json:"source_id"`
+	DestinationID string     `json:"destination_id"`
+	StartTime     CustomTime `json:"start_time"`
+	JobRunID      string     `json:"job_run_id"`
+	TaskRunID     string     `json:"task_run_id"`
+	JobType       string     `json:"async_job_type"`
+	WorkspaceID   string     `json:"workspace_id"`
+}
+
+type CustomTime struct {
+	time.Time
+}
+
+const ctLayout = "01-02-2006 15:04:05"
+
+func (ct *CustomTime) UnmarshalJSON(b []byte) (err error) {
+	s := strings.Trim(string(b), "\"")
+	if s == "null" {
+		ct.Time = time.Time{}
+		return
+	}
+	ct.Time, err = time.Parse(ctLayout, s)
+	return
+}
+
+func (ct *CustomTime) MarshalJSON() ([]byte, error) {
+	if ct.Time.IsZero() {
+		return []byte("null"), nil
+	}
+	return []byte(fmt.Sprintf("\"%s\"", ct.Time.Format(ctLayout))), nil
 }
 
 type insertJobResponse struct {
