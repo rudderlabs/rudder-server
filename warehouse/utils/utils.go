@@ -199,9 +199,32 @@ func loadConfig() {
 }
 
 type DeleteByMetaData struct {
-	JobRunId  string    `json:"job_run_id"`
-	TaskRunId string    `json:"task_run_id"`
-	StartTime time.Time `json:"start_time"`
+	JobRunId  string     `json:"job_run_id"`
+	TaskRunId string     `json:"task_run_id"`
+	StartTime CustomTime `json:"start_time"`
+}
+
+type CustomTime struct {
+	time.Time
+}
+
+const ctLayout = "01-02-2006 15:04:05"
+
+func (ct *CustomTime) UnmarshalJSON(b []byte) (err error) {
+	s := strings.Trim(string(b), "\"")
+	if s == "null" {
+		ct.Time = time.Time{}
+		return
+	}
+	ct.Time, err = time.Parse(ctLayout, s)
+	return
+}
+
+func (ct *CustomTime) MarshalJSON() ([]byte, error) {
+	if ct.Time.IsZero() {
+		return []byte("null"), nil
+	}
+	return []byte(fmt.Sprintf("\"%s\"", ct.Time.Format(ctLayout))), nil
 }
 
 type DeleteByParams struct {
