@@ -276,8 +276,6 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router.retryTimeWindow")
 	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "Router.RSources"+rt.destType+".retryTimeWindow", "Router.RSources.retryTimeWindow")
 	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")
-	rt.reloadableConfig.jobIteratorMaxQueries = config.GetReloadableIntVar(50, 1, "Router.jobIterator.maxQueries")
-	rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance = config.GetReloadableIntVar(10, 1, "Router.jobIterator.discardedPercentageTolerance")
 	rt.reloadableConfig.savePayloadOnError = config.GetReloadableBoolVar(false, "Router."+rt.destType+".savePayloadOnError", "Router.savePayloadOnError")
 	rt.reloadableConfig.transformerProxy = config.GetReloadableBoolVar(false, "Router."+rt.destType+".transformerProxy", "Router.transformerProxy")
 	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, "Router."+rt.destType+".skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf")
