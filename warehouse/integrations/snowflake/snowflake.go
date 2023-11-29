@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
@@ -316,22 +317,21 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			DELETE FROM
 				%[1]q.%[2]q
 			WHERE
-				context_sources_job_run_id <> $1 AND
-				context_sources_task_run_id <> $2 AND
-				context_source_id = $3 AND
-				received_at < TO_TIMESTAMP($4,'MM-DD-YYYY HH:MI:SS');`,
+				context_sources_job_run_id <> '%[3]s' AND
+				context_sources_task_run_id <> '%[4]s' AND
+				context_source_id = '%[5]s' AND
+				received_at < TO_TIMESTAMP('%[6]s','MM-DD-YYYY HH:MI:SS');`,
 			sf.Namespace,
 			tb,
+			params.JobRunId,
+			params.TaskRunId,
+			params.SourceId,
+			params.StartTime.Format(source.CustomTimeLayout),
 		)
 		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
 
 		if sf.config.enableDeleteByJobs {
-			_, err := sf.DB.ExecContext(ctx, sqlStatement,
-				params.JobRunId,
-				params.TaskRunId,
-				params.SourceId,
-				params.StartTime,
-			)
+			_, err := sf.DB.ExecContext(ctx, sqlStatement)
 			if err != nil {
 				log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
 				return err
