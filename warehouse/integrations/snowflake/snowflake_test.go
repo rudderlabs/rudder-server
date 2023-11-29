@@ -1109,18 +1109,39 @@ func TestSnowflake_DeleteBy(t *testing.T) {
 	sf.DB = sqlquerywrapper.New(db)
 	sf.Namespace = namespace
 
+	now := time.Now()
+
 	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
 	require.NoError(t, err)
 
 	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
 	require.NoError(t, err)
 
-	t.Logf("deleted by")
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
+	require.NoError(t, err)
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
+	require.NoError(t, err)
+
 	err = sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
-		SourceId:  "test_source_id",
-		JobRunId:  "",
-		TaskRunId: "",
-		StartTime: time.Now().Add(-time.Hour),
+		SourceId:  "source_id_1",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
 	})
 	require.NoError(t, err)
+
+	rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err)
+
+	fmt.Println(namespace)
+	var recordIDs []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err)
+
+		recordIDs = append(recordIDs, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{1}, recordIDs)
 }

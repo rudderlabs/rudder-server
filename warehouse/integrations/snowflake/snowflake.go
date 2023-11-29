@@ -314,15 +314,13 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			lf.DestinationID, sf.Warehouse.Destination.ID,
 		)
 		log.Infow("Cleaning up the following tables in snowflake")
-		sqlStatement := fmt.Sprintf(`
-			DELETE FROM "` + sf.Namespace + `"."` + tb + `"
-			WHERE
-				context_sources_job_run_id <> $1 AND
-				context_sources_task_run_id <> $2 AND
-				context_source_id = $3 AND
-				received_at < $4`,
-		)
-		_, err := sf.DB.ExecContext(ctx, sqlStatement,
+		_, err := sf.DB.ExecContext(ctx,
+			`DELETE FROM "`+sf.Namespace+`"."`+tb+`"
+		WHERE
+			context_sources_job_run_id <> ? AND
+			context_sources_task_run_id <> ? AND
+			context_source_id = ? AND
+			received_at < ?`,
 			params.JobRunId,
 			params.TaskRunId,
 			params.SourceId,
