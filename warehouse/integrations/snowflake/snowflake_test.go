@@ -1057,7 +1057,6 @@ func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
 }
 
 func TestSnowflake_DeleteBy(t *testing.T) {
-
 	if !isSnowflakeTestCredentialsAvailable() {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
@@ -1112,36 +1111,75 @@ func TestSnowflake_DeleteBy(t *testing.T) {
 	now := time.Now()
 
 	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
-	require.NoError(t, err)
+	require.NoError(t, err, "should create schema")
 
 	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
-	require.NoError(t, err)
+	require.NoError(t, err, "should create table")
 
 	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
-	require.NoError(t, err)
+	require.NoError(t, err, "should insert records")
 	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
-	require.NoError(t, err)
+	require.NoError(t, err, "should insert records")
 
-	err = sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
 		SourceId:  "source_id_1",
 		JobRunId:  "new_job_run_id",
 		TaskRunId: "new_task_job_run_id",
 		StartTime: now,
-	})
-	require.NoError(t, err)
+	}), "should delete records")
 
 	rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
-	require.NoError(t, err)
+	require.NoError(t, err, "should see a successful query for ids")
 
-	fmt.Println(namespace)
 	var recordIDs []int
 	for rows.Next() {
 		var id int
 		err := rows.Scan(&id)
-		require.NoError(t, err)
+		require.NoError(t, err, "should scan rows")
 
 		recordIDs = append(recordIDs, id)
 	}
 	require.NoError(t, rows.Err())
-	require.Equal(t, []int{1}, recordIDs)
+	require.Equal(t, []int{2}, recordIDs, "got the correct set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: time.Time{},
+	}), "delete should succeed even if start time is zero value - no records must be deleted")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+
+	var ids1 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids1 = append(ids1, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{2}, ids1, "got the same set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
+	}), "should delete records")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+	var ids2 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids2 = append(ids2, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Empty(t, ids2, "no more rows left")
 }

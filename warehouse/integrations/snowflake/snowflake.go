@@ -327,7 +327,6 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			params.StartTime,
 		)
 		if err != nil {
-			// TODO:
 			log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
 			return err
 		}
