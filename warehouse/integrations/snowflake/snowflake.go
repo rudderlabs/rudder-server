@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
@@ -306,36 +305,33 @@ func (sf *Snowflake) authString() string {
 }
 
 func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
+	if !sf.config.enableDeleteByJobs {
+		return nil
+	}
 	for _, tb := range tableNames {
 		log := sf.logger.With(
 			lf.TableName, tb,
 			lf.DestinationID, sf.Warehouse.Destination.ID,
 		)
 		log.Infow("Cleaning up the following tables in snowflake")
-
 		sqlStatement := fmt.Sprintf(`
-			DELETE FROM
-				%[1]q.%[2]q
+			DELETE FROM "` + sf.Namespace + `"."` + tb + `"
 			WHERE
-				context_sources_job_run_id <> '%[3]s' AND
-				context_sources_task_run_id <> '%[4]s' AND
-				context_source_id = '%[5]s' AND
-				received_at < TO_TIMESTAMP('%[6]s','MM-DD-YYYY HH:MI:SS');`,
-			sf.Namespace,
-			tb,
+				context_sources_job_run_id <> $1 AND
+				context_sources_task_run_id <> $2 AND
+				context_source_id = $3 AND
+				received_at < $4`,
+		)
+		_, err := sf.DB.ExecContext(ctx, sqlStatement,
 			params.JobRunId,
 			params.TaskRunId,
 			params.SourceId,
-			params.StartTime.Format(source.CustomTimeLayout),
+			params.StartTime,
 		)
-		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
-
-		if sf.config.enableDeleteByJobs {
-			_, err := sf.DB.ExecContext(ctx, sqlStatement)
-			if err != nil {
-				log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
-				return err
-			}
+		if err != nil {
+			// TODO:
+			log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
+			return err
 		}
 	}
 	return nil
