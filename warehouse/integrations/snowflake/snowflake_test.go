@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -1053,4 +1054,73 @@ func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	return db
+}
+
+func TestSnowflake_DeleteBy(t *testing.T) {
+
+	if !isSnowflakeTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+	}
+	if !isSnowflakeTestRBACCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testRBACKey)
+	}
+
+	namespace := testhelper.RandSchema(whutils.SNOWFLAKE)
+
+	ctx := context.Background()
+
+	credentials, err := getSnowflakeTestCredentials(testKey)
+	require.NoError(t, err)
+
+	urlConfig := sfdb.Config{
+		Account:   credentials.Account,
+		User:      credentials.User,
+		Role:      credentials.Role,
+		Password:  credentials.Password,
+		Database:  credentials.Database,
+		Warehouse: credentials.Warehouse,
+	}
+
+	dsn, err := sfdb.DSN(&urlConfig)
+	require.NoError(t, err)
+
+	db := getSnowflakeDB(t, dsn)
+	require.NoError(t, db.Ping())
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+				t.Logf("error deleting schema: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	config := config.New()
+	config.Set("Warehouse.snowflake.enableDeleteByJobs", true)
+
+	sf, err := snowflake.New(config, logger.NOP, memstats.New())
+	require.NoError(t, err)
+
+	sf.DB = sqlquerywrapper.New(db)
+	sf.Namespace = namespace
+
+	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
+	require.NoError(t, err)
+
+	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
+	require.NoError(t, err)
+
+	t.Logf("deleted by")
+	err = sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "test_source_id",
+		JobRunId:  "",
+		TaskRunId: "",
+		StartTime: time.Now().Add(-time.Hour),
+	})
+	require.NoError(t, err)
 }
