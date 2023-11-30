@@ -409,6 +409,10 @@ func (w *worker) processDestinationJobs() {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
 						errorAt = routerutils.ERROR_AT_TF
+						jobIds := lo.Map(destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT, _ int) int64 {
+							return jobMetadata.JobID
+						})
+						w.logger.Errorf("transformer response unmarshal error: %s, jobs: %v", string(destinationJob.Message), jobIds)
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
