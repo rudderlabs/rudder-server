@@ -27,6 +27,8 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -37,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/stretchr/testify/require"
 )
 
 func TestIntegration(t *testing.T) {
@@ -636,22 +637,59 @@ func TestIntegration(t *testing.T) {
 
 		mockUploader := newMockUploader(t, []warehouseutils.LoadFile{}, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-		az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
-		err := az.Setup(ctx, warehouse, mockUploader)
-		require.NoError(t, err)
+		t.Run("successful cleanup", func(t *testing.T) {
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
 
-		db, dbMock, err := sqlmock.New()
-		if err != nil {
-			t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-		}
-		defer db.Close()
+			stagingTable := warehouseutils.StagingTablePrefix(warehouseutils.AzureSynapse) + tableName
 
-		dbMock.ExpectQuery("").WillReturnError(fmt.Errorf("query error"))
+			_, err = az.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %q.%q (id int)", namespace, stagingTable))
+			require.NoError(t, err)
 
-		// TODO: Add more test cases
-		az.DB = sqlquerywrapper.New(db)
-		err = az.CrashRecover(ctx)
-		require.ErrorContains(t, err, "query error")
+			var count int
+			err = az.DB.QueryRowContext(ctx, `
+				SELECT count(*)
+				FROM information_schema.tables
+				WHERE table_schema = @schema AND table_name = @table`,
+				sql.Named("schema", namespace),
+				sql.Named("table", stagingTable),
+			).Scan(&count)
+			require.NoError(t, err)
+
+			require.Equal(t, 1, count, "staging table should be created")
+
+			err = az.CrashRecover(ctx)
+			require.NoError(t, err)
+
+			err = az.DB.QueryRowContext(ctx, `
+				SELECT count(*)
+				FROM information_schema.tables
+				WHERE table_schema = @schema AND table_name = @table`,
+				sql.Named("schema", namespace),
+				sql.Named("table", stagingTable),
+			).Scan(&count)
+			require.NoError(t, err)
+
+			require.Equal(t, 0, count, "staging table should be dropped")
+		})
+
+		t.Run("query error", func(t *testing.T) {
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			db, dbMock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+
+			dbMock.ExpectQuery("select table_name").WillReturnError(fmt.Errorf("query error"))
+
+			// TODO: Add more test cases
+			az.DB = sqlquerywrapper.New(db)
+			err = az.CrashRecover(ctx)
+			require.ErrorContains(t, err, "query error")
+		})
 	})
 }
 

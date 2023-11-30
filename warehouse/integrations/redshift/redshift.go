@@ -1336,7 +1336,12 @@ func (rs *Redshift) TestConnection(ctx context.Context, _ model.Warehouse) error
 
 func (rs *Redshift) Cleanup(ctx context.Context) {
 	if rs.DB != nil {
-		rs.dropDanglingStagingTables(ctx)
+		err := rs.dropDanglingStagingTables(ctx)
+		if err != nil {
+			rs.logger.Errorw("Error dropping dangling staging tables",
+				logfield.Error, err.Error(),
+			)
+		}
 		_ = rs.DB.Close()
 	}
 }

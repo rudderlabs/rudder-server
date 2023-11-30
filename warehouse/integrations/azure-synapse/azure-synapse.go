@@ -867,7 +867,7 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	if err := rows.Err(); err != nil {
-		panic(fmt.Errorf("iterating for dangling staging tables: %w", err))
+		return fmt.Errorf("iterating for dangling staging tables: %w", err)
 	}
 	as.logger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
@@ -954,7 +954,21 @@ func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) (*types
 func (as *AzureSynapse) Cleanup(ctx context.Context) {
 	if as.DB != nil {
 		// extra check aside dropStagingTable(table)
-		as.dropDanglingStagingTables(ctx)
+		err := as.dropDanglingStagingTables(ctx)
+		if err != nil {
+			as.logger.Warnw("Error dropping dangling staging tables",
+				logfield.DestinationID, as.Warehouse.Destination.ID,
+				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.SourceID, as.Warehouse.Source.ID,
+				logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, as.Warehouse.Destination.ID,
+				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, as.Warehouse.WorkspaceID,
+				logfield.Namespace, as.Warehouse.Namespace,
+
+				logfield.Error, err,
+			)
+		}
 		_ = as.DB.Close()
 	}
 }

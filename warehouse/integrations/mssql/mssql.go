@@ -963,7 +963,22 @@ func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) (*types.LoadTa
 func (ms *MSSQL) Cleanup(ctx context.Context) {
 	if ms.DB != nil {
 		// extra check aside dropStagingTable(table)
-		ms.dropDanglingStagingTables(ctx)
+		err := ms.dropDanglingStagingTables(ctx)
+		if err != nil {
+			ms.logger.Warnw("Error dropping dangling staging tables",
+				logfield.DestinationID, ms.Warehouse.Destination.ID,
+				logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.SourceID, ms.Warehouse.Source.ID,
+				logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, ms.Warehouse.Destination.ID,
+				logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
+				logfield.Namespace, ms.Warehouse.Namespace,
+
+				logfield.Error, err,
+			)
+		}
+
 		_ = ms.DB.Close()
 	}
 }
