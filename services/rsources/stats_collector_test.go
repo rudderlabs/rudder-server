@@ -307,9 +307,9 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 								}).
 							Times(1)
 
-						failedRecords := []json.RawMessage{}
+						failedRecords := []FailedRecord{}
 						for i := 0; i < len(jobs)/2; i++ {
-							failedRecords = append(failedRecords, []byte(`"recordId"`))
+							failedRecords = append(failedRecords, FailedRecord{Record: []byte(`"recordId"`)})
 						}
 						js.EXPECT().
 							AddFailedRecords(
