@@ -1304,7 +1304,10 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 	return nil
 }
 
-func (*Snowflake) CrashRecover(context.Context) {}
+func (*Snowflake) CrashRecover(context.Context) error {
+	// no-op: snowflake does not need crash recovery
+	return nil
+}
 
 func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (empty bool, err error) {
 	empty = true

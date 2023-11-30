@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -25,8 +26,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIntegration(t *testing.T) {
@@ -597,6 +598,60 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, testhelper.DiscardTestRecords())
 		})
+	})
+
+	t.Run("CrashRecovery", func(t *testing.T) {
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(azureSynapsePort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		tableName := "crash_recovery_test_table"
+
+		mockUploader := newMockUploader(t, []warehouseutils.LoadFile{}, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+
+		az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+		err := az.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		db, dbMock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+		}
+		defer db.Close()
+
+		dbMock.ExpectQuery("").WillReturnError(fmt.Errorf("query error"))
+
+		// TODO: Add more test cases
+		az.DB = sqlquerywrapper.New(db)
+		err = az.CrashRecover(ctx)
+		require.ErrorContains(t, err, "query error")
 	})
 }
 

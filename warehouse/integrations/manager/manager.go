@@ -27,7 +27,7 @@ import (
 
 type Manager interface {
 	Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error
-	CrashRecover(ctx context.Context)
+	CrashRecover(ctx context.Context) error
 	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
 	CreateSchema(ctx context.Context) (err error)
 	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)

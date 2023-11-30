@@ -53,7 +53,10 @@ func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader 
 	return err
 }
 
-func (*Datalake) CrashRecover(context.Context) {}
+func (*Datalake) CrashRecover(context.Context) error {
+	// no-op: datalake does not need crash recovery
+	return nil
+}
 
 func (d *Datalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
 	return d.SchemaRepository.FetchSchema(ctx, d.Warehouse)

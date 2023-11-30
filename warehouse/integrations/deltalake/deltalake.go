@@ -229,12 +229,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(ctx context.Context) {
-	d.dropDanglingStagingTables(ctx)
+func (d *Deltalake) CrashRecover(ctx context.Context) error {
+	return d.dropDanglingStagingTables(ctx)
 }
 
 // dropDanglingStagingTables drops dangling staging tables
-func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
+func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
 		d.logger.Warnw("fetching tables for dropping dangling staging tables",
@@ -246,10 +246,10 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
 			logfield.Namespace, d.Namespace,
 			logfield.Error, err.Error(),
 		)
-		return
+		return fmt.Errorf("fetching tables for dropping dangling staging tables: %w", err)
 	}
 
-	d.dropStagingTables(ctx, tableNames)
+	return d.dropStagingTables(ctx, tableNames)
 }
 
 // fetchTables fetches tables from the database
@@ -286,7 +286,7 @@ func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, er
 }
 
 // dropStagingTables drops all the staging tables
-func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) {
+func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) error {
 	for _, stagingTable := range stagingTables {
 		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
@@ -300,8 +300,10 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 				logfield.StagingTableName, stagingTable,
 				logfield.Error, err.Error(),
 			)
+			return fmt.Errorf("dropping staging table: %w", err)
 		}
 	}
+	return nil
 }
 
 // DropTable drops a table from the warehouse
