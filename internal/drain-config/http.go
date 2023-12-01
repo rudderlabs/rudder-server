@@ -15,13 +15,13 @@ func (dcm *drainConfigManager) DrainConfigHttpHandler() http.Handler {
 
 func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	jobRunID := getJobRunIDParam(r)
-	if jobRunID == "" {
+	jobRunIDVal := chi.URLParam(r, "job_run_id")
+	if jobRunIDVal == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	if err := dcm.insert(ctx, jobRunID); err != nil {
+	if err := dcm.insert(ctx, jobRunIDKey, jobRunIDVal); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -29,15 +29,12 @@ func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func getJobRunIDParam(r *http.Request) string {
-	return chi.URLParam(r, "job_run_id")
-}
-
-func (dcm *drainConfigManager) insert(ctx context.Context, jobRunID string) error {
+func (dcm *drainConfigManager) insert(ctx context.Context, key, value string) error {
 	_, err := dcm.db.ExecContext(
 		ctx,
-		"INSERT INTO drain_config (key, value) VALUES ('drain.jobRunIDs', $1)",
-		jobRunID,
+		"INSERT INTO drain_config (key, value) VALUES ($1, $2)",
+		key,
+		value,
 	)
 	if err != nil {
 		return err

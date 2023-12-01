@@ -44,14 +44,9 @@ func TestDrainConfigRoutine(t *testing.T) {
 
 	conf.Set("drain.age", "1ms")
 	require.Eventually(t, func() bool {
-		return slices.Equal(nil, conf.GetStringSlice("drain.jobRunIDs", nil))
+		return slices.Equal([]string{}, conf.GetStringSlice("drain.jobRunIDs", nil))
 	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
-	require.Equal(t, []string{}, conf.GetStringSlice("drain.jobRunIDs", nil))
-
-	conf.Set("RSources.toAbortJobRunIDs", "abc def ghi")
-	require.Eventually(t, func() bool {
-		return slices.Equal([]string{"abc", "def", "ghi"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "should eventually read from drain config table")
+	require.Nil(t, conf.GetStringSlice("drain.jobRunIDs", nil), "should've cleaned up")
 
 	drainConfigManager.Stop()
 }
@@ -79,7 +74,7 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.Code, "expected status code to be 201")
 	require.Eventually(t, func() bool {
 		return slices.Equal([]string{"randomJobRunID"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
+	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table", conf.GetStringSlice("drain.jobRunIDs", nil))
 
 	cancel()
 	drainConfigManager.Stop()

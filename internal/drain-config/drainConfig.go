@@ -9,9 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lib/pq"
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -30,8 +27,7 @@ const (
 
 	// drain configurations
 
-	jobRunID       = "drain.jobRunIDs"
-	configJobRunID = "RSources.toAbortJobRunIDs"
+	jobRunIDKey = "drain.jobRunIDs"
 )
 
 type drainConfigManager struct {
@@ -96,7 +92,9 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 	d.wg.Add(1)
 	defer d.wg.Done()
 	// map to hold the config values
-	configMap := make(map[string][]string)
+	configMap := map[string][]string{
+		jobRunIDKey: {},
+	}
 	for {
 		if d.done.Load() {
 			return nil
@@ -105,10 +103,9 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		dbConfigMap := make(map[string][]string)
 
 		collectFromDB := func() error {
-			// fetch the config values from the db
 			rows, err := d.db.QueryContext(
-				ctx, "SELECT key, value FROM drain_config where key = ANY($1) and created_at > $2 ORDER BY key, value ASC",
-				pq.Array([]string{jobRunID}),
+				ctx,
+				"SELECT key, value FROM drain_config where created_at > $1 ORDER BY key, value ASC",
 				time.Now().Add(-1*d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
 			)
 			if err != nil {
@@ -145,10 +142,11 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		}
 
 		// compare config values, if different set the config
-		configVals := lo.Uniq(append(dbConfigMap[jobRunID], d.conf.GetStringSlice(configJobRunID, nil)...))
-		if !slices.Equal(configMap[jobRunID], configVals) {
-			configMap[jobRunID] = configVals
-			d.conf.Set(jobRunID, configVals)
+		for key := range configMap {
+			if !slices.Equal(configMap[key], dbConfigMap[key]) {
+				configMap[key] = dbConfigMap[key]
+				d.conf.Set(key, dbConfigMap[key])
+			}
 		}
 
 		select {
@@ -183,11 +181,9 @@ func migrate(db *sql.DB) error {
 
 // setupDBConn sets up the database connection
 func setupDBConn(conf *config.Config) (*sql.DB, error) {
-	var psqlInfo string
+	psqlInfo := misc.GetConnectionString(conf)
 	if conf.IsSet("SharedDB.dsn") {
 		psqlInfo = conf.GetString("SharedDB.dsn", "")
-	} else {
-		psqlInfo = misc.GetConnectionString(conf)
 	}
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
