@@ -38,8 +38,8 @@ func (a *mockAdapter) getProxyURL(destType string) (string, error) {
 	return url.JoinPath(a.url, "v0", "destinations", strings.ToLower(destType), "proxy")
 }
 
-func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponseT, error) {
-	return TransResponseT{
+func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
+	return TransResponse{
 		routerJobResponseCodes:       make(map[int64]int),
 		routerJobResponseBodys:       make(map[int64]string),
 		routerJobDontBatchDirectives: make(map[int64]bool),

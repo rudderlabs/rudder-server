@@ -179,7 +179,7 @@ func TestV1Adapter(t *testing.T) {
 		}
 		resp := ProxyResponseV1{
 			Message: "test",
-			Response: []TPDestResponseT{
+			Response: []TPDestResponse{
 				{
 					StatusCode: 200,
 					Metadata: ProxyRequestMetadata{
@@ -233,7 +233,7 @@ func TestV1Adapter(t *testing.T) {
 		}
 		resp := ProxyResponseV1{
 			Message: "test",
-			Response: []TPDestResponseT{
+			Response: []TPDestResponse{
 				{
 					StatusCode: 200,
 					Metadata: ProxyRequestMetadata{

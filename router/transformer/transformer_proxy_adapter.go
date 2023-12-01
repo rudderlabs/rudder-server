@@ -20,7 +20,7 @@ import (
 type transformerProxyAdapter interface {
 	getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error)
 	getProxyURL(destType string) (string, error)
-	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponseT, error)
+	getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error)
 }
 
 type ProxyRequestPayloadV0 struct {
@@ -35,19 +35,19 @@ type ProxyResponseV0 struct {
 }
 
 type ProxyResponseV1 struct {
-	Message           string            `json:"message"`
-	Response          []TPDestResponseT `json:"response"`
-	AuthErrorCategory string            `json:"authErrorCategory"`
+	Message           string           `json:"message"`
+	Response          []TPDestResponse `json:"response"`
+	AuthErrorCategory string           `json:"authErrorCategory"`
 }
 
-type TransResponseT struct {
+type TransResponse struct {
 	routerJobResponseCodes       map[int64]int
 	routerJobResponseBodys       map[int64]string
 	routerJobDontBatchDirectives map[int64]bool
 	authErrorCategory            string
 }
 
-type TPDestResponseT struct {
+type TPDestResponse struct {
 	StatusCode int                  `json:"statusCode"`
 	Metadata   ProxyRequestMetadata `json:"metadata"`
 	Error      string               `json:"error"`
@@ -74,7 +74,7 @@ func (v0 *v0Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v0", destType)
 }
 
-func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponseT, error) {
+func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -87,7 +87,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	}
 	err := jsonfast.Unmarshal(respData, &transformerResponse)
 	if err != nil {
-		return TransResponseT{
+		return TransResponse{
 				routerJobResponseCodes:       routerJobResponseCodes,
 				routerJobResponseBodys:       routerJobResponseBodys,
 				routerJobDontBatchDirectives: routerJobDontBatchDirectives,
@@ -101,7 +101,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 		routerJobResponseBodys[m.JobID] = string(respData)
 	}
 
-	return TransResponseT{
+	return TransResponse{
 			routerJobResponseCodes:       routerJobResponseCodes,
 			routerJobResponseBodys:       routerJobResponseBodys,
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
@@ -118,7 +118,7 @@ func (v1 *v1Adapter) getProxyURL(destType string) (string, error) {
 	return getTransformerProxyURL("v1", destType)
 }
 
-func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponseT, error) {
+func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -131,7 +131,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	}
 	err := jsonfast.Unmarshal(respData, &transformerResponse)
 	if err != nil {
-		return TransResponseT{
+		return TransResponse{
 				routerJobResponseCodes:       routerJobResponseCodes,
 				routerJobResponseBodys:       routerJobResponseBodys,
 				routerJobDontBatchDirectives: routerJobDontBatchDirectives,
@@ -146,7 +146,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	sort.Slice(jobIDsInMetadata, func(i, j int) bool {
 		return jobIDsInMetadata[i] < jobIDsInMetadata[j]
 	})
-	jobIDsInResponse := lo.Map(transformerResponse.Response, func(resp TPDestResponseT, _ int) int64 {
+	jobIDsInResponse := lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
 		return resp.Metadata.JobID
 	})
 	sort.Slice(jobIDsInResponse, func(i, j int) bool {
@@ -166,7 +166,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 		routerJobDontBatchDirectives[resp.Metadata.JobID] = resp.Metadata.DontBatch
 	}
 
-	return TransResponseT{
+	return TransResponse{
 			routerJobResponseCodes:       routerJobResponseCodes,
 			routerJobResponseBodys:       routerJobResponseBodys,
 			routerJobDontBatchDirectives: routerJobDontBatchDirectives,
