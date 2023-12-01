@@ -10,58 +10,59 @@ import (
 )
 
 type timer struct {
-	frequency    time.Duration
-	limitReached bool // set when a 429 is received
-	mu           sync.Mutex
-	limitSet     bool // set when the limit is set by the timer
-	cancel       context.CancelFunc
+	frequency            time.Duration // frequency at which the timer runs and resets the tooManyRequestsCount and totalRequestsCount
+	delay                time.Duration
+	mu                   sync.Mutex
+	limitSet             bool // set when the limit is set by the timer
+	cancel               context.CancelFunc
+	tooManyRequestsCount int64
+	totalRequestsCount   int64
 }
 
 type Adaptive struct {
-	shortTimer               *timer
-	longTimer                *timer
-	decreaseLimitPercentage  *config.Reloadable[int64]
-	increaseChangePercentage *config.Reloadable[int64]
+	shortTimer             *timer
+	longTimer              *timer
+	decreaseRatePercentage *config.Reloadable[int64]
+	increaseRatePercentage *config.Reloadable[int64]
 }
 
-func New(config *config.Config) *Adaptive {
-	shortTimeFrequency := config.GetDuration("Router.throttler.adaptive.shortTimeFrequency", 5, time.Second)
-	longTimeFrequency := config.GetDuration("Router.throttler.adaptive.longTimeFrequency", 15, time.Second)
+func New(config *config.Config, destWindow time.Duration) *Adaptive {
+	increaseRateEvaluationFrequency := config.GetInt64("Router.throttler.adaptive.increaseRateEvaluationFrequency", 2)
+	decreaseRateDelay := config.GetInt64("Router.throttler.adaptive.decreaseRateDelay", 1)
 
+	shortTimerDelay := time.Duration(decreaseRateDelay) * destWindow
 	shortTimer := &timer{
-		frequency: shortTimeFrequency,
+		frequency: shortTimerDelay + destWindow,
+		delay:     shortTimerDelay,
 	}
 	longTimer := &timer{
-		frequency: longTimeFrequency,
+		frequency: time.Duration(increaseRateEvaluationFrequency) * destWindow,
 	}
 
 	go shortTimer.run()
 	go longTimer.run()
 
 	return &Adaptive{
-		shortTimer:               shortTimer,
-		longTimer:                longTimer,
-		decreaseLimitPercentage:  config.GetReloadableInt64Var(30, 1, "Router.throttler.adaptive.decreaseLimitPercentage"),
-		increaseChangePercentage: config.GetReloadableInt64Var(10, 1, "Router.throttler.adaptive.increaseLimitPercentage"),
+		shortTimer:             shortTimer,
+		longTimer:              longTimer,
+		decreaseRatePercentage: config.GetReloadableInt64Var(30, 1, "Router.throttler.adaptive.decreaseRatePercentage"),
+		increaseRatePercentage: config.GetReloadableInt64Var(10, 1, "Router.throttler.adaptive.increaseRatePercentage"),
 	}
 }
 
 func (a *Adaptive) LimitFactor() float64 {
-	if a.shortTimer.getLimitReached() && !a.shortTimer.limitSet {
-		a.shortTimer.limitSet = true
-		return float64(-a.decreaseLimitPercentage.Load()) / 100
-	} else if !a.longTimer.getLimitReached() && !a.longTimer.limitSet {
-		a.longTimer.limitSet = true
-		return float64(a.increaseChangePercentage.Load()) / 100
+	resolution := min(a.decreaseRatePercentage.Load(), a.increaseRatePercentage.Load())
+	if a.shortTimer.getLimitReached() && a.shortTimer.SetLimit(true) && a.shortTimer.tooManyRequestsCount*100 >= a.shortTimer.totalRequestsCount*resolution { // if the number of 429s in the last 1 second is greater than the resolution
+		return 1 - float64(a.decreaseRatePercentage.Load())/100
+	} else if !a.longTimer.getLimitReached() && a.longTimer.SetLimit(true) {
+		return 1 + float64(a.increaseRatePercentage.Load())/100
 	}
-	return 0.0
+	return 1.0
 }
 
 func (a *Adaptive) ResponseCodeReceived(code int) {
-	if code == http.StatusTooManyRequests {
-		a.shortTimer.updateLimitReached()
-		a.longTimer.updateLimitReached()
-	}
+	a.shortTimer.updateLimitReached(code)
+	a.longTimer.updateLimitReached(code)
 }
 
 func (a *Adaptive) Shutdown() {
@@ -78,25 +79,47 @@ func (t *timer) run() {
 			return
 		case <-time.After(t.frequency):
 			t.resetLimitReached()
+			if t.delay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(t.delay):
+					t.resetLimitReached()
+				}
+			}
 		}
 	}
 }
 
-func (t *timer) updateLimitReached() {
+func (t *timer) updateLimitReached(code int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.limitReached = true
+	if code == http.StatusTooManyRequests {
+		t.tooManyRequestsCount++
+	}
+	t.totalRequestsCount++
 }
 
 func (t *timer) getLimitReached() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.limitReached
+	return t.tooManyRequestsCount > 0
 }
 
 func (t *timer) resetLimitReached() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.limitReached = false
+	t.tooManyRequestsCount = 0
+	t.totalRequestsCount = 0
 	t.limitSet = false
+}
+
+func (t *timer) SetLimit(limitSet bool) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if limitSet == t.limitSet {
+		return false
+	}
+	t.limitSet = limitSet
+	return true
 }
