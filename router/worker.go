@@ -412,7 +412,7 @@ func (w *worker) processDestinationJobs() {
 						jobIds := lo.Map(destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT, _ int) int64 {
 							return jobMetadata.JobID
 						})
-						w.logger.Errorf("transformer response unmarshal error for message: %s, jobs: %v", string(destinationJob.Message), jobIds)
+						w.logger.Errorw("transformer response unmarshal error for message: %s, jobs: %v", "message", string(destinationJob.Message), "jobIDs", jobIds)
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
