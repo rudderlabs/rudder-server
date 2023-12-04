@@ -411,6 +411,12 @@ func (w *worker) processDestinationJobs() {
 					if err != nil {
 						errorAt = routerutils.ERROR_AT_TF
 						respStatusCode, respBody := types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+						jobIDs := lo.Map(destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT, _ int) int64 {
+							return jobMetadata.JobID
+						})
+						// limiting the log to print 10KB of transformed payload
+						truncatedMessage := misc.TruncateStr(string(destinationJob.Message), int(10*bytesize.KB))
+						w.logger.Errorw("transformer response unmarshal error", "message", truncatedMessage, "jobIDs", jobIDs)
 						respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					} else {
 						var respStatusCode int
