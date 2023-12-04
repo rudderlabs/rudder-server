@@ -12,7 +12,7 @@ import (
 
 type ConsentManagementInfo struct {
 	DeniedConsentIDs   []string `json:"deniedConsentIds"`
-	AllowedConsentIDs  []string `json:"allowedConsentIds"`
+	AllowedConsentIDs  []string `json:"allowedConsentIds"` // Not used currently but added for future use
 	Provider           string   `json:"provider"`
 	ResolutionStrategy string   `json:"resolutionStrategy"`
 }
