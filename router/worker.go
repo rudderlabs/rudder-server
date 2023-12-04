@@ -414,7 +414,8 @@ func (w *worker) processDestinationJobs() {
 						jobIds := lo.Map(destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT, _ int) int64 {
 							return jobMetadata.JobID
 						})
-						w.logger.Errorw("transformer response unmarshal error for message: %s, jobs: %v", "message", string(destinationJob.Message), "jobIDs", jobIds)
+						// limiting the log to print 10KB of transformed payload
+						w.logger.Errorw("transformer response unmarshal error for message: %s, jobs: %v", "message", string(destinationJob.Message[:10*1024]), "jobIDs", jobIds)
 						respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					} else {
 						var respStatusCode int
