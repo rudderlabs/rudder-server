@@ -782,11 +782,11 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			},
 			expected: ConsentManagementInfo{
 				Provider: "custom",
-				AllowedConsentIds: []string{
+				AllowedConsentIDs: []string{
 					"consent category 1",
 					"consent category 2",
 				},
-				DeniedConsentIds:   []string{},
+				DeniedConsentIDs:   []string{},
 				ResolutionStrategy: "",
 			},
 		},
@@ -811,11 +811,11 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			},
 			expected: ConsentManagementInfo{
 				Provider: "custom",
-				DeniedConsentIds: []string{
+				DeniedConsentIDs: []string{
 					"consent category 1",
 					"consent category 2",
 				},
-				AllowedConsentIds:  []string{},
+				AllowedConsentIDs:  []string{},
 				ResolutionStrategy: "",
 			},
 		},
@@ -937,11 +937,11 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			},
 			expected: ConsentManagementInfo{
 				Provider: "custom",
-				AllowedConsentIds: []string{
+				AllowedConsentIDs: []string{
 					"consent category 1",
 					"consent category 2",
 				},
-				DeniedConsentIds: []string{
+				DeniedConsentIDs: []string{
 					"consent category 3",
 					"consent category 4",
 				},

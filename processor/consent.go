@@ -11,8 +11,8 @@ import (
 )
 
 type ConsentManagementInfo struct {
-	DeniedConsentIds   []string `json:"deniedConsentIds"`
-	AllowedConsentIds  []string `json:"allowedConsentIds"`
+	DeniedConsentIDs   []string `json:"deniedConsentIds"`
+	AllowedConsentIDs  []string `json:"allowedConsentIds"`
 	Provider           string   `json:"provider"`
 	ResolutionStrategy string   `json:"resolutionStrategy"`
 }
@@ -45,7 +45,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 		proc.logger.Error(err)
 	}
 
-	if len(consentManagementInfo.DeniedConsentIds) == 0 {
+	if len(consentManagementInfo.DeniedConsentIDs) == 0 {
 		return destinations
 	}
 
@@ -66,11 +66,11 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 				switch finalResolutionStrategy {
 				// The user must consent to at least one of the configured consents in the destination
 				case "or":
-					return !lo.Every(consentManagementInfo.DeniedConsentIds, cmpData.Consents)
+					return !lo.Every(consentManagementInfo.DeniedConsentIDs, cmpData.Consents)
 
 				// The user must consent to all of the configured consents in the destination
 				default: // "and"
-					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIds)) == 0
+					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
 				}
 			}
 		} else {
@@ -78,12 +78,12 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 
 			// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
 			if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
-				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIds)) == 0
+				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIDs)) == 0
 			}
 
 			// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
 			if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
-				return !lo.Every(consentManagementInfo.DeniedConsentIds, ketchPurposes)
+				return !lo.Every(consentManagementInfo.DeniedConsentIDs, ketchPurposes)
 			}
 		}
 		return true
@@ -219,8 +219,8 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			return consent, consent != ""
 		}
 
-		consentManagementInfo.AllowedConsentIds = lo.FilterMap(consentManagementInfo.AllowedConsentIds, filterPredicate)
-		consentManagementInfo.DeniedConsentIds = lo.FilterMap(consentManagementInfo.DeniedConsentIds, filterPredicate)
+		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, filterPredicate)
+		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, filterPredicate)
 	}
 
 	return consentManagementInfo, nil
