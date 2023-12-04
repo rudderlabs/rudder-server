@@ -199,16 +199,16 @@ func loadConfig() {
 }
 
 type DeleteByMetaData struct {
-	JobRunId  string `json:"job_run_id"`
-	TaskRunId string `json:"task_run_id"`
-	StartTime string `json:"start_time"`
+	JobRunId  string    `json:"job_run_id"`
+	TaskRunId string    `json:"task_run_id"`
+	StartTime time.Time `json:"start_time"`
 }
 
 type DeleteByParams struct {
 	SourceId  string
 	JobRunId  string
 	TaskRunId string
-	StartTime string
+	StartTime time.Time
 }
 
 type ColumnInfo struct {

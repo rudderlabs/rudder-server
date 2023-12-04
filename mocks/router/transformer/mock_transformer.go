@@ -37,13 +37,11 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // ProxyRequest mocks base method.
-func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) (int, string, string) {
+func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(string)
-	ret2, _ := ret[2].(string)
-	return ret0, ret1, ret2
+	ret0, _ := ret[0].(transformer.ProxyRequestResponse)
+	return ret0
 }
 
 // ProxyRequest indicates an expected call of ProxyRequest.

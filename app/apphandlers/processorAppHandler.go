@@ -265,16 +265,17 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:           logger.NewLogger().Child("router"),
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         routerDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		ThrottlerFactory: throttlerFactory,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Logger:                     logger.NewLogger().Child("router"),
+		Reporting:                  reporting,
+		BackendConfig:              backendconfig.DefaultBackendConfig,
+		RouterDB:                   routerDB,
+		ProcErrorDB:                errDBForWrite,
+		TransientSources:           transientSources,
+		RsourcesService:            rsourcesService,
+		TransformerFeaturesService: transformerFeaturesService,
+		ThrottlerFactory:           throttlerFactory,
+		Debugger:                   destinationHandle,
+		AdaptiveLimit:              adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reporting,
