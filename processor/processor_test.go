@@ -4953,6 +4953,10 @@ func (*mockTransformerService) SourceTransformerVersion() string {
 	return "random-version"
 }
 
+func (*mockTransformerService) TransformerProxyVersion() string {
+	return "random-version"
+}
+
 func (*mockTransformerService) Wait() chan struct{} {
 	return make(chan struct{})
 }

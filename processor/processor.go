@@ -681,7 +681,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 		proc.logger.Info("Async init group done")
 
-		// waiting for init group
+		// waiting for transformer features
 		proc.logger.Info("Waiting for transformer features")
 		select {
 		case <-ctx.Done():
