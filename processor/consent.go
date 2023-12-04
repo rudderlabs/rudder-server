@@ -42,7 +42,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 	consentManagementInfo, err := getConsentManagementInfo(event)
 	if err != nil {
 		// Log the error for debugging purposes
-		proc.logger.Error(err)
+		proc.logger.Errorw("failed to get consent management info", "error", err.Error())
 	}
 
 	if len(consentManagementInfo.DeniedConsentIDs) == 0 {
