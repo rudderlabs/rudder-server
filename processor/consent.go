@@ -183,17 +183,17 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[stri
 		consentsConfig := providerConfig.Consents
 
 		if len(consentsConfig) > 0 && providerConfig.Provider != "" {
-			consentIds := lo.FilterMap(
+			consentIDs := lo.FilterMap(
 				consentsConfig,
 				func(consentsObj GenericConsentsConfig, _ int) (string, bool) {
 					return consentsObj.Consent, consentsObj.Consent != ""
 				},
 			)
 
-			if len(consentIds) > 0 {
+			if len(consentIDs) > 0 {
 				genericConsentManagementData[providerConfig.Provider] = GenericConsentManagementProviderData{
 					ResolutionStrategy: providerConfig.ResolutionStrategy,
-					Consents:           consentIds,
+					Consents:           consentIDs,
 				}
 			}
 		}
