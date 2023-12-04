@@ -92,9 +92,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 	d.wg.Add(1)
 	defer d.wg.Done()
 	// map to hold the config values
-	configMap := map[string][]string{
-		jobRunIDKey: {},
-	}
+	configMap := map[string][]string{}
 	for {
 		if d.done.Load() {
 			return nil
