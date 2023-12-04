@@ -73,18 +73,19 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
 				}
 			}
-		} else {
-			// Legacy consent management
+			return true
+		}
 
-			// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
-			if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
-				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIDs)) == 0
-			}
+		// Legacy consent management
 
-			// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
-			if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
-				return !lo.Every(consentManagementInfo.DeniedConsentIDs, ketchPurposes)
-			}
+		// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
+		if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
+			return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIDs)) == 0
+		}
+
+		// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
+		if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
+			return !lo.Every(consentManagementInfo.DeniedConsentIDs, ketchPurposes)
 		}
 		return true
 	})
