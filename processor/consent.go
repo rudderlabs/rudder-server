@@ -39,7 +39,7 @@ Supports legacy and generic consent management.
 */
 func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
 	// If the event does not have denied consent IDs, do not filter any destinations
-	consentManagementInfo, err := GetConsentManagementInfo(event)
+	consentManagementInfo, err := getConsentManagementInfo(event)
 	if err != nil {
 		// Log the error for debugging purposes
 		proc.logger.Error(err)
@@ -120,7 +120,7 @@ func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentMan
 	return providerData
 }
 
-func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
+func getOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
 	cookieCategories, ok := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]interface{})
 	if !ok {
 		// Handle the case where oneTrustCookieCategories is not a slice
@@ -140,7 +140,7 @@ func GetOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
 	})
 }
 
-func GetKetchConsentCategories(dest *backendconfig.DestinationT) []string {
+func getKetchConsentCategories(dest *backendconfig.DestinationT) []string {
 	consentPurposes, ok := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]interface{})
 	if !ok {
 		// Handle the case where ketchConsentPurposes is not a slice
@@ -160,7 +160,7 @@ func GetKetchConsentCategories(dest *backendconfig.DestinationT) []string {
 	})
 }
 
-func GetGenericConsentManagementData(dest *backendconfig.DestinationT) (map[string]GenericConsentManagementProviderData, error) {
+func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[string]GenericConsentManagementProviderData, error) {
 	genericConsentManagementData := make(map[string]GenericConsentManagementProviderData)
 
 	if _, ok := dest.Config["consentManagement"]; !ok {
@@ -202,7 +202,7 @@ func GetGenericConsentManagementData(dest *backendconfig.DestinationT) (map[stri
 	return genericConsentManagementData, nil
 }
 
-func GetConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
+func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
 		consentManagementObjBytes, mErr := jsonfast.Marshal(consentManagement)

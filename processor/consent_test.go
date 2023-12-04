@@ -54,7 +54,7 @@ func TestGetOneTrustConsentCategories(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			require.EqualValues(t, tc.expected, GetOneTrustConsentCategories(tc.dest))
+			require.EqualValues(t, tc.expected, getOneTrustConsentCategories(tc.dest))
 		})
 	}
 }
@@ -99,7 +99,7 @@ func TestGetKetchConsentCategories(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			require.EqualValues(t, tc.expected, GetKetchConsentCategories(tc.dest))
+			require.EqualValues(t, tc.expected, getKetchConsentCategories(tc.dest))
 		})
 	}
 }
@@ -713,9 +713,9 @@ func TestFilterDestinations(t *testing.T) {
 			proc.logger = logger.NewLogger().Child("processor")
 
 			for _, dest := range tc.destinations {
-				proc.config.oneTrustConsentCategoriesMap[dest.ID] = GetOneTrustConsentCategories(&dest)
-				proc.config.ketchConsentCategoriesMap[dest.ID] = GetKetchConsentCategories(&dest)
-				proc.config.destGenericConsentManagementMap[dest.ID], _ = GetGenericConsentManagementData(&dest)
+				proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
+				proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
+				proc.config.destGenericConsentManagementMap[dest.ID], _ = getGenericConsentManagementData(&dest)
 			}
 
 			filteredDestinations := proc.getConsentFilteredDestinations(tc.event, tc.destinations)
@@ -952,7 +952,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			actual, _ := GetConsentManagementInfo(testCase.input)
+			actual, _ := getConsentManagementInfo(testCase.input)
 			require.Equal(t, testCase.expected, actual)
 		})
 	}
@@ -1134,7 +1134,7 @@ func TestGetGenericConsentManagementData(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			actual, _ := GetGenericConsentManagementData(testCase.input)
+			actual, _ := getGenericConsentManagementData(testCase.input)
 			require.Equal(t, testCase.expected, actual)
 		})
 	}

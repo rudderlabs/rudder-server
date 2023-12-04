@@ -819,11 +819,11 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						oneTrustConsentCategoriesMap[destination.ID] = GetOneTrustConsentCategories(destination)
-						ketchConsentCategoriesMap[destination.ID] = GetKetchConsentCategories(destination)
+						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
+						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
 						var err error
-						destGenericConsentManagementMap[destination.ID], err = GetGenericConsentManagementData(destination)
+						destGenericConsentManagementMap[destination.ID], err = getGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
 						}
