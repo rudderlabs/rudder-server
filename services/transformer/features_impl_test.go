@@ -49,6 +49,20 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.SourceTransformerVersion()).To(Equal(V0))
 		})
 
+		It("before features are fetched, TransformerProxyVersion should return v0", func() {
+			handler := &featuresService{
+				features: json.RawMessage(defaultTransformerFeatures),
+				logger:   logger.NewLogger(),
+				waitChan: make(chan struct{}),
+				config: FeaturesServiceConfig{
+					PollInterval:             time.Duration(1),
+					FeaturesRetryMaxAttempts: 1,
+				},
+			}
+
+			Expect(handler.TransformerProxyVersion()).To(Equal(V0))
+		})
+
 		It("before features are fetched, defaultTransformerFeatures must be served", func() {
 			handler := &featuresService{
 				features: json.RawMessage(defaultTransformerFeatures),
@@ -92,7 +106,8 @@ var _ = Describe("Transformer features", func() {
 				  "a": true,
 				  "b": true
 				},
-				"supportSourceTransformV1": true
+				"supportSourceTransformV1": true,
+				"supportTransformerProxyV1": true
 			  }`
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +127,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("a")).To(BeTrue())
 			Expect(handler.RouterTransform("b")).To(BeTrue())
 			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
+			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 		})
 	})
 })

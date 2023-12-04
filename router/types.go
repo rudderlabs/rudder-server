@@ -25,6 +25,7 @@ type HandleDestOAuthRespParams struct {
 	trRespStCd     int
 	trRespBody     string
 	secret         json.RawMessage
+	contentType    string
 }
 
 type Diagnostic struct {
