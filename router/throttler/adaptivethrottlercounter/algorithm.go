@@ -14,7 +14,6 @@ type timer struct {
 	delay                time.Duration
 	mu                   sync.Mutex
 	limitSet             bool // set when the limit is set by the timer
-	cancel               context.CancelFunc
 	tooManyRequestsCount int64
 	totalRequestsCount   int64
 }
@@ -24,6 +23,8 @@ type Adaptive struct {
 	longTimer              *timer
 	decreaseRatePercentage *config.Reloadable[int64]
 	increaseRatePercentage *config.Reloadable[int64]
+	cancel                 context.CancelFunc
+	wg                     *sync.WaitGroup
 }
 
 func New(config *config.Config, destWindow time.Duration) *Adaptive {
@@ -39,14 +40,21 @@ func New(config *config.Config, destWindow time.Duration) *Adaptive {
 		frequency: time.Duration(increaseRateEvaluationFrequency) * destWindow,
 	}
 
-	go shortTimer.run()
-	go longTimer.run()
+	var wg sync.WaitGroup
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go shortTimer.run(&wg, ctx)
+	wg.Add(1)
+	go longTimer.run(&wg, ctx)
+	wg.Add(1)
 
 	return &Adaptive{
 		shortTimer:             shortTimer,
 		longTimer:              longTimer,
 		decreaseRatePercentage: config.GetReloadableInt64Var(30, 1, "Router.throttler.adaptive.decreaseRatePercentage"),
 		increaseRatePercentage: config.GetReloadableInt64Var(10, 1, "Router.throttler.adaptive.increaseRatePercentage"),
+		cancel:                 cancel,
+		wg:                     &wg,
 	}
 }
 
@@ -66,13 +74,12 @@ func (a *Adaptive) ResponseCodeReceived(code int) {
 }
 
 func (a *Adaptive) Shutdown() {
-	a.shortTimer.cancel()
-	a.longTimer.cancel()
+	a.cancel()
+	a.wg.Wait()
 }
 
-func (t *timer) run() {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.cancel = cancel
+func (t *timer) run(wg *sync.WaitGroup, ctx context.Context) {
+	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():

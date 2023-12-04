@@ -20,7 +20,7 @@ func TestFactory(t *testing.T) {
 		defer f.Shutdown()
 		ta := f.Get("destName", "destID")
 
-		t.Run("when there is a 429s in the last shortTimeFrequency", func(t *testing.T) {
+		t.Run("when there is a 429s in the last shortTimer frequency", func(t *testing.T) {
 			currentLimit := ta.getLimit()
 			require.NotZero(t, currentLimit)
 			ta.ResponseCodeReceived(429)
@@ -29,7 +29,7 @@ func TestFactory(t *testing.T) {
 			}, 2*time.Second, 10*time.Millisecond, "limit: %d, expectedLimit: %d", ta.getLimit(), currentLimit*7/10)
 		})
 
-		t.Run("when there are no 429s in the last longTimeFrequency", func(t *testing.T) {
+		t.Run("when there are no 429s in the last longTimer frequency", func(t *testing.T) {
 			currentLimit := ta.getLimit()
 			require.Eventually(t, func() bool {
 				return floatCheck(ta.getLimit(), currentLimit*110/100) // increases by 10% since there is no error in the last 2 seconds
