@@ -822,7 +822,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 						oneTrustConsentCategoriesMap[destination.ID] = GetOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = GetKetchConsentCategories(destination)
 
-						err := error(nil)
+						var err error
 						destGenericConsentManagementMap[destination.ID], err = GetGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
