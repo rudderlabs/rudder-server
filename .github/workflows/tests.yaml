@@ -15,7 +15,7 @@ jobs:
         FEATURES: [ oss ,enterprise ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version: '~1.21'
@@ -62,7 +62,7 @@ jobs:
             destination: snowflake
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -71,12 +71,12 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: make test-warehouse package=./${{ matrix.package }}/...
+        run: make test-warehouse package=${{ matrix.package }}
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
@@ -92,7 +92,7 @@ jobs:
     name: Unit
     runs-on: 'ubuntu-20.04'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version: '~1.21'
@@ -123,10 +123,15 @@ jobs:
           - regulation-worker
           - router
           - services
+          - services/rsources
           - suppression-backup-service
           - warehouse
+        include:
+          - package: services
+            exclude: services/rsources
+          
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version: '~1.21'
@@ -143,7 +148,7 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-        run: make test package=./${{ matrix.package }}/...
+        run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
@@ -162,7 +167,7 @@ jobs:
       - package-unit
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go
         uses: actions/setup-go@v4
         with:

@@ -18,7 +18,7 @@ type workerHandle interface {
 	stats() *processorStats
 
 	getJobs(partition string) jobsdb.JobsResult
-	markExecuting(jobs []*jobsdb.JobT) error
+	markExecuting(partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	processJobsForDest(partition string, subJobs subJob) *transformationMessage
 	transformations(partition string, in *transformationMessage) *storeMessage

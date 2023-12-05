@@ -78,6 +78,7 @@ type JobMetadataT struct {
 	JobT               *jobsdb.JobT    `json:"jobsT,omitempty"`
 	WorkerAssignedTime time.Time       `json:"workerAssignedTime"`
 	DestInfo           json.RawMessage `json:"destInfo,omitempty"`
+	DontBatch          bool            `json:"dontBatch"`
 }
 
 // TransformMessageT is used to pass message to the transformer workers

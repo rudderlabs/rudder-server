@@ -30,6 +30,14 @@ func (t *featuresService) SourceTransformerVersion() string {
 	return V0
 }
 
+func (t *featuresService) TransformerProxyVersion() string {
+	if gjson.GetBytes(t.features, "supportTransformerProxyV1").Bool() {
+		return V1
+	}
+
+	return V0
+}
+
 func (t *featuresService) RouterTransform(destType string) bool {
 	return gjson.GetBytes(t.features, "routerTransform."+destType).Bool()
 }

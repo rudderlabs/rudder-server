@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/stretchr/testify/require"
 
@@ -254,7 +255,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		tc.JobRunID,
 		tc.TaskRunID,
 		tc.DestinationID,
-		time.Now().UTC().Format("2006-01-02 15:04:05"),
+		time.Now().UTC().Format(source.CustomTimeLayout),
 		tc.WorkspaceID,
 	)
 

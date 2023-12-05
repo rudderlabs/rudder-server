@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -48,6 +49,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type mockObserver struct {
+	calls []struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}
+}
+
+func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+	m.calls = append(m.calls, struct {
+		source *backendconfig.SourceT
+		events []transformer.TransformerEvent
+	}{source: source, events: events})
+}
+
 type testContext struct {
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -60,6 +75,7 @@ type testContext struct {
 	mockArchivalDB        *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
+	MockObserver          *mockObserver
 	MockRsourcesService   *rsources.MockJobService
 }
 
@@ -89,6 +105,7 @@ func (c *testContext) Setup() {
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
+	c.MockObserver = &mockObserver{}
 }
 
 func (c *testContext) Finish() {
@@ -764,6 +781,8 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -956,6 +975,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should skip writing events belonging to transient sources in archival DB", func() {
@@ -1105,6 +1126,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -2262,7 +2285,7 @@ var _ = Describe("Processor", Ordered, func() {
 					Expect(jobs).To(HaveLen(1))
 				})
 
-			config.Set("RSources.toAbortJobRunIDs", "job_run_id_1")
+			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -2551,8 +2574,11 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
-			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(400))
-			Expect(m.failedMetrics[1].StatusDetail.StatusCode).To(Equal(299))
+			slices.SortFunc(m.failedMetrics, func(a, b *types.PUReportedMetric) int {
+				return a.StatusDetail.StatusCode - b.StatusDetail.StatusCode
+			})
+			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(299))
+			Expect(m.failedMetrics[1].StatusDetail.StatusCode).To(Equal(400))
 			Expect(int(m.failedCountMap[key])).To(Equal(2))
 
 			Expect(len(m.filteredJobs)).To(Equal(1))
@@ -4020,6 +4046,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		[]enricher.PipelineEnricher{},
 	)
 	processor.reportingEnabled = enableReporting
+	processor.sourceObservers = []sourceObserver{c.MockObserver}
 }
 
 func handlePendingGatewayJobs(processor *Handle) {
@@ -4379,6 +4406,10 @@ func getMockTransformerService() transformerFeaturesService.FeaturesService {
 type mockTransformerService struct{}
 
 func (*mockTransformerService) SourceTransformerVersion() string {
+	return "random-version"
+}
+
+func (*mockTransformerService) TransformerProxyVersion() string {
 	return "random-version"
 }
 
