@@ -229,12 +229,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(ctx context.Context) {
-	d.dropDanglingStagingTables(ctx)
+func (d *Deltalake) CrashRecover(ctx context.Context) error {
+	return d.dropDanglingStagingTables(ctx)
 }
 
 // dropDanglingStagingTables drops dangling staging tables
-func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
+func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
 		d.logger.Warnw("fetching tables for dropping dangling staging tables",
@@ -246,10 +246,10 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
 			logfield.Namespace, d.Namespace,
 			logfield.Error, err.Error(),
 		)
-		return
+		return fmt.Errorf("fetching tables for dropping dangling staging tables: %w", err)
 	}
 
-	d.dropStagingTables(ctx, tableNames)
+	return d.dropStagingTables(ctx, tableNames)
 }
 
 // fetchTables fetches tables from the database
@@ -286,7 +286,7 @@ func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, er
 }
 
 // dropStagingTables drops all the staging tables
-func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) {
+func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) error {
 	for _, stagingTable := range stagingTables {
 		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
@@ -300,8 +300,10 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 				logfield.StagingTableName, stagingTable,
 				logfield.Error, err.Error(),
 			)
+			return fmt.Errorf("dropping staging table: %w", err)
 		}
 	}
+	return nil
 }
 
 // DropTable drops a table from the warehouse
@@ -603,7 +605,12 @@ func (d *Deltalake) loadTable(
 
 	if !skipTempTableDelete {
 		defer func() {
-			d.dropStagingTables(ctx, []string{stagingTableName})
+			err := d.dropStagingTables(ctx, []string{stagingTableName})
+			if err != nil {
+				log.Errorw("dropping staging table",
+					logfield.Error, err.Error(),
+				)
+			}
 		}()
 	}
 
@@ -1030,7 +1037,21 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables(ctx, []string{identifyStagingTable})
+	defer func() {
+		err := d.dropStagingTables(ctx, []string{identifyStagingTable})
+		if err != nil {
+			d.logger.Warnw("dropped staging table",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.StagingTableName, identifyStagingTable,
+				logfield.Error, err.Error(),
+			)
+		}
+	}()
 
 	if len(usersSchemaInUpload) == 0 {
 		return map[string]error{
@@ -1106,7 +1127,21 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables(ctx, []string{stagingTableName})
+	defer func() {
+		err := d.dropStagingTables(ctx, []string{stagingTableName})
+		if err != nil {
+			d.logger.Warnw("dropped staging table",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.StagingTableName, stagingTableName,
+				logfield.Error, err.Error(),
+			)
+		}
+	}()
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
@@ -1254,7 +1289,18 @@ func (*Deltalake) LoadIdentityMappingsTable(context.Context) error {
 // Cleanup cleans up the warehouse
 func (d *Deltalake) Cleanup(ctx context.Context) {
 	if d.DB != nil {
-		d.dropDanglingStagingTables(ctx)
+		err := d.dropDanglingStagingTables(ctx)
+		if err != nil {
+			d.logger.Warnw("Error dropping dangling staging tables",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.Error, err.Error(),
+			)
+		}
 		_ = d.DB.Close()
 	}
 }

@@ -950,7 +950,10 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	return err
 }
 
-func (*Clickhouse) CrashRecover(context.Context) {}
+func (*Clickhouse) CrashRecover(context.Context) error {
+	// no-op: clickhouse does not need crash recovery
+	return nil
+}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
