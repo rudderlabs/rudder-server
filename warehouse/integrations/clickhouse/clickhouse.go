@@ -236,6 +236,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	ch.config.randomLoadDelay = func(destinationID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
 			5,
@@ -243,7 +244,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", destinationID),
 			"Warehouse.clickhouse.maxLoadDelay",
 		)
-		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
+		return time.Duration(float64(maxDelay) * (1 - r.Float64()))
 	}
 
 	return ch
