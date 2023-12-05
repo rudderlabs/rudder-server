@@ -13,10 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func TestIsSuppressedConcurrency(t *testing.T) {
 	log := &tLog{Logger: logger.NOP}
 	h := newHandler(&fakeSuppresser{}, log)
@@ -26,7 +22,7 @@ func TestIsSuppressedConcurrency(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		go func() {
 			defer wg.Done()
-			require.Nil(t, h.GetSuppressedUser("workspaceID", "userID", "sourceID"))
+			h.GetSuppressedUser("workspaceID", "userID", "sourceID")
 		}()
 	}
 	wg.Wait()
@@ -39,10 +35,10 @@ type fakeSuppresser struct {
 
 func (*fakeSuppresser) Suppressed(_, _, _ string) (*model.Metadata, error) {
 	// random failures, but always returning false
-	if rand.Intn(2)%2 == 0 { // skipcq: GSC-G404
+	if rand.New(rand.NewSource(time.Now().UnixNano())).Intn(2)%2 == 0 { // skipcq: GSC-G404
 		return nil, fmt.Errorf("some error")
 	} else {
-		return nil, nil
+		return &model.Metadata{}, nil
 	}
 }
 

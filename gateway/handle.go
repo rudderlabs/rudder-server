@@ -111,6 +111,9 @@ type Handle struct {
 		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
 	}
+
+	// additional internal http handlers
+	internalHttpHandlers map[string]http.Handler
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.

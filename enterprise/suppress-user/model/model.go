@@ -9,6 +9,7 @@ var (
 	ErrRestoring    = errors.New("repository is restoring")
 	ErrNotSupported = errors.New("operation not supported")
 	SyncDoneMarker  = ".sync_done"
+	ErrKeyNotFound  = errors.New("key not found")
 )
 var Wildcard = "*"
 

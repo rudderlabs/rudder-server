@@ -130,7 +130,7 @@ func generateTestData(t *testing.T, tmpDir string) {
 	generateBackupFiles := func(t *testing.T, dir, backupFilename string, repo *badgerdb.Repository, suppressions []model.Suppression) {
 		token := []byte("__token__")
 
-		repo.Add(suppressions, token)
+		require.NoError(t, repo.Add(suppressions, token))
 
 		f, err := os.Create(path.Join(dir, backupFilename))
 		defer func() { _ = f.Close() }()

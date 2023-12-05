@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -25,6 +26,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -596,6 +598,97 @@ func TestIntegration(t *testing.T) {
 				),
 			)
 			require.Equal(t, records, testhelper.DiscardTestRecords())
+		})
+	})
+
+	t.Run("CrashRecovery", func(t *testing.T) {
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(azureSynapsePort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		tableName := "crash_recovery_test_table"
+
+		mockUploader := newMockUploader(t, []warehouseutils.LoadFile{}, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+
+		t.Run("successful cleanup", func(t *testing.T) {
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			stagingTable := warehouseutils.StagingTablePrefix(warehouseutils.AzureSynapse) + tableName
+
+			_, err = az.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %q.%q (id int)", namespace, stagingTable))
+			require.NoError(t, err)
+
+			var count int
+			err = az.DB.QueryRowContext(ctx, `
+				SELECT count(*)
+				FROM information_schema.tables
+				WHERE table_schema = @schema AND table_name = @table`,
+				sql.Named("schema", namespace),
+				sql.Named("table", stagingTable),
+			).Scan(&count)
+			require.NoError(t, err)
+
+			require.Equal(t, 1, count, "staging table should be created")
+
+			err = az.CrashRecover(ctx)
+			require.NoError(t, err)
+
+			err = az.DB.QueryRowContext(ctx, `
+				SELECT count(*)
+				FROM information_schema.tables
+				WHERE table_schema = @schema AND table_name = @table`,
+				sql.Named("schema", namespace),
+				sql.Named("table", stagingTable),
+			).Scan(&count)
+			require.NoError(t, err)
+
+			require.Equal(t, 0, count, "staging table should be dropped")
+		})
+
+		t.Run("query error", func(t *testing.T) {
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			db, dbMock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+
+			dbMock.ExpectQuery("select table_name").WillReturnError(fmt.Errorf("query error"))
+
+			// TODO: Add more test cases
+			az.DB = sqlquerywrapper.New(db)
+			err = az.CrashRecover(ctx)
+			require.ErrorContains(t, err, "query error")
 		})
 	})
 }

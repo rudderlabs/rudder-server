@@ -107,7 +107,7 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error {
+func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
 	if sh.config.SkipFailedRecordsCollection {
 		return nil
 	}
@@ -126,7 +126,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`)
+	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`)
 	if err != nil {
 		return err
 	}
@@ -136,22 +136,24 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		if _, err = stmt.ExecContext(
 			ctx,
 			id,
-			records[i]); err != nil {
+			records[i].Record,
+			records[i].Code,
+		); err != nil {
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
 	}
 	return nil
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecords, error) {
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV2, error) {
 	if sh.config.SkipFailedRecordsCollection {
-		return JobFailedRecords{ID: jobRunId}, ErrOperationNotSupported
+		return JobFailedRecordsV2{ID: jobRunId}, ErrOperationNotSupported
 	}
 	var nextPageToken NextPageToken
 	var err error
 	if paging.Size > 0 {
 		if nextPageToken, err = NextPageTokenFromString(paging.NextPageToken); err != nil {
-			return JobFailedRecords{ID: jobRunId}, ErrInvalidPaginationToken
+			return JobFailedRecordsV2{ID: jobRunId}, ErrInvalidPaginationToken
 		}
 	}
 
@@ -177,7 +179,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		return ids, nil
 	}()
 	if err != nil {
-		return JobFailedRecords{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
+		return JobFailedRecordsV2{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
 	}
 
 	filters := "WHERE r.id = ANY($1)"
@@ -194,16 +196,112 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			k.source_id,
 			k.destination_id,
 			r.id,
-			r.record_id 
+			r.record_id,
+			r.code
 		FROM "rsources_failed_keys_v2_records" r 
 		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s 
 		ORDER BY r.id, r.record_id ASC %[2]s`,
 		filters, limit)
 
-	failedRecordsMap := map[JobTargetKey]FailedRecords{}
+	failedRecordsMap := map[JobTargetKey][]FailedRecord{}
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
 	if err != nil {
-		return JobFailedRecords{ID: jobRunId}, err
+		return JobFailedRecordsV2{ID: jobRunId}, err
+	}
+	defer func() { _ = rows.Close() }()
+	var queryResultSize int
+	for rows.Next() {
+		var key JobTargetKey
+		var code int
+		err := rows.Scan(
+			&key.TaskRunID,
+			&key.SourceID,
+			&key.DestinationID,
+			&nextPageToken.ID,
+			&nextPageToken.RecordID,
+			&code,
+		)
+		if err != nil {
+			return JobFailedRecordsV2{ID: jobRunId}, err
+		}
+		failedRecordsMap[key] = append(failedRecordsMap[key], FailedRecord{Record: json.RawMessage(nextPageToken.RecordID), Code: code})
+		queryResultSize++
+	}
+	if err := rows.Err(); err != nil {
+		return JobFailedRecordsV2{ID: jobRunId}, err
+	}
+
+	res := failedRecordsFromQueryResult(jobRunId, failedRecordsMap)
+	if limit != "" && queryResultSize == paging.Size {
+		res.Paging = &PagingInfo{
+			Size:          paging.Size,
+			NextPageToken: nextPageToken.String(),
+		}
+	}
+	return JobFailedRecordsV2(res), nil
+}
+
+func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV1, error) {
+	if sh.config.SkipFailedRecordsCollection {
+		return JobFailedRecordsV1{ID: jobRunId}, ErrOperationNotSupported
+	}
+	var nextPageToken NextPageToken
+	var err error
+	if paging.Size > 0 {
+		if nextPageToken, err = NextPageTokenFromString(paging.NextPageToken); err != nil {
+			return JobFailedRecordsV1{ID: jobRunId}, ErrInvalidPaginationToken
+		}
+	}
+
+	// first find the list of ids (postgres query planner uses an inefficient plan if there is one id with millions of records and a few ids with a few records)
+	ids, err := func() ([]string, error) {
+		var ids []string
+		filters, params := sqlFilters(jobRunId, filter)
+		rows, err := sh.readDB().QueryContext(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return ids, nil
+	}()
+	if err != nil {
+		return JobFailedRecordsV1{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
+	}
+
+	filters := "WHERE r.id = ANY($1)"
+	params := []interface{}{pq.Array(ids)}
+	var limit string
+	if paging.Size > 0 {
+		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
+		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
+		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
+	}
+	sqlStatement := fmt.Sprintf(
+		`SELECT
+			k.task_run_id,
+			k.source_id,
+			k.destination_id,
+			r.id,
+			r.record_id
+		FROM "rsources_failed_keys_v2_records" r 
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s 
+		ORDER BY r.id, r.record_id ASC %[2]s`,
+		filters, limit)
+
+	failedRecordsMap := map[JobTargetKey][]json.RawMessage{}
+	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
+	if err != nil {
+		return JobFailedRecordsV1{ID: jobRunId}, err
 	}
 	defer func() { _ = rows.Close() }()
 	var queryResultSize int
@@ -217,13 +315,13 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			&nextPageToken.RecordID,
 		)
 		if err != nil {
-			return JobFailedRecords{ID: jobRunId}, err
+			return JobFailedRecordsV1{ID: jobRunId}, err
 		}
 		failedRecordsMap[key] = append(failedRecordsMap[key], json.RawMessage(nextPageToken.RecordID))
 		queryResultSize++
 	}
 	if err := rows.Err(); err != nil {
-		return JobFailedRecords{ID: jobRunId}, err
+		return JobFailedRecordsV1{ID: jobRunId}, err
 	}
 
 	res := failedRecordsFromQueryResult(jobRunId, failedRecordsMap)
@@ -233,7 +331,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			NextPageToken: nextPageToken.String(),
 		}
 	}
-	return res, nil
+	return JobFailedRecordsV1(res), nil
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
@@ -378,26 +476,40 @@ func (sh *sourcesHandler) init() error {
 			return time.After(config.GetDuration("Rsources.stats.cleanup.interval", 1, time.Hour))
 		}
 	}
-	sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
-	if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
-		return err
-	}
-	if err := migrateFailedKeysTable(ctx, sh.localDB); err != nil {
-		return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
-	}
-	sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
-	if sh.sharedDB != nil {
-		sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
-		if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
+
+	const lockID = 100020001
+
+	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx *sql.Tx) error {
+		sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
+		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
 		}
-		sh.log.Debugf("rsources tables for shared db %s setup successfully", sh.config.SharedConn)
-
-		sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
-		if err := sh.setupLogicalReplication(ctx); err != nil {
-			return fmt.Errorf("failed to setup rsources logical replication in %s: %w", sh.config.LocalHostname, err)
+		if err := migrateFailedKeysTable(ctx, tx); err != nil {
+			return fmt.Errorf("migrating rsources_failed_keys table: %w", err)
 		}
-		sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
+		sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if sh.sharedDB != nil {
+		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
+			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
+			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
+				return err
+			}
+			sh.log.Debugf("rsources tables for shared db %s setup successfully", sh.config.SharedConn)
+
+			sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
+			if err := sh.setupLogicalReplication(ctx); err != nil {
+				return fmt.Errorf("logical replication in %q: %w", sh.config.LocalHostname, err)
+			}
+			sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -413,15 +525,7 @@ func setupTables(ctx context.Context, db *sql.DB, defaultDbName string, log logg
 }
 
 // TODO: Remove this after a few releases
-func migrateFailedKeysTable(ctx context.Context, db *sql.DB) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(100020001)`); err != nil {
-		return fmt.Errorf("error while acquiring advisory lock for failed keys migration: %w", err)
-	}
+func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 	var previousTableExists bool
 	row := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`)
 	if err := row.Scan(&previousTableExists); err != nil {
@@ -499,7 +603,7 @@ func migrateFailedKeysTable(ctx context.Context, db *sql.DB) error {
 		if _, err := tx.ExecContext(ctx, `drop function if exists ksuid()`); err != nil {
 			return fmt.Errorf("failed to drop ksuid function: %w", err)
 		}
-		return tx.Commit()
+		return nil
 	}
 
 	return nil
@@ -562,6 +666,10 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 			return err
 		}
 	}
+	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -700,4 +808,19 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 			}
 		}
 	}
+}
+
+func withAdvisoryLock(ctx context.Context, db *sql.DB, lockId int64, f func(tx *sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockId); err != nil {
+		return fmt.Errorf("acquiring advisory lock: %w", err)
+	}
+	if err := f(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

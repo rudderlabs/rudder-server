@@ -91,15 +91,15 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 	})
 
 	type metadata struct {
-		JobRunID  string `json:"job_run_id"`
-		TaskRunID string `json:"task_run_id"`
-		JobType   string `json:"jobtype"`
-		StartTime string `json:"start_time"`
+		JobRunID  string    `json:"job_run_id"`
+		TaskRunID string    `json:"task_run_id"`
+		JobType   string    `json:"jobtype"`
+		StartTime time.Time `json:"start_time"`
 	}
 	metadataJson, err := json.Marshal(metadata{
 		JobRunID:  payload.JobRunID,
 		TaskRunID: payload.TaskRunID,
-		StartTime: payload.StartTime,
+		StartTime: payload.StartTime.Time,
 		JobType:   string(notifier.JobTypeAsync),
 	})
 	if err != nil {

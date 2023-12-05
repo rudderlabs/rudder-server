@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -240,6 +241,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}
 	}()
 
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, a.log.Child("drain-config"))
+	if err != nil {
+		return fmt.Errorf("drain config manager setup: %v", err)
+	}
+	defer drainConfigManager.Stop()
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.DrainConfigRoutine(ctx)
+	}))
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.CleanupRoutine(ctx)
+	}))
+
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -265,16 +278,17 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:           logger.NewLogger().Child("router"),
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         routerDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		ThrottlerFactory: throttlerFactory,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Logger:                     logger.NewLogger().Child("router"),
+		Reporting:                  reporting,
+		BackendConfig:              backendconfig.DefaultBackendConfig,
+		RouterDB:                   routerDB,
+		ProcErrorDB:                errDBForWrite,
+		TransientSources:           transientSources,
+		RsourcesService:            rsourcesService,
+		TransformerFeaturesService: transformerFeaturesService,
+		ThrottlerFactory:           throttlerFactory,
+		Debugger:                   destinationHandle,
+		AdaptiveLimit:              adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reporting,

@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
+	clickhousestd "github.com/ClickHouse/clickhouse-go"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
@@ -22,7 +22,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -160,7 +162,7 @@ func TestIntegration(t *testing.T) {
 			destinationID           string
 			warehouseEvents         testhelper.EventsCountMap
 			warehouseModifiedEvents testhelper.EventsCountMap
-			clusterSetup            func(t testing.TB)
+			clusterSetup            func(t *testing.T)
 			db                      *sql.DB
 			stagingFilePrefix       string
 		}{
@@ -188,9 +190,9 @@ func TestIntegration(t *testing.T) {
 					"aliases":       8,
 					"groups":        8,
 				},
-				clusterSetup: func(t testing.TB) {
+				clusterSetup: func(t *testing.T) {
 					t.Helper()
-					initializeClickhouseClusterMode(t, dbs[1:], tables)
+					initializeClickhouseClusterMode(t, dbs[1:], tables, clusterPort1)
 				},
 				stagingFilePrefix: "testdata/upload-cluster-job",
 			},
@@ -1018,7 +1020,9 @@ func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB 
 	defer cancel()
 
 	require.Eventually(t, func() bool {
-		return db.PingContext(ctx) == nil
+		err := db.PingContext(ctx)
+		t.Log(err)
+		return err == nil
 	}, time.Minute, time.Second)
 
 	err = db.PingContext(ctx)
@@ -1027,7 +1031,7 @@ func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB 
 	return db
 }
 
-func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
+func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string, clusterPost int) {
 	t.Helper()
 
 	type ColumnInfoT struct {
@@ -1161,6 +1165,79 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		}))
 	}
 
+	t.Run("Create Drop Create", func(t *testing.T) {
+		clusterDB := connectClickhouseDB(context.Background(), t, fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+			"localhost", clusterPost, "rudderdb", "rudder-password", "rudder",
+		))
+
+		t.Run("with UUID", func(t *testing.T) {
+			testTable := "test_table_with_uuid"
+
+			createTableSQLStatement := func() string {
+				return fmt.Sprintf(`
+					CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" (
+					  "id" String, "received_at" DateTime
+					) ENGINE = ReplicatedReplacingMergeTree(
+					  '/clickhouse/{cluster}/tables/%[2]s/{database}/{table}',
+					  '{replica}'
+					)
+					ORDER BY
+					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					testTable,
+					uuid.New().String(),
+				)
+			}
+
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(fmt.Sprintf(`DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster";`, testTable))
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+		})
+		t.Run("without UUID", func(t *testing.T) {
+			testTable := "test_table_without_uuid"
+
+			createTableSQLStatement := func() string {
+				return fmt.Sprintf(`
+					CREATE TABLE IF NOT EXISTS "rudderdb".%[1]q ON CLUSTER "rudder_cluster" (
+					  "id" String, "received_at" DateTime
+					) ENGINE = ReplicatedReplacingMergeTree(
+					  '/clickhouse/{cluster}/tables/{database}/{table}',
+					  '{replica}'
+					)
+					ORDER BY
+					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					testTable,
+				)
+			}
+
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			}))
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(fmt.Sprintf(`DROP TABLE rudderdb.%[1]s ON CLUSTER "rudder_cluster";`, testTable))
+				return err
+			}))
+
+			err := testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(createTableSQLStatement())
+				return err
+			})
+			require.Error(t, err)
+
+			var clickhouseErr *clickhousestd.Exception
+			require.ErrorAs(t, err, &clickhouseErr)
+			require.Equal(t, int32(253), clickhouseErr.Code)
+		})
+	})
 	// Alter columns to all the cluster tables
 	for _, clusterDB := range clusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {

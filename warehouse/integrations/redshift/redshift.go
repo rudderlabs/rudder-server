@@ -1039,7 +1039,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
+func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := `
 		SELECT
 		  table_name
@@ -1055,8 +1055,7 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
-		rs.logger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
-		return
+		return fmt.Errorf("querying for dangling staging tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1065,20 +1064,21 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			return fmt.Errorf("querying for dangling staging tables: %w", err)
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	if err := rows.Err(); err != nil {
-		panic(fmt.Errorf("iterate result from query: %s\nwith Error : %w", sqlStatement, err))
+		return fmt.Errorf("iterating for dangling staging tables: %w", err)
 	}
 	rs.logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			rs.logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			return fmt.Errorf("dropping dangling staging table %q.%q: %w", rs.Namespace, stagingTableName, err)
 		}
 	}
+	return nil
 }
 
 func (rs *Redshift) CreateSchema(ctx context.Context) (err error) {
@@ -1336,13 +1336,18 @@ func (rs *Redshift) TestConnection(ctx context.Context, _ model.Warehouse) error
 
 func (rs *Redshift) Cleanup(ctx context.Context) {
 	if rs.DB != nil {
-		rs.dropDanglingStagingTables(ctx)
+		err := rs.dropDanglingStagingTables(ctx)
+		if err != nil {
+			rs.logger.Errorw("Error dropping dangling staging tables",
+				logfield.Error, err.Error(),
+			)
+		}
 		_ = rs.DB.Close()
 	}
 }
 
-func (rs *Redshift) CrashRecover(ctx context.Context) {
-	rs.dropDanglingStagingTables(ctx)
+func (rs *Redshift) CrashRecover(ctx context.Context) error {
+	return rs.dropDanglingStagingTables(ctx)
 }
 
 func (*Redshift) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {

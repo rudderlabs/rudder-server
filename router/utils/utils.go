@@ -70,6 +70,7 @@ type JobParameters struct {
 	EventType               string      `json:"event_type"`
 	WorkspaceID             string      `json:"workspaceId"`
 	RudderAccountID         string      `json:"rudderAccountId"`
+	DontBatch               bool        `json:"dontBatch"`
 }
 
 // ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails
@@ -120,7 +121,7 @@ func NewDrainer(
 		),
 		jobRunIDs: conf.GetReloadableStringSliceVar(
 			nil,
-			"RSources.toAbortJobRunIDs",
+			"drain.jobRunIDs",
 		),
 		destinationResolver: destDrainFunc,
 	}
