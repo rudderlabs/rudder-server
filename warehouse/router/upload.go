@@ -282,6 +282,17 @@ func (job *UploadJob) run() (err error) {
 	defer whManager.Cleanup(job.ctx)
 
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
+		job.logger.Warnw("Error during recovery (dangling staging table cleanup)",
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.Namespace, job.warehouse.Namespace,
+			logfield.Error, err.Error(),
+		)
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}

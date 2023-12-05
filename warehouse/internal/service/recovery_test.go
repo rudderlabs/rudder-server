@@ -20,15 +20,17 @@ type mockRepo struct {
 }
 
 type mockDestination struct {
-	recovered int
+	recovered   int
+	recoveryErr error
 }
 
 func (r *mockRepo) InterruptedDestinations(_ context.Context, destinationType string) ([]string, error) {
 	return r.m[destinationType], r.err
 }
 
-func (d *mockDestination) CrashRecover(_ context.Context) {
+func (d *mockDestination) CrashRecover(_ context.Context) error {
 	d.recovered += 1
+	return d.recoveryErr
 }
 
 func TestRecovery(t *testing.T) {
@@ -36,37 +38,47 @@ func TestRecovery(t *testing.T) {
 		name          string
 		whType        string
 		destinationID string
+		repoErr       error
+		destErr       error
 
-		recovery bool
-
-		repoErr error
-		wantErr error
+		recoveryCalled bool
+		wantErr        error
 	}{
 		{
-			name:          "interrupted mssql warehouse",
-			whType:        warehouseutils.MSSQL,
-			destinationID: "1",
-			recovery:      true,
+			name:           "interrupted mssql warehouse",
+			whType:         warehouseutils.MSSQL,
+			destinationID:  "1",
+			recoveryCalled: true,
 		},
 		{
-			name:          "non-interrupted mssql warehouse",
-			whType:        warehouseutils.MSSQL,
-			destinationID: "3",
-			recovery:      false,
+			name:           "non-interrupted mssql warehouse",
+			whType:         warehouseutils.MSSQL,
+			destinationID:  "3",
+			recoveryCalled: false,
 		},
 		{
-			name:          "interrupted snowflake - skipped - warehouse",
-			whType:        warehouseutils.SNOWFLAKE,
-			destinationID: "6",
-			recovery:      false,
+			name:           "interrupted snowflake - skipped - warehouse",
+			whType:         warehouseutils.SNOWFLAKE,
+			destinationID:  "6",
+			recoveryCalled: false,
 		},
 
 		{
-			name:          "repo error",
+			name:          "error during recovery detection",
 			whType:        warehouseutils.MSSQL,
 			destinationID: "1",
 			repoErr:       fmt.Errorf("repo error"),
-			wantErr:       fmt.Errorf("repo interrupted destinations: repo error"),
+			wantErr:       fmt.Errorf("detection: repo interrupted destinations: repo error"),
+		},
+		{
+			name:          "error during recovery",
+			whType:        warehouseutils.MSSQL,
+			destinationID: "2",
+			repoErr:       nil,
+			destErr:       fmt.Errorf("destination error"),
+
+			recoveryCalled: true,
+			wantErr:        fmt.Errorf("crash recover: destination error"),
 		},
 	}
 
@@ -80,7 +92,9 @@ func TestRecovery(t *testing.T) {
 				err: tc.repoErr,
 			}
 
-			d := &mockDestination{}
+			d := &mockDestination{
+				recoveryErr: tc.destErr,
+			}
 
 			recovery := service.NewRecovery(tc.whType, repo)
 
@@ -98,7 +112,7 @@ func TestRecovery(t *testing.T) {
 				}
 			}
 
-			if tc.recovery {
+			if tc.recoveryCalled {
 				require.Equal(t, 1, d.recovered)
 			} else {
 				require.Equal(t, 0, d.recovered)
