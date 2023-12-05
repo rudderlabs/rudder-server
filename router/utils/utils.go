@@ -121,7 +121,7 @@ func NewDrainer(
 		),
 		jobRunIDs: conf.GetReloadableStringSliceVar(
 			nil,
-			"RSources.toAbortJobRunIDs",
+			"drain.jobRunIDs",
 		),
 		destinationResolver: destDrainFunc,
 	}

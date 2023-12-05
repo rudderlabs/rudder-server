@@ -2546,7 +2546,7 @@ var _ = Describe("Processor", Ordered, func() {
 					Expect(jobs).To(HaveLen(1))
 				})
 
-			config.Set("RSources.toAbortJobRunIDs", "job_run_id_1")
+			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()
 			processorSetupAndAssertJobHandling(processor, c)
 		})
