@@ -38,9 +38,12 @@ func (c *decreaseLimitCounter) run(ctx context.Context, wg *sync.WaitGroup) {
 			return
 		case <-time.After(c.window()):
 			c.counterMu.Lock()
-			throttledRate := float64(c.throttledCount) / float64(c.totalCount)
-			c.throttledCount = 0
-			c.totalCount = 0
+			var throttledRate float64
+			if c.totalCount > 0 {
+				throttledRate = float64(c.throttledCount) / float64(c.totalCount)
+				c.throttledCount = 0
+				c.totalCount = 0
+			}
 			c.counterMu.Unlock()
 			if throttledRate > float64(c.throttleTolerancePercentage())/100 {
 				c.limitFactor.Add(-float64(c.decreasePercentage.Load()) / 100)

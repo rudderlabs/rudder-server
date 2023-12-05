@@ -18,7 +18,6 @@ type Adaptive struct {
 }
 
 func New(config *config.Config, window misc.ValueLoader[time.Duration]) *Adaptive {
-
 	lf := &limitFactor{value: 1}
 
 	increaseWindowMultiplier := config.GetReloadableIntVar(2, 1, "Router.throttler.adaptive.increaseWindowMultiplier")

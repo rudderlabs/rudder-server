@@ -18,19 +18,22 @@ type adaptiveThrottleConfig struct {
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
 	c.window = config.GetReloadableDurationVar(0, time.Second,
 		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName))
+		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
+		`Router.throttler.adaptive.timeWindow`)
 	c.minLimit = config.GetReloadableInt64Var(1, 1,
-		fmt.Sprintf(`Router.throttler.%s.%s.minLimit`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.minLimit`, destName))
+		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.minLimit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destName),
+		`Router.throttler.adaptive.minLimit`)
 	c.maxLimit = config.GetReloadableInt64Var(0, 1,
-		fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.maxLimit`, destName),
+		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName),
 		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
+		`Router.throttler.adaptive.maxLimit`)
 }
 
 func (c *adaptiveThrottleConfig) enabled() bool {
-	return c.minLimit.Load() > 0 && c.maxLimit.Load() > 0 && c.window.Load() > 0 && c.minLimit.Load() > c.maxLimit.Load()
+	return c.minLimit.Load() > 0 && c.maxLimit.Load() > 0 && c.window.Load() > 0 && c.minLimit.Load() <= c.maxLimit.Load()
 }
 
 type adaptiveThrottler struct {

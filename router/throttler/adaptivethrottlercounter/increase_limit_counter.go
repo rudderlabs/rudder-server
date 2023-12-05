@@ -24,6 +24,7 @@ func (c *increaseLimitCounter) ResponseCodeReceived(code int) {
 		c.throttledCountMu.Unlock()
 	}
 }
+
 func (c *increaseLimitCounter) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
@@ -36,6 +37,7 @@ func (c *increaseLimitCounter) run(ctx context.Context, wg *sync.WaitGroup) {
 				c.limitFactor.Add(float64(c.increasePercentage.Load()) / 100)
 			}
 			c.throttledCount = 0
+			c.throttledCountMu.Unlock()
 		}
 	}
 }
