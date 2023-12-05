@@ -11,10 +11,10 @@ import (
 )
 
 type ConsentManagementInfo struct {
-	DeniedConsentIDs   []string `json:"deniedConsentIds"`
-	AllowedConsentIDs  []string `json:"allowedConsentIds"` // Not used currently but added for future use
-	Provider           string   `json:"provider"`
-	ResolutionStrategy string   `json:"resolutionStrategy"`
+	DeniedConsentIDs   []string    `json:"deniedConsentIds"`
+	AllowedConsentIDs  interface{} `json:"allowedConsentIds"` // Not used currently but added for future use
+	Provider           string      `json:"provider"`
+	ResolutionStrategy string      `json:"resolutionStrategy"`
 }
 
 type GenericConsentManagementProviderData struct {
@@ -220,7 +220,6 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			return consent, consent != ""
 		}
 
-		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, filterPredicate)
 		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, filterPredicate)
 	}
 

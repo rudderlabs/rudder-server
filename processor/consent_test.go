@@ -762,7 +762,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			expected: defConsentManagementInfo,
 		},
 		{
-			description: "should return default values for allowed consent IDs when it is missing in the event",
+			description: "should return default values for denied consent IDs when it is missing in the event",
 			input: types.SingularEventT{
 				"anonymousId": "123",
 				"type":        "track",
@@ -782,60 +782,13 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			},
 			expected: ConsentManagementInfo{
 				Provider: "custom",
-				AllowedConsentIDs: []string{
+				AllowedConsentIDs: []interface{}{
 					"consent category 1",
 					"consent category 2",
 				},
 				DeniedConsentIDs:   []string{},
 				ResolutionStrategy: "",
 			},
-		},
-		{
-			description: "should return default values for denied consent IDs when it is missing in the event",
-			input: types.SingularEventT{
-				"anonymousId": "123",
-				"type":        "track",
-				"event":       "test",
-				"properties": map[string]interface{}{
-					"category": "test",
-				},
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"provider": "custom",
-						"deniedConsentIds": []string{
-							"consent category 1",
-							"consent category 2",
-						},
-					},
-				},
-			},
-			expected: ConsentManagementInfo{
-				Provider: "custom",
-				DeniedConsentIDs: []string{
-					"consent category 1",
-					"consent category 2",
-				},
-				AllowedConsentIDs:  []string{},
-				ResolutionStrategy: "",
-			},
-		},
-		{
-			description: "should return default values for allowed consent IDs when it is malformed",
-			input: types.SingularEventT{
-				"anonymousId": "123",
-				"type":        "track",
-				"event":       "test",
-				"properties": map[string]interface{}{
-					"category": "test",
-				},
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"provider":          "custom",
-						"allowedConsentIds": "dummy",
-					},
-				},
-			},
-			expected: defConsentManagementInfo,
 		},
 		{
 			description: "should return default values for denied consent IDs when it is malformed",
@@ -898,7 +851,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 				},
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
-						"allowedConsentIds": map[string]interface{}{ // this should have been an array
+						"deniedConsentIds": map[string]interface{}{ // this should have been an array
 							"consent": "consent category 1",
 						},
 					},
@@ -918,11 +871,9 @@ func TestGetConsentManagementInfo(t *testing.T) {
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
 						"provider": "custom",
-						"allowedConsentIds": []string{
-							"consent category 1",
-							"consent category 2",
-							"",
-							"",
+						"allowedConsentIds": map[string]interface{}{
+							"C0001": "consent category 1",
+							"C0002": "consent category 2",
 						},
 						"deniedConsentIds": []string{
 							"consent category 3",
@@ -937,9 +888,9 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			},
 			expected: ConsentManagementInfo{
 				Provider: "custom",
-				AllowedConsentIDs: []string{
-					"consent category 1",
-					"consent category 2",
+				AllowedConsentIDs: map[string]interface{}{
+					"C0001": "consent category 1",
+					"C0002": "consent category 2",
 				},
 				DeniedConsentIDs: []string{
 					"consent category 3",
