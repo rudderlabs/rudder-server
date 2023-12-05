@@ -503,8 +503,10 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
-	if err = misc.SleepCtx(ctx, ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID)); err != nil {
-		return
+	if delay := ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID); delay > 0 {
+		if err = misc.SleepCtx(ctx, delay); err != nil {
+			return
+		}
 	}
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(ctx, tableName, tableSchemaInUpload)
