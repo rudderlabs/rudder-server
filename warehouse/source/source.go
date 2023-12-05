@@ -147,12 +147,11 @@ func (m *Manager) process(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("getting pending source jobs with error %w", err)
 		}
-		if len(pendingJobs) == 0 {
-			continue
-		}
 
-		if err = m.processPendingJobs(ctx, pendingJobs); err != nil {
-			return fmt.Errorf("process pending source jobs with error %w", err)
+		if len(pendingJobs) > 0 {
+			if err = m.processPendingJobs(ctx, pendingJobs); err != nil {
+				return fmt.Errorf("process pending source jobs with error %w", err)
+			}
 		}
 
 		select {
