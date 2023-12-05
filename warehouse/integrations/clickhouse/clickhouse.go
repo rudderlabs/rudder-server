@@ -237,11 +237,11 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	ch.config.randomLoadDelay = func(destinationID string) time.Duration {
+	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
 			0,
 			time.Second,
-			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", destinationID),
+			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
 			"Warehouse.clickhouse.maxLoadDelay",
 		)
 		return time.Duration(float64(maxDelay) * (1 - r.Float64()))
@@ -503,7 +503,7 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
-	if err = misc.SleepCtx(ctx, ch.config.randomLoadDelay(ch.Warehouse.Destination.ID)); err != nil {
+	if err = misc.SleepCtx(ctx, ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID)); err != nil {
 		return
 	}
 	if ch.UseS3CopyEngineForLoading() {
