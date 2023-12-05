@@ -38,5 +38,6 @@
             "package-name": "rudder-server",
             "release-type": "go"
         }
-    }
+    },
+    ".": "1.18.0"
 }
