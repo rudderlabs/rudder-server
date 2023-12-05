@@ -846,8 +846,8 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 // * the load table strategy is "append" mode OR appendOnlyTables contains the table name
 // * AND the uploader says we can append
 func (sf *Snowflake) ShouldAppendTable(tableName string) bool {
-	shouldAppend := (slices.Contains(sf.config.appendOnlyTables, tableName) ||
-		sf.config.loadTableStrategy == loadTableStrategyAppendMode)
+	shouldAppend := slices.Contains(sf.config.appendOnlyTables, tableName) ||
+		sf.config.loadTableStrategy == loadTableStrategyAppendMode
 
 	return shouldAppend && sf.Uploader.CanAppend()
 }
