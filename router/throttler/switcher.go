@@ -8,7 +8,7 @@ import (
 
 type switchingThrottler struct {
 	adaptiveEnabled misc.ValueLoader[bool]
-	normal          Throttler
+	static          Throttler
 	adaptive        Throttler
 }
 
@@ -21,7 +21,7 @@ func (t *switchingThrottler) ResponseCodeReceived(code int) {
 }
 
 func (t *switchingThrottler) Shutdown() {
-	t.normal.Shutdown()
+	t.static.Shutdown()
 	t.adaptive.Shutdown()
 }
 
@@ -33,5 +33,5 @@ func (t *switchingThrottler) throttler() Throttler {
 	if t.adaptiveEnabled.Load() {
 		return t.adaptive
 	}
-	return t.normal
+	return t.static
 }

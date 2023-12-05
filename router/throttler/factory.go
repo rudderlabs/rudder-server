@@ -58,7 +58,7 @@ func (f *factory) Get(destName, destID string) Throttler {
 
 	var conf staticThrottleConfig
 	conf.readThrottlingConfig(f.config, destName, destID)
-	dt := &staticThrottler{
+	st := &staticThrottler{
 		limiter: f.limiter,
 		config:  conf,
 	}
@@ -72,9 +72,12 @@ func (f *factory) Get(destName, destID string) Throttler {
 	}
 
 	f.throttlers[destID] = &switchingThrottler{
-		adaptiveEnabled: f.config.GetReloadableBoolVar(false, "Router.throttler."+destID+".adaptive.enabled", "Router.throttler."+destName+".adaptive.enabled", "Router.throttler.adaptive.enabled"),
-		normal:          dt,
-		adaptive:        at,
+		adaptiveEnabled: f.config.GetReloadableBoolVar(false,
+			fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destName, destID),
+			fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destName),
+			"Router.throttler.adaptive.enabled"),
+		static:   st,
+		adaptive: at,
 	}
 	return f.throttlers[destID]
 }
