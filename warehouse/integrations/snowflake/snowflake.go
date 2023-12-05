@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -172,6 +173,7 @@ type Snowflake struct {
 		loadTableStrategy  string
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
+		appendOnlyTables   []string
 
 		debugDuplicateWorkspaceIDs   []string
 		debugDuplicateTables         []string
@@ -198,6 +200,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
+
+	// appendOnlyTables is a workaround introduced for Mattermost for now. It is only supported for snowflake.
+	sf.config.appendOnlyTables = conf.GetStringSlice("Warehouse.snowflake.appendOnlyTables", nil)
+
 	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
 	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
 	sf.config.debugDuplicateLimit = conf.GetInt("Warehouse.snowflake.debugDuplicateLimit", 100)
@@ -377,7 +383,7 @@ func (sf *Snowflake) loadTable(
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	if sf.ShouldAppend() {
+	if sf.ShouldAppendTable(tableName) {
 		log.Infow("copying data into main table")
 		loadTableStats, err := sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName)
 		if err != nil {
@@ -836,11 +842,14 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-// ShouldAppend returns true if:
-// * the load table strategy is "append" mode
-// * the uploader says we can append
-func (sf *Snowflake) ShouldAppend() bool {
-	return sf.config.loadTableStrategy == loadTableStrategyAppendMode && sf.Uploader.CanAppend()
+// ShouldAppendTable returns true if:
+// * the load table strategy is "append" mode OR appendOnlyTables contains the table name
+// * AND the uploader says we can append
+func (sf *Snowflake) ShouldAppendTable(tableName string) bool {
+	shouldAppend := slices.Contains(sf.config.appendOnlyTables, tableName) ||
+		sf.config.loadTableStrategy == loadTableStrategyAppendMode
+
+	return shouldAppend && sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
@@ -882,7 +891,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	if sf.ShouldAppend() {
+	if sf.ShouldAppendTable(identifiesTable) {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
 			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
