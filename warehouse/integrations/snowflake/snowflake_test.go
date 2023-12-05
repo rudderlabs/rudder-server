@@ -965,39 +965,80 @@ func TestIntegration(t *testing.T) {
 
 func TestSnowflake_ShouldAppend(t *testing.T) {
 	testCases := []struct {
-		name                  string
-		loadTableStrategy     string
-		uploaderCanAppend     bool
-		uploaderExpectedCalls int
-		expected              bool
+		name              string
+		loadTableStrategy string
+		tableName         string
+		appendOnlyTables  []string
+		uploaderCanAppend bool
+		expected          bool
 	}{
 		{
-			name:                  "uploader says we can append and we are in append mode",
-			loadTableStrategy:     "APPEND",
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			name:              "uploader says we can append and we are in append mode",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          true,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in append mode",
-			loadTableStrategy:     "APPEND",
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              false,
+			name:              "uploader says we cannot append and we are in append mode",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          false,
 		},
 		{
-			name:                  "uploader says we can append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 0,
-			expected:              false,
+			name:              "uploader says we can append and we are in merge mode",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          false,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 0,
-			expected:              false,
+			name:              "uploader says we cannot append and we are in merge mode",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is in append only",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is not in append only",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we cannot append, in merge mode, but table is in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is not in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
 		},
 	}
 
@@ -1005,16 +1046,17 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.snowflake.loadTableStrategy", tc.loadTableStrategy)
+			c.Set("Warehouse.snowflake.appendOnlyTables", tc.appendOnlyTables)
 
 			sf, err := snowflake.New(c, logger.NOP, memstats.New())
 			require.NoError(t, err)
 
 			mockCtrl := gomock.NewController(t)
 			uploader := mockuploader.NewMockUploader(mockCtrl)
-			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
+			uploader.EXPECT().CanAppend().AnyTimes().Return(tc.uploaderCanAppend)
 
 			sf.Uploader = uploader
-			require.Equal(t, sf.ShouldAppend(), tc.expected)
+			require.Equal(t, sf.ShouldAppendTable(tc.tableName), tc.expected)
 		})
 	}
 }

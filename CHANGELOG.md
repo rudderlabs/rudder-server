@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.3](https://github.com/rudderlabs/rudder-server/compare/v1.17.2...v1.17.3) (2023-12-05)
+
+
+### Bug Fixes
+
+* source no pending jobs ([#4197](https://github.com/rudderlabs/rudder-server/issues/4197)) ([221d7da](https://github.com/rudderlabs/rudder-server/commit/221d7da5c369fc1ba1e6eb4eb7cf7639072ccbe7))
+
 ## [1.17.2](https://github.com/rudderlabs/rudder-server/compare/v1.17.1...v1.17.2) (2023-11-20)
 
 

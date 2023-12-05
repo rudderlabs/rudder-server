@@ -607,7 +607,7 @@ var _ = Describe("router", func() {
 		})
 
 		It("aborts jobs that bear a abort configured jobRunId", func() {
-			conf.Set("RSources.toAbortJobRunIDs", "someJobRunId")
+			conf.Set("drain.jobRunIDs", "someJobRunId")
 			router := &Handle{
 				Reporting: &reporting.NOOP{},
 			}
@@ -2275,24 +2275,16 @@ func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
-	fmt.Println(`@@@@@@@@@@@@@@@@@@`)
-	fmt.Println(expectedState, errorCode, errorResponse)
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
 	if attemptNum >= 1 {
 		Expect(gjson.GetBytes(status.ErrorResponse, "content-type").String()).To(Equal(gjson.Get(errorResponse, "content-type").String()))
 		Expect(gjson.GetBytes(status.ErrorResponse, "response").String()).To(Equal(gjson.Get(errorResponse, "response").String()))
-		fmt.Println(`!!!!!!!!!`)
-		fmt.Println(status)
-		fmt.Println(string(status.ErrorResponse))
-		fmt.Println(`status.errorResponse.reason: `, gjson.Get(string(status.ErrorResponse), "reason").String())
-		fmt.Println(`expected.errorResponse.reason: `, gjson.Get(errorResponse, "reason").String())
 		Expect(gjson.Get(string(status.ErrorResponse), "reason").String()).To(Equal(gjson.Get(errorResponse, "reason").String()))
 	}
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.RetryTime).To(BeTemporally(">=", status.ExecTime, 10*time.Second))
-	fmt.Println(`status.AttemptNum: `, status.AttemptNum, ` |||| `, `attemptNum: `, attemptNum)
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
