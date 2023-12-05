@@ -1,0 +1,44 @@
+{
+    "prerelease": true,
+    "release-as": "${branch}",
+    "group-pull-request-title-pattern": "chore: release ${version}",
+    "changelog-sections": [
+        {
+            "type": "feat",
+            "section": "Features",
+            "hidden": false
+        },
+        {
+            "type": "fix",
+            "section": "Bug Fixes",
+            "hidden": false
+        },
+        {
+            "type": "chore",
+            "section": "Miscellaneous",
+            "hidden": false
+        },
+        {
+            "type": "refactor",
+            "section": "Miscellaneous",
+            "hidden": false
+        },
+        {
+            "type": "test",
+            "section": "Miscellaneous",
+            "hidden": false
+        },
+        {
+            "type": "doc",
+            "section": "Documentation",
+            "hidden": false
+        }
+    ],
+    "bump-minor-pre-major": true,
+    "packages": {
+        ".": {
+            "package-name": "rudder-server",
+            "release-type": "go"
+        }
+    }
+}
