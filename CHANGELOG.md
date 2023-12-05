@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.18.0](https://github.com/rudderlabs/rudder-server/compare/v1.17.0...v1.18.0) (2023-12-05)
+
+
+### Features
+
+* a table for all drain configuration(jobRunID for now) ([#4153](https://github.com/rudderlabs/rudder-server/issues/4153)) ([3d605d3](https://github.com/rudderlabs/rudder-server/commit/3d605d389aec0b49e13d7e550049f00f4df61da9))
+* append only tables config for snowflake ([#4186](https://github.com/rudderlabs/rudder-server/issues/4186)) ([09a1ab0](https://github.com/rudderlabs/rudder-server/commit/09a1ab053f504b377fa4379c17471b6d70d5e2ee))
+* capture delayed events ([#4104](https://github.com/rudderlabs/rudder-server/issues/4104)) ([f9f8782](https://github.com/rudderlabs/rudder-server/commit/f9f8782f6019e012246d6aeffb3f10a2e888aa6e))
+* generic consent management ([#4056](https://github.com/rudderlabs/rudder-server/issues/4056)) ([0f202e8](https://github.com/rudderlabs/rudder-server/commit/0f202e8c4c29fe54aa4a9802a9d578ab6a7f864e))
+* include error codes in v2 failed-records response payload ([#4116](https://github.com/rudderlabs/rudder-server/issues/4116)) ([e803bf9](https://github.com/rudderlabs/rudder-server/commit/e803bf92c59f9ef38953f2436205f9ff47f594a3))
+* introduce random sleep before clickhouse loads ([#4193](https://github.com/rudderlabs/rudder-server/issues/4193)) ([85cfdcf](https://github.com/rudderlabs/rudder-server/commit/85cfdcf13ba4e6bab02ec698c94679f2cbcc64e2))
+* partial failure support for delivery via transformer proxy ([#4131](https://github.com/rudderlabs/rudder-server/issues/4131)) ([a7e2e81](https://github.com/rudderlabs/rudder-server/commit/a7e2e81a10ab6d44826601fc39dc58fc91e4ab5d))
+
+
+### Bug Fixes
+
+* add autovacuum_vacuum_cost_limit to the reports table [PIPE-512] ([#4136](https://github.com/rudderlabs/rudder-server/issues/4136)) ([690aeb0](https://github.com/rudderlabs/rudder-server/commit/690aeb010a1b98c0f52c347b77d9d79ae6df9a47))
+* align gha pr comment with workflow config ([#4194](https://github.com/rudderlabs/rudder-server/issues/4194)) ([1355c96](https://github.com/rudderlabs/rudder-server/commit/1355c96de2665adf5c6d4b822bb604809973e469))
+* clickhouse zookeeper table metadata ([#4121](https://github.com/rudderlabs/rudder-server/issues/4121)) ([41e060a](https://github.com/rudderlabs/rudder-server/commit/41e060a3d71d44ba1c23db3843231c313298f893))
+* error reporting handling and config changes ([#4195](https://github.com/rudderlabs/rudder-server/issues/4195)) ([70af46e](https://github.com/rudderlabs/rudder-server/commit/70af46e708d28a715d3ad31e22ee3f9d28ece30f))
+* gateway responds with http status 500 and body pq: invalid byte sequence for encoding UTF8: 0x00 ([#4161](https://github.com/rudderlabs/rudder-server/issues/4161)) ([7b118b9](https://github.com/rudderlabs/rudder-server/commit/7b118b9be0137863b65ac60514828f8462b2313e))
+* graceful termination for cron tracker ([#4128](https://github.com/rudderlabs/rudder-server/issues/4128)) ([cb33412](https://github.com/rudderlabs/rudder-server/commit/cb334126a4b7646ae8990db87c97fa52d9f65cce))
+* graceful termination for cron tracker ([#4128](https://github.com/rudderlabs/rudder-server/issues/4128)) ([ac8a55a](https://github.com/rudderlabs/rudder-server/commit/ac8a55a77978634e469ea4b25eeaa5f12ec8b1aa))
+* snowflake delete ([#4179](https://github.com/rudderlabs/rudder-server/issues/4179)) ([906e5b0](https://github.com/rudderlabs/rudder-server/commit/906e5b061d79070f6445bc153abd2f3f40a16e28))
+* source no pending jobs ([#4197](https://github.com/rudderlabs/rudder-server/issues/4197)) ([79f8551](https://github.com/rudderlabs/rudder-server/commit/79f8551bd0707803a5a8f9956f6904887f1b2bbd))
+* warehouse archiver integration tests ([#4135](https://github.com/rudderlabs/rudder-server/issues/4135)) ([cb33412](https://github.com/rudderlabs/rudder-server/commit/cb334126a4b7646ae8990db87c97fa52d9f65cce))
+* warehouse archiver integration tests ([#4135](https://github.com/rudderlabs/rudder-server/issues/4135)) ([ac8a55a](https://github.com/rudderlabs/rudder-server/commit/ac8a55a77978634e469ea4b25eeaa5f12ec8b1aa))
+* **warehouse:** crash recovery without panics ([#4182](https://github.com/rudderlabs/rudder-server/issues/4182)) ([a97436e](https://github.com/rudderlabs/rudder-server/commit/a97436e51b04ba8bda65170c45379324fafe2f73))
+
 ## [1.17.3](https://github.com/rudderlabs/rudder-server/compare/v1.17.2...v1.17.3) (2023-12-05)
 
 
