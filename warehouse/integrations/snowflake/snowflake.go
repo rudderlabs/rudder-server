@@ -201,8 +201,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
 
-	// appendOnlyTables is a workaround introduced for Mattermost for now. It is only support on snowflake.
-	sf.config.appendOnlyTables = conf.GetStringSlice("Warehouse.snowflake.appendOnlyTables", []string{})
+	// appendOnlyTables is a workaround introduced for Mattermost for now. It is only supported for snowflake.
+	sf.config.appendOnlyTables = conf.GetStringSlice("Warehouse.snowflake.appendOnlyTables", nil)
 
 	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
 	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
