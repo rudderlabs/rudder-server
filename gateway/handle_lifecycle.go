@@ -52,6 +52,7 @@ func (gw *Handle) Setup(
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService, sourcehandle sourcedebugger.SourceDebugger,
+	opts ...OptFunc,
 ) error {
 	gw.config = config
 	gw.logger = logger
@@ -135,6 +136,10 @@ func (gw *Handle) Setup(
 		gw.eventSchemaHandler = event_schema.GetInstance()
 	}
 
+	for _, opt := range opts {
+		opt(gw)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 	gw.backgroundCancel = cancel
@@ -163,6 +168,14 @@ func (gw *Handle) Setup(
 		return nil
 	}))
 	return nil
+}
+
+type OptFunc func(*Handle)
+
+func WithInternalHttpHandlers(handlers map[string]http.Handler) OptFunc {
+	return func(gw *Handle) {
+		gw.internalHttpHandlers = handlers
+	}
 }
 
 // initUserWebRequestWorkers initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
@@ -384,6 +397,9 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
 
 		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
+		for path, handler := range gw.internalHttpHandlers {
+			r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
+		}
 	})
 
 	// TODO: delete this handler once we are ready to remove support for the v1 api
