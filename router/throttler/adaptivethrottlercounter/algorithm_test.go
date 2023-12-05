@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const float64EqualityThreshold = 1e-9
@@ -16,7 +17,7 @@ const float64EqualityThreshold = 1e-9
 func TestAdaptiveRateLimit(t *testing.T) {
 	t.Run("when there is a 429s in the last shortTimer frequency", func(t *testing.T) {
 		config := config.New()
-		al := New(config, 1*time.Second)
+		al := New(config, misc.SingleValueLoader(1*time.Second))
 		defer al.Shutdown()
 		al.ResponseCodeReceived(429)
 		require.True(t, floatCheck(al.LimitFactor(), float64(0.7))) // reduces by 30% since there is an error in the last 1 second
@@ -24,14 +25,14 @@ func TestAdaptiveRateLimit(t *testing.T) {
 
 	t.Run("when there are no 429s ins the last longTimer frequency", func(t *testing.T) {
 		config := config.New()
-		al := New(config, 1*time.Second)
+		al := New(config, misc.SingleValueLoader(1*time.Second))
 		defer al.Shutdown()
 		require.True(t, floatCheck(al.LimitFactor(), float64(1.1))) // increases by 10% since there is no error in the last 2 seconds
 	})
 
 	t.Run("429s less than resolution", func(t *testing.T) {
 		config := config.New()
-		al := New(config, 1*time.Second)
+		al := New(config, misc.SingleValueLoader(1*time.Second))
 		defer al.Shutdown()
 		for i := 0; i < 10; i++ {
 			al.ResponseCodeReceived(200)
@@ -42,7 +43,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 
 	t.Run("429s more than resolution", func(t *testing.T) {
 		config := config.New()
-		al := New(config, 1*time.Second)
+		al := New(config, misc.SingleValueLoader(1*time.Second))
 		defer al.Shutdown()
 		for i := 0; i < 5; i++ {
 			al.ResponseCodeReceived(200)
@@ -54,7 +55,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 	t.Run("should delay for few windows before decreasing again", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.adaptive.decreaseRateDelay", 2)
-		al := New(config, 1*time.Second)
+		al := New(config, misc.SingleValueLoader(1*time.Second))
 		defer al.Shutdown()
 		al.ResponseCodeReceived(429)
 		require.True(t, floatCheck(al.LimitFactor(), float64(0.7)))

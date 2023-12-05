@@ -6,23 +6,31 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type adaptiveThrottleConfig struct {
-	enabled  bool
-	limit    int64
-	window   time.Duration
-	minLimit *config.Reloadable[int64]
-	maxLimit *config.Reloadable[int64]
+	window   misc.ValueLoader[time.Duration]
+	minLimit misc.ValueLoader[int64]
+	maxLimit misc.ValueLoader[int64]
 }
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
-	c.window = config.GetDurationVar(1, time.Second, fmt.Sprintf(`Router.throttler.adaptive.%s.timeWindow`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.timeWindow`, destName), `Router.throttler.adaptive.timeWindow`, fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID), fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName))
-	c.minLimit = config.GetReloadableInt64Var(1, 1, fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destName), `Router.throttler.adaptive.minLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	c.maxLimit = config.GetReloadableInt64Var(250, 1, fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destID), fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName), `Router.throttler.adaptive.maxLimit`, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	if c.window > 0 {
-		c.enabled = true
-	}
+	c.window = config.GetReloadableDurationVar(0, time.Second,
+		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName))
+	c.minLimit = config.GetReloadableInt64Var(1, 1,
+		fmt.Sprintf(`Router.throttler.%s.%s.minLimit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.minLimit`, destName))
+	c.maxLimit = config.GetReloadableInt64Var(0, 1,
+		fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.maxLimit`, destName),
+		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+}
+
+func (c *adaptiveThrottleConfig) enabled() bool {
+	return c.minLimit.Load() > 0 && c.maxLimit.Load() > 0 && c.window.Load() > 0 && c.minLimit.Load() > c.maxLimit.Load()
 }
 
 type adaptiveThrottler struct {
@@ -33,13 +41,10 @@ type adaptiveThrottler struct {
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
 func (t *adaptiveThrottler) CheckLimitReached(ctx context.Context, key string, cost int64) (limited bool, retErr error) {
-	if !t.config.enabled {
+	if !t.config.enabled() {
 		return false, nil
 	}
-	if t.config.minLimit.Load() > t.config.maxLimit.Load() {
-		return false, fmt.Errorf("minLimit %d is greater than maxLimit %d", t.config.minLimit.Load(), t.config.maxLimit.Load())
-	}
-	allowed, _, err := t.limiter.Allow(ctx, cost, t.getLimit(), getWindowInSecs(t.config.window), key)
+	allowed, _, err := t.limiter.Allow(ctx, cost, t.getLimit(), getWindowInSecs(t.config.window.Load()), key)
 	if err != nil {
 		return false, fmt.Errorf("could not limit: %w", err)
 	}
@@ -58,12 +63,6 @@ func (t *adaptiveThrottler) Shutdown() {
 }
 
 func (t *adaptiveThrottler) getLimit() int64 {
-	limit := t.config.limit
-	if limit == 0 {
-		limit = t.config.maxLimit.Load()
-	}
-	limit = int64(float64(limit) * t.algorithm.LimitFactor())
-	limit = max(t.config.minLimit.Load(), min(limit, t.config.maxLimit.Load()))
-	t.config.limit = limit
-	return t.config.limit
+	limit := int64(float64(t.config.maxLimit.Load()) * t.algorithm.LimitFactor())
+	return max(t.config.minLimit.Load(), limit)
 }
