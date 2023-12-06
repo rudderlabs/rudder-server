@@ -69,7 +69,9 @@ func (t *adaptiveThrottler) Shutdown() {
 
 func (t *adaptiveThrottler) getLimit() int64 {
 	limitFactor := t.algorithm.LimitFactor()
-	defer t.limitFactorMeasurement.Gauge(limitFactor)
+	if t.limitFactorMeasurement != nil {
+		t.limitFactorMeasurement.Gauge(limitFactor)
+	}
 	limit := int64(float64(t.config.maxLimit.Load()) * limitFactor)
 	return max(t.config.minLimit.Load(), limit)
 }

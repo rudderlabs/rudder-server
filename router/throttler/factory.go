@@ -45,9 +45,9 @@ func (f *factory) Get(destName, destID string) Throttler {
 	defer func() {
 		if f.Stats != nil {
 			tags := stats.Tags{
-				"destination_id":   destID,
-				"destination_name": destName,
-				"adaptive_enabled": fmt.Sprintf("%t", f.throttlers[destID].(*switchingThrottler).adaptiveEnabled.Load()),
+				"destinationId": destID,
+				"destType":      destName,
+				"adaptive":      fmt.Sprintf("%t", f.throttlers[destID].(*switchingThrottler).adaptiveEnabled.Load()),
 			}
 			f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(f.throttlers[destID].getLimit())
 		}
@@ -65,14 +65,18 @@ func (f *factory) Get(destName, destID string) Throttler {
 
 	var adaptiveConf adaptiveThrottleConfig
 	adaptiveConf.readThrottlingConfig(f.config, destName, destID)
+	var limitFactorMeasurement stats.Measurement = nil
+	if f.Stats != nil {
+		limitFactorMeasurement = f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
+			"destinationId": destID,
+			"destType":      destName,
+		})
+	}
 	at := &adaptiveThrottler{
-		limiter:   f.adaptiveLimiter,
-		algorithm: newAdaptiveAlgorithm(f.config, adaptiveConf.window),
-		config:    adaptiveConf,
-		limitFactorMeasurement: f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
-			"destination_id":   destID,
-			"destination_name": destName,
-		}),
+		limiter:                f.adaptiveLimiter,
+		algorithm:              newAdaptiveAlgorithm(f.config, adaptiveConf.window),
+		config:                 adaptiveConf,
+		limitFactorMeasurement: limitFactorMeasurement,
 	}
 
 	f.throttlers[destID] = &switchingThrottler{
