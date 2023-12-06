@@ -2181,19 +2181,20 @@ func requireStagingFileEventsCount(
 		return t.B
 	})
 
-	require.Eventuallyf(t, func() bool {
-		var eventsCount int
-		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
-		if err != nil {
-			t.Logf("error getting staging file events count: %v", err)
-			return false
-		}
-		t.Logf("Staging file events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		30*time.Second,
-		1*time.Second,
-		"expected staging file events count to be %d", expectedCount,
+	var eventsCount int
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+			if err != nil {
+				t.Logf("error getting staging file events count: %v", err)
+				return false
+			}
+			t.Logf("Staging file events count: %d", eventsCount)
+			return eventsCount == expectedCount
+		},
+		10*time.Second,
+		250*time.Millisecond,
+		"expected staging file events count to be %d, got %d", expectedCount, eventsCount,
 	)
 }
 
@@ -2215,19 +2216,19 @@ func requireLoadFileEventsCount(
 		return t.B
 	})
 
-	require.Eventuallyf(t, func() bool {
-		var eventsCount int
-		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
-		if err != nil {
-			t.Logf("error getting load file events count: %v", err)
-			return false
-		}
-		t.Logf("Load file events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		30*time.Second,
-		1*time.Second,
-		"expected load file events count to be %d", expectedCount,
+	var eventsCount int
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+			if err != nil {
+				t.Logf("error getting load file events count: %v", err)
+				return false
+			}
+			return eventsCount == expectedCount
+		},
+		10*time.Second,
+		250*time.Millisecond,
+		"expected load file events count to be %d, got %d", expectedCount, eventsCount,
 	)
 }
 
@@ -2266,19 +2267,19 @@ func requireTableUploadEventsCount(
 		}
 	}
 
-	require.Eventuallyf(t, func() bool {
-		var eventsCount int
-		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
-		if err != nil {
-			t.Logf("error getting table upload events count: %v", err)
-			return false
-		}
-		t.Logf("Table upload events count: %d", eventsCount)
-		return eventsCount == expectedCount
-	},
-		30*time.Second,
-		1*time.Second,
-		"expected table upload events count to be %d", expectedCount,
+	var eventsCount int
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
+			if err != nil {
+				t.Logf("error getting table upload events count: %v", err)
+				return false
+			}
+			return eventsCount == expectedCount
+		},
+		10*time.Second,
+		250*time.Millisecond,
+		"expected table upload events count to be %d, got %d", expectedCount, eventsCount,
 	)
 }
 
@@ -2300,19 +2301,19 @@ func requireUploadJobsCount(
 		return t.B
 	})
 
-	require.Eventuallyf(t, func() bool {
-		var jobsCount int
-		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
-		if err != nil {
-			t.Logf("error getting upload jobs count: %v", err)
-			return false
-		}
-		t.Logf("upload jobs count: %d", jobsCount)
-		return jobsCount == expectedCount
-	},
-		30*time.Second,
-		1*time.Second,
-		"expected upload jobs count to be %d", expectedCount,
+	var jobsCount int
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
+			if err != nil {
+				t.Logf("error getting upload jobs count: %v", err)
+				return false
+			}
+			return jobsCount == expectedCount
+		},
+		10*time.Second,
+		250*time.Millisecond,
+		"expected upload jobs count to be %d, got %d", expectedCount, jobsCount,
 	)
 }
 
@@ -2333,19 +2334,19 @@ func requireRetriedUploadJobsCount(
 		return t.B
 	})
 
-	require.Eventuallyf(t, func() bool {
-		var jobsCount sql.NullInt64
-		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
-		if err != nil {
-			t.Logf("error getting retried upload jobs count: %v", err)
-			return false
-		}
-		t.Logf("retried upload jobs count: %d", jobsCount.Int64)
-		return jobsCount.Int64 == int64(expectedCount)
-	},
+	var jobsCount sql.NullInt64
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&jobsCount)
+			if err != nil {
+				t.Logf("error getting retried upload jobs count: %v", err)
+				return false
+			}
+			return jobsCount.Int64 == int64(expectedCount)
+		},
 		120*time.Second,
-		1*time.Second,
-		"expected retried upload jobs count to be %d", expectedCount,
+		250*time.Millisecond,
+		"expected retried upload jobs count to be %d, got %d", expectedCount, jobsCount.Int64,
 	)
 }
 
@@ -2358,19 +2359,19 @@ func requireDownstreamEventsCount(
 ) {
 	t.Helper()
 
-	require.Eventuallyf(t, func() bool {
-		var eventsCount int
-		err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount)
-		if err != nil {
-			t.Logf("error getting downstream events count: %v", err)
-			return false
-		}
-		t.Logf("downstream events count for table %s: %d", tableName, eventsCount)
-		return eventsCount == expectedCount
-	},
+	var eventsCount int
+	require.Eventuallyf(t,
+		func() bool {
+			err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&eventsCount)
+			if err != nil {
+				t.Logf("error getting downstream events count: %v", err)
+				return false
+			}
+			return eventsCount == expectedCount
+		},
 		10*time.Second,
-		1*time.Second,
-		"expected downstream events count for table %s to be %d", tableName, expectedCount,
+		250*time.Millisecond,
+		"expected downstream events count for table %s to be %d, got %d", tableName, expectedCount, eventsCount,
 	)
 }
 
@@ -2391,18 +2392,17 @@ func requireReportsCount(
 		return t.B
 	})
 
+	var reportsCount sql.NullInt64
 	require.Eventuallyf(t, func() bool {
-		var reportsCount sql.NullInt64
 		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount)
 		if err != nil {
 			t.Logf("error getting reports count: %v", err)
 			return false
 		}
-		t.Logf("reports count: %d", reportsCount.Int64)
 		return reportsCount.Int64 == int64(expectedCount)
 	},
 		10*time.Second,
-		1*time.Second,
-		"expected reports count to be %d", expectedCount,
+		250*time.Millisecond,
+		"expected reports count to be %d, got %d", expectedCount, reportsCount.Int64,
 	)
 }
