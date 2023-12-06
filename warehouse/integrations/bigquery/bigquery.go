@@ -861,14 +861,14 @@ func (bq *BigQuery) dedupEnabled() bool {
 	return bq.config.isDedupEnabled || bq.config.isUsersTableDedupEnabled
 }
 
-func (bq *BigQuery) CrashRecover(ctx context.Context) {
+func (bq *BigQuery) CrashRecover(ctx context.Context) error {
 	if !bq.dedupEnabled() {
-		return
+		return nil
 	}
-	bq.dropDanglingStagingTables(ctx)
+	return bq.dropDanglingStagingTables(ctx)
 }
 
-func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
+func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  table_name
@@ -884,8 +884,7 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 	query := bq.db.Query(sqlStatement)
 	it, err := bq.getMiddleware().Read(ctx, query)
 	if err != nil {
-		bq.logger.Errorf("WH: BQ: Error dropping dangling staging tables in BQ: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return fmt.Errorf("reading dangling staging tables in dataset %v: %w", bq.namespace, err)
 	}
 
 	var stagingTableNames []string
@@ -896,23 +895,21 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) bool {
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			bq.logger.Errorf("BQ: Error in processing fetched staging tables from information schema in dataset %v : %v", bq.namespace, err)
-			return false
+			return fmt.Errorf("processing dangling staging tables in dataset %v: %w", bq.namespace, err)
 		}
 		if _, ok := values[0].(string); ok {
 			stagingTableNames = append(stagingTableNames, values[0].(string))
 		}
 	}
 	bq.logger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		err := bq.DeleteTable(ctx, stagingTableName)
 		if err != nil {
-			bq.logger.Errorf("WH: BQ:  Error dropping dangling staging table: %s in BQ: %v", stagingTableName, err)
-			delSuccess = false
+			return fmt.Errorf("dropping dangling staging table: %w", err)
 		}
 	}
-	return delSuccess
+
+	return nil
 }
 
 func (bq *BigQuery) IsEmpty(

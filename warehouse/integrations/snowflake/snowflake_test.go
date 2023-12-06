@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -964,39 +965,80 @@ func TestIntegration(t *testing.T) {
 
 func TestSnowflake_ShouldAppend(t *testing.T) {
 	testCases := []struct {
-		name                  string
-		loadTableStrategy     string
-		uploaderCanAppend     bool
-		uploaderExpectedCalls int
-		expected              bool
+		name              string
+		loadTableStrategy string
+		tableName         string
+		appendOnlyTables  []string
+		uploaderCanAppend bool
+		expected          bool
 	}{
 		{
-			name:                  "uploader says we can append and we are in append mode",
-			loadTableStrategy:     "APPEND",
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			name:              "uploader says we can append and we are in append mode",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          true,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in append mode",
-			loadTableStrategy:     "APPEND",
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              false,
+			name:              "uploader says we cannot append and we are in append mode",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          false,
 		},
 		{
-			name:                  "uploader says we can append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 0,
-			expected:              false,
+			name:              "uploader says we can append and we are in merge mode",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          false,
 		},
 		{
-			name:                  "uploader says we cannot append and we are in merge mode",
-			loadTableStrategy:     "MERGE",
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 0,
-			expected:              false,
+			name:              "uploader says we cannot append and we are in merge mode",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is in append only",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is not in append only",
+			loadTableStrategy: "APPEND",
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we cannot append, in merge mode, but table is in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is not in append only",
+			loadTableStrategy: "MERGE",
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
 		},
 	}
 
@@ -1004,16 +1046,17 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.snowflake.loadTableStrategy", tc.loadTableStrategy)
+			c.Set("Warehouse.snowflake.appendOnlyTables", tc.appendOnlyTables)
 
 			sf, err := snowflake.New(c, logger.NOP, memstats.New())
 			require.NoError(t, err)
 
 			mockCtrl := gomock.NewController(t)
 			uploader := mockuploader.NewMockUploader(mockCtrl)
-			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
+			uploader.EXPECT().CanAppend().AnyTimes().Return(tc.uploaderCanAppend)
 
 			sf.Uploader = uploader
-			require.Equal(t, sf.ShouldAppend(), tc.expected)
+			require.Equal(t, sf.ShouldAppendTable(tc.tableName), tc.expected)
 		})
 	}
 }
@@ -1053,4 +1096,132 @@ func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	return db
+}
+
+func TestSnowflake_DeleteBy(t *testing.T) {
+	if !isSnowflakeTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+	}
+	if !isSnowflakeTestRBACCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testRBACKey)
+	}
+
+	namespace := testhelper.RandSchema(whutils.SNOWFLAKE)
+
+	ctx := context.Background()
+
+	credentials, err := getSnowflakeTestCredentials(testKey)
+	require.NoError(t, err)
+
+	urlConfig := sfdb.Config{
+		Account:   credentials.Account,
+		User:      credentials.User,
+		Role:      credentials.Role,
+		Password:  credentials.Password,
+		Database:  credentials.Database,
+		Warehouse: credentials.Warehouse,
+	}
+
+	dsn, err := sfdb.DSN(&urlConfig)
+	require.NoError(t, err)
+
+	db := getSnowflakeDB(t, dsn)
+	require.NoError(t, db.Ping())
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+				t.Logf("error deleting schema: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	config := config.New()
+	config.Set("Warehouse.snowflake.enableDeleteByJobs", true)
+
+	sf, err := snowflake.New(config, logger.NOP, memstats.New())
+	require.NoError(t, err)
+
+	sf.DB = sqlquerywrapper.New(db)
+	sf.Namespace = namespace
+
+	now := time.Now()
+
+	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
+	require.NoError(t, err, "should create schema")
+
+	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
+	require.NoError(t, err, "should create table")
+
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
+	require.NoError(t, err, "should insert records")
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
+	require.NoError(t, err, "should insert records")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_1",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
+	}), "should delete records")
+
+	rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+
+	var recordIDs []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		recordIDs = append(recordIDs, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{2}, recordIDs, "got the correct set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: time.Time{},
+	}), "delete should succeed even if start time is zero value - no records must be deleted")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+
+	var ids1 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids1 = append(ids1, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{2}, ids1, "got the same set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
+	}), "should delete records")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+	var ids2 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids2 = append(ids2, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Empty(t, ids2, "no more rows left")
 }

@@ -17,7 +17,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           operations-per-run: 200
-          stale-pr-message: 'This PR is considered to be stale. It has been open 20 days with no further activity thus it is going to be closed in 5 days. To avoid such a case please consider removing the stale label manually or add a comment to the PR.'
+          stale-pr-message: 'This PR is considered to be stale. It has been open 20 days with no further activity thus it is going to be closed in 7 days. To avoid such a case please consider removing the stale label manually or add a comment to the PR.'
           days-before-pr-stale: 20
           days-before-pr-close: 7
           stale-pr-label: 'Stale'

@@ -91,15 +91,15 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 	})
 
 	type metadata struct {
-		JobRunID  string `json:"job_run_id"`
-		TaskRunID string `json:"task_run_id"`
-		JobType   string `json:"jobtype"`
-		StartTime string `json:"start_time"`
+		JobRunID  string    `json:"job_run_id"`
+		TaskRunID string    `json:"task_run_id"`
+		JobType   string    `json:"jobtype"`
+		StartTime time.Time `json:"start_time"`
 	}
 	metadataJson, err := json.Marshal(metadata{
 		JobRunID:  payload.JobRunID,
 		TaskRunID: payload.TaskRunID,
-		StartTime: payload.StartTime,
+		StartTime: payload.StartTime.Time,
 		JobType:   string(notifier.JobTypeAsync),
 	})
 	if err != nil {
@@ -147,12 +147,11 @@ func (m *Manager) process(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("getting pending source jobs with error %w", err)
 		}
-		if len(pendingJobs) == 0 {
-			continue
-		}
 
-		if err = m.processPendingJobs(ctx, pendingJobs); err != nil {
-			return fmt.Errorf("process pending source jobs with error %w", err)
+		if len(pendingJobs) > 0 {
+			if err = m.processPendingJobs(ctx, pendingJobs); err != nil {
+				return fmt.Errorf("process pending source jobs with error %w", err)
+			}
 		}
 
 		select {
