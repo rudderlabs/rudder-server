@@ -17,7 +17,8 @@ func (t *switchingThrottler) CheckLimitReached(ctx context.Context, key string, 
 }
 
 func (t *switchingThrottler) ResponseCodeReceived(code int) {
-	t.throttler().ResponseCodeReceived(code)
+	t.static.ResponseCodeReceived(code)
+	t.adaptive.ResponseCodeReceived(code)
 }
 
 func (t *switchingThrottler) Shutdown() {

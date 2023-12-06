@@ -69,6 +69,10 @@ func (f *factory) Get(destName, destID string) Throttler {
 		limiter:   f.adaptiveLimiter,
 		algorithm: newAdaptiveAlgorithm(f.config, adaptiveConf.window),
 		config:    adaptiveConf,
+		limitFactorMeasurement: f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
+			"destination_id":   destID,
+			"destination_name": destName,
+		}),
 	}
 
 	f.throttlers[destID] = &switchingThrottler{

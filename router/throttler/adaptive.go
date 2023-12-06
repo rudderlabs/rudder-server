@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -37,9 +38,10 @@ func (c *adaptiveThrottleConfig) enabled() bool {
 }
 
 type adaptiveThrottler struct {
-	limiter   limiter
-	algorithm adaptiveAlgorithm
-	config    adaptiveThrottleConfig
+	limiter                limiter
+	algorithm              adaptiveAlgorithm
+	config                 adaptiveThrottleConfig
+	limitFactorMeasurement stats.Measurement
 }
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
@@ -66,6 +68,8 @@ func (t *adaptiveThrottler) Shutdown() {
 }
 
 func (t *adaptiveThrottler) getLimit() int64 {
-	limit := int64(float64(t.config.maxLimit.Load()) * t.algorithm.LimitFactor())
+	limitFactor := t.algorithm.LimitFactor()
+	defer t.limitFactorMeasurement.Gauge(limitFactor)
+	limit := int64(float64(t.config.maxLimit.Load()) * limitFactor)
 	return max(t.config.minLimit.Load(), limit)
 }
