@@ -24,6 +24,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "port": "{{.port}}",
             "path": "{{.path}}",

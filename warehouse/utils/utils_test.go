@@ -1007,7 +1007,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		},
 	}
 	for idx, input := range inputs {
-		got := input.warehouse.GetBoolDestinationConfig("useRudderStorage")
+		got := input.warehouse.GetBoolDestinationConfig(model.UseRudderStorageSetting)
 		want := input.expected
 		if got != want {
 			t.Errorf("got %t expected %t input %d", got, want, idx)
