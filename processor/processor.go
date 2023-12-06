@@ -1567,7 +1567,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		sourceId := eventParams.SourceId
 		ctx := stats.InjectTraceParentIntoContext(context.TODO(), eventParams.TraceParent)
-		_, span := proc.tracer.Start(ctx, "processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+		_, span := proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 			"sourceId":    sourceId,
 			"workspaceId": batchEvent.WorkspaceId,
 			"uuid":        batchEvent.UUID.String(),
@@ -2023,7 +2023,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 				"workspaceId":   event.Metadata.WorkspaceID,
 			}
 			ctx := stats.InjectTraceParentIntoContext(context.TODO(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "transformations", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindConsumer, stats.SpanWithTags(tags))
 
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
@@ -2158,7 +2158,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}()
 	for traceparent, tags := range in.traces {
 		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceparent)
-		_, span := proc.tracer.Start(ctx, "store", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindConsumer, stats.SpanWithTags(tags))
 		spans = append(spans, span)
 	}
 
@@ -2357,7 +2357,7 @@ type transformSrcDestOutput struct {
 	droppedJobs     []*jobsdb.JobT
 }
 
-func (proc *Handle) transformSrcDest(
+func (proc *Handle) transformSrcDest( // @TODO the problem with messages that have the same msgID is here!!!
 	ctx context.Context,
 	partition string,
 	// main inputs

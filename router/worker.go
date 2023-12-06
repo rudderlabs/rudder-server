@@ -55,6 +55,7 @@ type worker struct {
 }
 
 type workerJob struct {
+	ctx        context.Context
 	job        *jobsdb.JobT
 	assignedAt time.Time
 }

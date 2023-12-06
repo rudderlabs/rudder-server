@@ -98,7 +98,7 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 	reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
 	arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 
-	ctx, span := gw.tracer.Start(ctx, "webRequestHandler", stats.SpanKindServer,
+	ctx, span := gw.tracer.Start(ctx, "gw.webRequestHandler", stats.SpanKindServer,
 		stats.SpanWithTimestamp(time.Now()),
 		stats.SpanWithTags(stats.Tags{
 			"reqType":     reqType,

@@ -78,6 +78,7 @@ type Handle struct {
 	// state
 
 	logger                         logger.Logger
+	tracer                         stats.Tracer
 	destinationResponseHandler     ResponseHandler
 	telemetry                      *Diagnostic
 	netHandle                      NetHandle
@@ -182,6 +183,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	type reservedJob struct {
+		ctx  context.Context
 		slot *workerSlot
 		job  *jobsdb.JobT
 	}
@@ -208,12 +210,19 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
-			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
+			reservedJob.slot.Use(workerJob{ctx: reservedJob.ctx, job: reservedJob.job, assignedAt: assignedTime})
 		}
 		pickupCount += len(reservedJobs)
 		reservedJobs = nil
 		statusList = nil
 	}
+
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
 
 	// Identify jobs which can be processed
 	var iterationInterrupted bool
@@ -229,6 +238,26 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		lastJob = job
 		slot, err := rt.findWorkerSlot(workers, job, blockedOrderKeys)
 		if err == nil {
+			var (
+				ctx         = context.Background()
+				traceparent = gjson.GetBytes(job.Parameters, "traceparent").String()
+			)
+			if traceparent != "" {
+				ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
+
+				if _, ok := traces[traceparent]; !ok {
+					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
+						"workspaceId":   job.WorkspaceId,
+						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
+						"customVal":     job.CustomVal,
+					}))
+					traces[traceparent] = span
+				}
+			} else {
+				rt.logger.Warnn("traceparent is empty", logger.NewIntField("jobId", job.JobID))
+			}
+
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -242,7 +271,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
-			reservedJobs = append(reservedJobs, reservedJob{slot: slot, job: job})
+			reservedJobs = append(reservedJobs, reservedJob{ctx: ctx, slot: slot, job: job})
 			if shouldFlush() {
 				flush()
 			}
