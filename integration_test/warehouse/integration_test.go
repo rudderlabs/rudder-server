@@ -1659,7 +1659,7 @@ func runWarehouseServer(
 	conf.Set("Warehouse.waitForWorkerSleep", "1s")
 	conf.Set("Warehouse.uploadAllocatorSleep", "1s")
 	conf.Set("Warehouse.uploadStatusTrackFrequency", "1s")
-	conf.Set("Warehouse.mainLoopSleep", "1s")
+	conf.Set("Warehouse.mainLoopSleep", "5s")
 	conf.Set("Warehouse.jobs.processingSleepInterval", "1s")
 	conf.Set("PgNotifier.maxPollSleep", "1s")
 	conf.Set("PgNotifier.trackBatchIntervalInS", "1s")
