@@ -28,6 +28,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -205,6 +206,7 @@ func TestRouterManager(t *testing.T) {
 		ProcErrorDB:                errDB,
 		TransientSources:           transientsource.NewEmptyService(),
 		RsourcesService:            mockRsourcesService,
+		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
 		TransformerFeaturesService: transformer.NewNoOpService(),
 	}
 	brtFactory := &batchrouter.Factory{
