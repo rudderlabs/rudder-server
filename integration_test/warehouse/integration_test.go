@@ -107,7 +107,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -115,22 +115,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -168,7 +168,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"users": {
 					"user_id":     "string",
 					"received_at": "datetime",
@@ -180,22 +180,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -229,7 +229,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -237,22 +237,22 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -279,7 +279,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":                  "string",
 						"user_id":             "string",
@@ -289,22 +289,22 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -345,7 +345,7 @@ func TestUploads(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: whutils.POSTGRES,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"host":             pgResource.Host,
 						"database":         pgResource.Database,
 						"user":             pgResource.User,
@@ -377,7 +377,7 @@ func TestUploads(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			require.NoError(t, runWarehouseServer(t, ctx, webPort, pgResource, bcConfig, []lo.Tuple2[string, interface{}]{
+			require.NoError(t, runWarehouseServer(t, ctx, webPort, pgResource, bcConfig, []lo.Tuple2[string, any]{
 				{A: "CONFIG_BACKEND_URL", B: cp.URL},
 			}...))
 		}()
@@ -410,7 +410,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationRevisionID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -418,22 +418,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -524,7 +524,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -532,22 +532,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -562,7 +562,7 @@ func TestUploads(t *testing.T) {
 			tunnelledDatabase,
 		)
 		tunnelInfo := &tunnelling.TunnelInfo{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"sshUser":       tunnelledSSHUser,
 				"sshPort":       strconv.Itoa(sshPort),
 				"sshHost":       tunnelledSSHHost,
@@ -600,7 +600,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -608,29 +608,29 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
-			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Succeeded.State},
@@ -677,7 +677,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -685,13 +685,13 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: aborted},
 			}...)
-			requireReportsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireReportsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Failed.State},
@@ -701,7 +701,7 @@ func TestUploads(t *testing.T) {
 				{A: "initial_state", B: false},
 				{A: "terminal_state", B: true},
 			}...)
-			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Aborted.State},
@@ -749,7 +749,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -757,13 +757,13 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: aborted},
 		}...)
-		requireRetriedUploadJobsCount(t, ctx, db, 3, []lo.Tuple2[string, interface{}]{
+		requireRetriedUploadJobsCount(t, ctx, db, 3, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -801,7 +801,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "int",
@@ -809,22 +809,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -871,7 +871,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -879,19 +879,19 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -924,7 +924,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -935,22 +935,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -960,22 +960,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1013,7 +1013,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1024,22 +1024,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1049,22 +1049,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1102,7 +1102,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1113,22 +1113,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1138,22 +1138,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1191,7 +1191,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1202,22 +1202,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1227,22 +1227,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1283,7 +1283,7 @@ func TestUploads(t *testing.T) {
 				SourceJobID:           uuid.NewString(),
 				SourceJobRunID:        uuid.NewString(),
 				SourceTaskRunID:       uuid.NewString(),
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1294,22 +1294,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1319,22 +1319,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1375,7 +1375,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1386,22 +1386,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1411,22 +1411,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1467,7 +1467,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]interface{}{
+				Schema: map[string]map[string]any{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1478,22 +1478,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1503,22 +1503,22 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, interface{}]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, interface{}]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
@@ -1565,7 +1565,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]any{
 				"rudder_identity_mappings": {
 					"rudder_id":            "string",
 					"updated_at":           "datetime",
@@ -1580,22 +1580,22 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+		requireStagingFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+		requireLoadFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, interface{}]{
+		requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
 			{A: "status", B: waiting},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...) // not supported for postgres yet
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, interface{}]{
+		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -1610,7 +1610,7 @@ func runWarehouseServer(
 	webPort int,
 	pgResource *resource.PostgresResource,
 	bcConfig map[string]backendconfig.ConfigT,
-	configOverrides ...lo.Tuple2[string, interface{}],
+	configOverrides ...lo.Tuple2[string, any],
 ) error {
 	mockCtrl := gomock.NewController(t)
 
@@ -1699,7 +1699,7 @@ func defaultBackendConfig(
 							DestinationDefinition: backendconfig.DestinationDefinitionT{
 								Name: whutils.POSTGRES,
 							},
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"host":             pgResource.Host,
 								"database":         pgResource.Database,
 								"user":             pgResource.User,
@@ -1769,15 +1769,15 @@ func requireStagingFileEventsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
 	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_staging_files WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 
@@ -1804,15 +1804,15 @@ func requireLoadFileEventsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
 	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_load_files WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 
@@ -1838,27 +1838,27 @@ func requireTableUploadEventsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
-	tableUploadsFilters := lo.Filter(filters, func(t lo.Tuple2[string, interface{}], index int) bool {
+	tableUploadsFilters := lo.Filter(filters, func(t lo.Tuple2[string, any], index int) bool {
 		return !strings.HasPrefix(t.A, "wh_uploads")
 	})
-	uploadFilters := lo.Filter(filters, func(t lo.Tuple2[string, interface{}], index int) bool {
+	uploadFilters := lo.Filter(filters, func(t lo.Tuple2[string, any], index int) bool {
 		return strings.HasPrefix(t.A, "wh_uploads")
 	})
 
 	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_table_uploads WHERE 1 = 1"
-	query += strings.Join(lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 	if len(uploadFilters) > 0 {
 		query += " AND wh_upload_id IN (SELECT id FROM wh_uploads WHERE 1 = 1"
-		query += strings.Join(lo.Map(uploadFilters, func(t lo.Tuple2[string, interface{}], index int) string {
+		query += strings.Join(lo.Map(uploadFilters, func(t lo.Tuple2[string, any], index int) string {
 			return fmt.Sprintf(" AND %s = $%d", t.A, len(tableUploadsFilters)+index+1)
 		}), "")
 		query += ")"
@@ -1889,15 +1889,15 @@ func requireUploadJobsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
 	query := "SELECT count(*) FROM wh_uploads WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 
@@ -1922,15 +1922,15 @@ func requireRetriedUploadJobsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
 	query := "SELECT SUM(CAST(value ->> 'attempt' AS INT)) AS total_attempts FROM wh_uploads, jsonb_each(error) WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 
@@ -1980,15 +1980,15 @@ func requireReportsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
-	filters ...lo.Tuple2[string, interface{}],
+	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
 	query := "SELECT sum(count) FROM reports WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, interface{}], index int) string {
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, interface{}], _ int) interface{} {
+	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
 		return t.B
 	})
 
