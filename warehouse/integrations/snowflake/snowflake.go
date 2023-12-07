@@ -595,7 +595,7 @@ func (sf *Snowflake) trackDuplicateMessageInfo(
 
 	var out bytes.Buffer
 	if err := sqlutil.PrintRowsToTable(rows.Rows, &out); err != nil {
-		out.WriteString(fmt.Sprintf("error printing rows: %v", err))
+		return fmt.Errorf("printing rows to table: %w", err)
 	}
 
 	tmpDirPath, err := misc.CreateTMPDIR()

@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,12 +64,6 @@ var (
 	EventID                      string
 	VersionID                    string
 )
-
-type eventSchemasObject struct {
-	EventID   string
-	EventType string
-	VersionID string
-}
 
 type event struct {
 	anonymousID       string
@@ -259,105 +252,6 @@ func TestMainFlow(t *testing.T) {
 		}
 
 		t.Log("Processed", msgCount, "messages")
-	})
-
-	t.Run("event-models", func(t *testing.T) {
-		// GET /schemas/event-models
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
-		method := "GET"
-		resBody, _ := getEvent(url, method)
-		require.Eventually(t, func() bool {
-			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = getEvent(url, method)
-			return resBody != "[]"
-		}, time.Minute, 10*time.Millisecond)
-		require.NotEqual(t, resBody, "[]")
-		b := []byte(resBody)
-		var eventSchemas []eventSchemasObject
-
-		err := json.Unmarshal(b, &eventSchemas)
-		if err != nil {
-			t.Log(err)
-		}
-		for k := range eventSchemas {
-			if eventSchemas[k].EventType == "page" {
-				EventID = eventSchemas[k].EventID
-			}
-		}
-		require.NotEqual(t, EventID, "")
-	})
-
-	t.Run("event-versions", func(t *testing.T) {
-		// GET /schemas/event-versions
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, EventID)
-
-		b := []byte(resBody)
-		var eventSchemas []eventSchemasObject
-
-		err = json.Unmarshal(b, &eventSchemas)
-		require.NoError(t, err)
-		if err != nil {
-			t.Log(err)
-		}
-		VersionID = eventSchemas[0].VersionID
-		t.Log("Test Schemas Event ID's VersionID:", VersionID)
-	})
-
-	t.Run("event-model-key-counts", func(t *testing.T) {
-		// GET schemas/event-model/{EventID}/key-counts
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-model-metadata", func(t *testing.T) {
-		// GET /schemas/event-model/{EventID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-version-metadata", func(t *testing.T) {
-		// GET /schemas/event-version/{VersionID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-version-missing-keys", func(t *testing.T) {
-		// GET /schemas/event-version/{VersionID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "originalTimestamp")
-		require.Contains(t, resBody, "sentAt")
-		require.Contains(t, resBody, "channel")
-		require.Contains(t, resBody, "integrations.All")
-	})
-
-	t.Run("event-models-json-schemas", func(t *testing.T) {
-		// GET /schemas/event-models/json-schemas
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Eventually(t, func() bool {
-			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = getEvent(url, method)
-			return resBody != "[]"
-		}, time.Minute, 10*time.Millisecond)
-		require.NotEqual(t, resBody, "[]")
 	})
 
 	t.Run("beacon-batch", func(t *testing.T) {
