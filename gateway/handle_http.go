@@ -64,24 +64,6 @@ func (*Handle) robotsHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
 }
 
-// eventSchemaController middleware checks if the event schemas feature is enabled. If not, it returns a 400 response
-func (gw *Handle) eventSchemaController(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !gw.conf.enableEventSchemasFeature {
-			status := http.StatusBadRequest
-			responseBody := response.MakeResponse("EventSchemas feature is disabled")
-			gw.logger.Infow("response",
-				"ip", misc.GetIPFromReq(r),
-				"path", r.URL.Path,
-				"status", status,
-				"body", responseBody)
-			http.Error(w, responseBody, status)
-			return
-		}
-		wrappedFunc(w, r)
-	}
-}
-
 // webHandler - regular web request handler
 func (gw *Handle) webHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
