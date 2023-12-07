@@ -2,7 +2,6 @@ run:
   timeout: 7m
   go: '1.21'
   skip-dirs:
-    - enterprise
     - event-schema
 
 linters:

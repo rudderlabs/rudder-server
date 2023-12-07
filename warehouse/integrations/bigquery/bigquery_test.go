@@ -25,7 +25,6 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
-	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -78,7 +77,7 @@ func TestIntegration(t *testing.T) {
 
 	escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
 
-	bootstrapSvc := func(t *testing.T, preferAppend bool) *bigquery.Client {
+	bootstrapSvc := func(t *testing.T) *bigquery.Client {
 		templateConfigurations := map[string]any{
 			"workspaceID":          workspaceID,
 			"sourceID":             sourceID,
@@ -93,7 +92,6 @@ func TestIntegration(t *testing.T) {
 			"bucketName":           bqTestCredentials.BucketName,
 			"credentials":          escapedCredentialsTrimmedStr,
 			"sourcesNamespace":     sourcesNamespace,
-			"preferAppend":         preferAppend,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -151,31 +149,9 @@ func TestIntegration(t *testing.T) {
 			sourceJob                           bool
 			skipModifiedEvents                  bool
 			prerequisite                        func(context.Context, testing.TB, *bigquery.Client)
-			preferAppend                        bool
 			customPartitionsEnabledWorkspaceIDs string
 			stagingFilePrefix                   string
 		}{
-			{
-				name:     "Merge mode",
-				writeKey: writeKey,
-				schema:   namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				sourceID:                      sourceID,
-				destinationID:                 destinationID,
-				stagingFilesEventsMap:         stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-				loadFilesEventsMap:            loadFilesEventsMap(),
-				tableUploadsEventsMap:         tableUploadsEventsMap(),
-				warehouseEventsMap:            mergeEventsMap(),
-				preferAppend:                  false,
-				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
-					t.Helper()
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
-				},
-				stagingFilePrefix: "testdata/upload-job-merge-mode",
-			},
 			{
 				name:          "Source Job",
 				writeKey:      sourcesWriteKey,
@@ -193,7 +169,6 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
 				sourceJob:             true,
-				preferAppend:          true,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -215,7 +190,6 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            appendEventsMap(),
 				skipModifiedEvents:            true,
-				preferAppend:                  true,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -237,7 +211,6 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap:               tableUploadsEventsMap(),
 				warehouseEventsMap:                  appendEventsMap(),
 				skipModifiedEvents:                  true,
-				preferAppend:                        true,
 				customPartitionsEnabledWorkspaceIDs: workspaceID,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
@@ -274,7 +247,7 @@ func TestIntegration(t *testing.T) {
 					"RSERVER_WAREHOUSE_BIGQUERY_CUSTOM_PARTITIONS_ENABLED_WORKSPACE_IDS",
 					tc.customPartitionsEnabledWorkspaceIDs,
 				)
-				db := bootstrapSvc(t, tc.preferAppend)
+				db := bootstrapSvc(t)
 
 				t.Cleanup(func() {
 					for _, dataset := range []string{tc.schema} {
@@ -535,101 +508,6 @@ func TestIntegration(t *testing.T) {
 			require.Error(t, err)
 			require.Nil(t, loadTableStat)
 		})
-		t.Run("merge with dedup", func(t *testing.T) {
-			tableName := "merge_with_dedup_test_table"
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.json.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
-
-			c := config.New()
-			bq := whbigquery.New(c, logger.NOP)
-			err := bq.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = bq.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			loadTableStat, err = bq.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(0))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
-
-			records := bqHelper.RetrieveRecordsFromWarehouse(t, db,
-				fmt.Sprintf(`
-						SELECT
-						  id,
-						  received_at,
-						  test_bool,
-						  test_datetime,
-						  test_float,
-						  test_int,
-						  test_string
-						FROM %s
-						ORDER BY id;`,
-					fmt.Sprintf("`%s`.`%s`", namespace, tableName),
-				),
-			)
-			require.Equal(t, records, whth.SampleTestRecords())
-		})
-		t.Run("merge without dedup", func(t *testing.T) {
-			tableName := "merge_without_dedup_test_table"
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.json.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
-
-			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
-			c := config.New()
-			bq := whbigquery.New(c, logger.NOP)
-			err := bq.Setup(ctx, appendWarehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = bq.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = bq.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			retrieveRecordsSQL := fmt.Sprintf(
-				`SELECT
-					id,
-					received_at,
-					test_bool,
-					test_datetime,
-					test_float,
-					test_int,
-					test_string
-				FROM %s
-				ORDER BY id;`,
-				fmt.Sprintf("`%s`.`%s`", namespace, tableName),
-			)
-			records := bqHelper.RetrieveRecordsFromWarehouse(t, db, retrieveRecordsSQL)
-			require.Equal(t, records, whth.DedupTestRecords())
-
-			loadTableStat, err = bq.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			records = bqHelper.RetrieveRecordsFromWarehouse(t, db, retrieveRecordsSQL)
-			require.Len(t, records, 28)
-		})
 		t.Run("append", func(t *testing.T) {
 			tableName := "append_test_table"
 
@@ -638,11 +516,8 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
-
 			bq := whbigquery.New(config.New(), logger.NOP)
-			err := bq.Setup(ctx, appendWarehouse, mockUploader)
+			err := bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)
@@ -1020,20 +895,6 @@ func tableUploadsEventsMap() whth.EventsCountMap {
 func stagingFilesEventsMap() whth.EventsCountMap {
 	return whth.EventsCountMap{
 		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
-	}
-}
-
-func mergeEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"_groups":       1,
 	}
 }
 

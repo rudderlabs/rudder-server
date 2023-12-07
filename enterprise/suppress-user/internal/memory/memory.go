@@ -37,11 +37,11 @@ func (m *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Me
 	defer m.suppressionsMu.RUnlock()
 	workspace, ok := m.suppressions[workspaceID]
 	if !ok {
-		return nil, nil
+		return nil, model.ErrKeyNotFound
 	}
 	sourceIDs, ok := workspace[userID]
 	if !ok {
-		return nil, nil
+		return nil, model.ErrKeyNotFound
 	}
 	if metadata, ok := sourceIDs[model.Wildcard]; ok {
 		return &metadata, nil
@@ -49,7 +49,7 @@ func (m *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Me
 	if metadata, ok := sourceIDs[sourceID]; ok {
 		return &metadata, nil
 	}
-	return nil, nil
+	return nil, model.ErrKeyNotFound
 }
 
 // Add adds the given suppressions to the repository

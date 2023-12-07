@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/url"
 	"os"
 	"path"
@@ -21,27 +22,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/cenkalti/backoff/v4"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/ClickHouse/clickhouse-go"
+	"github.com/cenkalti/backoff/v4"
+	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -165,6 +161,7 @@ type Clickhouse struct {
 		numWorkersDownloadLoadFiles int
 		s3EngineEnabledWorkspaceIDs []string
 		slowQueryThreshold          time.Duration
+		randomLoadDelay             func(string) time.Duration
 	}
 }
 
@@ -239,6 +236,16 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
+		maxDelay := conf.GetDurationVar(
+			0,
+			time.Second,
+			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
+			"Warehouse.clickhouse.maxLoadDelay",
+		)
+		return time.Duration(float64(maxDelay) * (1 - r.Float64()))
+	}
 
 	return ch
 }
@@ -496,6 +503,11 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
+	if delay := ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID); delay > 0 {
+		if err = misc.SleepCtx(ctx, delay); err != nil {
+			return
+		}
+	}
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(ctx, tableName, tableSchemaInUpload)
 	}
@@ -793,7 +805,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	ch.logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -835,7 +847,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
 	var orderByClause string
 	if len(sortKeyFields) > 0 {
@@ -955,7 +967,10 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	return err
 }
 
-func (*Clickhouse) CrashRecover(context.Context) {}
+func (*Clickhouse) CrashRecover(context.Context) error {
+	// no-op: clickhouse does not need crash recovery
+	return nil
+}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {

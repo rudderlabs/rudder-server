@@ -117,7 +117,11 @@ func TestIntegration(t *testing.T) {
 	db := sql.OpenDB(connector)
 	require.NoError(t, db.Ping())
 
-	bootstrapSvc := func(t *testing.T, preferAppend bool) {
+	bootstrapSvc := func(t *testing.T, preferAppend *bool) {
+		var preferAppendStr string
+		if preferAppend != nil {
+			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
+		}
 		templateConfigurations := map[string]any{
 			"workspaceID":   workspaceID,
 			"sourceID":      sourceID,
@@ -131,7 +135,7 @@ func TestIntegration(t *testing.T) {
 			"containerName": deltaLakeCredentials.ContainerName,
 			"accountName":   deltaLakeCredentials.AccountName,
 			"accountKey":    deltaLakeCredentials.AccountKey,
-			"preferAppend":  preferAppend,
+			"preferAppend":  preferAppendStr,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -186,7 +190,7 @@ func TestIntegration(t *testing.T) {
 			destinationID       string
 			messageID           string
 			warehouseEventsMap  whth.EventsCountMap
-			preferAppend        bool
+			preferAppend        *bool
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
 			jobRunID            string
@@ -198,7 +202,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				preferAppend:        false,
+				preferAppend:        th.Ptr(false),
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-merge-mode",
 				jobRunID:            misc.FastUUID().String(),
@@ -210,12 +214,24 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  appendEventsMap(),
-				preferAppend:        true,
+				preferAppend:        th.Ptr(true),
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				jobRunID: "",
+			},
+			{
+				name:                "Undefined preferAppend",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  mergeEventsMap(),
+				preferAppend:        nil, // not defined in backend config
+				useParquetLoadFiles: false,
+				stagingFilePrefix:   "testdata/upload-job-undefined-preferAppend-mode",
+				jobRunID:            misc.FastUUID().String(),
 			},
 			{
 				name:                "Parquet load files",
@@ -224,7 +240,7 @@ func TestIntegration(t *testing.T) {
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				preferAppend:        false,
+				preferAppend:        th.Ptr(false),
 				useParquetLoadFiles: true,
 				stagingFilePrefix:   "testdata/upload-job-parquet",
 				jobRunID:            misc.FastUUID().String(),
@@ -510,13 +526,15 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("merge", func(t *testing.T) {
-			tableName := "merge_test_table"
-
 			t.Run("without dedup", func(t *testing.T) {
+				tableName := "merge_without_dedup_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+				mockUploader := newMockUploader(
+					t, loadFiles, tableName, schemaInUpload, schemaInWarehouse,
+					warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z",
+				)
 
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -558,6 +576,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, records, whth.SampleTestRecords())
 			})
 			t.Run("with dedup use new record", func(t *testing.T) {
+				tableName := "merge_with_dedup_use_new_record_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
@@ -605,13 +624,14 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, records, whth.DedupTestRecords())
 			})
 			t.Run("with no overlapping partition", func(t *testing.T) {
+				tableName := "merge_with_no_overlapping_partition_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-11-15T06:53:49.640Z")
 
 				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+				appendWarehouse.Destination.Config["preferAppend"] = true
 
 				d := deltalake.New(config.New(), logger.NOP, memstats.New())
 				err := d.Setup(ctx, appendWarehouse, mockUploader)
@@ -662,7 +682,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-12-15T06:53:49.640Z")
 
 			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
 			d := deltalake.New(config.New(), logger.NOP, memstats.New())
 			err := d.Setup(ctx, appendWarehouse, mockUploader)
@@ -1098,7 +1118,7 @@ func TestDeltalake_ShouldMerge(t *testing.T) {
 			d.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
-						string(model.PreferAppendSetting): tc.preferAppend,
+						model.PreferAppendSetting.String(): tc.preferAppend,
 					},
 				},
 			}

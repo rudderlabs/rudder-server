@@ -111,6 +111,9 @@ type Handle struct {
 		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
 	}
+
+	// additional internal http handlers
+	internalHttpHandlers map[string]http.Handler
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -324,8 +327,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 
-		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
-		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
+		anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
+		userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
 		eventTypeFromReq, _ := misc.MapLookup(
 			toSet,
 			"type",

@@ -464,7 +464,7 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.shouldMerge(),
+		logfield.ShouldMerge, rs.shouldMerge(tableName),
 	)
 	log.Infow("started loading")
 
@@ -519,7 +519,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	var rowsDeleted int64
-	if rs.shouldMerge() {
+	if rs.shouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -728,12 +728,17 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
-		logfield.ShouldMerge, rs.shouldMerge(),
+		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.shouldMerge(warehouseutils.UsersTable),
 		logfield.TableName, warehouseutils.UsersTable,
 	}
 	rs.logger.Infow("started loading for identifies and users tables", logFields...)
 
-	_, identifyStagingTable, err = rs.loadTable(ctx, warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
+	_, identifyStagingTable, err = rs.loadTable(ctx,
+		warehouseutils.IdentifiesTable,
+		rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable),
+		rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable),
+		true,
+	)
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
@@ -749,7 +754,12 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	}
 
 	if rs.config.skipComputingUserLatestTraits {
-		_, _, err := rs.loadTable(ctx, warehouseutils.UsersTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable), false)
+		_, _, err := rs.loadTable(ctx,
+			warehouseutils.UsersTable,
+			rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
+			rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
+			false,
+		)
 		if err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
@@ -833,26 +843,24 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	}
 	defer rs.dropStagingTables(ctx, []string{stagingTableName})
 
-	if rs.shouldMerge() {
-		primaryKey := "id"
-		query = fmt.Sprintf(`DELETE FROM %[1]s.%[2]q USING %[1]s.%[3]q _source
+	primaryKey := "id"
+	query = fmt.Sprintf(`DELETE FROM %[1]s.%[2]q USING %[1]s.%[3]q _source
 			WHERE _source.%[4]s = %[1]s.%[2]s.%[4]s;`,
-			rs.Namespace,
-			warehouseutils.UsersTable,
-			stagingTableName,
-			primaryKey,
-		)
+		rs.Namespace,
+		warehouseutils.UsersTable,
+		stagingTableName,
+		primaryKey,
+	)
 
-		if _, err = txn.ExecContext(ctx, query); err != nil {
-			_ = txn.Rollback()
+	if _, err = txn.ExecContext(ctx, query); err != nil {
+		_ = txn.Rollback()
 
-			rs.logger.Warnw("deleting from users table for dedup", append(logFields,
-				logfield.Query, query,
-				logfield.Error, err.Error(),
-			)...)
-			return map[string]error{
-				warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
-			}
+		rs.logger.Warnw("deleting from users table for dedup", append(logFields,
+			logfield.Query, query,
+			logfield.Error, err.Error(),
+		)...)
+		return map[string]error{
+			warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
 		}
 	}
 
@@ -957,7 +965,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
+func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := `SELECT table_name
 		FROM information_schema.tables
 		WHERE table_schema = $1 AND table_name like $2;`
@@ -967,8 +975,7 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
-		rs.logger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
-		return
+		return fmt.Errorf("querying for dangling staging tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -977,20 +984,21 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			return fmt.Errorf("querying for dangling staging tables: %w", err)
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	if err := rows.Err(); err != nil {
-		panic(fmt.Errorf("iterate result from query: %s\nwith Error : %w", sqlStatement, err))
+		return fmt.Errorf("iterating for dangling staging tables: %w", err)
 	}
 	rs.logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			rs.logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			return fmt.Errorf("dropping dangling staging table %q.%q: %w", rs.Namespace, stagingTableName, err)
 		}
 	}
+	return nil
 }
 
 func (rs *Redshift) CreateSchema(ctx context.Context) (err error) {
@@ -1223,13 +1231,18 @@ func (rs *Redshift) TestConnection(ctx context.Context, _ model.Warehouse) error
 
 func (rs *Redshift) Cleanup(ctx context.Context) {
 	if rs.DB != nil {
-		rs.dropDanglingStagingTables(ctx)
+		err := rs.dropDanglingStagingTables(ctx)
+		if err != nil {
+			rs.logger.Errorw("Error dropping dangling staging tables",
+				logfield.Error, err.Error(),
+			)
+		}
 		_ = rs.DB.Close()
 	}
 }
 
-func (rs *Redshift) CrashRecover(ctx context.Context) {
-	rs.dropDanglingStagingTables(ctx)
+func (rs *Redshift) CrashRecover(ctx context.Context) error {
+	return rs.dropDanglingStagingTables(ctx)
 }
 
 func (*Redshift) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
@@ -1326,11 +1339,24 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.connectTimeout = timeout
 }
 
-func (rs *Redshift) shouldMerge() bool {
-	return !rs.Uploader.CanAppend() ||
-		(rs.config.allowMerge &&
-			!rs.Warehouse.GetPreferAppendSetting() &&
-			!slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID))
+func (rs *Redshift) shouldMerge(tableName string) bool {
+	if !rs.config.allowMerge {
+		return false
+	}
+	if tableName == warehouseutils.UsersTable {
+		// If we are here it's because skipComputingUserLatestTraits is true.
+		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
+		// backwards compatibility.
+		return !slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
+	}
+	// It's important to check the ability to append after skipDedup to make sure that if both
+	// skipDedupDestinationIDs and skipComputingUserLatestTraits are set, we still merge.
+	// see hyperverge user table use case for more details.
+	if !rs.Uploader.CanAppend() {
+		return true
+	}
+	return !rs.Warehouse.GetPreferAppendSetting() &&
+		!slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
 }
 
 func (*Redshift) ErrorMappings() []model.JobError {

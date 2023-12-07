@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -60,7 +61,7 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
-		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
 	}
 }
@@ -72,7 +73,7 @@ func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsS
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
 		statsIndex:            map[statKey]*Stats{},
-		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
 	}
 	for _, opt := range opts {
@@ -98,7 +99,7 @@ type statsCollector struct {
 	jobIdsToStatKeyIndex  map[int64]statKey
 	jobIdsToRecordIdIndex map[int64]json.RawMessage
 	statsIndex            map[statKey]*Stats
-	failedRecordsIndex    map[statKey][]json.RawMessage
+	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
 }
 
@@ -188,7 +189,8 @@ func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) 
 			if recordId, recordIdOK := r.jobIdsToRecordIdIndex[jobStatus.JobID]; recordIdOK {
 				if jobStatus.JobState == jobsdb.Aborted.State {
 					if len(recordId) > 0 {
-						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], recordId)
+						code, _ := strconv.Atoi(jobStatus.ErrorCode)
+						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], FailedRecord{Record: recordId, Code: code})
 					}
 				}
 			}
@@ -219,7 +221,7 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		v := r.failedRecordsIndex[k]
 		// sort the records as well to avoid deadlocks
 		sort.Slice(v, func(i, j int) bool {
-			return string(v[i]) < string(v[j])
+			return string(v[i].Record) < string(v[j].Record)
 		})
 		err := r.jobService.AddFailedRecords(ctx, tx, k.jobRunId, k.JobTargetKey, v)
 		if err != nil {
@@ -233,7 +235,7 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	r.jobIdsToStatKeyIndex = map[int64]statKey{}
 	r.statsIndex = map[statKey]*Stats{}
 	r.jobIdsToRecordIdIndex = map[int64]json.RawMessage{}
-	r.failedRecordsIndex = map[statKey][]json.RawMessage{}
+	r.failedRecordsIndex = map[statKey][]FailedRecord{}
 
 	return nil
 }

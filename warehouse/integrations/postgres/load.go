@@ -39,7 +39,6 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.Loa
 			tx,
 			tableName,
 			pg.Uploader.GetTableSchemaInUpload(tableName),
-			false,
 		)
 		return err
 	})
@@ -55,7 +54,6 @@ func (pg *Postgres) loadTable(
 	txn *sqlmiddleware.Tx,
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
-	forceMerge bool,
 ) (*types.LoadTableStats, string, error) {
 	log := pg.logger.With(
 		logfield.SourceID, pg.Warehouse.Source.ID,
@@ -65,7 +63,7 @@ func (pg *Postgres) loadTable(
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, pg.shouldMerge(),
+		logfield.ShouldMerge, pg.shouldMerge(tableName),
 	)
 	log.Infow("started loading")
 	defer log.Infow("completed loading")
@@ -130,7 +128,7 @@ func (pg *Postgres) loadTable(
 	}
 
 	var rowsDeleted int64
-	if forceMerge || pg.shouldMerge() {
+	if pg.shouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = pg.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -240,8 +238,7 @@ func (pg *Postgres) deleteFromLoadTable(
 		WHERE
 		  (
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );
-	`,
+		  );`,
 		pg.Namespace,
 		tableName,
 		stagingTableName,
@@ -289,8 +286,7 @@ func (pg *Postgres) insertIntoLoadTable(
 			  %[4]q
 		  ) AS _
 		WHERE
-		  _rudder_staging_row_number = 1;
-	`,
+		  _rudder_staging_row_number = 1;`,
 		pg.Namespace,
 		tableName,
 		quotedColumnNames,
@@ -367,7 +363,7 @@ func (pg *Postgres) loadUsersTable(
 	usersSchemaInUpload,
 	usersSchemaInWarehouse model.TableSchema,
 ) loadUsersTableResponse {
-	_, identifyStagingTable, err := pg.loadTable(ctx, tx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, false)
+	_, identifyStagingTable, err := pg.loadTable(ctx, tx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload)
 	if err != nil {
 		return loadUsersTableResponse{
 			identifiesError: fmt.Errorf("loading identifies table: %w", err),
@@ -381,7 +377,7 @@ func (pg *Postgres) loadUsersTable(
 	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits ||
 		slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
 	if canSkipComputingLatestUserTraits {
-		if _, _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload, true); err != nil {
+		if _, _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
 			return loadUsersTableResponse{
 				usersError: fmt.Errorf("loading users table: %w", err),
 			}
@@ -553,9 +549,19 @@ func (pg *Postgres) loadUsersTable(
 	return loadUsersTableResponse{}
 }
 
-func (pg *Postgres) shouldMerge() bool {
-	return !pg.Uploader.CanAppend() ||
-		(pg.config.allowMerge &&
-			!pg.Warehouse.GetPreferAppendSetting() &&
-			!slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID))
+func (pg *Postgres) shouldMerge(tableName string) bool {
+	if !pg.config.allowMerge {
+		return false
+	}
+	if tableName == warehouseutils.UsersTable {
+		// If we are here it's because canSkipComputingLatestUserTraits is true.
+		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
+		// backwards compatibility.
+		return !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
+	}
+	if !pg.Uploader.CanAppend() {
+		return true
+	}
+	return !pg.Warehouse.GetPreferAppendSetting() &&
+		!slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
 }

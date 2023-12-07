@@ -415,7 +415,9 @@ func (pg *Postgres) Setup(_ context.Context, warehouse model.Warehouse, uploader
 	return err
 }
 
-func (*Postgres) CrashRecover(context.Context) {}
+func (*Postgres) CrashRecover(context.Context) error {
+	return nil
+}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {

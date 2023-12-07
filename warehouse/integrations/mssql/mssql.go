@@ -294,9 +294,11 @@ func (ms *MSSQL) loadTable(
 	// - Refer to Microsoft's documentation on temporary tables at
 	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
 	log.Debugw("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(
-		`SELECT TOP 0 * INTO %[1]s.%[2]s
-		FROM %[1]s.%[3]s;`,
+	createStagingTableStmt := fmt.Sprintf(`
+		SELECT
+		  TOP 0 * INTO %[1]s.%[2]s
+		FROM
+		  %[1]s.%[3]s;`,
 		ms.Namespace,
 		stagingTableName,
 		tableName,
@@ -469,7 +471,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
-func (ms *MSSQL) ProcessColumnValue(
+func (as *MSSQL) ProcessColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
@@ -844,11 +846,11 @@ func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader wa
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(ctx context.Context) {
-	ms.dropDanglingStagingTables(ctx)
+func (ms *MSSQL) CrashRecover(ctx context.Context) error {
+	return ms.dropDanglingStagingTables(ctx)
 }
 
-func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) {
+func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -863,8 +865,7 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) {
 	)
 	rows, err := ms.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
-		ms.logger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
-		return
+		return fmt.Errorf("querying for dangling staging tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -873,20 +874,21 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			return fmt.Errorf("scanning dangling staging tables: %w", err)
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	if err := rows.Err(); err != nil {
-		panic(fmt.Errorf("iterating result from query: %s\nwith Error : %w", sqlStatement, err))
+		return fmt.Errorf("iterating dangling staging tables: %w", err)
 	}
 	ms.logger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
 		_, err := ms.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
 		if err != nil {
-			ms.logger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			return fmt.Errorf("dropping dangling staging tables %q.%q : %w", ms.Namespace, stagingTableName, err)
 		}
 	}
+	return nil
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
@@ -961,7 +963,22 @@ func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) (*types.LoadTa
 func (ms *MSSQL) Cleanup(ctx context.Context) {
 	if ms.DB != nil {
 		// extra check aside dropStagingTable(table)
-		ms.dropDanglingStagingTables(ctx)
+		err := ms.dropDanglingStagingTables(ctx)
+		if err != nil {
+			ms.logger.Warnw("Error dropping dangling staging tables",
+				logfield.DestinationID, ms.Warehouse.Destination.ID,
+				logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.SourceID, ms.Warehouse.Source.ID,
+				logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, ms.Warehouse.Destination.ID,
+				logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
+				logfield.Namespace, ms.Warehouse.Namespace,
+
+				logfield.Error, err,
+			)
+		}
+
 		_ = ms.DB.Close()
 	}
 }

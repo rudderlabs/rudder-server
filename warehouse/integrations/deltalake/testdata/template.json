@@ -24,6 +24,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "port": "{{.port}}",
             "path": "{{.path}}",
@@ -38,8 +39,7 @@
             "accountKey": "{{.accountKey}}",
             "syncFrequency": "30",
             "eventDelivery": false,
-            "eventDeliveryTS": 1648195480174,
-            "preferAppend": {{.preferAppend}}
+            "eventDeliveryTS": 1648195480174
           },
           "liveEventsConfig": {
             "eventDelivery": false,

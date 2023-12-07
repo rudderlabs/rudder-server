@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -168,6 +169,7 @@ type Snowflake struct {
 		allowMerge         bool
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
+		appendOnlyTables   []string
 
 		debugDuplicateWorkspaceIDs   []string
 		debugDuplicateTables         []string
@@ -185,6 +187,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 	sf.config.allowMerge = conf.GetBool("Warehouse.snowflake.allowMerge", true)
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
+
+	// appendOnlyTables is a workaround introduced for Mattermost for now. It is only supported for snowflake.
+	sf.config.appendOnlyTables = conf.GetStringSlice("Warehouse.snowflake.appendOnlyTables", nil)
+
 	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
 	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
 	sf.config.debugDuplicateLimit = conf.GetInt("Warehouse.snowflake.debugDuplicateLimit", 100)
@@ -292,37 +298,31 @@ func (sf *Snowflake) authString() string {
 	return auth
 }
 
-func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) (err error) {
+func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
+	if !sf.config.enableDeleteByJobs {
+		return nil
+	}
 	for _, tb := range tableNames {
 		log := sf.logger.With(
 			lf.TableName, tb,
 			lf.DestinationID, sf.Warehouse.Destination.ID,
 		)
 		log.Infow("Cleaning up the following tables in snowflake")
-
-		sqlStatement := fmt.Sprintf(
-			`DELETE FROM %[1]q.%[2]q
-			WHERE
-				context_sources_job_run_id <> '%[3]s' AND
-				context_sources_task_run_id <> '%[4]s' AND
-				context_source_id = '%[5]s' AND
-				received_at < '%[6]s';`,
-			sf.Namespace,
-			tb,
+		_, err := sf.DB.ExecContext(ctx,
+			`DELETE FROM "`+sf.Namespace+`"."`+tb+`"
+		WHERE
+			context_sources_job_run_id <> ? AND
+			context_sources_task_run_id <> ? AND
+			context_source_id = ? AND
+			received_at < ?`,
 			params.JobRunId,
 			params.TaskRunId,
 			params.SourceId,
 			params.StartTime,
 		)
-
-		log.Debugw("Deleting rows in table in snowflake", lf.Query, sqlStatement)
-
-		if sf.config.enableDeleteByJobs {
-			_, err = sf.DB.ExecContext(ctx, sqlStatement)
-			if err != nil {
-				log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
-				return err
-			}
+		if err != nil {
+			log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
+			return err
 		}
 	}
 	return nil
@@ -347,7 +347,7 @@ func (sf *Snowflake) loadTable(
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
 		lf.TableName, tableName,
-		lf.ShouldMerge, sf.ShouldMerge(),
+		lf.ShouldMerge, sf.ShouldMerge(tableName),
 	)
 	log.Infow("started loading")
 
@@ -371,7 +371,7 @@ func (sf *Snowflake) loadTable(
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	if !sf.ShouldMerge() {
+	if !sf.ShouldMerge(tableName) {
 		log.Infow("copying data into main table")
 		loadTableStats, err := sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName)
 		if err != nil {
@@ -827,9 +827,15 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 // * the uploader says we cannot append
 // * the server configuration says we can merge
 // * the user opted-in
-func (sf *Snowflake) ShouldMerge() bool {
-	return !sf.Uploader.CanAppend() ||
-		(sf.config.allowMerge && !sf.Warehouse.GetPreferAppendSetting())
+func (sf *Snowflake) ShouldMerge(tableName string) bool {
+	if !sf.config.allowMerge {
+		return false
+	}
+
+	shouldAppend := slices.Contains(sf.config.appendOnlyTables, tableName) ||
+		sf.Warehouse.GetPreferAppendSetting()
+
+	return !(shouldAppend && sf.Uploader.CanAppend())
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
@@ -854,7 +860,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
 		lf.TableName, whutils.UsersTable,
-		lf.ShouldMerge, sf.ShouldMerge(),
+		lf.ShouldMerge, sf.ShouldMerge(identifiesTable),
 	)
 	log.Infow("started loading for identifies and users tables")
 
@@ -871,7 +877,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	if !sf.ShouldMerge() {
+	if !sf.ShouldMerge(identifiesTable) {
 		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
 		sqlStatement := fmt.Sprintf(
 			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
@@ -1286,7 +1292,10 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 	return nil
 }
 
-func (*Snowflake) CrashRecover(context.Context) {}
+func (*Snowflake) CrashRecover(context.Context) error {
+	// no-op: snowflake does not need crash recovery
+	return nil
+}
 
 func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (empty bool, err error) {
 	empty = true

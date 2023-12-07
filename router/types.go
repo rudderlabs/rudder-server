@@ -25,6 +25,7 @@ type HandleDestOAuthRespParams struct {
 	trRespStCd     int
 	trRespBody     string
 	secret         json.RawMessage
+	contentType    string
 }
 
 type Diagnostic struct {
@@ -53,30 +54,28 @@ type JobResponse struct {
 }
 
 type reloadableConfig struct {
-	jobQueryBatchSize                       misc.ValueLoader[int]
-	updateStatusBatchSize                   misc.ValueLoader[int]
-	readSleep                               misc.ValueLoader[time.Duration]
-	maxStatusUpdateWait                     misc.ValueLoader[time.Duration]
-	minRetryBackoff                         misc.ValueLoader[time.Duration]
-	maxRetryBackoff                         misc.ValueLoader[time.Duration]
-	jobsBatchTimeout                        misc.ValueLoader[time.Duration]
-	failingJobsPenaltyThreshold             misc.ValueLoader[float64]
-	failingJobsPenaltySleep                 misc.ValueLoader[time.Duration]
-	noOfJobsToBatchInAWorker                misc.ValueLoader[int]
-	jobsDBCommandTimeout                    misc.ValueLoader[time.Duration]
-	jobdDBMaxRetries                        misc.ValueLoader[int]
-	maxFailedCountForJob                    misc.ValueLoader[int]
-	maxFailedCountForSourcesJob             misc.ValueLoader[int]
-	payloadLimit                            misc.ValueLoader[int64]
-	routerTimeout                           misc.ValueLoader[time.Duration]
-	retryTimeWindow                         misc.ValueLoader[time.Duration]
-	sourcesRetryTimeWindow                  misc.ValueLoader[time.Duration]
-	pickupFlushInterval                     misc.ValueLoader[time.Duration]
-	maxDSQuerySize                          misc.ValueLoader[int]
-	jobIteratorMaxQueries                   misc.ValueLoader[int]
-	jobIteratorDiscardedPercentageTolerance misc.ValueLoader[int]
-	savePayloadOnError                      misc.ValueLoader[bool]
-	transformerProxy                        misc.ValueLoader[bool]
-	skipRtAbortAlertForTransformation       misc.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
-	skipRtAbortAlertForDelivery             misc.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	jobQueryBatchSize                 misc.ValueLoader[int]
+	updateStatusBatchSize             misc.ValueLoader[int]
+	readSleep                         misc.ValueLoader[time.Duration]
+	maxStatusUpdateWait               misc.ValueLoader[time.Duration]
+	minRetryBackoff                   misc.ValueLoader[time.Duration]
+	maxRetryBackoff                   misc.ValueLoader[time.Duration]
+	jobsBatchTimeout                  misc.ValueLoader[time.Duration]
+	failingJobsPenaltyThreshold       misc.ValueLoader[float64]
+	failingJobsPenaltySleep           misc.ValueLoader[time.Duration]
+	noOfJobsToBatchInAWorker          misc.ValueLoader[int]
+	jobsDBCommandTimeout              misc.ValueLoader[time.Duration]
+	jobdDBMaxRetries                  misc.ValueLoader[int]
+	maxFailedCountForJob              misc.ValueLoader[int]
+	maxFailedCountForSourcesJob       misc.ValueLoader[int]
+	payloadLimit                      misc.ValueLoader[int64]
+	routerTimeout                     misc.ValueLoader[time.Duration]
+	retryTimeWindow                   misc.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow            misc.ValueLoader[time.Duration]
+	pickupFlushInterval               misc.ValueLoader[time.Duration]
+	maxDSQuerySize                    misc.ValueLoader[int]
+	savePayloadOnError                misc.ValueLoader[bool]
+	transformerProxy                  misc.ValueLoader[bool]
+	skipRtAbortAlertForTransformation misc.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForDelivery       misc.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
 }

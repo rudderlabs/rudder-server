@@ -924,7 +924,15 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 					},
 				})
 				RecordAppError(fmt.Errorf("%v", r))
-				pkgLogger.Fatal(r)
+				pkgLogger.Fatalw("Panic detected. Application will crash.",
+					"stack", string(debug.Stack()),
+					"panic", r,
+					"team", team,
+					"goRoutines", runtime.NumGoroutine(),
+					"version", bugsnag.Config.AppVersion,
+					"releaseStage", bugsnag.Config.ReleaseStage,
+				)
+				logger.Sync()
 				panic(r)
 			})
 		}

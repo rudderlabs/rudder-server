@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -131,7 +132,11 @@ func TestIntegration(t *testing.T) {
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
-	bootstrapSvc := func(t testing.TB, preferAppend bool) {
+	bootstrapSvc := func(t testing.TB, preferAppend *bool) {
+		var preferAppendStr string
+		if preferAppend != nil {
+			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
+		}
 		templateConfigurations := map[string]any{
 			"workspaceID":                workspaceID,
 			"sourceID":                   sourceID,
@@ -169,7 +174,7 @@ func TestIntegration(t *testing.T) {
 			"rbacBucketName":             rbacCredentials.BucketName,
 			"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
 			"rbacAccessKey":              rbacCredentials.AccessKey,
-			"preferAppend":               preferAppend,
+			"preferAppend":               preferAppendStr,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -228,7 +233,7 @@ func TestIntegration(t *testing.T) {
 			sourceJob                     bool
 			stagingFilePrefix             string
 			emptyJobRunID                 bool
-			preferAppend                  bool
+			preferAppend                  *bool
 			customUserID                  string
 		}{
 			{
@@ -249,7 +254,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:     "Upload Job with Role",
@@ -269,7 +274,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-with-role",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:     "Upload Job with Case Sensitive Database",
@@ -289,7 +294,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				preferAppend:      false,
+				preferAppend:      th.Ptr(false),
 			},
 			{
 				name:          "Source Job with Sources",
@@ -311,7 +316,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				sourceJob:             true,
 				stagingFilePrefix:     "testdata/sources-job",
-				preferAppend:          false,
+				preferAppend:          th.Ptr(false),
 			},
 			{
 				name:                          "Upload Job in append mode",
@@ -332,8 +337,28 @@ func TestIntegration(t *testing.T) {
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				emptyJobRunID: true,
-				preferAppend:  true,
+				preferAppend:  th.Ptr(true),
 				customUserID:  testhelper.GetUserId("append_test"),
+			},
+			{
+				name:     "Undefined preferAppend",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				sourceID:      sourceID,
+				destinationID: destinationID,
+				cred:          credentials,
+				database:      database,
+				stagingFilesEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				},
+				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				},
+				stagingFilePrefix: "testdata/upload-job-undefined-preferAppend-mode",
+				preferAppend:      nil, // not defined in backend config
 			},
 		}
 
@@ -664,7 +689,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
 				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
 				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
@@ -761,7 +786,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
 
 				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[string(model.PreferAppendSetting)] = true
+				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
 				sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
 				require.NoError(t, err)
@@ -955,61 +980,105 @@ func TestIntegration(t *testing.T) {
 
 func TestSnowflake_ShouldMerge(t *testing.T) {
 	testCases := []struct {
-		name                  string
-		preferAppend          bool
-		uploaderCanAppend     bool
-		uploaderExpectedCalls int
-		expected              bool
+		name              string
+		preferAppend      bool
+		tableName         string
+		appendOnlyTables  []string
+		uploaderCanAppend bool
+		expected          bool
 	}{
 		{
-			name:                  "uploader says we can append and user prefers append",
-			preferAppend:          true,
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 1,
-			expected:              false,
+			name:              "uploader says we can append and user prefers append",
+			preferAppend:      true,
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          false,
 		},
 		{
-			name:                  "uploader says we cannot append and user prefers append",
-			preferAppend:          true,
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			name:              "uploader says we cannot append and user prefers append",
+			preferAppend:      true,
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          true,
 		},
 		{
-			name:                  "uploader says we can append and user prefers not to append",
-			preferAppend:          false,
-			uploaderCanAppend:     true,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			name:              "uploader says we can append and user prefers not to append",
+			preferAppend:      false,
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			expected:          true,
 		},
 		{
-			name:                  "uploader says we cannot append and user prefers not to append",
-			preferAppend:          false,
-			uploaderCanAppend:     false,
-			uploaderExpectedCalls: 1,
-			expected:              true,
+			name:              "uploader says we cannot append and user prefers not to append",
+			preferAppend:      false,
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is in append only",
+			preferAppend:      false,
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is in append only",
+			preferAppend:      true,
+			uploaderCanAppend: true,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
+		},
+		{
+			name:              "uploader says we can append, in append mode, but table is not in append only",
+			preferAppend:      true,
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          false,
+		},
+		{
+			name:              "uploader says we cannot append, in merge mode, but table is in append only",
+			preferAppend:      false,
+			uploaderCanAppend: false,
+			tableName:         "tracks",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
+		},
+		{
+			name:              "uploader says we can append, in merge mode, but table is not in append only",
+			preferAppend:      false,
+			uploaderCanAppend: true,
+			tableName:         "page_views",
+			appendOnlyTables:  []string{"tracks"},
+			expected:          true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			sf, err := snowflake.New(config.New(), logger.NOP, memstats.New())
+			c := config.New()
+			c.Set("Warehouse.snowflake.appendOnlyTables", tc.appendOnlyTables)
+
+			sf, err := snowflake.New(c, logger.NOP, memstats.New())
 			require.NoError(t, err)
 
 			sf.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
-						string(model.PreferAppendSetting): tc.preferAppend,
+						model.PreferAppendSetting.String(): tc.preferAppend,
 					},
 				},
 			}
 
 			mockCtrl := gomock.NewController(t)
 			uploader := mockuploader.NewMockUploader(mockCtrl)
-			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
+			uploader.EXPECT().CanAppend().AnyTimes().Return(tc.uploaderCanAppend)
 
 			sf.Uploader = uploader
-			require.Equal(t, sf.ShouldMerge(), tc.expected)
+			require.Equal(t, sf.ShouldMerge(tc.tableName), tc.expected)
 		})
 	}
 }
@@ -1049,4 +1118,132 @@ func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	return db
+}
+
+func TestSnowflake_DeleteBy(t *testing.T) {
+	if !isSnowflakeTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
+	}
+	if !isSnowflakeTestRBACCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testRBACKey)
+	}
+
+	namespace := testhelper.RandSchema(whutils.SNOWFLAKE)
+
+	ctx := context.Background()
+
+	credentials, err := getSnowflakeTestCredentials(testKey)
+	require.NoError(t, err)
+
+	urlConfig := sfdb.Config{
+		Account:   credentials.Account,
+		User:      credentials.User,
+		Role:      credentials.Role,
+		Password:  credentials.Password,
+		Database:  credentials.Database,
+		Warehouse: credentials.Warehouse,
+	}
+
+	dsn, err := sfdb.DSN(&urlConfig)
+	require.NoError(t, err)
+
+	db := getSnowflakeDB(t, dsn)
+	require.NoError(t, db.Ping())
+
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool {
+			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+				t.Logf("error deleting schema: %v", err)
+				return false
+			}
+			return true
+		},
+			time.Minute,
+			time.Second,
+		)
+	})
+
+	config := config.New()
+	config.Set("Warehouse.snowflake.enableDeleteByJobs", true)
+
+	sf, err := snowflake.New(config, logger.NOP, memstats.New())
+	require.NoError(t, err)
+
+	sf.DB = sqlquerywrapper.New(db)
+	sf.Namespace = namespace
+
+	now := time.Now()
+
+	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
+	require.NoError(t, err, "should create schema")
+
+	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
+	require.NoError(t, err, "should create table")
+
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
+	require.NoError(t, err, "should insert records")
+	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
+	require.NoError(t, err, "should insert records")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_1",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
+	}), "should delete records")
+
+	rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+
+	var recordIDs []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		recordIDs = append(recordIDs, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{2}, recordIDs, "got the correct set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: time.Time{},
+	}), "delete should succeed even if start time is zero value - no records must be deleted")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+
+	var ids1 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids1 = append(ids1, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []int{2}, ids1, "got the same set of ids after deletion")
+
+	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+		SourceId:  "source_id_2",
+		JobRunId:  "new_job_run_id",
+		TaskRunId: "new_task_job_run_id",
+		StartTime: now,
+	}), "should delete records")
+
+	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+	require.NoError(t, err, "should see a successful query for ids")
+	var ids2 []int
+	for rows.Next() {
+		var id int
+		err := rows.Scan(&id)
+		require.NoError(t, err, "should scan rows")
+
+		ids2 = append(ids2, id)
+	}
+	require.NoError(t, rows.Err())
+	require.Empty(t, ids2, "no more rows left")
 }

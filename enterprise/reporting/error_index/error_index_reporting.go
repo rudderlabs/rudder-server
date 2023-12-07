@@ -283,7 +283,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		start := time.Now()
 		sources, err := errIndexDB.GetDistinctParameterValues(ctx, "source_id")
 		if err != nil && ctx.Err() != nil {
-			return nil
+			return nil //nolint:nilerr
 		}
 		if err != nil {
 			return fmt.Errorf("getting distinct parameter values: %w", err)
@@ -305,8 +305,11 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 }
 
 func (eir *ErrorIndexReporter) Stop() {
+	eir.log.Infow("stopping error index reporter")
 	eir.cancel()
-	_ = eir.g.Wait()
+	if err := eir.g.Wait(); err != nil {
+		eir.log.Errorw("stopped error index reporter with error", "error", err)
+	}
 }
 
 // resolveJobsDB returns the jobsdb that matches the current transaction (using system information functions)

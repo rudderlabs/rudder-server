@@ -16,6 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -129,11 +130,27 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	if err != nil {
+		return fmt.Errorf("drain config manager setup: %v", err)
+	}
+	defer drainConfigManager.Stop()
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.DrainConfigRoutine(ctx)
+	}))
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.CleanupRoutine(ctx)
+	}))
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gateway.WithInternalHttpHandlers(
+			map[string]http.Handler{
+				"/drain": drainConfigManager.DrainConfigHttpHandler(),
+			},
+		),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)

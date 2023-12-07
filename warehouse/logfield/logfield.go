@@ -25,7 +25,7 @@ const (
 	Retried                    = "retried"
 	Attempt                    = "attempt"
 	LoadFileType               = "loadFileType"
-	LoadTableStrategy          = "loadTableStrategy"
+	ShouldMerge                = "shouldMerge"
 	ErrorMapping               = "errorMapping"
 	DestinationCredsValid      = "destinationCredsValid"
 	Query                      = "query"
@@ -36,5 +36,4 @@ const (
 	IntervalInHours            = "intervalInHours"
 	StartTime                  = "startTime"
 	EndTime                    = "endTime"
-	ShouldMerge                = "shouldMerge"
 )
