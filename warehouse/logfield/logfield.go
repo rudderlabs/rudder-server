@@ -32,7 +32,6 @@ const (
 	QueryExecutionTime         = "queryExecutionTime"
 	StagingTableName           = "stagingTableName"
 	TotalRows                  = "totalRows"
-	SampleDuplicateMessages    = "sampleDuplicateMessages"
 	IntervalInHours            = "intervalInHours"
 	StartTime                  = "startTime"
 	EndTime                    = "endTime"

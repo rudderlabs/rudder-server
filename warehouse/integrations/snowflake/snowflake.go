@@ -7,12 +7,17 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
@@ -143,15 +148,6 @@ type tableLoadResp struct {
 
 type optionalCreds struct {
 	schemaName string
-}
-
-type duplicateMessage struct {
-	id         string
-	receivedAt time.Time
-}
-
-func (m *duplicateMessage) String() string {
-	return `{"id": "` + m.id + `", "receivedAt": "` + m.receivedAt.Format("2006-01-02 15:04:05") + `", "lag": "` + time.Since(m.receivedAt).String() + `"}`
 }
 
 type Snowflake struct {
@@ -403,17 +399,9 @@ func (sf *Snowflake) loadTable(
 		return nil, nil, fmt.Errorf("loading data into staging table: %w", err)
 	}
 
-	duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
+	err = sf.trackDuplicateMessageInfo(ctx, db, tableName, stagingTableName, sortedColumnNames)
 	if err != nil {
-		log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
-	}
-	if len(duplicates) > 0 {
-		uploadID, _ := whutils.UploadIDFromCtx(ctx)
-
-		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
-			return item.String()
-		})
-		log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+		log.Warnw("failed to track duplicate message info", lf.Error, err.Error())
 	}
 
 	log.Infow("merge data into load table")
@@ -521,63 +509,133 @@ func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) 
 	}, ",")
 }
 
-func (sf *Snowflake) sampleDuplicateMessages(
-	ctx context.Context,
-	db *sqlmw.DB,
-	mainTableName,
-	stagingTableName string,
-) ([]duplicateMessage, error) {
+func (sf *Snowflake) trackDuplicateMessageInfo(
+	ctx context.Context, db *sqlmw.DB, mainTableName,
+	stagingTableName, sortedColumns string,
+) error {
 	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
-		return nil, nil
+		return nil
 	}
 	if !lo.Contains(sf.config.debugDuplicateTables, mainTableName) {
-		return nil, nil
+		return nil
 	}
 
 	identifier := sf.schemaIdentifier()
 	mainTable := fmt.Sprintf("%s.%q", identifier, mainTableName)
 	stagingTable := fmt.Sprintf("%s.%q", identifier, stagingTableName)
 
-	rows, err := db.QueryContext(ctx,
-		`SELECT ID, RECEIVED_AT
-		FROM `+mainTable+`
-		WHERE
-		  	RECEIVED_AT > (SELECT DATEADD(day,-?,current_date())) AND
-		  	ID IN (
-				SELECT ID
-				FROM `+stagingTable+`
-		  	)
-        ORDER BY RECEIVED_AT ASC
-		LIMIT ?;`,
+	rows, err := db.QueryContext(ctx, `
+		WITH mainCTE AS (
+		  SELECT
+			`+sortedColumns+`
+		  FROM
+			`+mainTable+`
+		  WHERE
+			RECEIVED_AT > (
+			  SELECT
+				DATEADD(
+				  day,
+				  -?,
+				  current_date()
+				)
+			)
+			AND ID IN (
+			  SELECT
+				ID
+			  FROM
+				`+stagingTable+`
+			)
+		  ORDER BY
+			RECEIVED_AT ASC
+		  LIMIT
+			?
+		), StagingCTE AS (
+		  SELECT
+			`+sortedColumns+`
+		  FROM
+			`+stagingTable+`
+		  WHERE
+			ID IN (
+			  SELECT
+				ID
+			  FROM
+				mainCTE
+			)
+		  ORDER BY
+			RECEIVED_AT ASC
+		)
+		(
+			SELECT
+			  *,
+			  'main' AS identifier_table
+			FROM
+			  mainCTE
+			ORDER BY
+			  ID ASC
+		)
+		UNION
+		(
+			SELECT
+			  *,
+			  'staging' AS identifier_table
+			FROM
+			  StagingCTE
+			ORDER BY
+			  ID ASC
+		);`,
 		sf.config.debugDuplicateIntervalInDays,
 		sf.config.debugDuplicateLimit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("querying for duplicate rows: %w", err)
+		return fmt.Errorf("querying for duplicate rows: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()
 	}()
 
-	var duplicateMessagesIDs []duplicateMessage
-	for rows.Next() {
-		var id string
-		var receivedAt time.Time
-
-		if err := rows.Scan(&id, &receivedAt); err != nil {
-			return nil, fmt.Errorf("scanning duplicate row: %w", err)
-		}
-
-		duplicateMessagesIDs = append(duplicateMessagesIDs, duplicateMessage{
-			id:         id,
-			receivedAt: receivedAt,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating over duplicate rows: %w", err)
+	var out bytes.Buffer
+	if err := sqlutil.PrintRowsToTable(rows.Rows, &out); err != nil {
+		out.WriteString(fmt.Sprintf("error printing rows: %v", err))
 	}
 
-	return duplicateMessagesIDs, nil
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		return fmt.Errorf("creating tmp dir: %w", err)
+	}
+
+	fileName := fmt.Sprintf(`%s.%s.%s.%s.sample-duplicate-rows.txt.gz`,
+		sf.Warehouse.Destination.DestinationDefinition.Name,
+		sf.Warehouse.Source.ID,
+		sf.Warehouse.Destination.ID,
+		mainTableName,
+	)
+	filePath := path.Join(tmpDirPath, misc.RudderWarehouseDebugging, fileName)
+
+	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	// Remove file if it already exists
+	_, err = os.Lstat(filePath)
+	if err == nil {
+		_ = os.Remove(filePath)
+	}
+
+	gzWriter, err := misc.CreateGZ(filePath)
+	if err != nil {
+		return fmt.Errorf("creating gzip file: %w", err)
+	}
+
+	err = gzWriter.WriteGZ(out.String())
+	if err != nil {
+		return fmt.Errorf("writing file: %w", err)
+	}
+
+	if err = gzWriter.CloseGZ(); err != nil {
+		return fmt.Errorf("closing gzip file: %w", err)
+	}
+	return nil
 }
 
 func (sf *Snowflake) copyInto(

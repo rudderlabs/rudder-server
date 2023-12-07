@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -774,6 +775,45 @@ func TestIntegration(t *testing.T) {
 					),
 				)
 				require.Equal(t, records, testhelper.DedupTestRecords())
+			})
+			t.Run("debug duplicate messages", func(t *testing.T) {
+				tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "debug_duplicate_messages_test_table")
+
+				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, true)
+
+				c := config.New()
+				c.Set("Warehouse.snowflake.debugDuplicateWorkspaceIDs", workspaceID)
+				c.Set("Warehouse.snowflake.debugDuplicateTables", strings.Join(
+					[]string{
+						"debug_duplicate_messages_test_table",
+					},
+					" ",
+				))
+
+				sf, err := snowflake.New(c, logger.NOP, memstats.New())
+				require.NoError(t, err)
+				err = sf.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = sf.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = sf.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, int64(14), loadTableStat.RowsInserted)
+				require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+
+				tmpDirPath, err := misc.CreateTMPDIR()
+				require.NoError(t, err)
+
+				filePath := path.Join(tmpDirPath, misc.RudderWarehouseDebugging, "SNOWFLAKE.test_source_id.test_destination_id.DEBUG_DUPLICATE_MESSAGES_TEST_TABLE.sample-duplicate-rows.txt.gz")
+				require.FileExists(t, filePath)
 			})
 		})
 		t.Run("append", func(t *testing.T) {

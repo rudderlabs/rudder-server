@@ -67,6 +67,7 @@ const (
 	RudderRedshiftManifests       = "rudder-redshift-manifests"
 	RudderWarehouseJsonUploadsTmp = "rudder-warehouse-json-uploads-tmp"
 	RudderTestPayload             = "rudder-test-payload"
+	RudderWarehouseDebugging      = "rudder-warehouse-debugging"
 )
 
 // ErrorStoreT : DS to store the app errors
