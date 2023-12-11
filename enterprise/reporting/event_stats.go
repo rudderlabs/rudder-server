@@ -27,7 +27,7 @@ const EventsProcessedMetricName = "events_processed_total"
 func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 	for index := range metrics {
 		var sourceCategory = metrics[index].ConnectionDetails.SourceCategory
-		if metrics[index].ConnectionDetails.SourceCategory == "" {
+		if sourceCategory == "" {
 			sourceCategory = EventStream
 		}
 		tags := stats.Tags{
