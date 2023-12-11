@@ -61,7 +61,7 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
 	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
-	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default)
+	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default, "rsources-service")
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
 	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)

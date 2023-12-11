@@ -254,9 +254,10 @@ func (a *App) setupDatabase(ctx context.Context) error {
 
 func (a *App) connectionString() string {
 	if !a.checkForWarehouseEnvVars() {
-		return misc.GetConnectionString(a.conf)
+		return misc.GetConnectionString(a.conf, "warehouse")
 	}
 
+	appName := fmt.Sprintf("warehouse-%s", a.appName)
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s application_name=%s",
 		a.config.host,
 		a.config.port,
@@ -264,7 +265,7 @@ func (a *App) connectionString() string {
 		a.config.password,
 		a.config.database,
 		a.config.sslMode,
-		a.appName,
+		appName,
 	)
 }
 

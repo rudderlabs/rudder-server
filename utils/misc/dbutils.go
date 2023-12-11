@@ -11,7 +11,7 @@ import (
 )
 
 // GetConnectionString Returns Jobs DB connection configuration
-func GetConnectionString(c *config.Config) string {
+func GetConnectionString(c *config.Config, componentName string) string {
 	host := c.GetString("DB.host", "localhost")
 	user := c.GetString("DB.user", "ubuntu")
 	dbname := c.GetString("DB.name", "ubuntu")
@@ -21,6 +21,9 @@ func GetConnectionString(c *config.Config) string {
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
 	appName := DefaultString("rudder-server").OnError(os.Hostname())
+	if len(componentName) > 0 {
+		appName = fmt.Sprintf("%s-%s", componentName, appName)
+	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
 		host, port, user, password, dbname, sslmode, appName)
