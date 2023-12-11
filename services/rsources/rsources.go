@@ -86,7 +86,6 @@ func (js *JobStatus) FixCorruptedStats(log logger.Logger) {
 		log.Warnw("Corrupted job status stats detected, fixing", "job_status", string(corruptedJson))
 		fixCorrupted()
 	}
-
 }
 
 type TaskStatus struct {

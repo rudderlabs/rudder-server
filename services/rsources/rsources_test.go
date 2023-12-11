@@ -3,13 +3,13 @@ package rsources_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCorruptedJobStatus(t *testing.T) {
-
 	t.Run("Corrupted Source Stats", func(t *testing.T) {
 		js := rsources.JobStatus{
 			ID: "job-id",
@@ -187,5 +187,4 @@ func TestCorruptedJobStatus(t *testing.T) {
 		require.EqualValues(t, 1, js.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Out)
 		require.EqualValues(t, 0, js.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Failed)
 	})
-
 }
