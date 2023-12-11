@@ -229,14 +229,6 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 
-	// reset state so that the collector can be
-	// reused for another stats collecting cycle
-	r.processing = false
-	r.jobIdsToStatKeyIndex = map[int64]statKey{}
-	r.statsIndex = map[statKey]*Stats{}
-	r.jobIdsToRecordIdIndex = map[int64]json.RawMessage{}
-	r.failedRecordsIndex = map[statKey][]FailedRecord{}
-
 	return nil
 }
 
