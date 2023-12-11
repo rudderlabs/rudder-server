@@ -13,6 +13,8 @@ type EventStatsReporter struct {
 	configSubscriber *configSubscriber
 }
 
+const EventStream = "EventStream"
+
 func NewEventStatsReporter(configSubscriber *configSubscriber, stats stats.Stats) *EventStatsReporter {
 	return &EventStatsReporter{
 		stats:            stats,
@@ -24,12 +26,16 @@ const EventsProcessedMetricName = "events_processed_total"
 
 func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 	for index := range metrics {
+		var sourceCategory = metrics[index].ConnectionDetails.SourceCategory
+		if metrics[index].ConnectionDetails.SourceCategory == "" {
+			sourceCategory = EventStream
+		}
 		tags := stats.Tags{
 			"workspaceId":     es.configSubscriber.WorkspaceIDFromSource(metrics[index].ConnectionDetails.SourceID),
 			"sourceId":        metrics[index].ConnectionDetails.SourceID,
 			"destinationId":   metrics[index].ConnectionDetails.DestinationID,
 			"reportedBy":      metrics[index].PUDetails.PU,
-			"sourceCategory":  metrics[index].ConnectionDetails.SourceCategory,
+			"sourceCategory":  sourceCategory,
 			"statusCode":      strconv.Itoa(metrics[index].StatusDetail.StatusCode),
 			"terminal":        strconv.FormatBool(metrics[index].PUDetails.TerminalPU),
 			"destinationType": es.configSubscriber.GetDestDetail(metrics[index].ConnectionDetails.DestinationID).destType,
