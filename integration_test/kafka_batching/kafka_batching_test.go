@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"

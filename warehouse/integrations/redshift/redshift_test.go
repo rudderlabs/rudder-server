@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	th "github.com/rudderlabs/rudder-server/testhelper"
 
 	"github.com/golang/mock/gomock"
@@ -25,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -603,7 +604,7 @@ func TestIntegration(t *testing.T) {
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
-				d := redshift.New(config.New(), logger.NOP, memstats.New())
+				d := redshift.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 

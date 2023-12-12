@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/golang/mock/gomock"

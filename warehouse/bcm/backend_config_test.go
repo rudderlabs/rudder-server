@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"

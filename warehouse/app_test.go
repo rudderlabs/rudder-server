@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"

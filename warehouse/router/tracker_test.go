@@ -16,11 +16,11 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -115,9 +115,10 @@ func TestRouter_Track(t *testing.T) {
 			_, err = pgResource.DB.Exec(string(sqlStatement))
 			require.NoError(t, err)
 
-			ctx := context.Background()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
+
+			ctx := context.Background()
 			nowSQL := "'2022-12-06 15:40:00'::timestamp"
 
 			now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")

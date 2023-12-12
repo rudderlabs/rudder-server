@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"

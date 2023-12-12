@@ -478,6 +478,9 @@ func TestRouter(t *testing.T) {
 			Identifier: "RS:test-source-id:test-destination-id-scheduler",
 		}
 
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		r := Router{}
 		r.db = db
 		r.statsFactory = statsStore

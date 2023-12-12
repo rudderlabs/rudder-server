@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -349,7 +351,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			loadTableStat, err := az.LoadTable(ctx, tableName)
@@ -365,7 +367,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = az.CreateSchema(ctx)
@@ -385,7 +387,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-				err = az.Setup(ctx, warehouse, mockUploader)
+				err := az.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = az.CreateSchema(ctx)
@@ -432,7 +434,7 @@ func TestIntegration(t *testing.T) {
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-				err = az.Setup(ctx, warehouse, mockUploader)
+				err := az.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
 				err = az.CreateSchema(ctx)
@@ -477,7 +479,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = az.CreateSchema(ctx)
@@ -499,7 +501,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = az.CreateSchema(ctx)
@@ -521,7 +523,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = az.CreateSchema(ctx)
@@ -564,8 +566,8 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
-			err = az.Setup(ctx, warehouse, mockUploader)
+			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = az.CreateSchema(ctx)
@@ -637,7 +639,7 @@ func TestIntegration(t *testing.T) {
 		mockUploader := newMockUploader(t, []warehouseutils.LoadFile{}, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
 		t.Run("successful cleanup", func(t *testing.T) {
-			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -674,7 +676,7 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("query error", func(t *testing.T) {
-			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 

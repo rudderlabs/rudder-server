@@ -8,6 +8,22 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"

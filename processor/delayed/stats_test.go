@@ -17,6 +17,7 @@ import (
 func TestEventStats(t *testing.T) {
 	s, err := memstats.New()
 	require.NoError(t, err)
+
 	c := config.New()
 
 	c.Set("processor.delayed_events.threshold", "1h")
@@ -235,6 +236,7 @@ func TestEventStats(t *testing.T) {
 
 				s, err := memstats.New()
 				require.NoError(t, err)
+
 				es := delayed.NewEventStats(s, c)
 
 				es.ObserveSourceEvents(source, events)

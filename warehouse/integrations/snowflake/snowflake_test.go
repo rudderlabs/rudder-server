@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -1168,7 +1167,7 @@ func TestSnowflake_DeleteBy(t *testing.T) {
 	config := config.New()
 	config.Set("Warehouse.snowflake.enableDeleteByJobs", true)
 
-	sf, err := snowflake.New(config, logger.NOP, memstats.New())
+	sf, err := snowflake.New(config, logger.NOP, stats.NOP)
 	require.NoError(t, err)
 
 	sf.DB = sqlquerywrapper.New(db)

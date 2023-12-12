@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -206,7 +205,7 @@ var _ = Describe("Proxy Request", func() {
 				id:              1,
 				input:           make(chan workerJob, 1),
 				rt:              router,
-				routerProxyStat: memstats.New().NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
+				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
 			}
 
 			destinationJob := types.DestinationJobT{
@@ -281,7 +280,7 @@ var _ = Describe("Proxy Request", func() {
 				id:              1,
 				input:           make(chan workerJob, 1),
 				rt:              router,
-				routerProxyStat: memstats.New().NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
+				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
 			}
 
 			destinationJob := types.DestinationJobT{
@@ -363,7 +362,7 @@ var _ = Describe("Proxy Request", func() {
 				id:              1,
 				input:           make(chan workerJob, 1),
 				rt:              router,
-				routerProxyStat: memstats.New().NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
+				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
 			}
 
 			destinationJob := types.DestinationJobT{

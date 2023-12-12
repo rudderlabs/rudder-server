@@ -490,6 +490,7 @@ func TestSlaveJob(t *testing.T) {
 
 				statsStore, err := memstats.New()
 				require.NoError(t, err)
+
 				stagingFileID := int64(1001)
 
 				destType := destType

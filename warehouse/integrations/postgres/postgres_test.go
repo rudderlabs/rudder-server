@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
