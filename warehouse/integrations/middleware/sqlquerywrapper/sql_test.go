@@ -17,8 +17,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
