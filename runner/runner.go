@@ -27,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -337,8 +336,6 @@ func runAllInit() {
 	backendconfig.Init()
 	warehouseutils.Init()
 	validations.Init()
-	eventschema.Init()
-	eventschema.Init2()
 	kafka.Init()
 	customdestinationmanager.Init()
 	alert.Init()

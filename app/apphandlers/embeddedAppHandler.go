@@ -271,7 +271,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		enrichers,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := rtThrottler.New(stats.Default)
+	throttlerFactory, err := rtThrottler.NewFactory(config, stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}

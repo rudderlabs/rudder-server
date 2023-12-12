@@ -4,7 +4,6 @@ package types
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -41,18 +40,6 @@ type EventParams struct {
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {
 	GetSuppressedUser(workspaceID, userID, sourceID string) *model.Metadata
-}
-
-// EventSchemasI is interface to access EventSchemas feature
-type EventSchemasI interface {
-	RecordEventSchema(writeKey, eventBatch string) bool
-	GetEventModels(w http.ResponseWriter, r *http.Request)
-	GetEventVersions(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
-	GetKeyCounts(w http.ResponseWriter, r *http.Request)
-	GetEventModelMetadata(w http.ResponseWriter, r *http.Request)
-	GetJsonSchemas(w http.ResponseWriter, r *http.Request)
 }
 
 // ConfigEnvI is interface to inject env variables into config

@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -89,8 +88,6 @@ func (gw *Handle) Setup(
 	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
 	// Enable suppress user feature. false by default
 	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
-	// EventSchemas feature. false by default
-	gw.conf.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	// Time period for diagnosis ticker
 	gw.conf.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS")
 	gw.conf.ReadTimeout = config.GetDurationVar(0, time.Second, "ReadTimeout", "ReadTimeOutInSec")
@@ -131,9 +128,6 @@ func (gw *Handle) Setup(
 		if err != nil {
 			return fmt.Errorf("could not setup suppress user feature: %w", err)
 		}
-	}
-	if gw.conf.enableEventSchemasFeature {
-		gw.eventSchemaHandler = event_schema.GetInstance()
 	}
 
 	for _, opt := range opts {
@@ -442,18 +436,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	srvMux.Post("/beacon/v1/batch", gw.beaconBatchHandler())
 	srvMux.Get("/version", withContentType("application/json; charset=utf-8", gw.versionHandler))
 	srvMux.Get("/robots.txt", gw.robotsHandler)
-
-	if gw.conf.enableEventSchemasFeature {
-		srvMux.Route("/schemas", func(r chi.Router) {
-			r.Get("/event-models", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetEventModels)))
-			r.Get("/event-versions", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetEventVersions)))
-			r.Get("/event-model/{EventID}/key-counts", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetKeyCounts)))
-			r.Get("/event-model/{EventID}/metadata", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetEventModelMetadata)))
-			r.Get("/event-version/{VersionID}/metadata", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetSchemaVersionMetadata)))
-			r.Get("/event-version/{VersionID}/missing-keys", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetSchemaVersionMissingKeys)))
-			r.Get("/event-models/json-schemas", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetJsonSchemas)))
-		})
-	}
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  func(_ string) bool { return true },

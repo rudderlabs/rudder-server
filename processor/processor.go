@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
@@ -85,7 +84,6 @@ type Handle struct {
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
 	logger                     logger.Logger
-	eventSchemaHandler         types.EventSchemasI
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
 	reporting                  types.Reporting
@@ -133,8 +131,6 @@ type Handle struct {
 		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
-		enableEventSchemasFeature       bool
-		enableEventSchemasAPIOnly       misc.ValueLoader[bool]
 		enableDedup                     bool
 		enableEventCount                misc.ValueLoader[bool]
 		transformTimesPQLength          int
@@ -166,7 +162,6 @@ type processorStats struct {
 	statDBR                       func(partition string) stats.Measurement
 	statDBW                       func(partition string) stats.Measurement
 	statLoopTime                  func(partition string) stats.Measurement
-	eventSchemasTime              func(partition string) stats.Measurement
 	validateEventsTime            func(partition string) stats.Measurement
 	processJobsTime               func(partition string) stats.Measurement
 	statSessionTransform          func(partition string) stats.Measurement
@@ -444,11 +439,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.eventSchemasTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_event_schemas_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.validateEventsTime = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_validate_events_time", stats.TimerType, stats.Tags{
 			"partition": partition,
@@ -589,9 +579,6 @@ func (proc *Handle) Setup(
 		return proc.statsFactory.NewTaggedStat("processor_db_write_throughput", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
-	}
-	if proc.config.enableEventSchemasFeature {
-		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
@@ -766,8 +753,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
-	// EventSchemas feature. false by default
-	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
@@ -788,7 +773,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.transformBatchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
 	proc.config.userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 	proc.config.enableEventCount = config.GetReloadableBoolVar(true, "Processor.enableEventCount")
-	proc.config.enableEventSchemasAPIOnly = config.GetReloadableBoolVar(false, "EventSchemas.enableEventSchemasAPIOnly")
 	proc.config.maxEventsToProcess = config.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
 	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
@@ -2209,6 +2193,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
+	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
@@ -2216,12 +2201,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
 
-			// rsources stats
-			in.rsourcesStats.CollectStats(statusList)
-			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats: %w", err)
-			}
 			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("saving dropped jobs: %w", err)
@@ -2231,6 +2210,11 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
+			}
+
+			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
 
 			return nil
@@ -2859,16 +2843,6 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		return unprocessedList
 	}
-
-	eventSchemasStart := time.Now()
-	if proc.config.enableEventSchemasFeature && !proc.config.enableEventSchemasAPIOnly.Load() {
-		for _, unprocessedJob := range unprocessedList.Jobs {
-			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
-			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
-		}
-	}
-	eventSchemasTime := time.Since(eventSchemasStart)
-	defer proc.stats.eventSchemasTime(partition).SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
 	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))

@@ -25,6 +25,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.database}}",
             "warehouse": "{{.warehouse}}",
@@ -149,6 +150,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.caseSensitiveDatabase}}",
             "warehouse": "{{.warehouse}}",
@@ -273,6 +275,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.rbacAccount}}",
             "database": "{{.rbacDatabase}}",
             "warehouse": "{{.rbacWarehouse}}",
@@ -424,6 +427,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "account": "{{.account}}",
             "database": "{{.database}}",
             "warehouse": "{{.warehouse}}",
