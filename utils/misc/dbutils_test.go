@@ -1,11 +1,12 @@
 package misc_test
 
 import (
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func TestSetApplicationNameInDBConnection(t *testing.T) {
+func TestSetApplicationNameInDBConnectionURL(t *testing.T) {
 	type args struct {
 		dns     string
 		appName string
