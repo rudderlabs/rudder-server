@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/samber/lo"
 
@@ -226,7 +226,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				cs := newMockConfigSubscriber()
 				cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 				defer eir.Stop()
 
 				syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -293,7 +293,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cf := newMockConfigSubscriber()
 		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.NOP)
 		defer eir.Stop()
 
 		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -329,7 +329,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			cf := newMockConfigSubscriber()
 			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.NOP)
 			defer eir.Stop()
 
 			syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -392,7 +392,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 		defer eir.Stop()
 
 		syncer1 := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -550,7 +550,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 		eir.now = func() time.Time {
 			return failedAt
 		}

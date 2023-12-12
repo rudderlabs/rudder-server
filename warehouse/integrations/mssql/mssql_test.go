@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/golang/mock/gomock"
 
@@ -386,7 +386,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -402,7 +402,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -422,7 +422,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				ms := mssql.New(config.New(), logger.NOP, memstats.New())
+				ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 				err := ms.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -469,7 +469,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-				ms := mssql.New(config.New(), logger.NOP, memstats.New())
+				ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 				err := ms.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -514,7 +514,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -536,7 +536,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -558,7 +558,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -602,7 +602,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 			err := ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -717,7 +717,7 @@ func TestMSSQL_ProcessColumnValue(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ms := mssql.New(config.New(), logger.NOP, memstats.New())
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
 
 			value, err := ms.ProcessColumnValue(tc.data, tc.dataType)
 			if tc.wantError {

@@ -269,7 +269,8 @@ var _ = Describe("Gateway Enterprise", func() {
 			gateway = &Handle{}
 			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
-			statsStore = memstats.New()
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
 			gateway.stats = statsStore
 			waitForBackendConfigInit(gateway)
 		})
@@ -413,10 +414,9 @@ var _ = Describe("Gateway", func() {
 
 	Context("Test All endpoints", func() {
 		var (
-			gateway    *Handle
-			statsStore *memstats.Store
-			whServer   *httptest.Server
-			serverURL  string
+			gateway   *Handle
+			whServer  *httptest.Server
+			serverURL string
 		)
 
 		BeforeEach(func() {
@@ -442,8 +442,7 @@ var _ = Describe("Gateway", func() {
 			gateway.irh = mockRequestHandler{}
 			gateway.rrh = mockRequestHandler{}
 			gateway.webhook = c.mockWebhook
-			statsStore = memstats.New()
-			gateway.stats = statsStore
+			gateway.stats = stats.NOP
 		})
 		AfterEach(func() {
 			err := gateway.Shutdown()
@@ -530,7 +529,8 @@ var _ = Describe("Gateway", func() {
 			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
-			statsStore = memstats.New()
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
 			gateway.stats = statsStore
 		})
 
@@ -859,7 +859,8 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 
-			statsStore = memstats.New()
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
 			gateway.stats = statsStore
 		})
 
@@ -964,7 +965,8 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 
-			statsStore = memstats.New()
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
 			gateway.stats = statsStore
 		})
 
@@ -1056,7 +1058,8 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 
-			statsStore = memstats.New()
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
 			gateway.stats = statsStore
 		})
 

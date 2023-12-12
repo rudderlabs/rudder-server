@@ -198,7 +198,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingFileLocation: uf.ObjectName,
 			}
 
-			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+			jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -224,7 +224,8 @@ func TestSlaveJob(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
@@ -261,7 +262,8 @@ func TestSlaveJob(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
@@ -296,7 +298,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingDestinationRevisionID: uuid.New().String(),
 			}
 
-			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+			jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -323,7 +325,7 @@ func TestSlaveJob(t *testing.T) {
 			DestinationType: destType,
 		}
 
-		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+		jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 		defer jr.cleanup()
 
@@ -364,7 +366,7 @@ func TestSlaveJob(t *testing.T) {
 
 		now := time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC)
 
-		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+		jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 		jr.uuidTS = now
 		jr.now = func() time.Time {
 			return now
@@ -486,7 +488,9 @@ func TestSlaveJob(t *testing.T) {
 					writerMap[fmt.Sprintf("test-%d", i)] = m
 				}
 
-				store := memstats.New()
+				store, err := memstats.New()
+				require.NoError(t, err)
+
 				stagingFileID := int64(1001)
 
 				destType := destType

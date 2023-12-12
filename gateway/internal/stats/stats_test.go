@@ -78,7 +78,8 @@ func TestReport(t *testing.T) {
 	}
 
 	// report
-	statsStore := memstats.New()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 	for _, v := range statMap {
 		v.Report(statsStore)
 	}

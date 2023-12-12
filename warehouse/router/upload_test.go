@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -118,7 +120,8 @@ func TestColumnCountStat(t *testing.T) {
 		},
 	}
 
-	store := memstats.New()
+	store, err := memstats.New()
+	require.NoError(t, err)
 
 	for _, tc := range inputs {
 		tc := tc
@@ -240,14 +243,14 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					t.Log("db:", pgResource.DBDsn)
 
-					rs := redshift.New(config.New(), logger.NOP, memstats.New())
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
 					ujf := &UploadJobFactory{
 						conf:         config.New(),
 						logger:       logger.NOP,
-						statsFactory: memstats.New(),
+						statsFactory: stats.NOP,
 						db:           sqlmiddleware.New(pgResource.DB),
 					}
 
@@ -316,14 +319,14 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New(config.New(), logger.NOP, memstats.New())
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
 			ujf := &UploadJobFactory{
 				conf:         config.New(),
 				logger:       logger.NOP,
-				statsFactory: memstats.New(),
+				statsFactory: stats.NOP,
 				db:           sqlmiddleware.New(pgResource.DB),
 			}
 

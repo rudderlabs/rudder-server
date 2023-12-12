@@ -9,9 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/source"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
@@ -94,9 +94,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -196,9 +196,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -325,9 +325,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -394,9 +394,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -543,7 +543,7 @@ func TestSlaveWorker(t *testing.T) {
 		}).AnyTimes()
 
 		tenantManager := multitenant.New(config.New(), mockBackendConfig)
-		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New())
+		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP)
 		ef := encoding.NewFactory(config.New())
 
 		setupCh := make(chan struct{})
@@ -570,7 +570,7 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
 				bcm,
 				constraints.New(config.New()),
@@ -635,7 +635,7 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
 				bcm,
 				constraints.New(config.New()),
