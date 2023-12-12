@@ -113,6 +113,7 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscri
 
 // Report reports the metrics to the errorIndex JobsDB
 func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx) error {
+	ctx := context.TODO() // TODO: add context to the Report method
 	failedAt := eir.now()
 
 	var jobs []*jobsdb.JobT
@@ -171,8 +172,8 @@ func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve jobsdb: %w", err)
 	}
-	if err := db.WithStoreSafeTxFromTx(eir.ctx, tx, func(tx jobsdb.StoreSafeTx) error {
-		return db.StoreInTx(eir.ctx, tx, jobs)
+	if err := db.WithStoreSafeTxFromTx(ctx, tx, func(tx jobsdb.StoreSafeTx) error {
+		return db.StoreInTx(ctx, tx, jobs)
 	}); err != nil {
 		return fmt.Errorf("failed to store jobs: %w", err)
 	}
