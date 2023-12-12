@@ -2207,7 +2207,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			}
 
 			if proc.isReportingEnabled() {
-				if err = proc.reporting.Report(in.reportMetrics, tx.Tx()); err != nil {
+				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
