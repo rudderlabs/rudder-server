@@ -138,7 +138,7 @@ func generateTestData(t *testing.T, tmpDir string) {
 		require.NoError(t, repo.Backup(f))
 	}
 
-	repo, err := badgerdb.NewRepository(tmpDir, logger.NOP, stats.NOP)
+	repo, err := badgerdb.NewRepository(tmpDir, logger.NOP, stats.Default)
 	require.NoError(t, err)
 
 	suppressions := []model.Suppression{

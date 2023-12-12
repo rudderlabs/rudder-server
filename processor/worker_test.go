@@ -39,10 +39,10 @@ func TestWorkerPool(t *testing.T) {
 
 		if pipelining {
 			var limiterWg sync.WaitGroup
-			wh.limiters.query = kitsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.NOP)
-			wh.limiters.process = kitsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.NOP)
-			wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.NOP)
-			wh.limiters.transform = kitsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.NOP)
+			wh.limiters.query = kitsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
+			wh.limiters.process = kitsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
+			wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
+			wh.limiters.transform = kitsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
 			defer limiterWg.Wait()
 		}
 

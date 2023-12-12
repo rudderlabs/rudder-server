@@ -81,11 +81,11 @@ func TestNotifier(t *testing.T) {
 			return count
 		}
 
-		notifierWithIdentifier := notifier.New(config.Default, logger.NOP, stats.NOP, workspaceIdentifier)
+		notifierWithIdentifier := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 		err := notifierWithIdentifier.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
-		notifierWithoutIdentifier := notifier.New(config.Default, logger.NOP, stats.NOP, "")
+		notifierWithoutIdentifier := notifier.New(config.Default, logger.NOP, stats.Default, "")
 		err = notifierWithoutIdentifier.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -132,7 +132,7 @@ func TestNotifier(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("success", func(t *testing.T) {
-			n := notifier.New(config.Default, logger.NOP, stats.NOP, workspaceIdentifier)
+			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
 			require.True(t, n.CheckHealth(ctx))
@@ -141,7 +141,7 @@ func TestNotifier(t *testing.T) {
 			cancelledCtx, cancel := context.WithCancel(ctx)
 			cancel()
 
-			n := notifier.New(config.Default, logger.NOP, stats.NOP, workspaceIdentifier)
+			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
 			require.False(t, n.CheckHealth(cancelledCtx))
@@ -323,7 +323,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -413,7 +413,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -586,7 +586,7 @@ func TestNotifier(t *testing.T) {
 		c.Set("PGNOTIFIER_DB_PORT", pgResource.Port)
 		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
 
-		n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 		err := n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 	})
@@ -605,7 +605,7 @@ func TestNotifier(t *testing.T) {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
+			n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
 
@@ -617,7 +617,7 @@ func TestNotifier(t *testing.T) {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
+			n := notifier.New(c, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
 

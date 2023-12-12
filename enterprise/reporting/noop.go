@@ -1,6 +1,8 @@
 package reporting
 
 import (
+	"context"
+
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -8,7 +10,7 @@ import (
 // NOOP reporting implementation that does nothing
 type NOOP struct{}
 
-func (*NOOP) Report(_ []*types.PUReportedMetric, _ *Tx) error {
+func (*NOOP) Report(_ context.Context, _ []*types.PUReportedMetric, _ *Tx) error {
 	return nil
 }
 

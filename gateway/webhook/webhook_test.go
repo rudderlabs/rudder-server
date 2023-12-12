@@ -99,7 +99,7 @@ func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	webhookHandler := Setup(mockGW, getMockTransformerService(), stats.NOP)
+	webhookHandler := Setup(mockGW, getMockTransformerService(), stats.Default)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
@@ -128,7 +128,7 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, sampleError, http.StatusBadRequest)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
@@ -173,7 +173,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 			respBody, _ := json.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
@@ -216,7 +216,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 			respBody, _ := json.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
@@ -259,7 +259,7 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 			respBody, _ := json.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
@@ -301,7 +301,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 			respBody, _ := json.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
@@ -348,7 +348,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 			respBody, _ := json.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)

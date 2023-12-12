@@ -25,7 +25,7 @@ func BenchmarkBackupRestore(b *testing.B) {
 	backupFilename := path.Join(b.TempDir(), "backup.badger")
 
 	repo1Path := path.Join(b.TempDir(), "repo-1")
-	repo1, err := badgerdb.NewRepository(repo1Path, logger.NOP, stats.NOP)
+	repo1, err := badgerdb.NewRepository(repo1Path, logger.NOP, stats.Default)
 	require.NoError(b, err)
 
 	for i := 0; i < totalSuppressions/batchSize; i++ {
@@ -56,7 +56,7 @@ func BenchmarkBackupRestore(b *testing.B) {
 	b.Run("restore", func(b *testing.B) {
 		b.StopTimer()
 		repo2Path := path.Join(b.TempDir(), "repo-2")
-		repo2, err := badgerdb.NewRepository(repo2Path, logger.NOP, stats.NOP)
+		repo2, err := badgerdb.NewRepository(repo2Path, logger.NOP, stats.Default)
 		require.NoError(b, err)
 
 		f, err := os.Open(backupFilename)

@@ -14,7 +14,7 @@ import (
 // TestBadgerRepoSpec tests the badgerdb repository implementation.
 func TestBadgerRepoSpec(t *testing.T) {
 	path := t.TempDir()
-	repo, err := badgerdb.NewRepository(path, logger.NOP, stats.NOP)
+	repo, err := badgerdb.NewRepository(path, logger.NOP, stats.Default)
 	require.NoError(t, err)
 	repotest.RunRepositoryTestSuite(t, repo)
 }

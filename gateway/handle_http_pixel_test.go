@@ -22,7 +22,7 @@ func TestPixelInterceptor(t *testing.T) {
 	newGateway := func() *Handle {
 		return &Handle{
 			logger: logger.NOP,
-			stats:  stats.NOP,
+			stats:  stats.Default,
 			now:    func() time.Time { return refTime },
 		}
 	}
