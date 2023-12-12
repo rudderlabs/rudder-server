@@ -3,6 +3,7 @@
 package types
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -62,7 +63,7 @@ type ConfigEnvI interface {
 // Reporting is interface to report metrics
 type Reporting interface {
 	// Report reports metrics to reporting service
-	Report(metrics []*PUReportedMetric, tx *Tx) error
+	Report(ctx context.Context, metrics []*PUReportedMetric, tx *Tx) error
 
 	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
 	DatabaseSyncer(c SyncerConfig) ReportingSyncer
