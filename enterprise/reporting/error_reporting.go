@@ -158,13 +158,13 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
+func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return nil
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return fmt.Errorf("preparing statement: %v", err)
@@ -180,7 +180,7 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *T
 
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
-		_, err = stmt.Exec(
+		_, err = stmt.ExecContext(ctx,
 			workspaceID,
 			edr.namespace,
 			edr.instanceID,
@@ -203,7 +203,7 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *T
 		}
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return fmt.Errorf("executing final statement: %v", err)

@@ -522,6 +522,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			}
 			if job.config.reportingEnabled {
 				err = job.reporting.Report(
+					job.ctx,
 					[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
 					tx.Tx,
 				)
@@ -717,7 +718,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		if err = job.reporting.Report(reportingMetrics, txn.Tx); err != nil {
+		if err = job.reporting.Report(job.ctx, reportingMetrics, txn.Tx); err != nil {
 			return "", fmt.Errorf("reporting metrics: %w", err)
 		}
 	}

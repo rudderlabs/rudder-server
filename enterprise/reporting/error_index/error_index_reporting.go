@@ -112,8 +112,7 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscri
 }
 
 // Report reports the metrics to the errorIndex JobsDB
-func (eir *ErrorIndexReporter) Report(metrics []*types.PUReportedMetric, tx *Tx) error {
-	ctx := context.TODO() // TODO: add context to the Report method
+func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, tx *Tx) error {
 	failedAt := eir.now()
 
 	var jobs []*jobsdb.JobT

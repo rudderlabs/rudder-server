@@ -1,6 +1,8 @@
 package router
 
 import (
+	"context"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -50,5 +52,5 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 }
 
 type reporter interface {
-	Report(metrics []*utilTypes.PUReportedMetric, txn *Tx) error
+	Report(ctx context.Context, metrics []*utilTypes.PUReportedMetric, txn *Tx) error
 }
