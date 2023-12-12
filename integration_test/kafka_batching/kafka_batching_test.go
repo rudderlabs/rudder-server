@@ -6,7 +6,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"go.opentelemetry.io/otel"
 	"io"
 	"math"
 	"net/http"
@@ -19,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"

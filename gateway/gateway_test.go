@@ -406,7 +406,7 @@ var _ = Describe("Gateway", func() {
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -1340,7 +1340,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1366,7 +1366,7 @@ var _ = Describe("Gateway", func() {
 		)
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1547,7 +1547,7 @@ var _ = Describe("Gateway", func() {
 		var gateway *Handle
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
