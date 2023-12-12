@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/rudderlabs/rudder-server/compare/v1.18.1...v1.18.2) (2023-12-12)
+
+
+### Bug Fixes
+
+* server panics during shutdown with reporting metrics: failed to store jobs: context canceled ([#4228](https://github.com/rudderlabs/rudder-server/issues/4228)) ([c5cb5a8](https://github.com/rudderlabs/rudder-server/commit/c5cb5a84ba13a1a42f76794e64e3fe1f29a2658e))
+
 ## [1.18.1](https://github.com/rudderlabs/rudder-server/compare/v1.18.0...v1.18.1) (2023-12-07)
 
 

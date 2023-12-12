@@ -6,6 +6,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"io"
 	"math"
 	"net/http"
@@ -282,7 +283,7 @@ func TestKafkaBatching(t *testing.T) {
 		{Name: ptr("instanceName"), Value: &serverInstanceID},
 		{Name: ptr("telemetry_sdk_language"), Value: ptr("go")},
 		{Name: ptr("telemetry_sdk_name"), Value: ptr("opentelemetry")},
-		{Name: ptr("telemetry_sdk_version"), Value: ptr("1.19.0")},
+		{Name: ptr("telemetry_sdk_version"), Value: ptr(otel.Version())},
 	}
 
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{
