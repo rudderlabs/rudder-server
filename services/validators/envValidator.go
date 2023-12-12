@@ -150,7 +150,7 @@ func killDanglingDBConnections(db *sql.DB) error {
 	rows, err := db.Query(`SELECT PID, QUERY_START, COALESCE(WAIT_EVENT_TYPE,''), COALESCE(WAIT_EVENT, ''), COALESCE(STATE, ''), QUERY, PG_TERMINATE_BACKEND(PID)
 							FROM PG_STAT_ACTIVITY
 							WHERE PID <> PG_BACKEND_PID()
-							AND APPLICATION_NAME = CURRENT_SETTING('APPLICATION_NAME')
+							AND APPLICATION_NAME LIKE ('%' || CURRENT_SETTING('APPLICATION_NAME'))
 							AND APPLICATION_NAME <> ''`)
 	if err != nil {
 		return fmt.Errorf("querying pg_stat_activity table for terminating dangling connections: %w", err)
