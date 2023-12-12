@@ -6,18 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 

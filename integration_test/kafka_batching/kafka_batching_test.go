@@ -25,7 +25,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"

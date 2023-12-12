@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -27,6 +25,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
@@ -434,8 +433,6 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Scheduler", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
 		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 

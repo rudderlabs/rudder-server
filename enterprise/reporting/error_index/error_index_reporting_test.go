@@ -11,12 +11,11 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck

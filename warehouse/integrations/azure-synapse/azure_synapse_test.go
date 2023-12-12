@@ -30,7 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/testcompose"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -566,7 +565,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			az := azuresynapse.New(config.New(), logger.NOP, memstats.New())
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
