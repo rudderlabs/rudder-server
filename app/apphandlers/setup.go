@@ -59,7 +59,8 @@ func rudderCoreWorkSpaceTableSetup() error {
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
 func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
-	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
+	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
+	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
 	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default)
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
 	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")

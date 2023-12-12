@@ -123,6 +123,7 @@ type Postgres struct {
 	LoadFileDownloader downloader.Downloader
 
 	config struct {
+		allowMerge                                bool
 		enableDeleteByJobs                        bool
 		numWorkersDownloadLoadFiles               int
 		slowQueryThreshold                        time.Duration
@@ -163,6 +164,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
+	pg.config.allowMerge = conf.GetBool("Warehouse.postgres.allowMerge", true)
 	pg.config.enableDeleteByJobs = conf.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	pg.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 	pg.config.slowQueryThreshold = conf.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
@@ -413,7 +415,9 @@ func (pg *Postgres) Setup(_ context.Context, warehouse model.Warehouse, uploader
 	return err
 }
 
-func (*Postgres) CrashRecover(context.Context) {}
+func (*Postgres) CrashRecover(context.Context) error {
+	return nil
+}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {

@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
@@ -86,7 +85,6 @@ type Handle struct {
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
 	logger                     logger.Logger
-	eventSchemaHandler         types.EventSchemasI
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
 	reporting                  types.Reporting
@@ -113,39 +111,38 @@ type Handle struct {
 		store      kitsync.Limiter
 	}
 	config struct {
-		isolationMode                isolation.Mode
-		mainLoopTimeout              time.Duration
-		enablePipelining             bool
-		pipelineBufferedItems        int
-		subJobSize                   int
-		pingerSleep                  misc.ValueLoader[time.Duration]
-		readLoopSleep                misc.ValueLoader[time.Duration]
-		maxLoopSleep                 misc.ValueLoader[time.Duration]
-		storeTimeout                 misc.ValueLoader[time.Duration]
-		maxEventsToProcess           misc.ValueLoader[int]
-		transformBatchSize           misc.ValueLoader[int]
-		userTransformBatchSize       misc.ValueLoader[int]
-		sourceIdDestinationMap       map[string][]backendconfig.DestinationT
-		sourceIdSourceMap            map[string]backendconfig.SourceT
-		workspaceLibrariesMap        map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap       map[string]string
-		oneTrustConsentCategoriesMap map[string][]string
-		ketchConsentCategoriesMap    map[string][]string
-		batchDestinations            []string
-		configSubscriberLock         sync.RWMutex
-		enableEventSchemasFeature    bool
-		enableEventSchemasAPIOnly    misc.ValueLoader[bool]
-		enableDedup                  bool
-		enableEventCount             misc.ValueLoader[bool]
-		transformTimesPQLength       int
-		captureEventNameStats        misc.ValueLoader[bool]
-		transformerURL               string
-		pollInterval                 time.Duration
-		GWCustomVal                  string
-		asyncInit                    *misc.AsyncInit
-		eventSchemaV2Enabled         bool
-		archivalEnabled              misc.ValueLoader[bool]
-		eventAuditEnabled            map[string]bool
+		isolationMode                   isolation.Mode
+		mainLoopTimeout                 time.Duration
+		enablePipelining                bool
+		pipelineBufferedItems           int
+		subJobSize                      int
+		pingerSleep                     misc.ValueLoader[time.Duration]
+		readLoopSleep                   misc.ValueLoader[time.Duration]
+		maxLoopSleep                    misc.ValueLoader[time.Duration]
+		storeTimeout                    misc.ValueLoader[time.Duration]
+		maxEventsToProcess              misc.ValueLoader[int]
+		transformBatchSize              misc.ValueLoader[int]
+		userTransformBatchSize          misc.ValueLoader[int]
+		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
+		sourceIdSourceMap               map[string]backendconfig.SourceT
+		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
+		destinationIDtoTypeMap          map[string]string
+		oneTrustConsentCategoriesMap    map[string][]string
+		ketchConsentCategoriesMap       map[string][]string
+		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
+		batchDestinations               []string
+		configSubscriberLock            sync.RWMutex
+		enableDedup                     bool
+		enableEventCount                misc.ValueLoader[bool]
+		transformTimesPQLength          int
+		captureEventNameStats           misc.ValueLoader[bool]
+		transformerURL                  string
+		pollInterval                    time.Duration
+		GWCustomVal                     string
+		asyncInit                       *misc.AsyncInit
+		eventSchemaV2Enabled            bool
+		archivalEnabled                 misc.ValueLoader[bool]
+		eventAuditEnabled               map[string]bool
 	}
 
 	drainConfig struct {
@@ -166,7 +163,6 @@ type processorStats struct {
 	statDBR                       func(partition string) stats.Measurement
 	statDBW                       func(partition string) stats.Measurement
 	statLoopTime                  func(partition string) stats.Measurement
-	eventSchemasTime              func(partition string) stats.Measurement
 	validateEventsTime            func(partition string) stats.Measurement
 	processJobsTime               func(partition string) stats.Measurement
 	statSessionTransform          func(partition string) stats.Measurement
@@ -446,11 +442,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.eventSchemasTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_event_schemas_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.validateEventsTime = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_validate_events_time", stats.TimerType, stats.Tags{
 			"partition": partition,
@@ -592,9 +583,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	if proc.config.enableEventSchemasFeature {
-		proc.eventSchemaHandler = eventschema.GetInstance()
-	}
 	if proc.config.enableDedup {
 		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
@@ -631,7 +619,7 @@ func (proc *Handle) setupReloadableVars() {
 	proc.jobdDBQueryRequestTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	proc.jobsDBCommandTimeout = proc.conf.GetReloadableDurationVar(600, time.Second, "JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
 	proc.jobdDBMaxRetries = proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
-	proc.drainConfig.jobRunIDs = proc.conf.GetReloadableStringSliceVar([]string{}, "RSources.toAbortJobRunIDs")
+	proc.drainConfig.jobRunIDs = proc.conf.GetReloadableStringSliceVar([]string{}, "drain.jobRunIDs")
 }
 
 // Start starts this processor's main loops.
@@ -683,7 +671,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 		proc.logger.Info("Async init group done")
 
-		// waiting for init group
+		// waiting for transformer features
 		proc.logger.Info("Waiting for transformer features")
 		select {
 		case <-ctx.Done():
@@ -768,8 +756,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
-	// EventSchemas feature. false by default
-	proc.config.enableEventSchemasFeature = config.GetBoolVar(false, "EventSchemas.enableEventSchemasFeature")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
@@ -790,7 +776,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.transformBatchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
 	proc.config.userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 	proc.config.enableEventCount = config.GetReloadableBoolVar(true, "Processor.enableEventCount")
-	proc.config.enableEventSchemasAPIOnly = config.GetReloadableBoolVar(false, "EventSchemas.enableEventSchemasAPIOnly")
 	proc.config.maxEventsToProcess = config.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
 	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
@@ -803,13 +788,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
-			oneTrustConsentCategoriesMap = make(map[string][]string)
-			ketchConsentCategoriesMap    = make(map[string][]string)
-			workspaceLibrariesMap        = make(map[string]backendconfig.LibrariesT, len(config))
-			sourceIdDestinationMap       = make(map[string][]backendconfig.DestinationT)
-			sourceIdSourceMap            = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap       = make(map[string]string)
-			eventAuditEnabled            = make(map[string]bool)
+			oneTrustConsentCategoriesMap    = make(map[string][]string)
+			ketchConsentCategoriesMap       = make(map[string][]string)
+			destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
+			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
+			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
+			destinationIDtoTypeMap          = make(map[string]string)
+			eventAuditEnabled               = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -820,8 +806,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-						oneTrustConsentCategoriesMap[destination.ID] = oneTrustConsentCategories(destination)
-						ketchConsentCategoriesMap[destination.ID] = ketchConsentCategories(destination)
+						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
+						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
+
+						var err error
+						destGenericConsentManagementMap[destination.ID], err = getGenericConsentManagementData(destination)
+						if err != nil {
+							proc.logger.Error(err)
+						}
 					}
 				}
 			}
@@ -831,6 +823,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.configSubscriberLock.Lock()
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
 		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
+		proc.config.destGenericConsentManagementMap = destGenericConsentManagementMap
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
@@ -1888,7 +1881,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
-				enabledDestinationsList := proc.filterDestinations(
+				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
 					proc.getEnabledDestinations(sourceId, *destType),
 				)
@@ -2278,6 +2271,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
+	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
@@ -2285,21 +2279,20 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
 
-			// rsources stats
-			in.rsourcesStats.CollectStats(statusList)
-			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats: %w", err)
-			}
-			err = proc.saveDroppedJobs(in.droppedJobs, tx.Tx())
+			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("saving dropped jobs: %w", err)
 			}
 
 			if proc.isReportingEnabled() {
-				if err = proc.reporting.Report(in.reportMetrics, tx.Tx()); err != nil {
+				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
+			}
+
+			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
 
 			return nil
@@ -2754,7 +2747,7 @@ func (proc *Handle) transformSrcDest( // @TODO the problem with messages that ha
 	}
 }
 
-func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
+func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
 	if len(droppedJobs) > 0 {
 		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
 			droppedJobs[i].JobID = int64(i)
@@ -2764,7 +2757,7 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 			rsources.IgnoreDestinationID(),
 		)
 		rsourcesStats.JobsDropped(droppedJobs)
-		return rsourcesStats.Publish(context.TODO(), tx.Tx)
+		return rsourcesStats.Publish(ctx, tx.Tx)
 	}
 	return nil
 }
@@ -2930,16 +2923,6 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 		return unprocessedList
 	}
 
-	eventSchemasStart := time.Now()
-	if proc.config.enableEventSchemasFeature && !proc.config.enableEventSchemasAPIOnly.Load() {
-		for _, unprocessedJob := range unprocessedList.Jobs {
-			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
-			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
-		}
-	}
-	eventSchemasTime := time.Since(eventSchemasStart)
-	defer proc.stats.eventSchemasTime(partition).SendTiming(eventSchemasTime)
-
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
 	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
 
@@ -3089,7 +3072,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 		return false
 	}
 
-	if enabledDestinationsList := proc.filterDestinations(
+	if enabledDestinationsList := proc.getConsentFilteredDestinations(
 		event,
 		lo.Flatten(
 			lo.Map(

@@ -239,7 +239,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				sqlTx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
 				tx := &Tx{Tx: sqlTx}
-				err = eir.Report(tc.reports, tx)
+				err = eir.Report(context.Background(), tc.reports, tx)
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
 				db, err := eir.resolveJobsDB(tx)
@@ -303,7 +303,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		sqlTx, err := postgresContainer.DB.Begin()
 		require.NoError(t, err)
 		tx := &Tx{Tx: sqlTx}
-		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		err = eir.Report(context.Background(), []*types.PUReportedMetric{}, tx)
 		require.NoError(t, err)
 		require.NoError(t, tx.Commit())
 
@@ -339,7 +339,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg2.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -406,7 +406,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg1.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -440,7 +440,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg3.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -568,7 +568,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		require.NoError(t, err)
 
 		tx := &Tx{Tx: sqlTx}
-		err = eir.Report(reports, tx)
+		err = eir.Report(context.Background(), reports, tx)
 		require.NoError(t, err)
 		require.NoError(t, tx.Commit())
 

@@ -153,6 +153,7 @@ type JobServiceConfig struct {
 	LocalHostname               string
 	LocalConn                   string
 	MaxPoolSize                 int
+	MinPoolSize                 int
 	SharedConn                  string
 	SubscriptionTargetConn      string
 	SkipFailedRecordsCollection bool
@@ -202,6 +203,9 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 	if config.MaxPoolSize <= 2 {
 		config.MaxPoolSize = 2 // minimum 2 connections in the pool for proper startup
 	}
+	if config.MinPoolSize <= 0 {
+		config.MinPoolSize = 1
+	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
@@ -219,6 +223,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
 		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
+		sharedDB.SetMaxIdleConns(config.MinPoolSize)
 	}
 	handler := &sourcesHandler{
 		log:      config.Log,

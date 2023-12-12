@@ -74,7 +74,6 @@ type Handle struct {
 	webhook                      webhook.Webhook
 	whProxy                      http.Handler
 	suppressUserHandler          types.UserSuppression
-	eventSchemaHandler           types.EventSchemasI
 	backgroundCancel             context.CancelFunc
 	backgroundWait               func() error
 	userWebRequestWorkers        []*userWebRequestWorkerT
@@ -103,7 +102,6 @@ type Handle struct {
 		maxReqSize                           misc.ValueLoader[int]
 		enableRateLimit                      misc.ValueLoader[bool]
 		enableSuppressUserFeature            bool
-		enableEventSchemasFeature            bool
 		diagnosisTickerTime                  time.Duration
 		ReadTimeout                          time.Duration
 		ReadHeaderTimeout                    time.Duration
@@ -112,6 +110,9 @@ type Handle struct {
 		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
 	}
+
+	// additional internal http handlers
+	internalHttpHandlers map[string]http.Handler
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.

@@ -3,7 +3,7 @@
 package types
 
 import (
-	"net/http"
+	"context"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -16,7 +16,7 @@ const (
 	DrainEventCode    = 410
 )
 
-// SingularEventT single event structrue
+// SingularEventT single event structure
 type SingularEventT map[string]interface{}
 
 type SingularEventWithReceivedAt struct {
@@ -43,18 +43,6 @@ type UserSuppression interface {
 	GetSuppressedUser(workspaceID, userID, sourceID string) *model.Metadata
 }
 
-// EventSchemasI is interface to access EventSchemas feature
-type EventSchemasI interface {
-	RecordEventSchema(writeKey, eventBatch string) bool
-	GetEventModels(w http.ResponseWriter, r *http.Request)
-	GetEventVersions(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
-	GetKeyCounts(w http.ResponseWriter, r *http.Request)
-	GetEventModelMetadata(w http.ResponseWriter, r *http.Request)
-	GetJsonSchemas(w http.ResponseWriter, r *http.Request)
-}
-
 // ConfigEnvI is interface to inject env variables into config
 type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
@@ -63,7 +51,7 @@ type ConfigEnvI interface {
 // Reporting is interface to report metrics
 type Reporting interface {
 	// Report reports metrics to reporting service
-	Report(metrics []*PUReportedMetric, tx *Tx) error
+	Report(ctx context.Context, metrics []*PUReportedMetric, tx *Tx) error
 
 	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
 	DatabaseSyncer(c SyncerConfig) ReportingSyncer

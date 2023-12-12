@@ -247,6 +247,7 @@ func TestLoadUsersTable(t *testing.T) {
 			mockUploader := mockuploader.NewMockUploader(ctrl)
 			mockUploader.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
 			mockUploader.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
+			mockUploader.EXPECT().CanAppend().AnyTimes().Return(true)
 
 			pg.DB = db
 			pg.Namespace = namespace

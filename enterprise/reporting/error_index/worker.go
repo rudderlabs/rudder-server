@@ -88,7 +88,7 @@ func newWorker(
 
 	w.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Reporting.errorIndexReporting.parquetParallelWriters")
 	w.config.parquetRowGroupSize = conf.GetReloadableInt64Var(512*bytesize.MB, 1, "Reporting.errorIndexReporting.parquetRowGroupSize")
-	w.config.parquetPageSize = conf.GetReloadableInt64Var(8*bytesize.KB, 1, "Reporting.errorIndexReporting.parquetPageSizeInKB")
+	w.config.parquetPageSize = conf.GetReloadableInt64Var(8*bytesize.KB, 1, "Reporting.errorIndexReporting.parquetPageSize")
 	w.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	w.config.bucketName = conf.GetString("ErrorIndex.Storage.Bucket", "rudder-failed-messages")
 	w.config.payloadLimit = conf.GetReloadableInt64Var(1*bytesize.GB, 1, "Reporting.errorIndexReporting.payloadLimit")

@@ -28,7 +28,9 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -197,13 +199,15 @@ func TestRouterManager(t *testing.T) {
 	defer brtDB.Close()
 	defer errDB.Close()
 	rtFactory := &router.Factory{
-		Logger:           logger.NOP,
-		Reporting:        &reporting.NOOP{},
-		BackendConfig:    mockBackendConfig,
-		RouterDB:         mockRtDB,
-		ProcErrorDB:      errDB,
-		TransientSources: transientsource.NewEmptyService(),
-		RsourcesService:  mockRsourcesService,
+		Logger:                     logger.NOP,
+		Reporting:                  &reporting.NOOP{},
+		BackendConfig:              mockBackendConfig,
+		RouterDB:                   mockRtDB,
+		ProcErrorDB:                errDB,
+		TransientSources:           transientsource.NewEmptyService(),
+		RsourcesService:            mockRsourcesService,
+		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
+		TransformerFeaturesService: transformer.NewNoOpService(),
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reporting.NOOP{},

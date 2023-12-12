@@ -282,6 +282,17 @@ func (job *UploadJob) run() (err error) {
 	defer whManager.Cleanup(job.ctx)
 
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
+		job.logger.Warnw("Error during recovery (dangling staging table cleanup)",
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.Namespace, job.warehouse.Namespace,
+			logfield.Error, err.Error(),
+		)
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
@@ -425,6 +436,7 @@ func (job *UploadJob) run() (err error) {
 // * the source is not an ETL source
 // * the source is not a replay source
 // * the source category is not in "mergeSourceCategoryMap"
+// * the job is not a retry
 func (job *UploadJob) CanAppend() bool {
 	if isSourceETL := job.upload.SourceJobRunID != ""; isSourceETL {
 		return false
@@ -433,6 +445,9 @@ func (job *UploadJob) CanAppend() bool {
 		return false
 	}
 	if _, isMergeCategory := mergeSourceCategoryMap[job.warehouse.Source.SourceDefinition.Category]; isMergeCategory {
+		return false
+	}
+	if job.upload.Retried {
 		return false
 	}
 	return true
@@ -511,6 +526,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			}
 			if job.config.reportingEnabled {
 				err = job.reporting.Report(
+					job.ctx,
 					[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
 					tx.Tx,
 				)
@@ -706,7 +722,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		})
 	}
 	if job.config.reportingEnabled {
-		if err = job.reporting.Report(reportingMetrics, txn.Tx); err != nil {
+		if err = job.reporting.Report(job.ctx, reportingMetrics, txn.Tx); err != nil {
 			return "", fmt.Errorf("reporting metrics: %w", err)
 		}
 	}

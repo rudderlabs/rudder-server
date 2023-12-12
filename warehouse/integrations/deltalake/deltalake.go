@@ -46,9 +46,6 @@ const (
 	partitionNotFound    = "SHOW PARTITIONS is not allowed on a table that is not partitioned"
 	columnsAlreadyExists = "already exists in root"
 
-	mergeMode  = "MERGE"
-	appendMode = "APPEND"
-
 	rudderStagingTableRegex    = "^rudder_staging_.*$"       // matches rudder_staging_* tables
 	nonRudderStagingTableRegex = "^(?!rudder_staging_.*$).*" // matches tables that do not start with rudder_staging_
 )
@@ -125,7 +122,7 @@ type Deltalake struct {
 	stats          stats.Stats
 
 	config struct {
-		loadTableStrategy      string
+		allowMerge             bool
 		enablePartitionPruning bool
 		slowQueryThreshold     time.Duration
 		maxRetries             int
@@ -141,7 +138,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.logger = log.Child("integration").Child("deltalake")
 	dl.stats = stat
 
-	dl.config.loadTableStrategy = conf.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
+	dl.config.allowMerge = conf.GetBool("Warehouse.deltalake.allowMerge", true)
 	dl.config.enablePartitionPruning = conf.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
 	dl.config.slowQueryThreshold = conf.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
 	dl.config.maxRetries = conf.GetInt("Warehouse.deltalake.maxRetries", 10)
@@ -229,12 +226,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(ctx context.Context) {
-	d.dropDanglingStagingTables(ctx)
+func (d *Deltalake) CrashRecover(ctx context.Context) error {
+	return d.dropDanglingStagingTables(ctx)
 }
 
 // dropDanglingStagingTables drops dangling staging tables
-func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
+func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
 		d.logger.Warnw("fetching tables for dropping dangling staging tables",
@@ -246,10 +243,10 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
 			logfield.Namespace, d.Namespace,
 			logfield.Error, err.Error(),
 		)
-		return
+		return fmt.Errorf("fetching tables for dropping dangling staging tables: %w", err)
 	}
 
-	d.dropStagingTables(ctx, tableNames)
+	return d.dropStagingTables(ctx, tableNames)
 }
 
 // fetchTables fetches tables from the database
@@ -286,7 +283,7 @@ func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, er
 }
 
 // dropStagingTables drops all the staging tables
-func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) {
+func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) error {
 	for _, stagingTable := range stagingTables {
 		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
@@ -300,8 +297,10 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 				logfield.StagingTableName, stagingTable,
 				logfield.Error, err.Error(),
 			)
+			return fmt.Errorf("dropping staging table: %w", err)
 		}
 	}
+	return nil
 }
 
 // DropTable drops a table from the warehouse
@@ -586,7 +585,7 @@ func (d *Deltalake) loadTable(
 		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 		logfield.Namespace, d.Namespace,
 		logfield.TableName, tableName,
-		logfield.LoadTableStrategy, d.config.loadTableStrategy,
+		logfield.ShouldMerge, d.ShouldMerge(),
 	)
 	log.Infow("started loading")
 
@@ -603,7 +602,12 @@ func (d *Deltalake) loadTable(
 
 	if !skipTempTableDelete {
 		defer func() {
-			d.dropStagingTables(ctx, []string{stagingTableName})
+			err := d.dropStagingTables(ctx, []string{stagingTableName})
+			if err != nil {
+				log.Errorw("dropping staging table",
+					logfield.Error, err.Error(),
+				)
+			}
 		}()
 	}
 
@@ -617,7 +621,7 @@ func (d *Deltalake) loadTable(
 	}
 
 	var loadTableStat *types.LoadTableStats
-	if d.ShouldAppend() {
+	if !d.ShouldMerge() {
 		log.Infow("inserting data from staging table to main table")
 		loadTableStat, err = d.insertIntoLoadTable(
 			ctx, tableName, stagingTableName,
@@ -1030,7 +1034,21 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables(ctx, []string{identifyStagingTable})
+	defer func() {
+		err := d.dropStagingTables(ctx, []string{identifyStagingTable})
+		if err != nil {
+			d.logger.Warnw("dropped staging table",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.StagingTableName, identifyStagingTable,
+				logfield.Error, err.Error(),
+			)
+		}
+	}()
 
 	if len(usersSchemaInUpload) == 0 {
 		return map[string]error{
@@ -1106,11 +1124,25 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables(ctx, []string{stagingTableName})
+	defer func() {
+		err := d.dropStagingTables(ctx, []string{stagingTableName})
+		if err != nil {
+			d.logger.Warnw("dropped staging table",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.StagingTableName, stagingTableName,
+				logfield.Error, err.Error(),
+			)
+		}
+	}()
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	if d.ShouldAppend() {
+	if !d.ShouldMerge() {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
@@ -1172,7 +1204,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		inserted int64
 	)
 
-	if d.ShouldAppend() {
+	if !d.ShouldMerge() {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
@@ -1254,7 +1286,18 @@ func (*Deltalake) LoadIdentityMappingsTable(context.Context) error {
 // Cleanup cleans up the warehouse
 func (d *Deltalake) Cleanup(ctx context.Context) {
 	if d.DB != nil {
-		d.dropDanglingStagingTables(ctx)
+		err := d.dropDanglingStagingTables(ctx)
+		if err != nil {
+			d.logger.Warnw("Error dropping dangling staging tables",
+				logfield.SourceID, d.Warehouse.Source.ID,
+				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, d.Warehouse.Destination.ID,
+				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+				logfield.Namespace, d.Namespace,
+				logfield.Error, err.Error(),
+			)
+		}
 		_ = d.DB.Close()
 	}
 }
@@ -1385,9 +1428,10 @@ func (*Deltalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPar
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-// ShouldAppend returns true if:
-// * the load table strategy is "append" mode
-// * the uploader says we can append
-func (d *Deltalake) ShouldAppend() bool {
-	return d.config.loadTableStrategy == appendMode && d.Uploader.CanAppend()
+// ShouldMerge returns true if:
+// * the uploader says we cannot append
+// * the user opted in to merging and we allow merging
+func (d *Deltalake) ShouldMerge() bool {
+	return !d.Uploader.CanAppend() ||
+		(d.config.allowMerge && !d.Warehouse.GetPreferAppendSetting())
 }
