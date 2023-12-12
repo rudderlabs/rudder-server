@@ -546,10 +546,13 @@ var _ = Describe("Gateway", func() {
 
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
-			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled))
+			expectedStr := []byte(fmt.Sprintf(
+				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "", "traceparent": ""}`,
+				SourceIDEnabled,
+			))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-			Expect(equals).To(Equal(true))
+			Expect(equals).To(BeTrue())
 
 			Expect(job.CustomVal).To(Equal(customVal))
 

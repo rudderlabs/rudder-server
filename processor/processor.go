@@ -1558,10 +1558,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			panic(err)
 		}
 
-		sourceId := eventParams.SourceId
+		sourceID := eventParams.SourceId
 		ctx := stats.InjectTraceParentIntoContext(context.TODO(), eventParams.TraceParent)
 		_, span := proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-			"sourceId":    sourceId,
+			"sourceId":    sourceID,
 			"workspaceId": batchEvent.WorkspaceId,
 			"uuid":        batchEvent.UUID.String(),
 			"jobId":       strconv.FormatInt(batchEvent.JobID, 10),
@@ -1593,7 +1593,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 		statusList = append(statusList, &newStatus)
 
-		source, err := proc.getSourceBySourceID(sourceId)
+		source, err := proc.getSourceBySourceID(sourceID)
 		if err != nil {
 			continue
 		}
@@ -1628,7 +1628,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				dedupKeys[dedupKey] = struct{}{}
 			}
 
-			proc.updateSourceEventStatsDetailed(singularEvent, sourceId)
+			proc.updateSourceEventStatsDetailed(singularEvent, sourceID)
 
 			// We count this as one, not destination specific ones
 			totalEvents++
@@ -1715,12 +1715,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			// Getting all the destinations which are enabled for this
 			// event
-			if !proc.isDestinationAvailable(singularEvent, sourceId) {
+			if !proc.isDestinationAvailable(singularEvent, sourceID) {
 				continue
 			}
 
-			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
-				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
+			if _, ok := groupedEventsBySourceId[SourceIDT(sourceID)]; !ok {
+				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]transformer.TransformerEvent, 0)
 			}
 			shallowEventCopy := transformer.TransformerEvent{}
 			shallowEventCopy.Message = singularEvent
@@ -1738,7 +1738,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
-			groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
+			groupedEventsBySourceId[SourceIDT(sourceID)] = append(groupedEventsBySourceId[SourceIDT(sourceID)], shallowEventCopy)
 
 			if proc.isReportingEnabled() {
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
