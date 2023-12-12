@@ -3,6 +3,7 @@ package misc
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/lib/pq"
@@ -27,6 +28,19 @@ func GetConnectionString(c *config.Config, componentName string) string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
 		host, port, user, password, dbname, sslmode, appName)
+}
+
+// SetApplicationNameInDBDNS sets application name in db connection url
+// if application name is already present in dns it will get override by the appName
+func SetApplicationNameInDBConnectionURL(connectionUrl, appName string) (string, error) {
+	connUrl, err := url.Parse(connectionUrl)
+	if err != nil {
+		return "", err
+	}
+	queryParams := connUrl.Query()
+	queryParams.Set("application_name", appName)
+	connUrl.RawQuery = queryParams.Encode()
+	return connUrl.String(), nil
 }
 
 /*

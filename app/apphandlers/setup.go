@@ -63,7 +63,15 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
 	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default, "rsources")
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
-	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
+	sharedDBConnUrl := config.GetString("SharedDB.dsn", "")
+	if len(sharedDBConnUrl) != 0 {
+		var err error
+		sharedDBConnUrl, err = misc.SetApplicationNameInDBConnectionURL(sharedDBConnUrl, "rsources")
+		if err != nil {
+			return nil, fmt.Errorf("failed to set application name in dns: %w", err)
+		}
+	}
+	rsourcesConfig.SharedConn = sharedDBConnUrl
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)
 
 	if deploymentType == deployment.MultiTenantType {
