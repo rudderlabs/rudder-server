@@ -24,7 +24,7 @@ func TestAuth(t *testing.T) {
 	newGateway := func(writeKeysSourceMap, sourceIDSourceMap map[string]backendconfig.SourceT) *Handle {
 		return &Handle{
 			logger:             logger.NOP,
-			stats:              stats.Default,
+			stats:              stats.NOP,
 			writeKeysSourceMap: writeKeysSourceMap,
 			sourceIDSourceMap:  sourceIDSourceMap,
 		}

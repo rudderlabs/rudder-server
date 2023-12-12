@@ -149,7 +149,7 @@ func TestTransformer(t *testing.T) {
 		defer srv.Close()
 
 		tr := handle{}
-		tr.stat = stats.Default
+		tr.stat = stats.NOP
 		tr.logger = logger.NOP
 		tr.conf = config.Default
 		tr.client = srv.Client()
@@ -299,7 +299,7 @@ func TestTransformer(t *testing.T) {
 				client.Timeout = 1 * time.Millisecond
 
 				tr := handle{}
-				tr.stat = stats.Default
+				tr.stat = stats.NOP
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = client
@@ -353,7 +353,7 @@ func TestTransformer(t *testing.T) {
 		defer srv.Close()
 
 		tr := handle{}
-		tr.stat = stats.Default
+		tr.stat = stats.NOP
 		tr.logger = logger.NOP
 		tr.conf = config.Default
 		tr.client = srv.Client()
@@ -474,7 +474,7 @@ func TestTransformer(t *testing.T) {
 				defer srv.Close()
 
 				tr := handle{}
-				tr.stat = stats.Default
+				tr.stat = stats.NOP
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = srv.Client()
@@ -568,7 +568,7 @@ func TestTransformer(t *testing.T) {
 
 				tr := handle{}
 				tr.client = srv.Client()
-				tr.stat = stats.Default
+				tr.stat = stats.NOP
 				tr.conf = config.Default
 				tr.logger = logger.NOP
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
@@ -635,7 +635,7 @@ func TestTransformer(t *testing.T) {
 			c.Set("Processor.maxRetry", 1)
 			c.Set("DEST_TRANSFORM_URL", srv.URL)
 
-			tr := NewTransformer(c, logger.NOP, stats.Default, WithClient(srv.Client()))
+			tr := NewTransformer(c, logger.NOP, stats.NOP, WithClient(srv.Client()))
 			rsp := tr.Transform(context.TODO(), events, 10)
 			require.Equal(t, rsp, expectedResponse)
 		})
@@ -675,7 +675,7 @@ func TestTransformer(t *testing.T) {
 					c.Set("Processor.maxRetry", 1)
 					c.Set("DEST_TRANSFORM_URL", srv.URL)
 
-					tr := NewTransformer(c, logger.NOP, stats.Default, WithClient(srv.Client()))
+					tr := NewTransformer(c, logger.NOP, stats.NOP, WithClient(srv.Client()))
 
 					events := append([]TransformerEvent{}, TransformerEvent{
 						Metadata: Metadata{
@@ -716,7 +716,7 @@ func TestTransformer(t *testing.T) {
 			c.Set("Processor.maxRetry", 1)
 			c.Set("USER_TRANSFORM_URL", srv.URL)
 
-			tr := NewTransformer(c, logger.NOP, stats.Default, WithClient(srv.Client()))
+			tr := NewTransformer(c, logger.NOP, stats.NOP, WithClient(srv.Client()))
 			rsp := tr.UserTransform(context.TODO(), events, 10)
 			require.Equal(t, rsp, expectedResponse)
 		})
@@ -734,7 +734,7 @@ func TestTransformer(t *testing.T) {
 			c.Set("Processor.maxRetry", 1)
 			c.Set("DEST_TRANSFORM_URL", srv.URL)
 
-			tr := NewTransformer(c, logger.NOP, stats.Default, WithClient(srv.Client()))
+			tr := NewTransformer(c, logger.NOP, stats.NOP, WithClient(srv.Client()))
 			rsp := tr.Validate(context.TODO(), events, 10)
 			require.Equal(t, rsp, expectedResponse)
 		})

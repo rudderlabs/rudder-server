@@ -120,7 +120,7 @@ func TestColumnCountStat(t *testing.T) {
 		},
 	}
 
-	store, err := memstats.New()
+	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
 	for _, tc := range inputs {
@@ -148,7 +148,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-				statsFactory: store,
+				statsFactory: statsStore,
 				schemaHandle: &schema.Schema{}, // TODO use constructor
 			}
 			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
@@ -162,8 +162,8 @@ func TestColumnCountStat(t *testing.T) {
 
 			j.columnCountStat(tableName)
 
-			m1 := store.Get("warehouse_load_table_column_count", tags)
-			m2 := store.Get("warehouse_load_table_column_limit", tags)
+			m1 := statsStore.Get("warehouse_load_table_column_count", tags)
+			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
 				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))

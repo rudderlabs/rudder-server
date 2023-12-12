@@ -25,7 +25,7 @@ import (
 func TestGeolocationEnrichment_Setup(t *testing.T) {
 	var (
 		defaultLog   = logger.NewLogger()
-		defaultStats = stats.Default
+		defaultStats = stats.NOP
 	)
 
 	t.Run("corrupted db file causes enricher to fail setup", func(t *testing.T) {

@@ -269,7 +269,7 @@ func TestDynamicClusterManager(t *testing.T) {
 			archiveDB,
 			nil,
 			config.Default,
-			stats.Default,
+			stats.NOP,
 		),
 
 		Processor: processor,

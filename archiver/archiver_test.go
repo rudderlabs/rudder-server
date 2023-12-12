@@ -134,7 +134,7 @@ func TestJobsArchival(t *testing.T) {
 		jd,
 		fileUploaderProvider,
 		c,
-		stats.Default,
+		stats.NOP,
 		WithArchiveTrigger(
 			func() <-chan time.Time {
 				return trigger
@@ -292,7 +292,7 @@ func TestNoQueriesIfDisabled(t *testing.T) {
 		jd,
 		fileuploader.NewStaticProvider(map[string]fileuploader.StorageSettings{}),
 		c,
-		stats.Default,
+		stats.NOP,
 	)
 
 	require.NoError(t, arc.Start())

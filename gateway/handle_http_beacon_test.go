@@ -24,7 +24,7 @@ func TestBeaconInterceptor(t *testing.T) {
 	newGateway := func() *Handle {
 		return &Handle{
 			logger: logger.NOP,
-			stats:  stats.Default,
+			stats:  stats.NOP,
 			now:    func() time.Time { return refTime },
 		}
 	}

@@ -115,7 +115,7 @@ func TestRouter_Track(t *testing.T) {
 			_, err = pgResource.DB.Exec(string(sqlStatement))
 			require.NoError(t, err)
 
-			store, err := memstats.New()
+			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -159,7 +159,7 @@ func TestRouter_Track(t *testing.T) {
 					return now
 				},
 				nowSQL:       nowSQL,
-				statsFactory: store,
+				statsFactory: statsStore,
 				db:           sqlquerywrapper.New(pgResource.DB),
 				logger:       logger.NOP,
 			}
@@ -171,7 +171,7 @@ func TestRouter_Track(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			m := store.Get("warehouse_track_upload_missing", stats.Tags{
+			m := statsStore.Get("warehouse_track_upload_missing", stats.Tags{
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,

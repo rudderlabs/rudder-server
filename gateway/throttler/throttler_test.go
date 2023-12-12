@@ -64,7 +64,7 @@ func TestGateway_Factory(t *testing.T) {
 	config.Set("RateLimit.eventLimit", eventLimit)
 	config.Set("RateLimit.timeWindow", timeWindow)
 	defer config.Reset()
-	rateLimiter, err := New(stats.Default)
+	rateLimiter, err := New(stats.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, rateLimiter)
 
