@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -439,6 +440,7 @@ func TestAuth(t *testing.T) {
 					Enabled: true,
 				},
 			})
+			gw.config = config.Default
 			r := newRequestWithSourceIdAndDestId(sourceID, "", &gwtypes.AuthRequestContext{})
 			w := httptest.NewRecorder()
 			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
@@ -447,6 +449,25 @@ func TestAuth(t *testing.T) {
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "OK", string(body))
+		})
+
+		t.Run("failed auth without destination id in header", func(t *testing.T) {
+			sourceID := "123"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+				},
+			})
+			gw.config = config.Default
+			gw.config.Set("Gateway.isDestinationIdMandatoryInRequestHeader", true)
+			r := newRequestWithSourceIdAndDestId(sourceID, "", &gwtypes.AuthRequestContext{})
+			w := httptest.NewRecorder()
+			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "Failed to read destination id from header\n", string(body))
 		})
 
 		t.Run("invalid destination id", func(t *testing.T) {

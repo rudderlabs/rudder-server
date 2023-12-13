@@ -136,8 +136,11 @@ func (gw *Handle) authenticateDestinationIdForSource(delegate http.HandlerFunc) 
 		}()
 		destinationID := r.Header.Get("X-Rudder-Destination-Id")
 		if destinationID == "" {
-			// TODO: once rETL team migrates to sending destination id in header make destination id as mandatory
-			delegate.ServeHTTP(w, r)
+			if !gw.config.GetBool("Gateway.isDestinationIdMandatoryInRequestHeader", false) {
+				delegate.ServeHTTP(w, r)
+				return
+			}
+			errorMessage = response.NoDestinationIdInHeader
 			return
 		}
 		isValidDestination, isDestinationEnabled := gw.validateDestinationID(destinationID, arctx)
@@ -292,6 +295,15 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				SourceType:  arctx.SourceCategory,
 			}
 		case response.InvalidDestinationID:
+			stat = gwstats.SourceStat{
+				SourceID:    arctx.SourceID,
+				WriteKey:    arctx.WriteKey,
+				ReqType:     reqType,
+				Source:      arctx.SourceTag(),
+				WorkspaceID: arctx.WorkspaceID,
+				SourceType:  arctx.SourceCategory,
+			}
+		case response.NoDestinationIdInHeader:
 			stat = gwstats.SourceStat{
 				SourceID:    arctx.SourceID,
 				WriteKey:    arctx.WriteKey,
