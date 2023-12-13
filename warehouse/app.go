@@ -169,7 +169,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.statsFactory,
 		workspaceIdentifier,
 	)
-	err := a.notifier.Setup(ctx, a.connectionString())
+	err := a.notifier.Setup(ctx, a.connectionString("notifier"))
 	if err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
@@ -217,7 +217,7 @@ func (a *App) Setup(ctx context.Context) error {
 }
 
 func (a *App) setupDatabase(ctx context.Context) error {
-	dsn := a.connectionString()
+	dsn := a.connectionString("warehouse")
 
 	database, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -252,12 +252,12 @@ func (a *App) setupDatabase(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) connectionString() string {
+func (a *App) connectionString(componentName string) string {
 	if !a.checkForWarehouseEnvVars() {
-		return misc.GetConnectionString(a.conf, "warehouse")
+		return misc.GetConnectionString(a.conf, componentName)
 	}
 
-	appName := fmt.Sprintf("warehouse-%s", a.appName)
+	appName := fmt.Sprintf("%s-%s", componentName, a.appName)
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s application_name=%s",
 		a.config.host,
 		a.config.port,
@@ -347,7 +347,7 @@ func (a *App) Run(ctx context.Context) error {
 	if !mode.IsStandAloneSlave(a.config.mode) {
 		a.reporting = a.app.Features().Reporting.Setup(gCtx, a.bcConfig)
 		defer a.reporting.Stop()
-		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString(), Label: types.WarehouseReportingLabel})
+		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString("reporting"), Label: types.WarehouseReportingLabel})
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			syncer()
 			return nil
