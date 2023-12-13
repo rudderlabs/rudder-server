@@ -119,6 +119,41 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// authenticateDestinationIdForSource middleware to authenticate destinationId in the X-Rudder-Destination-Id header.
+// If the destinationId is invalid, the request is rejected.
+// destinationID authentication should be performed only after source is authenticated and source is present in context
+// Following validations are performed
+//  1. Destination should be present for source config
+//  2. Destination should be enabled for the source
+func (gw *Handle) authenticateDestinationIdForSource(delegate http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
+		arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+		var errorMessage string
+		defer func() {
+			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, reqType, arctx)
+		}()
+		destinationID := r.Header.Get("X-Rudder-Destination-Id")
+		if destinationID == "" {
+			// TODO: once rETL team migrates to sending destination id in header make destination id as mandatory
+			delegate.ServeHTTP(w, r)
+			return
+		}
+		isValidDestination, isDestinationEnabled := gw.validateDestinationID(destinationID, arctx)
+		if !isValidDestination {
+			errorMessage = response.InvalidDestinationID
+			return
+		}
+		if !isDestinationEnabled {
+			errorMessage = response.DestinationDisabled
+			return
+		}
+		arctx.DestinationId = destinationID
+		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
+	}
+}
+
 // replaySourceIDAuth middleware to authenticate sourceID in the X-Rudder-Source-Id header.
 // If the sourceID is valid, i.e. it is a replay source and enabled, the source auth info is added to the request context.
 // If the sourceID is invalid, the request is rejected.
@@ -149,6 +184,19 @@ func (gw *Handle) authRequestContextForSourceID(sourceID string) *gwtypes.AuthRe
 		return sourceToRequestContext(s)
 	}
 	return nil
+}
+
+// validateDestinationID gets request context for a given sourceID. If the sourceID is invalid, returns nil.
+func (gw *Handle) validateDestinationID(destinationID string, arctx *gwtypes.AuthRequestContext) (isValid, destinationDisabled bool) {
+	if len(arctx.Source.Destinations) == 0 {
+		return false, false
+	}
+	for _, destination := range arctx.Source.Destinations {
+		if destination.ID == destinationID {
+			return true, destination.Enabled
+		}
+	}
+	return false, false
 }
 
 // authRequestContextForWriteKey gets request context for a given writeKey. If the writeKey is invalid, returns nil.
@@ -226,6 +274,24 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				Source:   "noSourceIDInHeader",
 			}
 		case response.SourceDisabled:
+			stat = gwstats.SourceStat{
+				SourceID:    arctx.SourceID,
+				WriteKey:    arctx.WriteKey,
+				ReqType:     reqType,
+				Source:      arctx.SourceTag(),
+				WorkspaceID: arctx.WorkspaceID,
+				SourceType:  arctx.SourceCategory,
+			}
+		case response.DestinationDisabled:
+			stat = gwstats.SourceStat{
+				SourceID:    arctx.SourceID,
+				WriteKey:    arctx.WriteKey,
+				ReqType:     reqType,
+				Source:      arctx.SourceTag(),
+				WorkspaceID: arctx.WorkspaceID,
+				SourceType:  arctx.SourceCategory,
+			}
+		case response.InvalidDestinationID:
 			stat = gwstats.SourceStat{
 				SourceID:    arctx.SourceID,
 				WriteKey:    arctx.WriteKey,

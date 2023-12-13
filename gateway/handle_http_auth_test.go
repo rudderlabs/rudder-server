@@ -50,6 +50,19 @@ func TestAuth(t *testing.T) {
 		return r
 	}
 
+	newRequestWithSourceIdAndDestId := func(sourceId, destinationId string, reqCtx *gwtypes.AuthRequestContext) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		if len(sourceId) != 0 {
+			r.Header.Add("X-Rudder-Source-Id", sourceId)
+		}
+		if len(destinationId) != 0 {
+			r.Header.Add("X-Rudder-Destination-Id", destinationId)
+		}
+		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamCallType, "dummy"))
+		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, reqCtx))
+		return r
+	}
+
 	t.Run("writeKeyAuth", func(t *testing.T) {
 		t.Run("successful auth", func(t *testing.T) {
 			writeKey := "123"
@@ -390,6 +403,100 @@ func TestAuth(t *testing.T) {
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "Invalid replay source\n", string(body))
+		})
+	})
+
+	t.Run("authenticateDestinationIdForSource", func(t *testing.T) {
+		t.Run("successful auth with destination header", func(t *testing.T) {
+			sourceID := "123"
+			destinationID := "456"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{{
+						ID: destinationID,
+					}},
+				},
+			})
+			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+				Source: backendconfig.SourceT{
+					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: true}},
+				},
+			})
+			w := httptest.NewRecorder()
+			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "OK", string(body))
+		})
+
+		t.Run("successful auth without destination id in header", func(t *testing.T) {
+			sourceID := "123"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+				},
+			})
+			r := newRequestWithSourceIdAndDestId(sourceID, "", &gwtypes.AuthRequestContext{})
+			w := httptest.NewRecorder()
+			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "OK", string(body))
+		})
+
+		t.Run("invalid destination id", func(t *testing.T) {
+			sourceID := "123"
+			destinationID := "456"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{{
+						ID: destinationID,
+					}},
+				},
+			})
+			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+				Source: backendconfig.SourceT{
+					Destinations: []backendconfig.DestinationT{{ID: "invalid-dest-id"}},
+				},
+			})
+			w := httptest.NewRecorder()
+			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should fail")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "Invalid destination id\n", string(body))
+		})
+
+		t.Run("destination disabled", func(t *testing.T) {
+			sourceID := "123"
+			destinationID := "456"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{{
+						ID: destinationID,
+					}},
+				},
+			})
+			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+				Source: backendconfig.SourceT{
+					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: false}},
+				},
+			})
+			w := httptest.NewRecorder()
+			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusNotFound, w.Code, "authentication should fail")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "Destination is disabled\n", string(body))
 		})
 	})
 }

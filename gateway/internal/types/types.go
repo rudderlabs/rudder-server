@@ -27,6 +27,8 @@ type AuthRequestContext struct {
 	SourceJobRunID  string
 	SourceTaskRunID string
 	Source          backendconfig.SourceT
+	// DestinationId is optional param, destination id will be present for rETL Request
+	DestinationId string
 }
 
 func (arctx *AuthRequestContext) SourceTag() string {
