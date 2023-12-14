@@ -293,7 +293,6 @@ func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
 	var score int
 	var errorCode string
 
-	// Check if the value is a string before converting to lowercase
 	errorMessage = strings.ToLower(errorMessage)
 	for keyword, s := range deprecationKeywords {
 		if strings.Contains(errorMessage, keyword) {
