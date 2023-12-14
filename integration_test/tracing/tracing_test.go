@@ -180,7 +180,7 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 
-	t.Run("status error at gateway", func(t *testing.T) {
+	t.Run("failed at gateway", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
 
@@ -232,11 +232,13 @@ func TestTracing(t *testing.T) {
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
-		eventsCount := 1
+		eventsCount := 12
 		startTIme := time.Now()
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
-		require.Error(t, err)
+		for i := 0; i < eventsCount; i++ {
+			err = sendEvents(1, "identify", "writekey-1", url)
+			require.Error(t, err)
+		}
 
 		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
 		require.NoError(t, err)
