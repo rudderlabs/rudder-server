@@ -5,6 +5,7 @@
 package mock_types
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -88,17 +89,17 @@ func (mr *MockReportingMockRecorder) DatabaseSyncer(arg0 interface{}) *gomock.Ca
 }
 
 // Report mocks base method.
-func (m *MockReporting) Report(arg0 []*types.PUReportedMetric, arg1 *tx.Tx) error {
+func (m *MockReporting) Report(arg0 context.Context, arg1 []*types.PUReportedMetric, arg2 *tx.Tx) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Report", arg0, arg1)
+	ret := m.ctrl.Call(m, "Report", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Report indicates an expected call of Report.
-func (mr *MockReportingMockRecorder) Report(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockReportingMockRecorder) Report(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporting)(nil).Report), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporting)(nil).Report), arg0, arg1, arg2)
 }
 
 // Stop mocks base method.

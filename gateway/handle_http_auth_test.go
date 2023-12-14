@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 )
@@ -20,11 +20,12 @@ func TestAuth(t *testing.T) {
 	delegate := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("OK"))
 	})
+	statsStore := memstats.New()
 
 	newGateway := func(writeKeysSourceMap, sourceIDSourceMap map[string]backendconfig.SourceT) *Handle {
 		return &Handle{
 			logger:             logger.NOP,
-			stats:              stats.Default,
+			stats:              statsStore,
 			writeKeysSourceMap: writeKeysSourceMap,
 			sourceIDSourceMap:  sourceIDSourceMap,
 		}
@@ -76,6 +77,21 @@ func TestAuth(t *testing.T) {
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "Failed to read writeKey from header\n", string(body))
+			require.Equal(t,
+				float64(1),
+				statsStore.Get(
+					"gateway.write_key_requests",
+					map[string]string{
+						"source":      "noWriteKey",
+						"sourceID":    "noWriteKey",
+						"workspaceId": "",
+						"writeKey":    "noWriteKey",
+						"reqType":     "dummy",
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+				).LastValue(),
+			)
 		})
 
 		t.Run("invalid writeKey", func(t *testing.T) {
@@ -94,7 +110,14 @@ func TestAuth(t *testing.T) {
 			writeKey := "123"
 			gw := newGateway(map[string]backendconfig.SourceT{
 				writeKey: {
-					Enabled: false,
+					Enabled:     false,
+					ID:          "456",
+					Name:        "789",
+					WorkspaceID: "wrskpc",
+					SourceDefinition: backendconfig.SourceDefinitionT{
+						Category: "catA",
+					},
+					WriteKey: writeKey,
 				},
 			}, nil)
 			r := newWriteKeyRequest(writeKey)
@@ -105,6 +128,37 @@ func TestAuth(t *testing.T) {
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "Source is disabled\n", string(body))
+			require.Equal(t,
+				float64(1),
+				statsStore.Get(
+					"gateway.write_key_requests",
+					map[string]string{
+						"reqType":     "dummy",
+						"sdkVersion":  "",
+						"source":      "789_123",
+						"sourceID":    "456",
+						"sourceType":  "catA",
+						"workspaceId": "wrskpc",
+						"writeKey":    writeKey,
+					},
+				).LastValue(),
+			)
+			require.Equal(t,
+				float64(1),
+				statsStore.Get(
+					"gateway.write_key_failed_requests",
+					map[string]string{
+						"reqType":     "dummy",
+						"sdkVersion":  "",
+						"source":      "789_123",
+						"sourceID":    "456",
+						"sourceType":  "catA",
+						"workspaceId": "wrskpc",
+						"writeKey":    writeKey,
+						"reason":      "Source is disabled",
+					},
+				).LastValue(),
+			)
 		})
 	})
 
