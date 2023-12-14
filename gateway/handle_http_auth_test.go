@@ -2,12 +2,13 @@ package gateway
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/stretchr/testify/require"
 
