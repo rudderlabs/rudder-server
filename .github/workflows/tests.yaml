@@ -174,7 +174,7 @@ jobs:
           go-version: '~1.21'
           check-latest: true
       - name: Download coverage reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
       - name: Merge Coverage
         run: |
           go install github.com/wadey/gocovmerge@latest
