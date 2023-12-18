@@ -590,7 +590,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		}
 
 		if len(metric.StatusDetail.EventName) > 100 {
-			metric.StatusDetail.EventName = "INVALID_EVENT_NAME"
+			metric.StatusDetail.EventName = types.InvalidEventName
 		}
 
 		_, err = stmt.Exec(

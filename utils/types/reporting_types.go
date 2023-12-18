@@ -21,6 +21,8 @@ const (
 	DefaultReplayEnabled    = false
 )
 
+const InvalidEventName = "INVALID_EVENT_NAME"
+
 var (
 	DiffStatus = "diff"
 
