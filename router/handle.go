@@ -251,7 +251,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
 						"workspaceId":   job.WorkspaceId,
 						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
-						"customVal":     job.CustomVal,
+						"destType":      rt.destType,
 					}))
 					traces[traceparent] = span
 				}

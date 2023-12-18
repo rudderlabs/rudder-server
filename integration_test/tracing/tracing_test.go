@@ -114,7 +114,7 @@ func TestTracing(t *testing.T) {
 		var zipkinTraces [][]tracemodel.ZipkinTrace
 		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
 
-		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup"}
+		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process"}
 
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
@@ -170,7 +170,15 @@ func TestTracing(t *testing.T) {
 		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
 			return trace.Name == "rt.pickup"
 		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["customVal"])
+			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
+			require.Equal(t, "source-1", trace.Tags["sourceId"])
+			require.Equal(t, "destination-1", trace.Tags["destinationId"])
+			require.Equal(t, "router", trace.Tags["otel.library.name"])
+		}
+		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
+			return trace.Name == "rt.process"
+		}) {
+			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
 			require.Equal(t, "source-1", trace.Tags["sourceId"])
 			require.Equal(t, "destination-1", trace.Tags["destinationId"])
 			require.Equal(t, "router", trace.Tags["otel.library.name"])
@@ -179,7 +187,6 @@ func TestTracing(t *testing.T) {
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
-
 	t.Run("failed at gateway", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
@@ -280,9 +287,8 @@ func TestTracing(t *testing.T) {
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
-	t.Run("traceParent should be present in gateway", func(t *testing.T) {})
-	t.Run("traceParent should be present in router", func(t *testing.T) {})
-	t.Run("traceParent should be present in destination", func(t *testing.T) {})
+	t.Run("router with transform", func(t *testing.T) {})
+	t.Run("router with batch transform", func(t *testing.T) {})
 	t.Run("multiplexing in user transformations", func(t *testing.T) {})
 	t.Run("multiplexing in destination transformations", func(t *testing.T) {})
 }
