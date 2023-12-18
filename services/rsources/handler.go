@@ -37,6 +37,10 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
+	return sh.getStatusInternal(ctx, sh.readDB(), jobRunId, filter)
+}
+
+func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, jobRunId string, filter JobFilter) (JobStatus, error) {
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
@@ -51,7 +55,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
+	rows, err := db.QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -329,7 +333,7 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
-	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err
 	}
@@ -382,7 +386,7 @@ func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId stri
 }
 
 func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
-	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err
 	}
