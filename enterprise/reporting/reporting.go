@@ -589,6 +589,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
+		if len(metric.StatusDetail.EventName) > 100 {
+			metric.StatusDetail.EventName = "INVALID_EVENT_NAME"
+		}
+
 		_, err = stmt.Exec(
 			workspaceID, r.namespace, r.instanceID,
 			metric.ConnectionDetails.SourceDefinitionId,
