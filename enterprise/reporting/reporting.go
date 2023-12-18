@@ -589,7 +589,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		if len(metric.StatusDetail.EventName) > 100 {
+		if len(metric.StatusDetail.EventName) > config.GetInt("Reporting.eventNameMaxLength", 100) {
 			metric.StatusDetail.EventName = types.InvalidEventName
 		}
 
