@@ -272,8 +272,8 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			if _, ok := traces[traceParent]; !ok {
 				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 				_, span := w.rt.tracer.Start(ctx, "rt.transform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
-					"sourceId":      job.JobMetadata.SourceID,
 					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"sourceId":      job.JobMetadata.SourceID,
 					"destinationId": job.JobMetadata.DestinationID,
 					"destType":      w.rt.destType,
 				}))
@@ -317,8 +317,8 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			if _, ok := traces[traceParent]; !ok {
 				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 				_, span := w.rt.tracer.Start(ctx, "rt.batchTransform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
-					"sourceId":      job.JobMetadata.SourceID,
 					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"sourceId":      job.JobMetadata.SourceID,
 					"destinationId": job.JobMetadata.DestinationID,
 					"destType":      w.rt.destType,
 				}))
@@ -373,8 +373,8 @@ func (w *worker) processDestinationJobs() {
 				if _, ok := traces[traceParent]; !ok {
 					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 					_, span := w.rt.tracer.Start(ctx, "rt.process", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
-						"sourceId":      jobMetadata.SourceID,
 						"workspaceId":   jobMetadata.WorkspaceID,
+						"sourceId":      jobMetadata.SourceID,
 						"destinationId": jobMetadata.DestinationID,
 						"destType":      w.rt.destType,
 					}))
