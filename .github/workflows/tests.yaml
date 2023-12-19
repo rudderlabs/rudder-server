@@ -119,6 +119,7 @@ jobs:
           - integration_test/reporting_dropped_events
           - integration_test/reporting_error_index
           - integration_test/warehouse
+          - integration_test/tracing
           - processor
           - regulation-worker
           - router
@@ -129,7 +130,7 @@ jobs:
         include:
           - package: services
             exclude: services/rsources
-          
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v4

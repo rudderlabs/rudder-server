@@ -72,6 +72,7 @@ type sourceObserver interface {
 // Handle is a handle to the processor module
 type Handle struct {
 	conf          *config.Config
+	tracer        stats.Tracer
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
 	lastJobID     int64
@@ -217,6 +218,7 @@ type ParametersT struct {
 	SourceCategory          string      `json:"source_category"`
 	RecordID                interface{} `json:"record_id"`
 	WorkspaceId             string      `json:"workspaceId"`
+	TraceParent             string      `json:"traceparent"`
 }
 
 type MetricMetadata struct {
@@ -394,6 +396,7 @@ func (proc *Handle) Setup(
 
 	// Stats
 	proc.statsFactory = stats.Default
+	proc.tracer = proc.statsFactory.NewTracer("processor")
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -929,8 +932,9 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
-
 	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
+
+	commonMetadata.TraceParent = eventParams.TraceParent
 
 	return &commonMetadata
 }
@@ -959,6 +963,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
+	metadata.TraceParent = commonMetadata.TraceParent
 	event.Metadata = metadata
 }
 
@@ -1024,7 +1029,18 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 	}
 }
 
-func (proc *Handle) getTransformerEvents(response transformer.Response, commonMetaData *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt, destination *backendconfig.DestinationT, inPU, pu string) ([]transformer.TransformerEvent, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
+func (proc *Handle) getTransformerEvents(
+	response transformer.Response,
+	commonMetaData *transformer.Metadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	destination *backendconfig.DestinationT,
+	inPU, pu string,
+) (
+	[]transformer.TransformerEvent,
+	[]*types.PUReportedMetric,
+	map[string]int64,
+	map[string]MetricMetadata,
+) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
@@ -1075,6 +1091,7 @@ func (proc *Handle) getTransformerEvents(response transformer.Response, commonMe
 		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
 		eventMetadata.DestinationDefinitionID = userTransformedEvent.Metadata.DestinationDefinitionID
 		eventMetadata.SourceCategory = userTransformedEvent.Metadata.SourceCategory
+		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
 		updatedEvent := transformer.TransformerEvent{
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
@@ -1528,20 +1545,37 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
 
-	for _, batchEvent := range jobList {
-
-		var gatewayBatchEvent types.GatewayBatchRequest
-		err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
-		if err != nil {
-			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
-			gatewayBatchEvent.Batch = []types.SingularEventT{}
+	spans := make([]stats.TraceSpan, 0, len(jobList))
+	defer func() {
+		for _, span := range spans {
+			span.End()
 		}
+	}()
+	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
-		err = jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
+		err := jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
 		if err != nil {
 			panic(err)
 		}
-		sourceId := eventParams.SourceId
+
+		sourceID := eventParams.SourceId
+		ctx := stats.InjectTraceParentIntoContext(context.TODO(), eventParams.TraceParent)
+		_, span := proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+			"sourceId":    sourceID,
+			"workspaceId": batchEvent.WorkspaceId,
+			"uuid":        batchEvent.UUID.String(),
+			"jobId":       strconv.FormatInt(batchEvent.JobID, 10),
+		}))
+		spans = append(spans, span)
+
+		var gatewayBatchEvent types.GatewayBatchRequest
+		err = jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
+		if err != nil {
+			span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
+			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
+			gatewayBatchEvent.Batch = []types.SingularEventT{}
+		}
+
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
@@ -1559,7 +1593,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 		statusList = append(statusList, &newStatus)
 
-		source, err := proc.getSourceBySourceID(sourceId)
+		source, err := proc.getSourceBySourceID(sourceID)
 		if err != nil {
 			continue
 		}
@@ -1594,7 +1628,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				dedupKeys[dedupKey] = struct{}{}
 			}
 
-			proc.updateSourceEventStatsDetailed(singularEvent, sourceId)
+			proc.updateSourceEventStatsDetailed(singularEvent, sourceID)
 
 			// We count this as one, not destination specific ones
 			totalEvents++
@@ -1681,12 +1715,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			// Getting all the destinations which are enabled for this
 			// event
-			if !proc.isDestinationAvailable(singularEvent, sourceId) {
+			if !proc.isDestinationAvailable(singularEvent, sourceID) {
 				continue
 			}
 
-			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
-				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
+			if _, ok := groupedEventsBySourceId[SourceIDT(sourceID)]; !ok {
+				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]transformer.TransformerEvent, 0)
 			}
 			shallowEventCopy := transformer.TransformerEvent{}
 			shallowEventCopy.Message = singularEvent
@@ -1704,7 +1738,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
-			groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
+			groupedEventsBySourceId[SourceIDT(sourceID)] = append(groupedEventsBySourceId[SourceIDT(sourceID)], shallowEventCopy)
 
 			if proc.isReportingEnabled() {
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
@@ -1959,6 +1993,36 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	wg := sync.WaitGroup{}
 	wg.Add(len(in.groupedEvents))
 
+	spans := make([]stats.TraceSpan, 0, len(in.groupedEvents))
+	defer func() {
+		for _, span := range spans {
+			span.End()
+		}
+	}()
+
+	traces := make(map[string]stats.Tags)
+	for _, eventList := range in.groupedEvents {
+		for _, event := range eventList {
+			if event.Metadata.TraceParent == "" {
+				proc.logger.Warnf("Missing traceParent in transformations for jobId %d", event.Metadata.JobID)
+				continue
+			}
+			if _, ok := traces[event.Metadata.TraceParent]; ok {
+				continue
+			}
+			tags := stats.Tags{
+				"sourceId":      event.Metadata.SourceID,
+				"destinationId": event.Metadata.DestinationID,
+				"workspaceId":   event.Metadata.WorkspaceID,
+			}
+			ctx := stats.InjectTraceParentIntoContext(context.TODO(), event.Metadata.TraceParent)
+			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+
+			spans = append(spans, span)
+			traces[event.Metadata.TraceParent] = tags
+		}
+	}
+
 	for srcAndDestKey, eventList := range in.groupedEvents {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
 		rruntime.Go(func() {
@@ -2015,6 +2079,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 		in.start,
 		in.hasMore,
 		in.rsourcesStats,
+		traces,
 	}
 }
 
@@ -2037,6 +2102,7 @@ type storeMessage struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+	traces        map[string]stats.Tags
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -2077,6 +2143,18 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) Store(partition string, in *storeMessage) {
+	spans := make([]stats.TraceSpan, 0, len(in.traces))
+	defer func() {
+		for _, span := range spans {
+			span.End()
+		}
+	}()
+	for traceParent, tags := range in.traces {
+		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceParent)
+		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+		spans = append(spans, span)
+	}
+
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -2633,6 +2711,7 @@ func (proc *Handle) transformSrcDest(
 				DestinationDefinitionID: destDefID,
 				RecordID:                recordId,
 				WorkspaceId:             workspaceId,
+				TraceParent:             metadata.TraceParent,
 			}
 			marshalledParams, err := jsonfast.Marshal(params)
 			if err != nil {
@@ -2904,8 +2983,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 				subJobs:       unprocessedList.Jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
-			},
-			),
+			}),
 		),
 	)
 	proc.stats.statLoopTime(partition).Since(s)

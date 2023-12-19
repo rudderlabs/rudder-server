@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/router/types"
+
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -23,10 +25,34 @@ func NewBuilder() *Builder {
 
 // Builder is a builder for a test transformer server
 type Builder struct {
-	routerTransforms      map[string]struct{}
-	userTransformHandler  http.HandlerFunc
-	destTransformHandlers map[string]http.HandlerFunc
-	trackingPlanHandler   http.HandlerFunc
+	routerTransforms            map[string]struct{}
+	userTransformHandler        http.HandlerFunc
+	destTransformHandlers       map[string]http.HandlerFunc
+	trackingPlanHandler         http.HandlerFunc
+	routerTransformHandler      http.HandlerFunc
+	routerBatchTransformHandler http.HandlerFunc
+}
+
+// WithRouterTransformHandlerFunc sets the router transformation http handler function for the server
+func (b *Builder) WithRouterTransformHandlerFunc(h http.HandlerFunc) *Builder {
+	b.routerTransformHandler = apiVersionMiddleware(h)
+	return b
+}
+
+// WithRouterTransformHandler sets the router transformation handler for the server
+func (b *Builder) WithRouterTransformHandler(h RouterTransformerHandler) *Builder {
+	return b.WithRouterTransformHandlerFunc(routerTransformerFunc(h))
+}
+
+// WithRouterBatchTransformHandlerFunc sets the router batch transformation http handler function for the server
+func (b *Builder) WithRouterBatchTransformHandlerFunc(h http.HandlerFunc) *Builder {
+	b.routerBatchTransformHandler = apiVersionMiddleware(h)
+	return b
+}
+
+// WithRouterBatchTransformHandler sets the router batch transformation handler for the server
+func (b *Builder) WithRouterBatchTransformHandler(h RouterTransformerHandler) *Builder {
+	return b.WithRouterBatchTransformHandlerFunc(routerBatchTransformerFunc(h))
 }
 
 // WithUserTransformHandlerFunc sets the user transformation http handler function for the server
@@ -97,6 +123,16 @@ func (b *Builder) Build() *httptest.Server {
 		}
 	}
 
+	// router transformation
+	if b.routerTransformHandler == nil {
+		b.routerTransformHandler = apiVersionMiddleware(routerTransformerFunc(MirroringRouterTransformerHandler))
+	}
+	mux.HandleFunc("/routerTransform", b.routerTransformHandler)
+	if b.routerBatchTransformHandler == nil {
+		b.routerBatchTransformHandler = apiVersionMiddleware(routerBatchTransformerFunc(MirroringRouterTransformerHandler))
+	}
+	mux.HandleFunc("/batch", b.routerBatchTransformHandler)
+
 	// features
 	features := []byte(`{"routerTransform": {}}`)
 	for destType := range b.routerTransforms {
@@ -116,6 +152,43 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 			return
 		}
 		var request []transformer.TransformerEvent
+		if err := json.Unmarshal(data, &request); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(h(request))
+	}
+}
+
+func routerTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		var request types.TransformMessageT
+		if err := json.Unmarshal(data, &request); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(struct {
+			Output []types.DestinationJobT `json:"output"`
+		}{
+			Output: h(request),
+		})
+	}
+}
+
+func routerBatchTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		var request types.TransformMessageT
 		if err := json.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(400)
 			return

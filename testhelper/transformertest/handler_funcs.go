@@ -3,12 +3,17 @@ package transformertest
 import (
 	"encoding/json"
 
+	"github.com/rudderlabs/rudder-server/router/types"
+
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
 // TransformerHandler is a function that takes a transformer request and returns a response
 type TransformerHandler func(request []transformer.TransformerEvent) []transformer.TransformerResponse
+
+// RouterTransformerHandler is a function that takes a router transformer request and returns a response
+type RouterTransformerHandler func(request types.TransformMessageT) types.DestinationJobs
 
 // MirroringTransformerHandler mirrors the request payload in the response
 var MirroringTransformerHandler TransformerHandler = func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
@@ -19,6 +24,21 @@ var MirroringTransformerHandler TransformerHandler = func(request []transformer.
 			Output:     req.Message,
 			StatusCode: 200,
 		})
+	}
+	return
+}
+
+// MirroringRouterTransformerHandler mirrors the router request payload in the response
+var MirroringRouterTransformerHandler RouterTransformerHandler = func(request types.TransformMessageT) (response types.DestinationJobs) {
+	response = make(types.DestinationJobs, len(request.Data))
+	for j := range request.Data {
+		req := request.Data[j]
+		response[j] = types.DestinationJobT{
+			Message:          req.Message,
+			JobMetadataArray: []types.JobMetadataT{req.JobMetadata},
+			Destination:      req.Destination,
+			StatusCode:       200,
+		}
 	}
 	return
 }

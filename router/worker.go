@@ -173,6 +173,7 @@ func (w *worker) workLoop() {
 				WorkspaceID:        parameters.WorkspaceID,
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          parameters.DontBatch,
+				TraceParent:        parameters.TraceParent,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -258,6 +259,31 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
 
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range routerJobs {
+		traceParent := job.JobMetadata.TraceParent
+		if traceParent != "" {
+			if _, ok := traces[traceParent]; !ok {
+				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+				_, span := w.rt.tracer.Start(ctx, "rt.transform", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+					"sourceId":      job.JobMetadata.SourceID,
+					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"destinationId": job.JobMetadata.DestinationID,
+					"destType":      w.rt.destType,
+				}))
+				traces[traceParent] = span
+			}
+		} else {
+			w.rt.logger.Warnn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+		}
+	}
+
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
@@ -277,6 +303,31 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 	defer func() {
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
+
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range routerJobs {
+		traceParent := job.JobMetadata.TraceParent
+		if traceParent != "" {
+			if _, ok := traces[traceParent]; !ok {
+				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+				_, span := w.rt.tracer.Start(ctx, "rt.batchTransform", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+					"sourceId":      job.JobMetadata.SourceID,
+					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"destinationId": job.JobMetadata.DestinationID,
+					"destType":      w.rt.destType,
+				}))
+				traces[traceParent] = span
+			}
+		} else {
+			w.rt.logger.Warnn("traceParent is empty during router batch transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+		}
+	}
 
 	inputJobsLength := len(routerJobs)
 	w.rt.batchInputCountStat.Count(inputJobsLength)
@@ -307,6 +358,33 @@ func (w *worker) processDestinationJobs() {
 	defer w.batchTimeStat.RecordDuration()()
 
 	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
+
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range w.destinationJobs {
+		for _, jobMetadata := range job.JobMetadataArray {
+			traceParent := jobMetadata.TraceParent
+			if traceParent != "" {
+				if _, ok := traces[traceParent]; !ok {
+					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+					_, span := w.rt.tracer.Start(ctx, "rt.process", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+						"sourceId":      jobMetadata.SourceID,
+						"workspaceId":   jobMetadata.WorkspaceID,
+						"destinationId": jobMetadata.DestinationID,
+						"destType":      w.rt.destType,
+					}))
+					traces[traceParent] = span
+				}
+			} else {
+				w.rt.logger.Warnn("traceParent is empty during router process", logger.NewIntField("jobId", jobMetadata.JobID))
+			}
+		}
+	}
 
 	var respContentType string
 
