@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/transformer"
-
 	"go.opentelemetry.io/otel"
+
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/assert"
@@ -51,86 +51,6 @@ type testConfig struct {
 	postgresResource *resource.PostgresResource
 	gwPort           int
 	prometheusPort   int
-}
-
-func setup(t testing.TB) testConfig {
-	t.Helper()
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	zipkinResource, err := resource.SetupZipkin(pool, t)
-	require.NoError(t, err)
-	postgresResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-
-	zipkinURL := "http://localhost:" + zipkinResource.Port + "/api/v2/spans"
-	zipkinTracesURL := "http://localhost:" + zipkinResource.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
-	gwPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	prometheusPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	return testConfig{
-		zipkinURL:        zipkinURL,
-		zipkinTracesURL:  zipkinTracesURL,
-		postgresResource: postgresResource,
-		gwPort:           gwPort,
-		prometheusPort:   prometheusPort,
-	}
-}
-
-func getZipkinTraces(t *testing.T, zipkinTracesURL string, eventsCount int) [][]tracemodel.ZipkinTrace {
-	t.Helper()
-
-	getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-	require.NoError(t, err)
-
-	spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
-
-	var zipkinTraces [][]tracemodel.ZipkinTrace
-	require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-	require.Len(t, zipkinTraces, eventsCount)
-
-	for _, zipkinTrace := range zipkinTraces {
-		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-			return int(a.Timestamp - b.Timestamp)
-		})
-	}
-	return zipkinTraces
-}
-
-func assertSpans(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, expectedSpans []string) {
-	t.Helper()
-
-	for _, zipkinTrace := range zipkinTraces {
-		require.Len(t, zipkinTrace, len(expectedSpans))
-
-		for i, trace := range zipkinTrace {
-			require.Equal(t, expectedSpans[i], trace.Name)
-		}
-	}
-}
-
-func assertTags(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, filterTraceName string, expectedTags map[string]string) {
-	t.Helper()
-
-	flattenedTraces := lo.Flatten(zipkinTraces)
-	for _, trace := range flattenedTraces {
-		require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-		require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-		require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-		require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-	}
-
-	for _, trace := range lo.Filter(flattenedTraces, func(trace tracemodel.ZipkinTrace, _ int) bool {
-		return trace.Name == filterTraceName
-	}) {
-		for key, value := range expectedTags {
-			require.Equal(t, value, trace.Tags[key])
-		}
-	}
 }
 
 func TestTracing(t *testing.T) {
@@ -175,7 +95,6 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process"}
 
 		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
@@ -183,16 +102,14 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
-
-		assertSpans(t, zipkinTraces, expectedSpans)
-
-		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
-		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -242,7 +159,6 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.transform", "rt.process"}
 
 		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
@@ -250,17 +166,15 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
-
-		assertSpans(t, zipkinTraces, expectedSpans)
-
-		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
-		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.transform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.transform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -309,7 +223,6 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.batchtransform", "rt.process"}
 
 		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
@@ -317,17 +230,15 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
-
-		assertSpans(t, zipkinTraces, expectedSpans)
-
-		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
-		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.batchtransform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.batchtransform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -378,11 +289,11 @@ func TestTracing(t *testing.T) {
 			require.Error(t, err)
 		}
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
 
 		assertSpans(t, zipkinTraces, expectedSpans)
-
-		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway", "otel.status_code": "ERROR", "error": response.RequestBodyTooLarge})
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway", "otel.status_code": "ERROR", "error": response.RequestBodyTooLarge}, eventsCount)
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -448,7 +359,6 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 3
-		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process", "rt.pickup", "rt.process"}
 
 		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
@@ -456,21 +366,121 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
-
-		assertSpans(t, zipkinTraces, expectedSpans)
-
-		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
-		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
-		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
-		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount*2)  // 2 because of multiplexing
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount*2) // 2 because of multiplexing
 
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
-	t.Run("one source multiple destinations", func(t *testing.T) {})
+	t.Run("one source multiple destinations", func(t *testing.T) {
+		config.Reset()
+		defer config.Reset()
+
+		tc := setup(t)
+
+		bcServer := backendconfigtest.NewBuilder().
+			WithWorkspaceConfig(
+				backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID("source-1").
+							WithWriteKey("writekey-1").
+							WithConnection(
+								backendconfigtest.NewDestinationBuilder("WEBHOOK").
+									WithID("destination-1").
+									Build()).
+							WithConnection(
+								backendconfigtest.NewDestinationBuilder("WEBHOOK").
+									WithID("destination-2").
+									Build()).
+							WithConnection(
+								backendconfigtest.NewDestinationBuilder("WEBHOOK").
+									WithID("destination-3").
+									Build()).
+							Build()).
+					Build()).
+			Build()
+		defer bcServer.Close()
+
+		trServer := transformertest.NewBuilder().Build()
+		defer trServer.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		wg, ctx := errgroup.WithContext(ctx)
+		wg.Go(func() error {
+			config.Set("Router.jobQueryBatchSize", 1)
+			config.Set("Router.noOfWorkers", 1)
+
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		eventsCount := 3
+
+		err := sendEvents(eventsCount, "identify", "writekey-1", url)
+		require.NoError(t, err)
+
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, 3*eventsCount)
+
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		require.Len(t, zipkinTraces, eventsCount)
+		requireTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-2", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-3", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-2", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+		requireTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-3", "destType": "WEBHOOK", "otel.library.name": "router"}, eventsCount)
+
+		cancel()
+		require.NoError(t, wg.Wait())
+	})
+}
+
+func setup(t testing.TB) testConfig {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	zipkinResource, err := resource.SetupZipkin(pool, t)
+	require.NoError(t, err)
+	postgresResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	zipkinURL := "http://localhost:" + zipkinResource.Port + "/api/v2/spans"
+	zipkinTracesURL := "http://localhost:" + zipkinResource.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
+
+	gwPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	prometheusPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+
+	return testConfig{
+		zipkinURL:        zipkinURL,
+		zipkinTracesURL:  zipkinTracesURL,
+		postgresResource: postgresResource,
+		gwPort:           gwPort,
+		prometheusPort:   prometheusPort,
+	}
 }
 
 func runRudderServer(
@@ -529,40 +539,6 @@ func runRudderServer(
 	return
 }
 
-// nolint: unparam
-func requireJobsCount(
-	t *testing.T,
-	ctx context.Context,
-	db *sql.DB,
-	queue, state string,
-	expectedCount int,
-) {
-	t.Helper()
-
-	query := fmt.Sprintf(`
-		SELECT
-		  count(*)
-		FROM
-		  unionjobsdbmetadata('%s', 1)
-		WHERE
-		  job_state = '%s'
-		  AND parameters ->> 'traceparent' is not NULL;
-	`,
-		queue,
-		state,
-	)
-	require.Eventuallyf(t, func() bool {
-		var jobsCount int
-		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&jobsCount))
-		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
-		return jobsCount == expectedCount
-	},
-		10*time.Second,
-		1*time.Second,
-		"%d %s events should be in %s state", expectedCount, queue, state,
-	)
-}
-
 // nolint: unparam, bodyclose
 func sendEvents(
 	num int,
@@ -610,4 +586,93 @@ func sendEvents(
 		kithttputil.CloseResponse(resp)
 	}
 	return nil
+}
+
+// nolint: unparam
+func requireJobsCount(
+	t *testing.T,
+	ctx context.Context,
+	db *sql.DB,
+	queue, state string,
+	expectedCount int,
+) {
+	t.Helper()
+
+	query := fmt.Sprintf(`
+		SELECT
+		  count(*)
+		FROM
+		  unionjobsdbmetadata('%s', 1)
+		WHERE
+		  job_state = '%s'
+		  AND parameters ->> 'traceparent' is not NULL;
+	`,
+		queue,
+		state,
+	)
+	require.Eventuallyf(t, func() bool {
+		var jobsCount int
+		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&jobsCount))
+		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
+		return jobsCount == expectedCount
+	},
+		10*time.Second,
+		1*time.Second,
+		"%d %s events should be in %s state", expectedCount, queue, state,
+	)
+}
+
+func getZipkinTraces(t *testing.T, zipkinTracesURL string) [][]tracemodel.ZipkinTrace {
+	t.Helper()
+
+	getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
+	require.NoError(t, err)
+
+	spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+
+	var zipkinTraces [][]tracemodel.ZipkinTrace
+	require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
+
+	for _, zipkinTrace := range zipkinTraces {
+		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
+			return int(a.Timestamp - b.Timestamp)
+		})
+	}
+	return zipkinTraces
+}
+
+func assertSpans(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, expectedSpans []string) {
+	t.Helper()
+
+	for _, zipkinTrace := range zipkinTraces {
+		require.Len(t, zipkinTrace, len(expectedSpans))
+
+		for i, trace := range zipkinTrace {
+			require.Equal(t, expectedSpans[i], trace.Name)
+		}
+	}
+}
+
+func requireTags(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, traceName string, traceTags map[string]string, expectedCount int) {
+	t.Helper()
+
+	// Add common tags
+	expectedTags := lo.Assign(traceTags, map[string]string{
+		"service.name":           app.EMBEDDED,
+		"telemetry.sdk.language": "go",
+		"telemetry.sdk.name":     "opentelemetry",
+		"telemetry.sdk.version":  otel.Version(),
+	})
+	filteredTraces := lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, index int) bool {
+		if trace.Name != traceName {
+			return false
+		}
+		for key, value := range expectedTags {
+			if trace.Tags[key] != value {
+				return false
+			}
+		}
+		return true
+	})
+	require.Len(t, filteredTraces, expectedCount)
 }
