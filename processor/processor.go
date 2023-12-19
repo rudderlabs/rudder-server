@@ -2004,7 +2004,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	for _, eventList := range in.groupedEvents {
 		for _, event := range eventList {
 			if event.Metadata.TraceParent == "" {
-				proc.logger.Warnf("Missing traceparent in transformations for jobId %d", event.Metadata.JobID)
+				proc.logger.Warnf("Missing traceParent in transformations for jobId %d", event.Metadata.JobID)
 				continue
 			}
 			if _, ok := traces[event.Metadata.TraceParent]; ok {
@@ -2149,8 +2149,8 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			span.End()
 		}
 	}()
-	for traceparent, tags := range in.traces {
-		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceparent)
+	for traceParent, tags := range in.traces {
+		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceParent)
 		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindConsumer, stats.SpanWithTags(tags))
 		spans = append(spans, span)
 	}
@@ -2350,7 +2350,7 @@ type transformSrcDestOutput struct {
 	droppedJobs     []*jobsdb.JobT
 }
 
-func (proc *Handle) transformSrcDest( // @TODO the problem with messages that have the same msgID is here!!!
+func (proc *Handle) transformSrcDest(
 	ctx context.Context,
 	partition string,
 	// main inputs

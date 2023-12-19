@@ -184,7 +184,6 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	type reservedJob struct {
-		ctx  context.Context
 		slot *workerSlot
 		job  *jobsdb.JobT
 	}
@@ -211,7 +210,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
-			reservedJob.slot.Use(workerJob{ctx: reservedJob.ctx, job: reservedJob.job, assignedAt: assignedTime})
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
 		}
 		pickupCount += len(reservedJobs)
 		reservedJobs = nil
@@ -239,24 +238,20 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		lastJob = job
 		slot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
 		if err == nil {
-			var (
-				ctx         = context.Background()
-				traceparent = gjson.GetBytes(job.Parameters, "traceparent").String()
-			)
-			if traceparent != "" {
-				ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
-
-				if _, ok := traces[traceparent]; !ok {
+			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
+			if traceParent != "" {
+				if _, ok := traces[traceParent]; !ok {
+					ctx = stats.InjectTraceParentIntoContext(ctx, traceParent)
 					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
 						"workspaceId":   job.WorkspaceId,
 						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
 						"destType":      rt.destType,
 					}))
-					traces[traceparent] = span
+					traces[traceParent] = span
 				}
 			} else {
-				rt.logger.Warnn("traceparent is empty", logger.NewIntField("jobId", job.JobID))
+				rt.logger.Warnn("traceParent is empty during router pickup", logger.NewIntField("jobId", job.JobID))
 			}
 
 			status := jobsdb.JobStatusT{
@@ -272,7 +267,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
-			reservedJobs = append(reservedJobs, reservedJob{ctx: ctx, slot: slot, job: job})
+			reservedJobs = append(reservedJobs, reservedJob{slot: slot, job: job})
 			if shouldFlush() {
 				flush()
 			}

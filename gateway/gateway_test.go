@@ -1572,7 +1572,7 @@ var _ = Describe("Gateway", func() {
 						jobs []*jobsdb.JobT,
 					) error {
 						for idx, job := range jobs {
-							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
+							Expect(misc.IsValidUUID(job.UUID.String())).To(BeTrue())
 							Expect(job.CustomVal).To(Equal("WEBHOOK"))
 
 							var paramsMap, expectedParamsMap map[string]interface{}
@@ -1590,7 +1590,7 @@ var _ = Describe("Gateway", func() {
 							_ = json.Unmarshal(job.Parameters, &paramsMap)
 							_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-							Expect(equals).To(Equal(true))
+							Expect(equals).To(BeTrue())
 						}
 						return nil
 					}).
