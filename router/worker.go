@@ -277,7 +277,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
 
 			if _, ok := traces[traceparent]; !ok {
-				_, span := w.rt.tracer.Start(ctx, "rt.transform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+				_, span := w.rt.tracer.Start(ctx, "rt.transform", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 					"sourceId":      job.JobMetadata.SourceID,
 					"workspaceId":   job.JobMetadata.WorkspaceID,
 					"destinationId": job.JobMetadata.DestinationID,
@@ -327,7 +327,7 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
 
 			if _, ok := traces[traceparent]; !ok {
-				_, span := w.rt.tracer.Start(ctx, "rt.batchTransform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+				_, span := w.rt.tracer.Start(ctx, "rt.batchTransform", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 					"sourceId":      job.JobMetadata.SourceID,
 					"workspaceId":   job.JobMetadata.WorkspaceID,
 					"destinationId": job.JobMetadata.DestinationID,
@@ -388,7 +388,7 @@ func (w *worker) processDestinationJobs() {
 				ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
 
 				if _, ok := traces[traceparent]; !ok {
-					_, span := w.rt.tracer.Start(ctx, "rt.process", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+					_, span := w.rt.tracer.Start(ctx, "rt.process", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 						"sourceId":      jobMetadata.SourceID,
 						"workspaceId":   jobMetadata.WorkspaceID,
 						"destinationId": jobMetadata.DestinationID,
@@ -400,7 +400,6 @@ func (w *worker) processDestinationJobs() {
 				w.rt.logger.Warnn("traceparent is empty", logger.NewIntField("jobId", jobMetadata.JobID))
 			}
 		}
-
 	}
 
 	var respContentType string

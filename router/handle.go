@@ -247,7 +247,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				ctx = stats.InjectTraceParentIntoContext(ctx, traceparent)
 
 				if _, ok := traces[traceparent]; !ok {
-					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
 						"workspaceId":   job.WorkspaceId,
 						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
