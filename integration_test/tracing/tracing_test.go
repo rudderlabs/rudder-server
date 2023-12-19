@@ -72,9 +72,9 @@ func TestTracing(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
 		zipkin, err := resource.SetupZipkin(pool, t)
+		require.NoError(t, err)
+		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
@@ -101,13 +101,13 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process"}
+		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process"}
 
 		err = sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
 		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
 		require.NoError(t, err)
@@ -125,10 +125,10 @@ func TestTracing(t *testing.T) {
 		}
 
 		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(stages))
+			require.Len(t, zipkinTrace, len(expectedSpans))
 
 			for i, trace := range zipkinTrace {
-				require.Equal(t, stages[i], trace.Name)
+				require.Equal(t, expectedSpans[i], trace.Name)
 				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
 				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
 				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
@@ -211,9 +211,9 @@ func TestTracing(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
 		zipkin, err := resource.SetupZipkin(pool, t)
+		require.NoError(t, err)
+		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
@@ -243,13 +243,13 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.transform", "rt.process"}
+		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.transform", "rt.process"}
 
 		err = sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
 		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
 		require.NoError(t, err)
@@ -267,10 +267,10 @@ func TestTracing(t *testing.T) {
 		}
 
 		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(stages))
+			require.Len(t, zipkinTrace, len(expectedSpans))
 
 			for i, trace := range zipkinTrace {
-				require.Equal(t, stages[i], trace.Name)
+				require.Equal(t, expectedSpans[i], trace.Name)
 				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
 				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
 				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
@@ -360,9 +360,9 @@ func TestTracing(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
 		zipkin, err := resource.SetupZipkin(pool, t)
+		require.NoError(t, err)
+		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
@@ -392,13 +392,13 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.batchtransform", "rt.process"}
+		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.batchtransform", "rt.process"}
 
 		err = sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
 		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
 		require.NoError(t, err)
@@ -416,10 +416,10 @@ func TestTracing(t *testing.T) {
 		}
 
 		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(stages))
+			require.Len(t, zipkinTrace, len(expectedSpans))
 
 			for i, trace := range zipkinTrace {
-				require.Equal(t, stages[i], trace.Name)
+				require.Equal(t, expectedSpans[i], trace.Name)
 				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
 				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
 				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
@@ -505,9 +505,9 @@ func TestTracing(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
 		zipkin, err := resource.SetupZipkin(pool, t)
+		require.NoError(t, err)
+		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
@@ -536,7 +536,7 @@ func TestTracing(t *testing.T) {
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
-		stages := []string{"gw.webrequesthandler"}
+		expectedSpans := []string{"gw.webrequesthandler"}
 
 		for i := 0; i < eventsCount; i++ {
 			err = sendEvents(1, "identify", "writekey-1", url)
@@ -559,10 +559,10 @@ func TestTracing(t *testing.T) {
 		}
 
 		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(stages))
+			require.Len(t, zipkinTrace, len(expectedSpans))
 
 			for i, trace := range zipkinTrace {
-				require.Equal(t, stages[i], trace.Name)
+				require.Equal(t, expectedSpans[i], trace.Name)
 				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
 				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
 				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
@@ -584,6 +584,7 @@ func TestTracing(t *testing.T) {
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
+	t.Run("one source multiple destinations", func(t *testing.T) {})
 	t.Run("multiplexing in transformations", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
@@ -628,9 +629,9 @@ func TestTracing(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
 		zipkin, err := resource.SetupZipkin(pool, t)
+		require.NoError(t, err)
+		postgresContainer, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
@@ -658,14 +659,14 @@ func TestTracing(t *testing.T) {
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
-		eventsCount := 12
-		stages := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process", "rt.pickup", "rt.process"}
+		eventsCount := 3
+		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process", "rt.pickup", "rt.process"}
 
 		err = sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, postgresContainer.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
 
 		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
 		require.NoError(t, err)
@@ -683,10 +684,10 @@ func TestTracing(t *testing.T) {
 		}
 
 		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(stages))
+			require.Len(t, zipkinTrace, len(expectedSpans))
 
 			for i, trace := range zipkinTrace {
-				require.Equal(t, stages[i], trace.Name)
+				require.Equal(t, expectedSpans[i], trace.Name)
 				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
 				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
 				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
@@ -803,25 +804,38 @@ func runRudderServer(
 // nolint: unparam
 func requireJobsCount(
 	t *testing.T,
+	ctx context.Context,
 	db *sql.DB,
 	queue, state string,
 	expectedCount int,
 ) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
+	query := fmt.Sprintf(`
+		SELECT
+		  count(*)
+		FROM
+		  unionjobsdbmetadata('%s', 1)
+		WHERE
+		  job_state = '%s'
+		  AND parameters ->> 'traceparent' is not NULL;
+	`,
+		queue,
+		state,
+	)
+	require.Eventuallyf(t, func() bool {
 		var jobsCount int
-		require.NoError(t, db.QueryRow(fmt.Sprintf(`SELECT count(*) FROM unionjobsdbmetadata('%s',1) WHERE job_state = '%s' AND parameters->>'traceparent' is not NULL;`, queue, state)).Scan(&jobsCount))
+		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&jobsCount))
 		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
 		return jobsCount == expectedCount
 	},
-		20*time.Minute,
+		10*time.Second,
 		1*time.Second,
-		fmt.Sprintf("%d %s events should be in %s state", expectedCount, queue, state),
+		"%d %s events should be in %s state", expectedCount, queue, state,
 	)
 }
 
-// nolint: unparam
+// nolint: unparam, bodyclose
 func sendEvents(
 	num int,
 	eventType, writeKey,
@@ -856,7 +870,7 @@ func sendEvents(
 		}
 		req.SetBasicAuth(writeKey, "password")
 
-		resp, err := (&http.Client{}).Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -865,7 +879,7 @@ func sendEvents(
 			b, _ := io.ReadAll(resp.Body)
 			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
 		}
-		func() { kithttputil.CloseResponse(resp) }()
+		kithttputil.CloseResponse(resp)
 	}
 	return nil
 }

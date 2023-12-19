@@ -1595,6 +1595,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		source, err := proc.getSourceBySourceID(sourceID)
 		if err != nil {
+			span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
 			continue
 		}
 
@@ -2016,7 +2017,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 				"workspaceId":   event.Metadata.WorkspaceID,
 			}
 			ctx := stats.InjectTraceParentIntoContext(context.TODO(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
 
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
@@ -2151,7 +2152,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}()
 	for traceParent, tags := range in.traces {
 		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceParent)
-		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindConsumer, stats.SpanWithTags(tags))
+		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindProducer, stats.SpanWithTags(tags))
 		spans = append(spans, span)
 	}
 
