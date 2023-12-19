@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -119,16 +121,16 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authenticateDestinationIdForSource middleware to authenticate destinationId in the X-Rudder-Destination-Id header.
+// authenticateDestinationIDForSource middleware to authenticate destinationId in the X-Rudder-Destination-Id header.
 // If the destinationId is invalid, the request is rejected.
 // destinationID authentication should be performed only after source is authenticated and source is present in context
 // Following validations are performed
 //  1. Destination should be present for source config
 //  2. Destination should be enabled for the source
-func (gw *Handle) authenticateDestinationIdForSource(delegate http.HandlerFunc) http.HandlerFunc {
+func (gw *Handle) authenticateDestinationIDForSource(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
-		arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+		reqType, _ := gwCtx.GetRequestTypeFromCtx(r.Context())
+		arctx, _ := gwCtx.GetAuthRequestFromCtx(r.Context())
 		var errorMessage string
 		defer func() {
 			gw.handleHttpError(w, r, errorMessage)
@@ -136,11 +138,12 @@ func (gw *Handle) authenticateDestinationIdForSource(delegate http.HandlerFunc) 
 		}()
 		destinationID := r.Header.Get("X-Rudder-Destination-Id")
 		if destinationID == "" {
-			if !gw.config.GetBool("Gateway.isDestinationIdMandatoryInRequestHeader", false) {
+			// TODO: make default value true once rETL team migrates to sending destination ID in header
+			if !gw.config.GetBool("Gateway.allowReqsWithoutDestIDInHeader", false) {
 				delegate.ServeHTTP(w, r)
 				return
 			}
-			errorMessage = response.NoDestinationIdInHeader
+			errorMessage = response.NoDestinationIDInHeader
 			return
 		}
 		isValidDestination, isDestinationEnabled := gw.validateDestinationID(destinationID, arctx)
@@ -152,7 +155,7 @@ func (gw *Handle) authenticateDestinationIdForSource(delegate http.HandlerFunc) 
 			errorMessage = response.DestinationDisabled
 			return
 		}
-		arctx.DestinationId = destinationID
+		arctx.DestinationID = destinationID
 		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
 	}
 }
@@ -276,34 +279,7 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				ReqType:  reqType,
 				Source:   "noSourceIDInHeader",
 			}
-		case response.SourceDisabled:
-			stat = gwstats.SourceStat{
-				SourceID:    arctx.SourceID,
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				Source:      arctx.SourceTag(),
-				WorkspaceID: arctx.WorkspaceID,
-				SourceType:  arctx.SourceCategory,
-			}
-		case response.DestinationDisabled:
-			stat = gwstats.SourceStat{
-				SourceID:    arctx.SourceID,
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				Source:      arctx.SourceTag(),
-				WorkspaceID: arctx.WorkspaceID,
-				SourceType:  arctx.SourceCategory,
-			}
-		case response.InvalidDestinationID:
-			stat = gwstats.SourceStat{
-				SourceID:    arctx.SourceID,
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				Source:      arctx.SourceTag(),
-				WorkspaceID: arctx.WorkspaceID,
-				SourceType:  arctx.SourceCategory,
-			}
-		case response.NoDestinationIdInHeader:
+		case response.SourceDisabled, response.NoDestinationIDInHeader, response.InvalidDestinationID, response.DestinationDisabled:
 			stat = gwstats.SourceStat{
 				SourceID:    arctx.SourceID,
 				WriteKey:    arctx.WriteKey,

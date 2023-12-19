@@ -52,13 +52,13 @@ func TestAuth(t *testing.T) {
 		return r
 	}
 
-	newRequestWithSourceIdAndDestId := func(sourceId, destinationId string, reqCtx *gwtypes.AuthRequestContext) *http.Request {
+	newRequestWithSourceIDAndDestID := func(sourceID, destinationID string, reqCtx *gwtypes.AuthRequestContext) *http.Request {
 		r := httptest.NewRequest("GET", "/", nil)
-		if len(sourceId) != 0 {
-			r.Header.Add("X-Rudder-Source-Id", sourceId)
+		if len(sourceID) != 0 {
+			r.Header.Add("X-Rudder-Source-Id", sourceID)
 		}
-		if len(destinationId) != 0 {
-			r.Header.Add("X-Rudder-Destination-Id", destinationId)
+		if len(destinationID) != 0 {
+			r.Header.Add("X-Rudder-Destination-Id", destinationID)
 		}
 		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamCallType, "dummy"))
 		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, reqCtx))
@@ -408,7 +408,7 @@ func TestAuth(t *testing.T) {
 		})
 	})
 
-	t.Run("authenticateDestinationIdForSource", func(t *testing.T) {
+	t.Run("authenticateDestinationIDForSource", func(t *testing.T) {
 		t.Run("successful auth with destination header", func(t *testing.T) {
 			sourceID := "123"
 			destinationID := "456"
@@ -420,13 +420,13 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: true}},
 				},
 			})
 			w := httptest.NewRecorder()
-			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+			gw.authenticateDestinationIDForSource(delegate).ServeHTTP(w, r)
 
 			require.Equal(t, http.StatusOK, w.Code, "authentication should succeed")
 			body, err := io.ReadAll(w.Body)
@@ -442,9 +442,9 @@ func TestAuth(t *testing.T) {
 				},
 			})
 			gw.config = config.Default
-			r := newRequestWithSourceIdAndDestId(sourceID, "", &gwtypes.AuthRequestContext{})
+			r := newRequestWithSourceIDAndDestID(sourceID, "", &gwtypes.AuthRequestContext{})
 			w := httptest.NewRecorder()
-			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+			gw.authenticateDestinationIDForSource(delegate).ServeHTTP(w, r)
 
 			require.Equal(t, http.StatusOK, w.Code, "authentication should succeed")
 			body, err := io.ReadAll(w.Body)
@@ -461,9 +461,9 @@ func TestAuth(t *testing.T) {
 			})
 			gw.config = config.Default
 			gw.config.Set("Gateway.isDestinationIdMandatoryInRequestHeader", true)
-			r := newRequestWithSourceIdAndDestId(sourceID, "", &gwtypes.AuthRequestContext{})
+			r := newRequestWithSourceIDAndDestID(sourceID, "", &gwtypes.AuthRequestContext{})
 			w := httptest.NewRecorder()
-			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+			gw.authenticateDestinationIDForSource(delegate).ServeHTTP(w, r)
 
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should succeed")
 			body, err := io.ReadAll(w.Body)
@@ -482,13 +482,13 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: "invalid-dest-id"}},
 				},
 			})
 			w := httptest.NewRecorder()
-			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+			gw.authenticateDestinationIDForSource(delegate).ServeHTTP(w, r)
 
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should fail")
 			body, err := io.ReadAll(w.Body)
@@ -507,13 +507,13 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIdAndDestId(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: false}},
 				},
 			})
 			w := httptest.NewRecorder()
-			gw.authenticateDestinationIdForSource(delegate).ServeHTTP(w, r)
+			gw.authenticateDestinationIDForSource(delegate).ServeHTTP(w, r)
 
 			require.Equal(t, http.StatusNotFound, w.Code, "authentication should fail")
 			body, err := io.ReadAll(w.Body)

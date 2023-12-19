@@ -264,7 +264,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	var (
 		arctx         = req.authContext
 		sourceID      = arctx.SourceID
-		destinationId = arctx.DestinationId
+		destinationID = arctx.DestinationID
 		// Should be function of body
 		workspaceId  = arctx.WorkspaceID
 		userIDHeader = req.userIDHeader
@@ -434,8 +434,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		"source_task_run_id": sourcesTaskRunID,
 		"traceparent":        traceParent,
 	}
-	if len(destinationId) != 0 {
-		params["destination_id"] = destinationId
+	if len(destinationID) != 0 {
+		params["destination_id"] = destinationID
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {
