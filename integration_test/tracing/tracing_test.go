@@ -45,10 +45,100 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 )
 
+type testConfig struct {
+	zipkinURL        string
+	zipkinTracesURL  string
+	postgresResource *resource.PostgresResource
+	gwPort           int
+	prometheusPort   int
+}
+
+func setup(t testing.TB) testConfig {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	zipkinResource, err := resource.SetupZipkin(pool, t)
+	require.NoError(t, err)
+	postgresResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	zipkinURL := "http://localhost:" + zipkinResource.Port + "/api/v2/spans"
+	zipkinTracesURL := "http://localhost:" + zipkinResource.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
+
+	gwPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	prometheusPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+
+	return testConfig{
+		zipkinURL:        zipkinURL,
+		zipkinTracesURL:  zipkinTracesURL,
+		postgresResource: postgresResource,
+		gwPort:           gwPort,
+		prometheusPort:   prometheusPort,
+	}
+}
+
+func getZipkinTraces(t *testing.T, zipkinTracesURL string, eventsCount int) [][]tracemodel.ZipkinTrace {
+	t.Helper()
+
+	getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
+	require.NoError(t, err)
+
+	spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+
+	var zipkinTraces [][]tracemodel.ZipkinTrace
+	require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
+	require.Len(t, zipkinTraces, eventsCount)
+
+	for _, zipkinTrace := range zipkinTraces {
+		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
+			return int(a.Timestamp - b.Timestamp)
+		})
+	}
+	return zipkinTraces
+}
+
+func assertSpans(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, expectedSpans []string) {
+	t.Helper()
+
+	for _, zipkinTrace := range zipkinTraces {
+		require.Len(t, zipkinTrace, len(expectedSpans))
+
+		for i, trace := range zipkinTrace {
+			require.Equal(t, expectedSpans[i], trace.Name)
+		}
+	}
+}
+
+func assertTags(t *testing.T, zipkinTraces [][]tracemodel.ZipkinTrace, filterTraceName string, expectedTags map[string]string) {
+	t.Helper()
+
+	flattenedTraces := lo.Flatten(zipkinTraces)
+	for _, trace := range flattenedTraces {
+		require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
+		require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
+		require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
+		require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
+	}
+
+	for _, trace := range lo.Filter(flattenedTraces, func(trace tracemodel.ZipkinTrace, _ int) bool {
+		return trace.Name == filterTraceName
+	}) {
+		for key, value := range expectedTags {
+			require.Equal(t, value, trace.Tags[key])
+		}
+	}
+}
+
 func TestTracing(t *testing.T) {
 	t.Run("gateway-processor-router tracing", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
+
+		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -69,117 +159,40 @@ func TestTracing(t *testing.T) {
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		zipkin, err := resource.SetupZipkin(pool, t)
-		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
-		zipkinTracesURL := "http://localhost:" + zipkin.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		prometheusPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, prometheusPort, postgresContainer, zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
 			return err
 		})
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
 		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process"}
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-		require.NoError(t, err)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
 
-		spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+		assertSpans(t, zipkinTraces, expectedSpans)
 
-		var zipkinTraces [][]tracemodel.ZipkinTrace
-		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-		require.Len(t, zipkinTraces, eventsCount)
-
-		for _, zipkinTrace := range zipkinTraces {
-			slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-				return int(a.Timestamp - b.Timestamp)
-			})
-		}
-
-		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(expectedSpans))
-
-			for i, trace := range zipkinTrace {
-				require.Equal(t, expectedSpans[i], trace.Name)
-				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-				require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-			}
-		}
-
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "gw.webrequesthandler"
-		}) {
-			require.Equal(t, "batch", trace.Tags["reqType"])
-			require.Equal(t, "/v1/batch", trace.Tags["path"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "gateway", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.processjobsfordest"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.transformations"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.store"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.pickup"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.process"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
+		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
+		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -187,6 +200,8 @@ func TestTracing(t *testing.T) {
 	t.Run("gateway-processor-router with transformations", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
+
+		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -208,128 +223,44 @@ func TestTracing(t *testing.T) {
 		trServer := transformertest.NewBuilder().WithRouterTransform("WEBHOOK").Build()
 		defer trServer.Close()
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		zipkin, err := resource.SetupZipkin(pool, t)
-		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
-		zipkinTracesURL := "http://localhost:" + zipkin.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		prometheusPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
 			config.Set("Router.guaranteeUserEventOrder", false)
 			config.Set("Router.WEBHOOK.enableBatching", false)
 
-			err := runRudderServer(ctx, gwPort, prometheusPort, postgresContainer, zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
 			return err
 		})
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
 		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.transform", "rt.process"}
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-		require.NoError(t, err)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
 
-		spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+		assertSpans(t, zipkinTraces, expectedSpans)
 
-		var zipkinTraces [][]tracemodel.ZipkinTrace
-		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-		require.Len(t, zipkinTraces, eventsCount)
-
-		for _, zipkinTrace := range zipkinTraces {
-			slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-				return int(a.Timestamp - b.Timestamp)
-			})
-		}
-
-		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(expectedSpans))
-
-			for i, trace := range zipkinTrace {
-				require.Equal(t, expectedSpans[i], trace.Name)
-				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-				require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-			}
-		}
-
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "gw.webrequesthandler"
-		}) {
-			require.Equal(t, "batch", trace.Tags["reqType"])
-			require.Equal(t, "/v1/batch", trace.Tags["path"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "gateway", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.processjobsfordest"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.transformations"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.store"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.pickup"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.transform"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.process"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
+		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
+		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.transform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -337,6 +268,8 @@ func TestTracing(t *testing.T) {
 	t.Run("gateway-processor-router with batch transformations", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
+
+		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -357,128 +290,44 @@ func TestTracing(t *testing.T) {
 		trServer := transformertest.NewBuilder().WithRouterTransform("WEBHOOK").Build()
 		defer trServer.Close()
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		zipkin, err := resource.SetupZipkin(pool, t)
-		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
-		zipkinTracesURL := "http://localhost:" + zipkin.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		prometheusPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
 			config.Set("Router.guaranteeUserEventOrder", false)
 			config.Set("Router.WEBHOOK.enableBatching", true)
 
-			err := runRudderServer(ctx, gwPort, prometheusPort, postgresContainer, zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
 			return err
 		})
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
 		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.batchtransform", "rt.process"}
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-		require.NoError(t, err)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
 
-		spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+		assertSpans(t, zipkinTraces, expectedSpans)
 
-		var zipkinTraces [][]tracemodel.ZipkinTrace
-		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-		require.Len(t, zipkinTraces, eventsCount)
-
-		for _, zipkinTrace := range zipkinTraces {
-			slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-				return int(a.Timestamp - b.Timestamp)
-			})
-		}
-
-		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(expectedSpans))
-
-			for i, trace := range zipkinTrace {
-				require.Equal(t, expectedSpans[i], trace.Name)
-				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-				require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-			}
-		}
-
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "gw.webrequesthandler"
-		}) {
-			require.Equal(t, "batch", trace.Tags["reqType"])
-			require.Equal(t, "/v1/batch", trace.Tags["path"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "gateway", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.processjobsfordest"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.transformations"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.store"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.pickup"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.batchtransform"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.process"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
+		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
+		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.batchtransform", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
 
 		cancel()
 		require.NoError(t, wg.Wait())
@@ -486,6 +335,8 @@ func TestTracing(t *testing.T) {
 	t.Run("failed at gateway", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
+
+		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -502,92 +353,45 @@ func TestTracing(t *testing.T) {
 		trServer := transformertest.NewBuilder().Build()
 		defer trServer.Close()
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		zipkin, err := resource.SetupZipkin(pool, t)
-		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
-		zipkinTracesURL := "http://localhost:" + zipkin.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		prometheusPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
 			config.Set("Gateway.maxReqSizeInKB", 0)
 
-			err := runRudderServer(ctx, gwPort, prometheusPort, postgresContainer, zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
 			return err
 		})
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 12
 		expectedSpans := []string{"gw.webrequesthandler"}
 
 		for i := 0; i < eventsCount; i++ {
-			err = sendEvents(1, "identify", "writekey-1", url)
+			err := sendEvents(1, "identify", "writekey-1", url)
 			require.Error(t, err)
 		}
 
-		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-		require.NoError(t, err)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
 
-		spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+		assertSpans(t, zipkinTraces, expectedSpans)
 
-		var zipkinTraces [][]tracemodel.ZipkinTrace
-		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-		require.Len(t, zipkinTraces, eventsCount)
-
-		for _, zipkinTrace := range zipkinTraces {
-			slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-				return int(a.Timestamp - b.Timestamp)
-			})
-		}
-
-		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(expectedSpans))
-
-			for i, trace := range zipkinTrace {
-				require.Equal(t, expectedSpans[i], trace.Name)
-				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-				require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-			}
-		}
-
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "gw.webrequesthandler"
-		}) {
-			require.Equal(t, "batch", trace.Tags["reqType"])
-			require.Equal(t, "/v1/batch", trace.Tags["path"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "gateway", trace.Tags["otel.library.name"])
-			require.Equal(t, "ERROR", trace.Tags["otel.status_code"])
-			require.Equal(t, response.RequestBodyTooLarge, trace.Tags["error"])
-		}
+		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway", "otel.status_code": "ERROR", "error": response.RequestBodyTooLarge})
 
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
-	t.Run("one source multiple destinations", func(t *testing.T) {})
 	t.Run("multiplexing in transformations", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
+
+		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -613,12 +417,12 @@ func TestTracing(t *testing.T) {
 					response = append(response, transformer.TransformerResponse{
 						Metadata:   req.Metadata,
 						Output:     req.Message,
-						StatusCode: 200,
+						StatusCode: http.StatusOK,
 					})
 					response = append(response, transformer.TransformerResponse{
 						Metadata:   req.Metadata,
 						Output:     req.Message,
-						StatusCode: 200,
+						StatusCode: http.StatusOK,
 					})
 				}
 				return
@@ -626,123 +430,47 @@ func TestTracing(t *testing.T) {
 			Build()
 		defer trServer.Close()
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		zipkin, err := resource.SetupZipkin(pool, t)
-		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
-		require.NoError(t, err)
-
-		zipkinURL := "http://localhost:" + zipkin.Port + "/api/v2/spans"
-		zipkinTracesURL := "http://localhost:" + zipkin.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-		prometheusPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
 			config.Set("Router.jobQueryBatchSize", 1)
 
-			err := runRudderServer(ctx, gwPort, prometheusPort, postgresContainer, zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
 			return err
 		})
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		url := fmt.Sprintf("http://localhost:%d", tc.gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 		eventsCount := 3
 		expectedSpans := []string{"gw.webrequesthandler", "proc.processjobsfordest", "proc.transformations", "proc.store", "rt.pickup", "rt.process", "rt.pickup", "rt.process"}
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		err := sendEvents(eventsCount, "identify", "writekey-1", url)
 		require.NoError(t, err)
 
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
 
-		getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
-		require.NoError(t, err)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, eventsCount)
 
-		spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
+		assertSpans(t, zipkinTraces, expectedSpans)
 
-		var zipkinTraces [][]tracemodel.ZipkinTrace
-		require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
-		require.Len(t, zipkinTraces, eventsCount)
-
-		for _, zipkinTrace := range zipkinTraces {
-			slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
-				return int(a.Timestamp - b.Timestamp)
-			})
-		}
-
-		for _, zipkinTrace := range zipkinTraces {
-			require.Len(t, zipkinTrace, len(expectedSpans))
-
-			for i, trace := range zipkinTrace {
-				require.Equal(t, expectedSpans[i], trace.Name)
-				require.Equal(t, "go", trace.Tags["telemetry.sdk.language"])
-				require.Equal(t, "opentelemetry", trace.Tags["telemetry.sdk.name"])
-				require.Equal(t, otel.Version(), trace.Tags["telemetry.sdk.version"])
-				require.Equal(t, app.EMBEDDED, trace.Tags["service.name"])
-			}
-		}
-
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "gw.webrequesthandler"
-		}) {
-			require.Equal(t, "batch", trace.Tags["reqType"])
-			require.Equal(t, "/v1/batch", trace.Tags["path"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "gateway", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.processjobsfordest"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.transformations"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "proc.store"
-		}) {
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "processor", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.pickup"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
-		for _, trace := range lo.Filter(lo.Flatten(zipkinTraces), func(trace tracemodel.ZipkinTrace, _ int) bool {
-			return trace.Name == "rt.process"
-		}) {
-			require.Equal(t, "WEBHOOK", trace.Tags["destType"])
-			require.Equal(t, "source-1", trace.Tags["sourceId"])
-			require.Equal(t, "destination-1", trace.Tags["destinationId"])
-			require.Equal(t, "router", trace.Tags["otel.library.name"])
-		}
+		assertTags(t, zipkinTraces, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"})
+		assertTags(t, zipkinTraces, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"})
+		assertTags(t, zipkinTraces, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
+		assertTags(t, zipkinTraces, "rt.process", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"})
 
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
+	t.Run("one source multiple destinations", func(t *testing.T) {})
 }
 
 func runRudderServer(
