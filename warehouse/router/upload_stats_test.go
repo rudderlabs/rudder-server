@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -168,7 +168,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: memstats.New(),
+			statsFactory: stats.NOP,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -208,7 +208,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: memstats.New(),
+			statsFactory: stats.NOP,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -249,7 +249,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: memstats.New(),
+			statsFactory: stats.NOP,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{

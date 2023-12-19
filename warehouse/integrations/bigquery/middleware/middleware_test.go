@@ -10,7 +10,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
