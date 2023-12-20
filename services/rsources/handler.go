@@ -115,10 +115,11 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	if sh.config.SkipFailedRecordsCollection {
 		return nil
 	}
+	uid := ksuid.New().String()
 	row := tx.QueryRow(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (job_run_id, task_run_id, source_id, destination_id, db_name) DO UPDATE SET ts = NOW()
-		RETURNING id`, ksuid.New().String(), jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
+		RETURNING id`, uid, jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
 	var id string
 	if err := row.Scan(&id); err != nil {
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
@@ -140,6 +141,15 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
 	}
+	sh.log.Infow("Added failed records", // TODO: switch log level to DEBUG after issue with duplicate records has been resolved
+		"ksuid", uid, // this is the ksuid that we generated
+		"id", id, // this is the actual id that was inserted into the table
+		"jobRunId", jobRunId,
+		"taskRunId", key.TaskRunID,
+		"sourceId", key.SourceID,
+		"destinationId", key.DestinationID,
+		"count", len(records),
+	)
 	return nil
 }
 
@@ -333,6 +343,8 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
+	log := sh.log.With("jobRunId", jobRunId, "filter", fmt.Sprintf("%+v", filter))
+	log.Info("Deleting job status stats and failed records")
 	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err
@@ -352,6 +364,7 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_stats" %s`, filters), filterParams...); err != nil {
+		log.Errorw("Failed to delete job status", "error", err)
 		_ = tx.Rollback()
 		return err
 	}
@@ -359,6 +372,7 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`WITH deleted AS (
 		DELETE FROM "rsources_failed_keys_v2" %s  RETURNING id)
 		DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM deleted)`, filters), filterParams...); err != nil {
+		log.Errorw("Failed to delete failed records", "error", err)
 		_ = tx.Rollback()
 		return err
 	}
@@ -366,6 +380,8 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 }
 
 func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
+	log := sh.log.With("jobRunId", jobRunId, "filter", fmt.Sprintf("%+v", filter))
+	log.Info("Deleting failed records")
 	filters, filterParams := sqlFilters(jobRunId, filter)
 	tx, err := sh.localDB.Begin()
 	if err != nil {
@@ -373,11 +389,13 @@ func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId stri
 	}
 
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
+		log.Errorw("Failed to deleting failed records", "error", err)
 		_ = tx.Rollback()
 		return err
 	}
 
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
+		log.Errorw("Failed to deleting failed records", "error", err)
 		_ = tx.Rollback()
 		return err
 	}
@@ -386,6 +404,10 @@ func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId stri
 }
 
 func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
+	sh.log.Infow("Deleting job status stats",
+		"jobRunId", jobRunId,
+		"filter", fmt.Sprintf("%+v", filter),
+	)
 	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err

@@ -70,6 +70,10 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, rsources.ErrStatusNotFound):
 			httpStatus = http.StatusNotFound
 		case errors.Is(err, rsources.ErrSourceNotCompleted):
+			h.logger.Infow("Attempted to delete job status and failed records for a source that is not completed",
+				"jobRunId", jobRunId,
+				"taskRunId", taskRunId,
+				"sourceId", sourceId)
 			httpStatus = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), httpStatus)
@@ -136,6 +140,10 @@ func (h *handler) deleteJobStatus(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, rsources.ErrStatusNotFound):
 			httpStatus = http.StatusNotFound
 		case errors.Is(err, rsources.ErrSourceNotCompleted):
+			h.logger.Infow("Attempted to delete job status for a source that is not completed",
+				"jobRunId", jobRunId,
+				"taskRunId", taskRunId,
+				"sourceId", sourceId)
 			httpStatus = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), httpStatus)
