@@ -2,6 +2,7 @@ package transformertest
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/rudderlabs/rudder-server/router/types"
 
@@ -22,7 +23,7 @@ var MirroringTransformerHandler TransformerHandler = func(request []transformer.
 		response = append(response, transformer.TransformerResponse{
 			Metadata:   req.Metadata,
 			Output:     req.Message,
-			StatusCode: 200,
+			StatusCode: http.StatusOK,
 		})
 	}
 	return
@@ -37,7 +38,7 @@ var MirroringRouterTransformerHandler RouterTransformerHandler = func(request ty
 			Message:          req.Message,
 			JobMetadataArray: []types.JobMetadataT{req.JobMetadata},
 			Destination:      req.Destination,
-			StatusCode:       200,
+			StatusCode:       http.StatusOK,
 		}
 	}
 	return
@@ -92,7 +93,7 @@ func DestTransformerHandler(f func(event transformer.TransformerEvent) integrati
 			res = append(res, transformer.TransformerResponse{
 				Metadata:   req.Metadata,
 				Output:     output,
-				StatusCode: 200,
+				StatusCode: http.StatusOK,
 			})
 		}
 		return

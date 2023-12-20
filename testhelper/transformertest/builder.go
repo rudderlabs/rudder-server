@@ -148,12 +148,12 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		var request []transformer.TransformerEvent
 		if err := json.Unmarshal(data, &request); err != nil {
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(h(request))
@@ -164,12 +164,12 @@ func routerTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		var request types.TransformMessageT
 		if err := json.Unmarshal(data, &request); err != nil {
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
@@ -185,12 +185,12 @@ func routerBatchTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		var request types.TransformMessageT
 		if err := json.Unmarshal(data, &request); err != nil {
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(h(request))
