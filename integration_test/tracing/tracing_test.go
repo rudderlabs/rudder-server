@@ -55,9 +55,6 @@ type testConfig struct {
 
 func TestTracing(t *testing.T) {
 	t.Run("gateway-processor-router tracing", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -84,7 +81,7 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -117,9 +114,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("zipkin down", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 		zipkinDownURL := "http://localhost:1234/api/v2/spans"
 
@@ -147,7 +141,7 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, zipkinDownURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, zipkinDownURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -172,9 +166,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("gateway-processor-router with transformations", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -202,10 +193,10 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			config.Set("Router.guaranteeUserEventOrder", false)
-			config.Set("Router.WEBHOOK.enableBatching", false)
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Router.guaranteeUserEventOrder"), "false")
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Router.WEBHOOK.enableBatching"), "false")
 
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -271,7 +262,7 @@ func TestTracing(t *testing.T) {
 			config.Set("Router.guaranteeUserEventOrder", false)
 			config.Set("Router.WEBHOOK.enableBatching", true)
 
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -332,7 +323,7 @@ func TestTracing(t *testing.T) {
 		wg.Go(func() error {
 			config.Set("Gateway.maxReqSizeInKB", 0)
 
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -408,7 +399,7 @@ func TestTracing(t *testing.T) {
 		wg.Go(func() error {
 			config.Set("Router.jobQueryBatchSize", 1)
 
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -478,7 +469,7 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -545,47 +536,49 @@ func setup(t testing.TB) testConfig {
 }
 
 func runRudderServer(
+	t testing.TB,
 	ctx context.Context,
 	port int,
 	prometheusPort int,
 	postgresContainer *resource.PostgresResource,
 	zipkinURL, cbURL, transformerURL, tmpDir string,
 ) (err error) {
-	config.Set("CONFIG_BACKEND_URL", cbURL)
-	config.Set("WORKSPACE_TOKEN", "token")
-	config.Set("DB.port", postgresContainer.Port)
-	config.Set("DB.user", postgresContainer.User)
-	config.Set("DB.name", postgresContainer.Database)
-	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerURL)
+	t.Setenv("CONFIG_BACKEND_URL", cbURL)
+	t.Setenv("WORKSPACE_TOKEN", "token")
+	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
-	config.Set("Warehouse.mode", "off")
-	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
-	config.Set("SourceDebugger.disableEventUploads", true)
-	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
-	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
-	config.Set("archival.Enabled", false)
-	config.Set("Reporting.syncer.enabled", false)
-	config.Set("BatchRouter.mainLoopFreq", "1s")
-	config.Set("BatchRouter.uploadFreq", "1s")
-	config.Set("Gateway.webPort", strconv.Itoa(port))
-	config.Set("RUDDER_TMPDIR", os.TempDir())
-	config.Set("recovery.storagePath", path.Join(tmpDir, "/recovery_data.json"))
-	config.Set("recovery.enabled", false)
-	config.Set("Profiler.Enabled", false)
-	config.Set("Gateway.enableSuppressUserFeature", false)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.port"), postgresContainer.Port)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.user"), postgresContainer.User)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.name"), postgresContainer.Database)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.password"), postgresContainer.Password)
 
-	config.Set("enableStats", true)
-	config.Set("RuntimeStats.enabled", false)
-	config.Set("OpenTelemetry.enabled", true)
-	config.Set("OpenTelemetry.traces.endpoint", zipkinURL)
-	config.Set("OpenTelemetry.traces.samplingRate", 1.0)
-	config.Set("OpenTelemetry.traces.withSyncer", true)
-	config.Set("OpenTelemetry.traces.withZipkin", true)
-	config.Set("OpenTelemetry.metrics.prometheus.enabled", true)
-	config.Set("OpenTelemetry.metrics.prometheus.port", prometheusPort)
-	config.Set("OpenTelemetry.metrics.exportInterval", 10*time.Millisecond)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.mode"), "off")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.backup.enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "archival.Enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.syncer.enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BatchRouter.mainLoopFreq"), "1s")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BatchRouter.uploadFreq"), "1s")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.webPort"), strconv.Itoa(port))
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "RUDDER_TMPDIR"), os.TempDir())
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "recovery.storagePath"), path.Join(tmpDir, "/recovery_data.json"))
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "recovery.enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Profiler.Enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.enableSuppressUserFeature"), "false")
+
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "enableStats"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "RuntimeStats.enabled"), "false")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.enabled"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.traces.endpoint"), zipkinURL)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.traces.samplingRate"), "1.0")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.traces.withSyncer"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.traces.withZipkin"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.metrics.prometheus.enabled"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.metrics.prometheus.port"), strconv.Itoa(prometheusPort))
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "OpenTelemetry.metrics.exportInterval"), "10ms")
 
 	defer func() {
 		if r := recover(); r != nil {
