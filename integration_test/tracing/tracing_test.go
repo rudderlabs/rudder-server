@@ -121,7 +121,7 @@ func TestTracing(t *testing.T) {
 		defer config.Reset()
 
 		tc := setup(t)
-		zipkinDownURL := "http://localhost:0/api/v2/spans"
+		zipkinDownURL := "http://localhost:1234/api/v2/spans"
 
 		bcServer := backendconfigtest.NewBuilder().
 			WithWorkspaceConfig(
@@ -501,8 +501,8 @@ func TestTracing(t *testing.T) {
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.library.name": "gateway"}, 1)
 			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, 1)
-			requireTags(t, zipkinTrace, "proc.transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, 1)
-			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.library.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.transformations", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "otel.library.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "destType": "WEBHOOK", "otel.library.name": "router"}, 1)
 			requireTags(t, zipkinTrace, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-2", "destType": "WEBHOOK", "otel.library.name": "router"}, 1)
 			requireTags(t, zipkinTrace, "rt.pickup", map[string]string{"sourceId": "source-1", "destinationId": "destination-3", "destType": "WEBHOOK", "otel.library.name": "router"}, 1)

@@ -1559,7 +1559,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 
 		sourceID := eventParams.SourceId
-		ctx := stats.InjectTraceParentIntoContext(context.TODO(), eventParams.TraceParent)
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), eventParams.TraceParent)
 		_, span := proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 			"workspaceId": batchEvent.WorkspaceId,
 			"sourceId":    sourceID,
@@ -2015,7 +2015,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 				"destinationId": event.Metadata.DestinationID,
 				"destType":      event.Metadata.DestinationType,
 			}
-			ctx := stats.InjectTraceParentIntoContext(context.TODO(), event.Metadata.TraceParent)
+			ctx := stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent)
 			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
 
 			spans = append(spans, span)
@@ -2150,7 +2150,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		}
 	}()
 	for traceParent, tags := range in.traces {
-		ctx := stats.InjectTraceParentIntoContext(context.TODO(), traceParent)
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindProducer, stats.SpanWithTags(tags))
 		spans = append(spans, span)
 	}
