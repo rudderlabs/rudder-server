@@ -19,17 +19,17 @@ jobs:
               "commit-sha": "${{ github.sha }}",
               "images": {
                 "server": {
-                  "tag": "${{ github.ref_name }}",
-                }
+                  "tag": "${{ github.ref_name }}"
+                },
                 "gateway": {
-                  "tag": "${{ github.ref_name }}",
+                  "tag": "${{ github.ref_name }}"
                 },
                 "warehouse-master": {
-                  "tag": "${{ github.ref_name }}",
+                  "tag": "${{ github.ref_name }}"
                 },
                 "warehouse-slave": {
-                  "tag": "${{ github.ref_name }}",
-                },
+                  "tag": "${{ github.ref_name }}"
+                }
               },
               "value-paths": []
             }
