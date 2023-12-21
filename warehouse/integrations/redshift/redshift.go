@@ -956,6 +956,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 			logfield.Schema, rs.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(rs.config.slowQueryThreshold),
+		sqlmiddleware.WithQueryTimeout(rs.connectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
