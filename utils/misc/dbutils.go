@@ -30,9 +30,9 @@ func GetConnectionString(c *config.Config, componentName string) string {
 		host, port, user, password, dbname, sslmode, appName)
 }
 
-// SetApplicationNameInDBDNS sets application name in db connection url
+// SetAppNameInDBConnURL sets application name in db connection url
 // if application name is already present in dns it will get override by the appName
-func SetApplicationNameInDBConnectionURL(connectionUrl, appName string) (string, error) {
+func SetAppNameInDBConnURL(connectionUrl, appName string) (string, error) {
 	connUrl, err := url.Parse(connectionUrl)
 	if err != nil {
 		return "", err

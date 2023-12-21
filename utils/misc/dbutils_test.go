@@ -47,13 +47,13 @@ func TestSetApplicationNameInDBConnectionURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := misc.SetApplicationNameInDBConnectionURL(tt.args.dns, tt.args.appName)
+			got, err := misc.SetAppNameInDBConnURL(tt.args.dns, tt.args.appName)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("SetApplicationNameInDBConnectionURL() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("SetAppNameInDBConnURL() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("SetApplicationNameInDBConnectionURL() got = %v, want %v", got, tt.want)
+				t.Errorf("SetAppNameInDBConnURL() got = %v, want %v", got, tt.want)
 			}
 		})
 	}

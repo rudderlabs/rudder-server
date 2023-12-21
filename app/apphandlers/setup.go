@@ -66,7 +66,7 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	sharedDBConnUrl := config.GetString("SharedDB.dsn", "")
 	if len(sharedDBConnUrl) != 0 {
 		var err error
-		sharedDBConnUrl, err = misc.SetApplicationNameInDBConnectionURL(sharedDBConnUrl, "rsources")
+		sharedDBConnUrl, err = misc.SetAppNameInDBConnURL(sharedDBConnUrl, "rsources")
 		if err != nil {
 			return nil, fmt.Errorf("failed to set application name in dns: %w", err)
 		}
