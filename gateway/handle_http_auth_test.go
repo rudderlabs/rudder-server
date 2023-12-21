@@ -465,7 +465,7 @@ func TestAuth(t *testing.T) {
 			w := httptest.NewRecorder()
 			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
 
-			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should succeed")
+			require.Equal(t, http.StatusBadRequest, w.Code, "authentication should succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "Failed to read destination id from header\n", string(body))
@@ -490,7 +490,7 @@ func TestAuth(t *testing.T) {
 			w := httptest.NewRecorder()
 			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
 
-			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should fail")
+			require.Equal(t, http.StatusBadRequest, w.Code, "authentication should fail")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
 			require.Equal(t, "Invalid destination id\n", string(body))
