@@ -94,8 +94,8 @@ var statusMap = map[string]status{
 	InvalidSourceID:         {message: InvalidSourceID, code: http.StatusUnauthorized},
 	InvalidReplaySource:     {message: InvalidReplaySource, code: http.StatusUnauthorized},
 	DestinationDisabled:     {message: DestinationDisabled, code: http.StatusNotFound},
-	InvalidDestinationID:    {message: InvalidDestinationID, code: http.StatusUnauthorized},
-	NoDestinationIDInHeader: {message: NoDestinationIDInHeader, code: http.StatusUnauthorized},
+	InvalidDestinationID:    {message: InvalidDestinationID, code: http.StatusBadRequest},
+	NoDestinationIDInHeader: {message: NoDestinationIDInHeader, code: http.StatusBadRequest},
 
 	// webhook specific status
 	InvalidWebhookSource:                           {message: InvalidWebhookSource, code: http.StatusNotFound},
