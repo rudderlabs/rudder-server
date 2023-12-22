@@ -2003,7 +2003,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	for _, eventList := range in.groupedEvents {
 		for _, event := range eventList {
 			if event.Metadata.TraceParent == "" {
-				proc.logger.Warnf("Missing traceParent in transformations for jobId %d", event.Metadata.JobID)
+				proc.logger.Warnn("Missing traceParent in transformations", logger.NewIntField("jobId", event.Metadata.JobID))
 				continue
 			}
 			if _, ok := traces[event.Metadata.TraceParent]; ok {
