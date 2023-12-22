@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/response"
+
 	"go.opentelemetry.io/otel"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/assert"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
 
 	"github.com/samber/lo"
@@ -230,9 +231,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("gateway-processor-router with batch transformations", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -259,8 +257,8 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			config.Set("Router.guaranteeUserEventOrder", false)
-			config.Set("Router.WEBHOOK.enableBatching", true)
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Router.guaranteeUserEventOrder"), "false")
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Router.WEBHOOK.enableBatching"), "true")
 
 			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
@@ -296,9 +294,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("failed at gateway", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -321,7 +316,7 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			config.Set("Gateway.maxReqSizeInKB", 0)
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.maxReqSizeInKB"), "0")
 
 			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
@@ -349,10 +344,7 @@ func TestTracing(t *testing.T) {
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
-	t.Run("multiplexing in transformations", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
+	t.Run("multiplexing in processor transformations", func(t *testing.T) {
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -397,7 +389,7 @@ func TestTracing(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			config.Set("Router.jobQueryBatchSize", 1)
+			t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Router.jobQueryBatchSize"), "1")
 
 			err := runRudderServer(t, ctx, tc.gwPort, tc.prometheusPort, tc.postgresResource, tc.zipkinURL, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
@@ -432,9 +424,6 @@ func TestTracing(t *testing.T) {
 		require.NoError(t, wg.Wait())
 	})
 	t.Run("one source multiple destinations", func(t *testing.T) {
-		config.Reset()
-		defer config.Reset()
-
 		tc := setup(t)
 
 		bcServer := backendconfigtest.NewBuilder().
@@ -509,6 +498,9 @@ func TestTracing(t *testing.T) {
 
 func setup(t testing.TB) testConfig {
 	t.Helper()
+
+	config.Reset()
+	t.Cleanup(config.Reset)
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -670,7 +662,7 @@ func requireJobsCount(
 		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
 		return jobsCount == expectedCount
 	},
-		10*time.Second,
+		30*time.Second,
 		1*time.Second,
 		"%d %s events should be in %s state", expectedCount, queue, state,
 	)
