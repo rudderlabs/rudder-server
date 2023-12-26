@@ -1,0 +1,439 @@
+openapi: 3.1.0
+info:
+  title: RudderStack HTTP API 
+  description: API for sending your events if you cannot use the SDKs.
+  version: 1.0.0
+servers:
+  - url: https://api.rudderstack.com/v1
+paths:
+  /identify:
+    post:
+      summary: Identify a user
+      description: Associates a visiting user to their actions and records any associated traits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "identified user id"
+                anonymousId:
+                  type: string
+                  description: Sets the user ID for cases where there is no unique identifier for the user. Either userId or anonymousId is required.
+                  example: "anon-id-new"
+                context:
+                  type: object
+                  description: Dictionary of information that provides context about a message.
+                  properties:
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                    traits:
+                      type: object
+                      description: Dictionary of the traits associated with the user, such as name or email.
+                      properties:
+                        trait1:
+                          type: string
+                          description: Trait 1.
+                          example: "new-val"
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-02-02T00:23:09.544Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+
+  /track:
+    post:
+      summary: Track an event
+      description: Tracks user's actions along with any properties associated with them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "identified user id"
+                anonymousId:
+                  type: string
+                  description: Sets the user ID for cases where there is no unique identifier for the user. Either userId or anonymousId is required.
+                  example: "anon-id-new"
+                event:
+                  type: string
+                  description: Name of the event to be tracked.
+                  example: "Product Purchased new"
+                properties:
+                  type: object
+                  description: Additional properties associated with the event.
+                  example: { name: "Shirt", revenue: 4.99 }
+                context:
+                  type: object
+                  description: Dictionary of information that provides context about a message.
+                  properties:
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                  required:
+                    - ip
+                  additionalProperties: false
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-02-02T00:23:09.544Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+          
+  /page:
+    post:
+      summary: Track a page view
+      description: Records your website’s page views with any additional relevant information about the viewed page.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "identified user id"
+                anonymousId:
+                  type: string
+                  description: Sets the user ID for cases where there is no unique identifier for the user. Either userId or anonymousId is required.
+                  example: "anon-id-new"
+                name:
+                  type: string
+                  description: Name of the page being viewed.
+                  example: "Page View"
+                properties:
+                  type: object
+                  description: Additional properties associated with the page.
+                  example: { title: "Home", path: "/" }
+                context:
+                  type: object
+                  description: Dictionary of information that provides context about a message.
+                  properties:
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                  required:
+                    - ip
+                  additionalProperties: false
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-02-02T00:23:09.544Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+          
+  /screen:
+    post:
+      summary: Record a screen view
+      description: Records whenever your user views their mobile screen with any additional relevant information about the screen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "identified user id"
+                anonymousId:
+                  type: string
+                  description: Sets the user ID for cases where there is no unique identifier for the user. Either userId or anonymousId is required.
+                  example: "anon-id-new"
+                name:
+                  type: string
+                  description: Name of the screen view.
+                  example: "Screen View"
+                properties:
+                  type: object
+                  description: Additional properties associated with the screen view.
+                  example: { prop1: "5" }
+                context:
+                  type: object
+                  description: Dictionary of information that provides context about a message.
+                  properties:
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                  required:
+                    - ip
+                  additionalProperties: false
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-02-02T00:23:09.544Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+          
+  /group:
+    post:
+      summary: Identify a user within a group
+      description: Lets you link an identified user with a group such as a company, organization, or an account. It also lets you record any custom traits associated with that group, like the name of the company, the number of employees, etc.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "user12345"
+                groupId:
+                  type: string
+                  description: Unique identifier for the group.
+                  example: "group1"
+                traits:
+                  type: object
+                  description: Traits or properties associated with the group.
+                  example: { name: "Company", industry: "Industry", employees: 123 }
+                context:
+                  type: object
+                  description: Dictionary of information that provides context about a message.
+                  properties:
+                    traits:
+                      type: object
+                      description: Additional traits or properties associated with the message.
+                      example: { trait1: "new-val" }
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                  required:
+                    - ip
+                  additionalProperties: false
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-01-21T00:21:34.208Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+          
+  /alias:
+    post:
+      summary: Create an alias for a user
+      description: Links two user IDs together.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: Unique identifier for a particular user in your database.
+                  example: "user123"
+                previousId:
+                  type: string
+                  description: Previous user ID associated with the current user.
+                  example: "user12345"
+                context:
+                  type: object
+                  description: Dictionary of information about the alias event.
+                  properties:
+                    traits:
+                      type: object
+                      description: Additional traits associated with the alias.
+                      properties:
+                        trait1:
+                          type: string
+                          description: Trait 1.
+                          example: "new-val"
+                    ip:
+                      type: string
+                      format: ipv4
+                      description: User's IP address.
+                      example: "14.5.67.21"
+                    library:
+                      type: object
+                      description: Information about the library sending the event.
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the library.
+                          example: "http"
+                  required:
+                    - ip
+                  additionalProperties: false
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The timestamp of the message's arrival.
+                  example: "2020-01-21T00:21:34.208Z"
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: Invalid request
+          
+  /batch:
+    post:
+      summary: Send a batch of events
+      description: Allows you to send a series of identify, track, page, group and screen requests in a single batch. This call helps you minimize the number of outbound requests, thus enabling better performance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                batch:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                        description: Unique identifier for a particular user in your database.
+                      anonymousId:
+                        type: string
+                        description: Sets the user ID for cases where there is no unique identifier for the user.
+                      type:
+                        type: string
+                        description: Type of event.
+                        enum:
+                          - identify
+                          - track
+                          - page
+                          - screen
+                          - group
+                          - alias
+                      event:
+                        type: string
+                        description: Name of the event to be tracked (applicable for "track" events).
+                      properties:
+                        type: object
+                        description: Additional properties associated with the event.
+                      context:
+                        type: object
+                        description: Dictionary of information that provides context about a message.
+                        properties:
+                          ip:
+                            $ref: '#/components/schemas/ip'
+                          library:
+                            $ref: '#/components/schemas/library'
+                          traits:
+                            type: object
+                            description: Additional traits or properties associated with the message.
+                      timestamp:
+                        type: string
+                        description: The timestamp of the event in ISO 8601 format.
+                  required:
+                    - userId
+                    - type
+                    - timestamp
+                  additionalProperties: false
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+components:
+  schemas:
+    library:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the library.
+    ip:
+      type: string
+      format: ipv4
+      description: User's IP address.
+    context:
+      type: object
+      properties:
+        ip:
+          $ref: '#/components/schemas/ip'
+        library:
+          $ref: '#/components/schemas/library'
+        traits:
+          type: object
+          description: Additional traits or properties associated with the message.
+      additionalProperties: false
+
