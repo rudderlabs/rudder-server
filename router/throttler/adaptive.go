@@ -11,9 +11,10 @@ import (
 )
 
 type adaptiveThrottleConfig struct {
-	window   misc.ValueLoader[time.Duration]
-	minLimit misc.ValueLoader[int64]
-	maxLimit misc.ValueLoader[int64]
+	window      misc.ValueLoader[time.Duration]
+	minLimit    misc.ValueLoader[int64]
+	maxLimit    misc.ValueLoader[int64]
+	staticLimit misc.ValueLoader[int64]
 }
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
@@ -28,9 +29,10 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 	c.maxLimit = config.GetReloadableInt64Var(0, 1,
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName),
-		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
 		`Router.throttler.adaptive.maxLimit`)
+	c.staticLimit = config.GetReloadableInt64Var(0, 1,
+		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
 }
 
 func (c *adaptiveThrottleConfig) enabled() bool {
@@ -72,6 +74,10 @@ func (t *adaptiveThrottler) getLimit() int64 {
 	if t.limitFactorMeasurement != nil {
 		t.limitFactorMeasurement.Gauge(limitFactor)
 	}
-	limit := int64(float64(t.config.maxLimit.Load()) * limitFactor)
+	maxLimit := t.config.maxLimit.Load()
+	if maxLimit == 0 {
+		maxLimit = t.config.staticLimit.Load() * 130 / 100 // increase static limit by 30% if maxLimit is not set
+	}
+	limit := int64(float64(maxLimit) * limitFactor)
 	return max(t.config.minLimit.Load(), limit)
 }
