@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
@@ -180,13 +180,13 @@ func TestHTTPApi(t *testing.T) {
 
 	tenantManager := multitenant.New(c, mockBackendConfig)
 
-	bcManager := bcm.New(config.New(), db, tenantManager, logger.NOP, memstats.New())
+	bcManager := bcm.New(config.New(), db, tenantManager, logger.NOP, stats.NOP)
 
 	triggerStore := &sync.Map{}
 
 	ctx, stopTest := context.WithCancel(context.Background())
 
-	n := notifier.New(config.New(), logger.NOP, memstats.New(), workspaceIdentifier)
+	n := notifier.New(config.New(), logger.NOP, stats.NOP, workspaceIdentifier)
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
@@ -414,7 +414,7 @@ func TestHTTPApi(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.runningMode", tc.runningMode)
 
-				a := NewApi(tc.mode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+				a := NewApi(tc.mode, c, logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 				a.healthHandler(resp, req)
 
 				var healthBody map[string]string
@@ -432,7 +432,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -450,7 +450,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -468,7 +468,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -486,7 +486,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusServiceUnavailable, resp.Code)
 
@@ -504,7 +504,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -530,7 +530,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -560,7 +560,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.pendingEventsHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -582,7 +582,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/internal/v1/warehouse/fetch-tables", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.fetchTablesHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -599,7 +599,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.fetchTablesHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
 
@@ -621,7 +621,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.fetchTablesHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
 
@@ -644,7 +644,7 @@ func TestHTTPApi(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/trigger-upload", bytes.NewReader([]byte(`"Invalid payload"`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -662,7 +662,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -680,7 +680,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 
 			require.Equal(t, http.StatusServiceUnavailable, resp.Code)
@@ -698,7 +698,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -716,7 +716,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 
 			require.Equal(t, http.StatusOK, resp.Code)
@@ -738,7 +738,7 @@ func TestHTTPApi(t *testing.T) {
 			`)))
 			resp := httptest.NewRecorder()
 
-			a := NewApi(config.MasterMode, config.New(), logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 			a.triggerUploadHandler(resp, req)
 
 			require.Equal(t, http.StatusOK, resp.Code)
@@ -762,7 +762,7 @@ func TestHTTPApi(t *testing.T) {
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 
-			a := NewApi(config.MasterMode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, c, logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 
 			serverSetupCh := make(chan struct{})
 			go func() {
@@ -948,7 +948,7 @@ func TestHTTPApi(t *testing.T) {
 
 			srvCtx, stopServer := context.WithCancel(ctx)
 
-			a := NewApi(config.MasterMode, c, logger.NOP, memstats.New(), mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
+			a := NewApi(config.MasterMode, c, logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore)
 
 			serverSetupCh := make(chan struct{})
 			go func() {

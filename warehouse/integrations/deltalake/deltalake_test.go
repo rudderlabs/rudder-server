@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -497,7 +498,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -513,7 +514,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -536,7 +537,7 @@ func TestIntegration(t *testing.T) {
 					warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z",
 				)
 
-				d := deltalake.New(config.New(), logger.NOP, memstats.New())
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -582,7 +583,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
 
-				d := deltalake.New(config.New(), logger.NOP, memstats.New())
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -633,7 +634,7 @@ func TestIntegration(t *testing.T) {
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = true
 
-				d := deltalake.New(config.New(), logger.NOP, memstats.New())
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -684,7 +685,7 @@ func TestIntegration(t *testing.T) {
 			appendWarehouse := th.Clone(t, warehouse)
 			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, appendWarehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -731,7 +732,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -754,7 +755,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -796,7 +797,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -838,7 +839,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -879,7 +880,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeParquet, false, false, "2022-12-15T06:53:49.640Z")
 
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -922,7 +923,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-				d := deltalake.New(config.New(), logger.NOP, memstats.New())
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -981,7 +982,7 @@ func TestIntegration(t *testing.T) {
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
-				d := deltalake.New(config.New(), logger.NOP, memstats.New())
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -1068,7 +1069,7 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.deltalake.maxErrorLength", len(tempError.Error())*25)
 
-			d := deltalake.New(c, logger.NOP, memstats.New())
+			d := deltalake.New(c, logger.NOP, stats.NOP)
 			require.Equal(t, tc.expectedError, d.TrimErrorMessage(tc.inputError))
 		})
 	}
@@ -1114,7 +1115,7 @@ func TestDeltalake_ShouldMerge(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := deltalake.New(config.New(), logger.NOP, memstats.New())
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			d.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]any{
