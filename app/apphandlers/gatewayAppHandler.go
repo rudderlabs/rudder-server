@@ -121,7 +121,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	rsourcesService, err := NewRsourcesService(deploymentType)
+	rsourcesService, err := NewRsourcesService(deploymentType, false)
 	if err != nil {
 		return err
 	}
@@ -132,15 +132,18 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	})
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
 	if err != nil {
-		return fmt.Errorf("drain config manager setup: %v", err)
+		a.log.Errorw("drain config manager setup fail", "error", err)
 	}
-	defer drainConfigManager.Stop()
-	g.Go(misc.WithBugsnag(func() (err error) {
-		return drainConfigManager.DrainConfigRoutine(ctx)
+
+	drainConfigHttpHandler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unable to start drain config http handler", http.StatusInternalServerError)
 	}))
-	g.Go(misc.WithBugsnag(func() (err error) {
-		return drainConfigManager.CleanupRoutine(ctx)
-	}))
+
+	if drainConfigManager != nil {
+		defer drainConfigManager.Stop()
+		drainConfigHttpHandler = drainConfigManager.DrainConfigHttpHandler()
+	}
+
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
@@ -148,7 +151,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
-				"/drain": drainConfigManager.DrainConfigHttpHandler(),
+				"/drain": drainConfigHttpHandler,
 			},
 		),
 	)

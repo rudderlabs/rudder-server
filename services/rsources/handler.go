@@ -44,7 +44,7 @@ func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, job
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
-		`SELECT 
+		`SELECT
 			source_id,
 			destination_id,
 			task_run_id,
@@ -96,7 +96,7 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 		failed_count
 	) values ($1, $2, $3, $4, $5, $6, $7)
 	on conflict(db_name, job_run_id, task_run_id, source_id, destination_id)
-	do update set 
+	do update set
 	in_count = "rsources_stats".in_count + excluded.in_count,
 	out_count = "rsources_stats".out_count + excluded.out_count,
 	failed_count = "rsources_stats".failed_count + excluded.failed_count,
@@ -116,7 +116,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return nil
 	}
 	row := tx.QueryRow(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
-		VALUES ($1, $2, $3, $4, $5) 
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (job_run_id, task_run_id, source_id, destination_id, db_name) DO UPDATE SET ts = NOW()
 		RETURNING id`, ksuid.New().String(), jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
 	var id string
@@ -196,8 +196,8 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			r.id,
 			r.record_id,
 			r.code
-		FROM "rsources_failed_keys_v2_records" r 
-		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s 
+		FROM "rsources_failed_keys_v2_records" r
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
 		ORDER BY r.id, r.record_id ASC %[2]s`,
 		filters, limit)
 
@@ -291,8 +291,8 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 			k.destination_id,
 			r.id,
 			r.record_id
-		FROM "rsources_failed_keys_v2_records" r 
-		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s 
+		FROM "rsources_failed_keys_v2_records" r
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
 		ORDER BY r.id, r.record_id ASC %[2]s`,
 		filters, limit)
 
@@ -430,7 +430,7 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 	}
 	before := time.Now().Add(-config.GetDuration("Rsources.retention", defaultRetentionPeriodInHours, time.Hour))
 	if _, err := tx.ExecContext(ctx, `delete from "rsources_stats" where job_run_id in (
-		select lastUpdateToJobRunId.job_run_id from 
+		select lastUpdateToJobRunId.job_run_id from
 			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
 		where lastUpdateToJobRunId.mts <= $1
 	)`, before); err != nil {
@@ -444,7 +444,7 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 				JOIN "rsources_failed_keys_v2_records" r on r.id = k.id
 				GROUP BY k.job_run_id
 			) lastUpdateToJobRunId WHERE lastUpdateToJobRunId.mts <= $1
-		)    
+		)
 	),
 	deleted AS (
 		DELETE FROM "rsources_failed_keys_v2" WHERE id IN (SELECT id FROM to_delete) RETURNING id
@@ -487,7 +487,7 @@ func (sh *sourcesHandler) init() error {
 		return err
 	}
 
-	if sh.sharedDB != nil {
+	if sh.sharedDB != nil && sh.config.ShouldSetupSharedDB {
 		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
 			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
 			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
@@ -536,26 +536,26 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 			v_alphabet char array[62] := array[
 				'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 				'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-				'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 
-				'U', 'V', 'W', 'X', 'Y', 'Z', 
-				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 
+				'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+				'U', 'V', 'W', 'X', 'Y', 'Z',
+				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
 				'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
 				'u', 'v', 'w', 'x', 'y', 'z'];
 			i integer := 0;
 		begin
-		
+
 			-- Get the current time
 			v_time := clock_timestamp();
-		
+
 			-- Extract epoch seconds
 			v_seconds := EXTRACT(EPOCH FROM v_time) - v_epoch;
-		
+
 			-- Generate a KSUID in a numeric variable
 			v_numeric := v_seconds * pow(2::numeric(50), 128) -- 32 bits for seconds and 128 bits for randomness
 				+ ((random()::numeric(70,20) * pow(2::numeric(70,20), 48))::numeric(50) * pow(2::numeric(50), 80)::numeric(50))
 				+ ((random()::numeric(70,20) * pow(2::numeric(70,20), 40))::numeric(50) * pow(2::numeric(50), 40)::numeric(50))
 				+  (random()::numeric(70,20) * pow(2::numeric(70,20), 40))::numeric(50);
-		
+
 			-- Encode it to base-62
 			while v_numeric <> 0 loop
 				v_base62 := v_base62 || v_alphabet[mod(v_numeric, 62) + 1];
@@ -563,15 +563,15 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 			end loop;
 			v_base62 := reverse(v_base62);
 			v_base62 := lpad(v_base62, 27, '0');
-		
+
 			return v_base62;
-			
+
 		end $$ language plpgsql;`); err != nil {
 			return fmt.Errorf("failed to create ksuid function: %w", err)
 		}
 
 		if _, err := tx.ExecContext(ctx, `WITH new_keys AS (
-			INSERT INTO "rsources_failed_keys_v2" 
+			INSERT INTO "rsources_failed_keys_v2"
 			(id, job_run_id, task_run_id, source_id, destination_id, db_name)
 			SELECT ksuid(), t.* FROM (
 				SELECT DISTINCT job_run_id, task_run_id, source_id, destination_id, db_name from "rsources_failed_keys"
@@ -580,12 +580,12 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 		)
 		INSERT INTO "rsources_failed_keys_v2_records" (id, record_id, ts)
 		 SELECT n.id, o.record_id::text, min(o.ts) FROM new_keys n
-			JOIN rsources_failed_keys o 
-				on o.db_name = n.db_name 
-				and o.destination_id = n.destination_id 
-				and o.source_id = n.source_id 
-				and o.task_run_id = n.task_run_id 
-				and o.job_run_id = n.job_run_id 
+			JOIN rsources_failed_keys o
+				on o.db_name = n.db_name
+				and o.destination_id = n.destination_id
+				and o.source_id = n.source_id
+				and o.task_run_id = n.task_run_id
+				and o.job_run_id = n.job_run_id
 			group by n.id, o.record_id
 		`); err != nil {
 			return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
@@ -605,7 +605,7 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 
 // TODO: Remove this after a few releases
 func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
-	sqlStatement := fmt.Sprintf(`create table "rsources_failed_keys" (	
+	sqlStatement := fmt.Sprintf(`create table "rsources_failed_keys" (
 		id BIGSERIAL,
 		db_name text not null default '%s',
 		job_run_id text not null,
@@ -631,13 +631,13 @@ func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName strin
 }
 
 func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`create table "rsources_failed_keys_v2" (	
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`create table "rsources_failed_keys_v2" (
 		id VARCHAR(27) COLLATE "C",
 		db_name text not null default '%s',
 		job_run_id text not null,
 		task_run_id text not null,
 		source_id text not null,
-		destination_id text not null,		
+		destination_id text not null,
 		primary key (id),
 		unique (job_run_id, task_run_id, source_id, destination_id, db_name)
 	)`, defaultDbName)); err != nil {
@@ -648,7 +648,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		}
 	}
 
-	if _, err := db.ExecContext(ctx, `create table "rsources_failed_keys_v2_records" (	
+	if _, err := db.ExecContext(ctx, `create table "rsources_failed_keys_v2_records" (
 		id VARCHAR(27) COLLATE "C",
 		record_id text not null,
     	ts timestamp not null default NOW(),
