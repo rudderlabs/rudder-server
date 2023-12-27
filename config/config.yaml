@@ -256,4 +256,4 @@ PgNotifier:
   trackBatchInterval: 2s
   maxAttempt: 3
 Reporting:
-  eventNameMaxLength: 100
+  eventNameMaxLength: 0

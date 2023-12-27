@@ -21,7 +21,7 @@ const (
 	DefaultReplayEnabled    = false
 )
 
-const InvalidEventName = "INVALID_EVENT_NAME"
+const MaxLengthExceeded = ":max-length-exceeded:"
 
 var (
 	DiffStatus = "diff"
