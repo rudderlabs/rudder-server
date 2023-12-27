@@ -29,7 +29,7 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName),
 		`Router.throttler.adaptive.maxLimit`)
-	limitMultiplier := config.GetReloadableInt64Var(150, 1,
+	limitMultiplier := config.GetReloadableFloat64Var(1.5,
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.limitMultiplier`, destName, destID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.limitMultiplier`, destName),
 		`Router.throttler.adaptive.limitMultiplier`)
@@ -41,7 +41,7 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 		if maxLimit > 0 {
 			return maxLimit
 		}
-		return limit.Load() * limitMultiplier.Load()
+		return int64(float64(limit.Load()) * limitMultiplier.Load())
 	}
 }
 
