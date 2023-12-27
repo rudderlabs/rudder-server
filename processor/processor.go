@@ -2193,6 +2193,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
+	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
@@ -2200,21 +2201,20 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
 
-			// rsources stats
-			in.rsourcesStats.CollectStats(statusList)
-			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats: %w", err)
-			}
-			err = proc.saveDroppedJobs(in.droppedJobs, tx.Tx())
+			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("saving dropped jobs: %w", err)
 			}
 
 			if proc.isReportingEnabled() {
-				if err = proc.reporting.Report(in.reportMetrics, tx.Tx()); err != nil {
+				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
+			}
+
+			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
 
 			return nil
@@ -2668,7 +2668,7 @@ func (proc *Handle) transformSrcDest(
 	}
 }
 
-func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
+func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
 	if len(droppedJobs) > 0 {
 		for i := range droppedJobs { // each dropped job should have a unique jobID in the scope of the batch
 			droppedJobs[i].JobID = int64(i)
@@ -2678,7 +2678,7 @@ func (proc *Handle) saveDroppedJobs(droppedJobs []*jobsdb.JobT, tx *Tx) error {
 			rsources.IgnoreDestinationID(),
 		)
 		rsourcesStats.JobsDropped(droppedJobs)
-		return rsourcesStats.Publish(context.TODO(), tx.Tx)
+		return rsourcesStats.Publish(ctx, tx.Tx)
 	}
 	return nil
 }
