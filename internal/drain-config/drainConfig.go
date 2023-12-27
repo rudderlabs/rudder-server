@@ -192,5 +192,7 @@ func setupDBConn(conf *config.Config) (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("db ping: %v", err)
 	}
+	db.SetMaxIdleConns(conf.GetInt("drainConfig.maxIdleConns", 1))
+	db.SetMaxOpenConns(conf.GetInt("drainConfig.maxOpenConns", 2))
 	return db, nil
 }

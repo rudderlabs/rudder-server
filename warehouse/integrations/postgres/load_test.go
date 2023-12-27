@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/golang/mock/gomock"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -23,7 +25,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -169,7 +170,6 @@ func TestLoadUsersTable(t *testing.T) {
 
 			db := sqlmiddleware.New(pgResource.DB)
 
-			store := memstats.New()
 			c := config.New()
 			c.Set("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", tc.skipUserTraitsWorkspaceIDs)
 			ctx := context.Background()
@@ -205,7 +205,7 @@ func TestLoadUsersTable(t *testing.T) {
 			identifiesLoadFiles := cloneFiles(t, tc.mockIdentifiesFiles)
 			require.NotEmpty(t, identifiesLoadFiles)
 
-			pg := postgres.New(c, logger.NOP, store)
+			pg := postgres.New(c, logger.NOP, stats.NOP)
 
 			var (
 				identifiesSchemaInUpload = model.TableSchema{

@@ -37,6 +37,10 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
+	return sh.getStatusInternal(ctx, sh.readDB(), jobRunId, filter)
+}
+
+func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, jobRunId string, filter JobFilter) (JobStatus, error) {
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
@@ -51,7 +55,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
+	rows, err := db.QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -111,22 +115,16 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	if sh.config.SkipFailedRecordsCollection {
 		return nil
 	}
-
-	row := tx.QueryRow(`WITH new_key AS (
-		INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
+	row := tx.QueryRow(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
 		VALUES ($1, $2, $3, $4, $5) 
-		ON CONFLICT (job_run_id, task_run_id, source_id, destination_id, db_name) DO NOTHING
-		RETURNING id
-	) SELECT COALESCE(
-		(SELECT id FROM new_key),
-		(SELECT id FROM rsources_failed_keys_v2 WHERE job_run_id = $2 AND task_run_id = $3 AND source_id = $4 AND destination_id = $5)
-	)`, ksuid.New().String(), jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
+		ON CONFLICT (job_run_id, task_run_id, source_id, destination_id, db_name) DO UPDATE SET ts = NOW()
+		RETURNING id`, ksuid.New().String(), jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
 	var id string
 	if err := row.Scan(&id); err != nil {
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`)
+	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
 	if err != nil {
 		return err
 	}
@@ -335,7 +333,7 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
-	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err
 	}
@@ -358,16 +356,12 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`WITH deleted AS (
+		DELETE FROM "rsources_failed_keys_v2" %s  RETURNING id)
+		DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM deleted)`, filters), filterParams...); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
-
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
 	return tx.Commit()
 }
 
@@ -392,7 +386,7 @@ func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId stri
 }
 
 func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
-	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	jobStatus, err := sh.getStatusInternal(ctx, sh.localDB, jobRunId, filter)
 	if err != nil {
 		return err
 	}
@@ -453,9 +447,9 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		)    
 	),
 	deleted AS (
-		DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM to_delete) RETURNING id
+		DELETE FROM "rsources_failed_keys_v2" WHERE id IN (SELECT id FROM to_delete) RETURNING id
 	)
-	DELETE FROM "rsources_failed_keys_v2" WHERE id IN (SELECT id FROM to_delete) RETURNING id`, before); err != nil {
+	DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM to_delete) RETURNING id`, before); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -667,6 +661,9 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		}
 	}
 	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {
 		return err
 	}
 

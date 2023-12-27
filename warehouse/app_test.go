@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
@@ -132,7 +132,7 @@ func TestApp(t *testing.T) {
 					c.Set("Warehouse.runningMode", subTC.runningMode)
 					c.Set("Warehouse.webPort", webPort)
 
-					a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+					a := New(mockApp, c, logger.NOP, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 					err = a.Setup(ctx)
 					require.NoError(t, err)
 
@@ -195,7 +195,7 @@ func TestApp(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		a := New(mockApp, c, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
+		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
 		err = a.Setup(ctx)
 		require.NoError(t, err)
 
@@ -263,7 +263,7 @@ func TestApp(t *testing.T) {
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
 
-		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.EqualError(t, err, "setting up database: warehouse Service needs postgres version >= 10. Exiting")
 	})
@@ -275,7 +275,7 @@ func TestApp(t *testing.T) {
 		c.Set("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu")
 		c.Set("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 
-		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.ErrorContains(t, err, "setting up database: could not check compatibility:")
 	})
@@ -290,7 +290,7 @@ func TestApp(t *testing.T) {
 		c.Set("DB.password", pgResource.Password)
 		c.Set("DB.name", pgResource.Database)
 
-		a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+		a := New(mockApp, c, logger.NOP, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 		err = a.Setup(context.Background())
 		require.NoError(t, err)
 	})
@@ -371,7 +371,7 @@ func TestApp(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		a := New(mockApp, c, logger.NOP, memstats.New(), mockBackendConfig, filemanager.New)
+		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
 		require.NoError(t, a.monitorDestRouters(ctx))
 	})
@@ -402,7 +402,7 @@ func TestApp(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			a := New(mockApp, c, logger.NOP, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+			a := New(mockApp, c, logger.NOP, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 
@@ -444,7 +444,7 @@ func TestApp(t *testing.T) {
 			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Infof(gomock.Any()).AnyTimes()
 
-			a := New(mockApp, c, mockLogger, memstats.New(), &bcConfig.NOOP{}, filemanager.New)
+			a := New(mockApp, c, mockLogger, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
 			err = a.Setup(ctx)
 			require.NoError(t, err)
 

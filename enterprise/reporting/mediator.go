@@ -70,9 +70,9 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	return rm
 }
 
-func (rm *Mediator) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
+func (rm *Mediator) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	for _, reporter := range rm.reporters {
-		if err := reporter.Report(metrics, txn); err != nil {
+		if err := reporter.Report(ctx, metrics, txn); err != nil {
 			return err
 		}
 	}

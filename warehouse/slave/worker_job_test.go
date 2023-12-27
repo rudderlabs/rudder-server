@@ -198,7 +198,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingFileLocation: uf.ObjectName,
 			}
 
-			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+			jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -224,7 +224,8 @@ func TestSlaveJob(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
@@ -261,7 +262,8 @@ func TestSlaveJob(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			jr := newJobRun(p, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
@@ -296,7 +298,7 @@ func TestSlaveJob(t *testing.T) {
 				StagingDestinationRevisionID: uuid.New().String(),
 			}
 
-			jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+			jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 			defer jr.cleanup()
 
@@ -323,7 +325,7 @@ func TestSlaveJob(t *testing.T) {
 			DestinationType: destType,
 		}
 
-		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+		jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 
 		defer jr.cleanup()
 
@@ -364,7 +366,7 @@ func TestSlaveJob(t *testing.T) {
 
 		now := time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC)
 
-		jr := newJobRun(p, config.New(), logger.NOP, memstats.New(), encoding.NewFactory(config.New()))
+		jr := newJobRun(p, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
 		jr.uuidTS = now
 		jr.now = func() time.Time {
 			return now
@@ -486,7 +488,9 @@ func TestSlaveJob(t *testing.T) {
 					writerMap[fmt.Sprintf("test-%d", i)] = m
 				}
 
-				store := memstats.New()
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
+
 				stagingFileID := int64(1001)
 
 				destType := destType
@@ -515,7 +519,7 @@ func TestSlaveJob(t *testing.T) {
 				c.Set("Warehouse.slaveUploadTimeout", "5m")
 				c.Set("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", loadObjectFolder)
 
-				jr := newJobRun(job, c, logger.NOP, store, encoding.NewFactory(config.New()))
+				jr := newJobRun(job, c, logger.NOP, statsStore, encoding.NewFactory(config.New()))
 				jr.since = func(t time.Time) time.Duration {
 					return time.Second
 				}
@@ -534,9 +538,9 @@ func TestSlaveJob(t *testing.T) {
 
 				require.NoError(t, err)
 				require.Len(t, loadFile, len(jr.outputFileWritersMap))
-				require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get("load_file_total_upload_time", jr.buildTags()).LastDuration())
+				require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), statsStore.Get("load_file_total_upload_time", jr.buildTags()).LastDuration())
 				for i := 0; i < len(jr.outputFileWritersMap); i++ {
-					require.EqualValues(t, time.Second, store.Get("load_file_upload_time", jr.buildTags()).LastDuration())
+					require.EqualValues(t, time.Second, statsStore.Get("load_file_upload_time", jr.buildTags()).LastDuration())
 				}
 
 				outputPathRegex := fmt.Sprintf(`http://%s/%s/%s/test.*/%s/.*/load.dump`, minioResource.Endpoint, minioResource.BucketName, loadObjectFolder, sourceID)
