@@ -2,6 +2,7 @@ package adaptivethrottlercounter
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -79,6 +80,7 @@ type limitFactor struct {
 func (l *limitFactor) Add(value float64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	prevLimit := l.value
 	l.value += value
 	if l.value < 0 {
 		l.value = 0
@@ -86,6 +88,7 @@ func (l *limitFactor) Add(value float64) {
 	if l.value > 1 {
 		l.value = 1
 	}
+	fmt.Println("limit factor changed from", prevLimit, "to", l.value, "with value", value)
 }
 
 func (l *limitFactor) Get() float64 {
