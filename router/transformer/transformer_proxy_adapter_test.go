@@ -156,10 +156,14 @@ func TestV1Adapter(t *testing.T) {
 						DontBatch: false,
 					},
 				},
+				Config: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 			DestName: "testDestType",
 		}
-		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}]}`
+		expectedPayload := `{"type":"a","endpoint":"a.com","method":"","userId":"","headers":null,"params":null,"body":{"jobId":1},"files":null,"metadata":[{"jobId":1,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":true},{"jobId":2,"attemptNum":0,"userId":"","sourceId":"","destinationId":"","workspaceId":"","secret":null,"dontBatch":false}],"config":{"key_1":"val_1","key_2":"val_2"}}`
 
 		payload, err := v1Adapter.getPayload(proxyReqParms)
 		require.Nil(t, err)
