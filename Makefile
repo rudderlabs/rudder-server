@@ -117,4 +117,10 @@ swagger: check-swagger
 
 .PHONY: serve-swagger
 serve-swagger: check-swagger
-	swagger serve -F=swagger swagger.yaml
+	go install github.com/go-swagger/go-swagger/cmd/swagger
+	swagger serve ./swagger.yaml
+
+.PHONY: serve-swagger-ui
+serve-swagger-ui: check-swagger
+	go install github.com/go-swagger/go-swagger/cmd/swagger
+	swagger serve -F swagger ./swagger.yaml
