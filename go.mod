@@ -8,7 +8,7 @@ toolchain go1.21.3
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
 replace (
-	github.com/containerd/containerd => github.com/containerd/containerd v1.6.24
+	github.com/containerd/containerd => github.com/containerd/containerd v1.6.26
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.4
 	github.com/docker/docker => github.com/docker/docker v24.0.6+incompatible
 	github.com/elazarl/goproxy => github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a // indirect
@@ -115,6 +115,7 @@ require (
 )
 
 require (
+	github.com/containerd/log v0.1.0 // indirect
 	github.com/openzipkin/zipkin-go v0.4.2 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/zipkin v1.21.0 // indirect
