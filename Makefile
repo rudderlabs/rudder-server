@@ -107,20 +107,8 @@ proto: install-tools ## Generate protobuf files
 bench-kafka:
 	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
 
-.PHONY: check-swagger
-check-swagger:
-	which swagger || (GO111MODULE=off go get -u github.com/go-swagger/go-swagger/cmd/swagger)
-
-.PHONY: swagger
-swagger: check-swagger
-	GO111MODULE=on go mod vendor  && GO111MODULE=off swagger generate spec -o ./swagger.yaml --scan-models
-
-.PHONY: serve-swagger
-serve-swagger: check-swagger
-	go install github.com/go-swagger/go-swagger/cmd/swagger
-	swagger serve ./swagger.yaml
-
 .PHONY: serve-swagger-ui
 serve-swagger-ui: install-tools
+	go install github.com/go-swagger/go-swagger/cmd/swagger
 	swagger validate ./swagger.yaml
 	swagger serve -F swagger ./swagger.yaml
