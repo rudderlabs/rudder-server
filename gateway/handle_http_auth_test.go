@@ -52,7 +52,7 @@ func TestAuth(t *testing.T) {
 		return r
 	}
 
-	newRequestWithSourceIDAndDestID := func(sourceID, destinationID string, reqCtx *gwtypes.AuthRequestContext) *http.Request {
+	newRequestWithSourceIDAndDestID := func(sourceID, destinationID, reqType string, reqCtx *gwtypes.AuthRequestContext) *http.Request {
 		r := httptest.NewRequest("GET", "/", nil)
 		if len(sourceID) != 0 {
 			r.Header.Add("X-Rudder-Source-Id", sourceID)
@@ -60,8 +60,12 @@ func TestAuth(t *testing.T) {
 		if len(destinationID) != 0 {
 			r.Header.Add("X-Rudder-Destination-Id", destinationID)
 		}
-		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamCallType, "dummy"))
-		r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, reqCtx))
+		if len(reqType) > 0 {
+			r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamCallType, reqType))
+		}
+		if reqCtx != nil {
+			r = r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, reqCtx))
+		}
 		return r
 	}
 
@@ -420,7 +424,7 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, "dummy", &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: true}},
 				},
@@ -434,6 +438,52 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, "OK", string(body))
 		})
 
+		t.Run("auth req should be present in context", func(t *testing.T) {
+			sourceID := "123"
+			destinationID := "456"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{{
+						ID: destinationID,
+					}},
+				},
+			})
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, "dummy", nil)
+			w := httptest.NewRecorder()
+			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusInternalServerError, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "unable to get AuthRequest from context\n", string(body))
+		})
+
+		t.Run("req type should be present in context", func(t *testing.T) {
+			sourceID := "123"
+			destinationID := "456"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{{
+						ID: destinationID,
+					}},
+				},
+			})
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, "", &gwtypes.AuthRequestContext{
+				Source: backendconfig.SourceT{
+					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: true}},
+				},
+			})
+			w := httptest.NewRecorder()
+			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusInternalServerError, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "unable to get request type from context\n", string(body))
+		})
+
 		t.Run("successful auth without destination id in header", func(t *testing.T) {
 			sourceID := "123"
 			gw := newGateway(nil, map[string]backendconfig.SourceT{
@@ -442,7 +492,7 @@ func TestAuth(t *testing.T) {
 				},
 			})
 			gw.config = config.Default
-			r := newRequestWithSourceIDAndDestID(sourceID, "", &gwtypes.AuthRequestContext{})
+			r := newRequestWithSourceIDAndDestID(sourceID, "", "dummy", &gwtypes.AuthRequestContext{})
 			w := httptest.NewRecorder()
 			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
 
@@ -461,7 +511,7 @@ func TestAuth(t *testing.T) {
 			})
 			gw.config = config.Default
 			gw.config.Set("Gateway.requireDestinationIdHeader", true)
-			r := newRequestWithSourceIDAndDestID(sourceID, "", &gwtypes.AuthRequestContext{})
+			r := newRequestWithSourceIDAndDestID(sourceID, "", "dummy", &gwtypes.AuthRequestContext{})
 			w := httptest.NewRecorder()
 			gw.authDestIDForSource(delegate).ServeHTTP(w, r)
 
@@ -482,7 +532,7 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, "dummy", &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: "invalid-dest-id"}},
 				},
@@ -507,7 +557,7 @@ func TestAuth(t *testing.T) {
 					}},
 				},
 			})
-			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, &gwtypes.AuthRequestContext{
+			r := newRequestWithSourceIDAndDestID(sourceID, destinationID, "dummy", &gwtypes.AuthRequestContext{
 				Source: backendconfig.SourceT{
 					Destinations: []backendconfig.DestinationT{{ID: destinationID, Enabled: false}},
 				},
