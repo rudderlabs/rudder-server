@@ -39,6 +39,9 @@ type drainConfigManager struct {
 	wg   sync.WaitGroup
 }
 
+// NewDrainConfigManager returns a drainConfigManager
+// If migration fails while setting up drain config, drainConfigManager object will be returned along with error
+// Consumers must handle errors and non-nil drainConfigManager object according to their use case.
 func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
 	db, err := setupDBConn(conf)
 	if err != nil {

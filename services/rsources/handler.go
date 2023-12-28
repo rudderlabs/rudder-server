@@ -487,7 +487,7 @@ func (sh *sourcesHandler) init() error {
 		return err
 	}
 
-	if sh.sharedDB != nil && sh.config.ShouldSetupSharedDB {
+	if sh.config.ShouldSetupSharedDB && sh.sharedDB != nil {
 		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
 			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
 			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {

@@ -132,13 +132,10 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	})
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
 	if err != nil {
-		a.log.Errorw("drain config manager setup fail", "error", err)
+		a.log.Errorw("drain config manager setup failed while starting gateway", "error", err)
 	}
 
-	drainConfigHttpHandler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unable to start drain config http handler", http.StatusInternalServerError)
-	}))
-
+	drainConfigHttpHandler := drain_config.ErrorResponder("unable to start drain config http handler")
 	if drainConfigManager != nil {
 		defer drainConfigManager.Stop()
 		drainConfigHttpHandler = drainConfigManager.DrainConfigHttpHandler()
