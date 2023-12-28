@@ -121,6 +121,6 @@ serve-swagger: check-swagger
 	swagger serve ./swagger.yaml
 
 .PHONY: serve-swagger-ui
-serve-swagger-ui: check-swagger
-	go install github.com/go-swagger/go-swagger/cmd/swagger
+serve-swagger-ui: install-tools
+	swagger validate ./swagger.yaml
 	swagger serve -F swagger ./swagger.yaml
