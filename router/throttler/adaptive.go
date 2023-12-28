@@ -13,7 +13,7 @@ import (
 type adaptiveThrottleConfig struct {
 	window   misc.ValueLoader[time.Duration]
 	minLimit misc.ValueLoader[int64]
-	maxLimit misc.ValueLoader[int64]
+	maxLimit func() int64
 }
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
@@ -25,16 +25,28 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.minLimit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destName),
 		`Router.throttler.adaptive.minLimit`)
-	c.maxLimit = config.GetReloadableInt64Var(0, 1,
+	maxLimit := config.GetReloadableInt64Var(0, 1,
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destName),
-		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
-		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
 		`Router.throttler.adaptive.maxLimit`)
+	limitMultiplier := config.GetReloadableFloat64Var(1.5,
+		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.limitMultiplier`, destName, destID),
+		fmt.Sprintf(`Router.throttler.adaptive.%s.limitMultiplier`, destName),
+		`Router.throttler.adaptive.limitMultiplier`)
+	limit := config.GetReloadableInt64Var(0, 1,
+		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
+		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+	c.maxLimit = func() int64 {
+		maxLimit := maxLimit.Load()
+		if maxLimit > 0 {
+			return maxLimit
+		}
+		return int64(float64(limit.Load()) * limitMultiplier.Load())
+	}
 }
 
 func (c *adaptiveThrottleConfig) enabled() bool {
-	return c.minLimit.Load() > 0 && c.maxLimit.Load() > 0 && c.window.Load() > 0 && c.minLimit.Load() <= c.maxLimit.Load()
+	return c.minLimit.Load() > 0 && c.maxLimit() > 0 && c.window.Load() > 0 && c.minLimit.Load() <= c.maxLimit()
 }
 
 type adaptiveThrottler struct {
@@ -72,6 +84,6 @@ func (t *adaptiveThrottler) getLimit() int64 {
 	if t.limitFactorMeasurement != nil {
 		t.limitFactorMeasurement.Gauge(limitFactor)
 	}
-	limit := int64(float64(t.config.maxLimit.Load()) * limitFactor)
+	limit := int64(float64(t.config.maxLimit()) * limitFactor)
 	return max(t.config.minLimit.Load(), limit)
 }
