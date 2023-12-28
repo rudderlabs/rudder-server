@@ -1,0 +1,325 @@
+swagger: '2.0'
+info:
+  title: RudderStack HTTP API
+  version: 1.0.0
+  description: >-
+    The RudderStack HTTP API lets you track your customer event data and route
+    it to your desired destinations.
+  termsOfService: 'https://www.rudderstack.com/master-service-agreement/'
+  contact:
+    email: support@rudderstack.com
+  license:
+    name: Apache 2.0
+    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
+basePath: /v1
+consumes:
+  - application/json
+produces:
+  - application/json
+schemes:
+  - http
+paths:
+  /api/v1/identify:
+    post:
+      tags:
+        - HTTP API
+      summary: Identify
+      description: >-
+        The identify call lets you associate a visiting user to their actions
+        and record any associated traits.
+      operationId: Identify
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/IdentifyPayload'
+      responses:
+        '200':
+          description: OK
+  /v1/track:
+    post:
+      tags:
+        - HTTP API
+      summary: Track
+      description: >-
+        The track call lets you track user actions along with any properties
+        associated with them.
+      operationId: Track
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/TrackPayload'
+      responses:
+        '200':
+          description: OK
+  /v1/page:
+    post:
+      tags:
+        - HTTP API
+      summary: Page
+      description: >-
+        The page call lets you record your website’s page views with any
+        additional relevant information about the viewed page.
+      operationId: Page
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/PagePayload'
+      responses:
+        '200':
+          description: OK
+  /v1/screen:
+    post:
+      tags:
+        - HTTP API
+      summary: Screen
+      description: >-
+        The screen call is the mobile equivalent of the page call. It lets you
+        record whenever your user views their mobile screen with any additional
+        relevant information about the screen.
+      operationId: Screen
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/ScreenPayload'
+      responses:
+        '200':
+          description: OK
+  /v1/group:
+    post:
+      tags:
+        - HTTP API
+      summary: Group
+      description: >-
+        The group call lets you link an identified user with a group such as a
+        company, organization, or an account. It also lets you record any custom
+        traits associated with that group, like the name of the company, the
+        number of employees, etc.
+      operationId: Group
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/GroupPayload'
+      responses:
+        '200':
+          description: OK
+  /v1/alias:
+    post:
+      tags:
+        - HTTP API
+      summary: Alias
+      description: The alias call lets you merge different identities of a known user.
+      operationId: Alias
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/AliasPayload'
+      responses:
+        '200':
+          description: OK
+  /v1/batch:
+    post:
+      tags:
+        - HTTP API
+      summary: Batch
+      description: >-
+        The batch call enables you to send a batch of events (identify, track,
+        page, group, screen, alias) in a single request.
+      operationId: Batch
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/BatchPayload'
+      responses:
+        '200':
+          description: OK
+definitions:
+  IdentifyPayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      anonymousId:
+        type: string
+        description: >-
+          Sets the user ID for cases where there is no unique identifier for the
+          user.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  TrackPayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      anonymousId:
+        type: string
+        description: >-
+          Sets the user ID for cases where there is no unique identifier for the
+          user.
+      event:
+        type: string
+        description: Name of the event being performed by the user.
+      properties:
+        type: object
+        description: Dictionary of the properties associated with a particular event.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  PagePayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      anonymousId:
+        type: string
+        description: >-
+          Sets the user ID for cases where there is no unique identifier for the
+          user.
+      name:
+        type: string
+        description: Name of the page being viewed.
+      properties:
+        type: object
+        description: Dictionary of the properties associated with a particular event.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  ScreenPayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      anonymousId:
+        type: string
+        description: >-
+          Sets the user ID for cases where there is no unique identifier for the
+          user.
+      name:
+        type: string
+        description: Name of the screen being viewed.
+      properties:
+        type: object
+        description: >-
+          Dictionary of the properties associated with the page being viewed,
+          such as url and referrer.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  GroupPayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      anonymousId:
+        type: string
+        description: >-
+          Sets the user ID for cases where there is no unique identifier for the
+          user.
+      groupId:
+        type: string
+        description: 'Unique identifier of the group, as present in your database.'
+      traits:
+        type: object
+        description: >-
+          Dictionary of the traits associated with the group, such as name or
+          email.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  AliasPayload:
+    type: object
+    properties:
+      userId:
+        type: string
+        description: Unique identifier for a particular user in your database.
+      previousId:
+        type: string
+        description: The previous unique identifier of the user.
+      context:
+        type: object
+        description: Dictionary of information that provides context about a message.
+      timestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the message’s arrival.
+  BatchPayload:
+    type: object
+    properties:
+      batch:
+        type: array
+        items:
+          allOf:
+            - $ref: '#/definitions/IdentifyPayload'
+            - $ref: '#/definitions/TrackPayload'
+            - $ref: '#/definitions/PagePayload'
+            - $ref: '#/definitions/ScreenPayload'
+            - $ref: '#/definitions/GroupPayload'
+            - $ref: '#/definitions/AliasPayload'
+        description: 'An array of identify, track, page, group, screen, alias calls.'
