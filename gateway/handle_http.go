@@ -3,6 +3,9 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -62,6 +65,24 @@ func (gw *Handle) webGroupHandler() http.HandlerFunc {
 // robotsHandler prevents robots from crawling the gateway endpoints
 func (*Handle) robotsHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
+}
+
+// workspaceStatusHandler - handler for workspace status requests
+func (gw *Handle) workspaceStatusHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workspaceID := chi.URLParam(r, "workspaceID")
+		serving := gw.servesWorkspace(workspaceID)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"serving":` + strconv.FormatBool(serving) + `}`))
+	}
+}
+
+func (gw *Handle) servesWorkspace(workspaceID string) bool {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+
+	_, exists := gw.workspaceIDMap[workspaceID]
+	return exists
 }
 
 // webHandler - regular web request handler

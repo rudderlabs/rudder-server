@@ -11,10 +11,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
@@ -1333,6 +1336,25 @@ var _ = Describe("Gateway", func() {
 				"batch",
 			)
 		})
+
+		DescribeTable("serving workspace", func(workspaceID, expectedResponse string) {
+			Eventually(func() string {
+				req := httptest.NewRequest(http.MethodGet, "/internal/v1/workspace/"+workspaceID+"/status", nil)
+
+				chiCtx := chi.NewRouteContext()
+				chiCtx.URLParams.Add("workspaceID", workspaceID)
+				req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, chiCtx))
+
+				resp := httptest.NewRecorder()
+				handler := gateway.workspaceStatusHandler()
+				handler.ServeHTTP(resp, req)
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				return string(bodyBytes)
+			}).Should(Equal(expectedResponse))
+		},
+			Entry("should serve known workspace", WorkspaceID, "{\"serving\":true}"),
+			Entry("should not serve unknown workspace", "unknown", "{\"serving\":false}"),
+		)
 	})
 
 	Context("Robots", func() {
@@ -1683,6 +1705,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/internal/v1/warehouse/fetch-tables",
 		"/internal/v1/job-status/123",
 		"/internal/v1/job-status/123/failed-records",
+		path.Join("/internal/v1/workspace", WorkspaceID, "status"),
 	}
 
 	postEndpoints := []string{

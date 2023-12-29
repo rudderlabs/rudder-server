@@ -91,6 +91,7 @@ type Handle struct {
 	configSubscriberLock sync.RWMutex
 	writeKeysSourceMap   map[string]backendconfig.SourceT
 	sourceIDSourceMap    map[string]backendconfig.SourceT
+	workspaceIDMap       map[string]struct{}
 
 	conf struct { // configuration parameters
 		httpTimeout                                                                       time.Duration

@@ -204,9 +204,12 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			writeKeysSourceMap = map[string]backendconfig.SourceT{}
 			sourceIDSourceMap  = map[string]backendconfig.SourceT{}
+			workspaceIDMap     = map[string]struct{}{}
 		)
 		configData := data.Data.(map[string]backendconfig.ConfigT)
 		for _, wsConfig := range configData {
+			workspaceIDMap[wsConfig.WorkspaceID] = struct{}{}
+
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
 				sourceIDSourceMap[source.ID] = source
@@ -216,6 +219,7 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 			}
 		}
 		gw.configSubscriberLock.Lock()
+		gw.workspaceIDMap = workspaceIDMap
 		gw.writeKeysSourceMap = writeKeysSourceMap
 		gw.sourceIDSourceMap = sourceIDSourceMap
 		gw.configSubscriberLock.Unlock()
@@ -386,6 +390,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
+		r.Get("/v1/workspace/{workspaceID}/status", gw.workspaceStatusHandler())
 
 		// TODO: delete this handler once we are ready to remove support for the v1 api
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
