@@ -8,7 +8,7 @@ toolchain go1.21.3
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
 replace (
-	github.com/containerd/containerd => github.com/containerd/containerd v1.6.24
+	github.com/containerd/containerd => github.com/containerd/containerd v1.6.26
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.4
 	github.com/docker/docker => github.com/docker/docker v24.0.6+incompatible
 	github.com/elazarl/goproxy => github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a // indirect
@@ -19,9 +19,9 @@ replace (
 	github.com/spf13/viper => github.com/spf13/viper v1.16.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
 	go.mongodb.org/mongo-driver => go.mongodb.org/mongo-driver v1.12.1
-	golang.org/x/crypto => golang.org/x/crypto v0.13.0
-	golang.org/x/image => golang.org/x/image v0.12.0
-	golang.org/x/net => golang.org/x/net v0.17.0
+	golang.org/x/crypto => golang.org/x/crypto v0.17.0
+	golang.org/x/image => golang.org/x/image v0.14.0
+	golang.org/x/net => golang.org/x/net v0.19.0
 	golang.org/x/text => golang.org/x/text v0.14.0
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
@@ -103,7 +103,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.15.0
+	golang.org/x/crypto v0.16.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/oauth2 v0.15.0
 	golang.org/x/sync v0.5.0
@@ -115,6 +115,7 @@ require (
 )
 
 require (
+	github.com/containerd/log v0.1.0 // indirect
 	github.com/openzipkin/zipkin-go v0.4.2 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/zipkin v1.21.0 // indirect
@@ -178,7 +179,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
+	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -294,8 +295,8 @@ require (
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/mod v0.13.0 // indirect
 	golang.org/x/net v0.19.0 // indirect
-	golang.org/x/sys v0.14.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
