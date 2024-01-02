@@ -19,7 +19,7 @@ produces:
 schemes:
   - http
 paths:
-  /api/v1/identify:
+  /v1/identify:
     post:
       tags:
         - HTTP API
@@ -174,6 +174,76 @@ paths:
       responses:
         '200':
           description: OK
+
+  /internal/v1/extract:
+    post:
+      tags:
+        - Internal API
+      summary: Extract
+      description: Handles extract requests.
+      operationId: Extract
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: OK
+      security:
+        - writeKeyAuth: []
+  /internal/v1/retl:
+    post:
+      tags:
+        - Internal API
+      summary: Retl
+      description: Handles retl (real-time ETL) requests.
+      operationId: Retl
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: OK
+      security:
+        - writeKeyAuth: []
+  /internal/v1/audiencelist:
+    post:
+      tags:
+        - Internal API
+      summary: Audience List
+      description: Handles audience list requests.
+      operationId: AudienceList
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: OK
+      security:
+        - writeKeyAuth: []
+  /internal/v1/replay:
+    post:
+      tags:
+        - Internal API
+      summary: Replay
+      description: Handles replay requests.
+      operationId: Replay
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: OK
+      security:
+        - writeKeyAuth: []
+
 definitions:
   IdentifyPayload:
     type: object
@@ -189,10 +259,27 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          traits:
+            type: object
+            properties:
+              trait1:
+                type: string
+                description: New value for trait1.
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   TrackPayload:
     type: object
     properties:
@@ -213,10 +300,21 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   PagePayload:
     type: object
     properties:
@@ -237,10 +335,21 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   ScreenPayload:
     type: object
     properties:
@@ -263,10 +372,21 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   GroupPayload:
     type: object
     properties:
@@ -289,10 +409,27 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          traits:
+            type: object
+            properties:
+              trait1:
+                type: string
+                description: New value for trait1.
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   AliasPayload:
     type: object
     properties:
@@ -305,16 +442,34 @@ definitions:
       context:
         type: object
         description: Dictionary of information that provides context about a message.
+        properties:
+          traits:
+            type: object
+            properties:
+              trait1:
+                type: string
+                description: New value for trait1.
+          ip:
+            type: string
+            description: IP address.
+          library:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Name of the library.
       timestamp:
         type: string
         format: date-time
         description: The timestamp of the message’s arrival.
+
   BatchPayload:
     type: object
     properties:
       batch:
         type: array
         items:
+          type: object
           allOf:
             - $ref: '#/definitions/IdentifyPayload'
             - $ref: '#/definitions/TrackPayload'
@@ -322,4 +477,36 @@ definitions:
             - $ref: '#/definitions/ScreenPayload'
             - $ref: '#/definitions/GroupPayload'
             - $ref: '#/definitions/AliasPayload'
-        description: 'An array of identify, track, page, group, screen, alias calls.'
+          properties:
+            userId:
+              type: string
+            anonymousId:
+              type: string
+            type:
+              type: string
+            context:
+              type: object
+              properties:
+                traits:
+                  type: object
+                  properties:
+                    trait1:
+                      type: string
+                ip:
+                  type: string
+                library:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+            timestamp:
+              type: string
+    required:
+      - batch
+
+securityDefinitions:
+  writeKeyAuth:
+    type: apiKey
+    in: header
+    name: Authorization
+    description: Write Key Authentication
