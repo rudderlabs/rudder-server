@@ -141,7 +141,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -185,7 +185,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -231,7 +231,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -276,7 +276,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -319,7 +319,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -356,7 +356,7 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
-				Config: map[string]interface{}{
+				DestinationConfig: map[string]interface{}{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
