@@ -2772,7 +2772,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsents,
@@ -2783,7 +2783,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(3)) // all except D1 and D3
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsents,
@@ -2794,7 +2794,18 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(5)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "")).To(BeTrue())
+			Expect(
+				len(processor.getConsentFilteredDestinations(
+					eventWithoutConsentManagementData,
+					processor.getEnabledDestinations(
+						SourceIDOneTrustConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
+
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
@@ -2853,7 +2864,7 @@ var _ = Describe("Processor", Ordered, func() {
 				),
 			)
 			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
-			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent, "")).To(BeTrue())
 		})
 
 		It("should filter based on generic consent management preferences", func() {
@@ -3010,7 +3021,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
@@ -3021,7 +3032,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsentsGCM,
@@ -3032,7 +3043,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithCustomConsentsGCM,
@@ -3043,7 +3054,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(8)) // all except D13
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCM,
@@ -3054,7 +3065,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(7)) // all except D6 and D7
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCMKetch,
@@ -3064,6 +3075,15 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 				)),
 			).To(Equal(8)) // all except D7
+
+			// some unknown destination ID is passed destination will be unavailable
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
+
+			// known destination ID is passed and destination is enabled
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA)).To(BeTrue())
+
+			// know destination ID is passed and destination is not enabled
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled)).To(BeFalse())
 		})
 	})
 
