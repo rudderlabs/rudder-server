@@ -109,5 +109,7 @@ bench-kafka:
 
 .PHONY: serve-swagger-ui
 serve-swagger-ui: install-tools
+	go install github.com/go-swagger/go-swagger/cmd/swagger@latest
 	swagger validate --stop-on-error ./swagger.yaml
+	swagger serve ./swagger.yaml 
 	swagger serve -F swagger ./swagger.yaml
