@@ -280,7 +280,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 				traces[traceParent] = span
 			}
 		} else {
-			w.rt.logger.Warnn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
 
@@ -325,7 +325,7 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 				traces[traceParent] = span
 			}
 		} else {
-			w.rt.logger.Warnn("traceParent is empty during router batch transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+			w.rt.logger.Debugn("traceParent is empty during router batch transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
 
@@ -381,7 +381,7 @@ func (w *worker) processDestinationJobs() {
 					traces[traceParent] = span
 				}
 			} else {
-				w.rt.logger.Warnn("traceParent is empty during router process", logger.NewIntField("jobId", jobMetadata.JobID))
+				w.rt.logger.Debugn("traceParent is empty during router process", logger.NewIntField("jobId", jobMetadata.JobID))
 			}
 		}
 	}

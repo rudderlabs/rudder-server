@@ -251,7 +251,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 					traces[traceParent] = span
 				}
 			} else {
-				rt.logger.Warnn("traceParent is empty during router pickup", logger.NewIntField("jobId", job.JobID))
+				rt.logger.Debugn("traceParent is empty during router pickup", logger.NewIntField("jobId", job.JobID))
 			}
 
 			status := jobsdb.JobStatusT{

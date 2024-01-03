@@ -596,7 +596,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 
 	traceParent := stats.GetTraceParentFromContext(req.Context())
 	if traceParent == "" {
-		gw.logger.Warnw("traceParent not found in request")
+		gw.logger.Debugw("traceParent not found in request")
 	}
 
 	webReq := webRequestT{
