@@ -71,6 +71,7 @@ type JobParameters struct {
 	WorkspaceID             string      `json:"workspaceId"`
 	RudderAccountID         string      `json:"rudderAccountId"`
 	DontBatch               bool        `json:"dontBatch"`
+	TraceParent             string      `json:"traceparent"`
 }
 
 // ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails

@@ -56,6 +56,7 @@ func (gw *Handle) Setup(
 	gw.config = config
 	gw.logger = logger
 	gw.stats = stat
+	gw.tracer = stat.NewTracer("gateway")
 	gw.application = application
 	gw.backendConfig = backendConfig
 	gw.jobsDB = jobsDB
@@ -207,8 +208,8 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 			workspaceIDMap     = map[string]struct{}{}
 		)
 		configData := data.Data.(map[string]backendconfig.ConfigT)
-		for _, wsConfig := range configData {
-			workspaceIDMap[wsConfig.WorkspaceID] = struct{}{}
+		for wid, wsConfig := range configData {
+			workspaceIDMap[wid] = struct{}{}
 
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
