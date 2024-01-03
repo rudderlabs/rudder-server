@@ -466,6 +466,11 @@ func (bq *BigQuery) jobStatistics(
 	)
 	bqJob, err := bqJobGetCall.Context(ctx).Location(job.Location()).Fields("statistics").Do()
 	if err != nil {
+		// In case of rate limit error, return empty statistics
+		var e *googleapi.Error
+		if errors.As(err, &e) && e.Code == 429 {
+			return &bqService.JobStatistics{}, nil
+		}
 		return nil, fmt.Errorf("getting job: %w", err)
 	}
 	return bqJob.Statistics, nil
