@@ -114,10 +114,10 @@ install-tools:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 	go install gotest.tools/gotestsum@v1.10.0
 	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/go-swagger/go-swagger/cmd/swagger@latest. <- swagger dependency
+	go install github.com/go-swagger/go-swagger/cmd/swagger@latest
 	bash ./scripts/install-golangci-lint.sh v1.55.0
 
 .PHONY: serve-swagger-ui
 serve-swagger-ui: install-tools
-	swagger validate --stop-on-error ./swagger.yaml 
+	swagger validate --stop-on-error ./swagger.yaml
 	swagger serve -F swagger ./swagger.yaml
