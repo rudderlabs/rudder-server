@@ -78,16 +78,6 @@ run-mt: ## Run rudder-server in multi-tenant deployment type
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-
-install-tools:
-	go install github.com/golang/mock/mockgen@v1.6.0
-	go install mvdan.cc/gofumpt@latest
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
-	go install gotest.tools/gotestsum@v1.10.0
-	go install golang.org/x/tools/cmd/goimports@latest
-	bash ./scripts/install-golangci-lint.sh v1.55.0
-
 .PHONY: lint
 lint: fmt ## Run linters on all go files
 	golangci-lint run -v --timeout 5m
