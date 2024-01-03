@@ -51,16 +51,22 @@ func WithDrainConcurrencyLimit(drainLimit misc.ValueLoader[int]) OptFn {
 }
 
 // WithDebugInfoProvider sets the debug info provider for the barrier (used for debugging purposes in case an illegal job sequence is detected)
-func WithDebugInfoProvider(debugInfoProvider func(key string) string) OptFn {
+func WithDebugInfoProvider(debugInfoProvider func(key BarrierKey) string) OptFn {
 	return func(b *Barrier) {
 		b.debugInfo = debugInfoProvider
+	}
+}
+
+func WithOrderingDisabledCheckForBarrierKey(orderingDisabledForKey func(key BarrierKey) bool) OptFn {
+	return func(b *Barrier) {
+		b.orderingDisabledForKey = orderingDisabledForKey
 	}
 }
 
 // NewBarrier creates a new properly initialized Barrier
 func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
-		barriers:                 make(map[string]*barrierInfo),
+		barriers:                 make(map[BarrierKey]*barrierInfo),
 		metadata:                 make(map[string]string),
 		eventOrderKeyThreshold:   misc.SingleValueLoader(0),
 		disabledStateDuration:    misc.SingleValueLoader(10 * time.Minute),
@@ -88,7 +94,7 @@ func NewBarrier(fns ...OptFn) *Barrier {
 type Barrier struct {
 	mu       sync.RWMutex // mutex to synchronize concurrent access to the barrier's methods
 	queue    []command
-	barriers map[string]*barrierInfo
+	barriers map[BarrierKey]*barrierInfo
 	metadata map[string]string
 
 	eventOrderKeyThreshold   misc.ValueLoader[int] // maximum number of concurrent jobs for a given key (0 means no threshold)
@@ -97,13 +103,23 @@ type Barrier struct {
 
 	drainLimit misc.ValueLoader[int] // maximum number of concurrent jobs to accept after a previously failed job has been aborted
 
-	debugInfo func(key string) string
+	debugInfo func(key BarrierKey) string
+
+	orderingDisabledForKey func(key BarrierKey) bool
+}
+
+type BarrierKey struct {
+	DestinationID, UserID, WorkspaceID string
+}
+
+func (bk *BarrierKey) String() string {
+	return fmt.Sprintf("%s:%s:%s", bk.WorkspaceID, bk.DestinationID, bk.UserID)
 }
 
 // Enter the barrier for this key and jobID. If there is not already a barrier for this key
 // returns true, otherwise false along with the previous failed jobID if this is the cause of the barrier.
 // Another scenario where a barrier might exist for a key is when the previous job has failed in an unrecoverable manner and the drain limiter is enabled.
-func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJobID *int64) {
+func (b *Barrier) Enter(key BarrierKey, jobID int64) (accepted bool, previousFailedJobID *int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	barrier, ok := b.barriers[key]
@@ -122,6 +138,12 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 
 	// if the barrier is in a disabled state, accept the job
 	if barrier.state == stateDisabled {
+		return true, nil
+	}
+
+	if b.orderingDisabledForKey != nil && b.orderingDisabledForKey(key) {
+		barrier.state = stateDisabled
+		barrier.stateTime = time.Now()
 		return true, nil
 	}
 
@@ -171,7 +193,7 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 // Leave the barrier for this key and jobID. Leave acts as an undo operation for Enter, i.e.
 // when a previously-entered job leaves the barrier it is as if this key and jobID didn't enter the barrier.
 // Calling Leave is idempotent.
-func (b *Barrier) Leave(key string, jobID int64) {
+func (b *Barrier) Leave(key BarrierKey, jobID int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	// remove the job from the active limiters
@@ -184,7 +206,7 @@ func (b *Barrier) Leave(key string, jobID int64) {
 }
 
 // Peek returns the previously failed jobID for the given key, if any
-func (b *Barrier) Peek(key string) (previousFailedJobID *int64) {
+func (b *Barrier) Peek(key BarrierKey) (previousFailedJobID *int64) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	barrier, ok := b.barriers[key]
@@ -196,7 +218,7 @@ func (b *Barrier) Peek(key string) (previousFailedJobID *int64) {
 }
 
 // Wait returns true if the job for this key shouldn't continue, but wait (transition to a waiting state)
-func (b *Barrier) Wait(key string, jobID int64) (wait bool, previousFailedJobID *int64) {
+func (b *Barrier) Wait(key BarrierKey, jobID int64) (wait bool, previousFailedJobID *int64) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	barrier, ok := b.barriers[key]
@@ -227,7 +249,7 @@ func (b *Barrier) Wait(key string, jobID int64) (wait bool, previousFailedJobID 
 // StateChanged must be called at the end, after the job state change has been persisted.
 // The only exception to this rule is when a job has failed in a retryable manner, in this scenario you should notify the barrier immediately after the failure.
 // An [ErrUnsupportedState] error will be returned if the state is not supported.
-func (b *Barrier) StateChanged(key string, jobID int64, state string) error {
+func (b *Barrier) StateChanged(key BarrierKey, jobID int64, state string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -269,7 +291,7 @@ func (b *Barrier) Sync() int {
 }
 
 // Disabled returns [true] if the barrier is disabled for this key, [false] otherwise
-func (b *Barrier) Disabled(key string) bool {
+func (b *Barrier) Disabled(key BarrierKey) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	barrier, ok := b.barriers[key]
@@ -386,7 +408,7 @@ type command interface {
 }
 
 type cmd struct {
-	key   string
+	key   BarrierKey
 	jobID int64
 }
 

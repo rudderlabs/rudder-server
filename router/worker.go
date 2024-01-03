@@ -122,7 +122,11 @@ func (w *worker) workLoop() {
 			}
 
 			if w.rt.guaranteeUserEventOrder {
-				orderKey := jobOrderKey(userID, parameters.DestinationID)
+				orderKey := eventorder.BarrierKey{
+					UserID:        userID,
+					DestinationID: parameters.DestinationID,
+					WorkspaceID:   job.WorkspaceId,
+				}
 				if wait, previousFailedJobID := w.barrier.Wait(orderKey, job.JobID); wait {
 					previousFailedJobIDStr := "<nil>"
 					if previousFailedJobID != nil {
@@ -801,7 +805,11 @@ func (w *worker) hydrateRespStatusCodes(destinationJob types.DestinationJobT, re
 func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT, respStatusCodes map[int64]int) {
 	for _, metadata := range destinationJob.JobMetadataArray {
 		if !isJobTerminated(respStatusCodes[metadata.JobID]) {
-			orderKey := jobOrderKey(metadata.UserID, metadata.DestinationID)
+			orderKey := eventorder.BarrierKey{
+				UserID:        metadata.UserID,
+				DestinationID: metadata.DestinationID,
+				WorkspaceID:   metadata.WorkspaceID,
+			}
 			if w.rt.guaranteeUserEventOrder && !w.barrier.Disabled(orderKey) { // if barrier is disabled, we shouldn't need to track the failed job
 				failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
 			}
@@ -981,7 +989,11 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		if w.rt.guaranteeUserEventOrder {
 			if status.JobState == jobsdb.Failed.State {
 
-				orderKey := jobOrderKey(destinationJobMetadata.UserID, destinationJobMetadata.DestinationID)
+				orderKey := eventorder.BarrierKey{
+					UserID:        destinationJobMetadata.UserID,
+					DestinationID: destinationJobMetadata.DestinationID,
+					WorkspaceID:   destinationJobMetadata.WorkspaceID,
+				}
 				w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
 				if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
 					panic(err)

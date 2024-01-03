@@ -110,6 +110,9 @@ type Handle struct {
 	startEnded                     chan struct{}
 	barrier                        *eventorder.Barrier
 
+	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
+	eventOrderingDisabledForDestination func(destinationID string) bool
+
 	limiter struct {
 		pickup    kitsync.Limiter
 		transform kitsync.Limiter
@@ -193,7 +196,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	var statusList []*jobsdb.JobStatusT
 	var reservedJobs []reservedJob
-	blockedOrderKeys := make(map[string]struct{})
+	blockedOrderKeys := make(map[eventorder.BarrierKey]struct{})
 
 	flushTime := time.Now()
 	shouldFlush := func() bool {
@@ -482,7 +485,15 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			if status != jobsdb.Failed.State {
 				orderKey := jobOrderKey(userID, gjson.GetBytes(resp.job.Parameters, "destination_id").String())
 				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.id, resp.status.JobID, orderKey, status)
-				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
+				if err := worker.barrier.StateChanged(
+					eventorder.BarrierKey{
+						UserID:        userID,
+						DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
+						WorkspaceID:   resp.job.WorkspaceId,
+					},
+					resp.status.JobID,
+					status,
+				); err != nil {
 					panic(err)
 				}
 			}
@@ -522,7 +533,7 @@ type workerJobSlot struct {
 	drainReason string
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerJobSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
@@ -533,14 +544,21 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrParamsUnmarshal
 	}
 
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+	orderKey := eventorder.BarrierKey{
+		UserID:        job.UserID,
+		DestinationID: parameters.DestinationID,
+		WorkspaceID:   job.WorkspaceId,
+	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
-	if !eventOrderingDisabled && rt.barrier.Disabled(orderKey) {
+	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
+		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
+			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
 		eventOrderingDisabled = true
 		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
 			"destType":      rt.destType,
 			"destinationId": parameters.DestinationID,
+			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
 	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to its worker right away
