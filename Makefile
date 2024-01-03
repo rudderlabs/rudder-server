@@ -107,9 +107,17 @@ proto: install-tools ## Generate protobuf files
 bench-kafka:
 	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
 
+install-tools:
+	go install github.com/golang/mock/mockgen@v1.6.0
+	go install mvdan.cc/gofumpt@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+	go install gotest.tools/gotestsum@v1.10.0
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/go-swagger/go-swagger/cmd/swagger@latest. <- swagger dependency
+	bash ./scripts/install-golangci-lint.sh v1.55.0
+
 .PHONY: serve-swagger-ui
 serve-swagger-ui: install-tools
-	go install github.com/go-swagger/go-swagger/cmd/swagger@latest
-	swagger validate --stop-on-error ./swagger.yaml
-	swagger serve ./swagger.yaml 
+	swagger validate --stop-on-error ./swagger.yaml 
 	swagger serve -F swagger ./swagger.yaml
