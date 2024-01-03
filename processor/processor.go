@@ -1559,17 +1559,26 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 
 		sourceID := eventParams.SourceId
-		ctx := stats.InjectTraceParentIntoContext(context.Background(), eventParams.TraceParent)
-		_, span := proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-			"workspaceId": batchEvent.WorkspaceId,
-			"sourceId":    sourceID,
-		}))
-		spans = append(spans, span)
+		traceParent := eventParams.TraceParent
+
+		var span stats.TraceSpan
+		if traceParent == "" {
+			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
+		} else {
+			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+				"workspaceId": batchEvent.WorkspaceId,
+				"sourceId":    sourceID,
+			}))
+			spans = append(spans, span)
+		}
 
 		var gatewayBatchEvent types.GatewayBatchRequest
 		err = jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent)
 		if err != nil {
-			span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
+			if span != nil {
+				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
+			}
 			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
@@ -1593,7 +1602,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		source, err := proc.getSourceBySourceID(sourceID)
 		if err != nil {
-			span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
+			if span != nil {
+				span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
+			}
 			continue
 		}
 
