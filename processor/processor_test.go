@@ -1692,7 +1692,25 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
+				require.JSONEq(GinkgoT(), `{
+					"source_id":"source-from-transformer",
+					"destination_id":"destination-from-transformer",
+					"received_at":"",
+					"transform_at":"processor",
+					"message_id":"",
+					"gateway_job_id":0,
+					"source_task_run_id":"",
+					"source_job_id":"",
+					"source_job_run_id":"",
+					"event_name":"",
+					"event_type":"",
+					"source_definition_id":"",
+					"destination_definition_id":"",
+					"source_category":"",
+					"record_id":null,
+					"workspaceId":"",
+					"traceparent":""
+				}`, string(job.Parameters))
 			}
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -1932,7 +1950,25 @@ var _ = Describe("Processor", Ordered, func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
+				require.JSONEq(GinkgoT(), `{
+					"source_id": "source-from-transformer",
+					"destination_id": "destination-from-transformer",
+					"received_at": "",
+					"transform_at": "processor",
+					"message_id": "",
+					"gateway_job_id": 0,
+					"source_task_run_id": "",
+					"source_job_id": "",
+					"source_job_run_id": "",
+					"event_name": "",
+					"event_type": "",
+					"source_definition_id": "",
+					"destination_definition_id": "",
+					"source_category": "",
+					"record_id": null,
+					"workspaceId": "",
+					"traceparent": ""
+				}`, string(job.Parameters))
 			}
 
 			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
