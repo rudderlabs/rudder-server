@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -181,18 +182,29 @@ var _ = Describe("Proxy Request", func() {
 
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
-				Return(transformer.ProxyRequestResponse{
-					ProxyRequestStatusCode:   200,
-					ProxyRequestResponseBody: "OK",
-					RespContentType:          "application/json",
-					RespStatusCodes: map[int64]int{
-						1: 200,
-						2: 201,
-					},
-					RespBodys: map[int64]string{
-						1: "ok1",
-						2: "ok2",
-					},
+				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
+					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
+					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
+					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
+					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					}))
+
+					return transformer.ProxyRequestResponse{
+						ProxyRequestStatusCode:   200,
+						ProxyRequestResponseBody: "OK",
+						RespContentType:          "application/json",
+						RespStatusCodes: map[int64]int{
+							1: 200,
+							2: 201,
+						},
+						RespBodys: map[int64]string{
+							1: "ok1",
+							2: "ok2",
+						},
+					}
 				})
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
@@ -220,6 +232,11 @@ var _ = Describe("Proxy Request", func() {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: gaDestinationID,
+					Config: map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					},
 				},
 				Batched:    false,
 				StatusCode: 200,
@@ -256,18 +273,29 @@ var _ = Describe("Proxy Request", func() {
 
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
-				Return(transformer.ProxyRequestResponse{
-					ProxyRequestStatusCode:   400,
-					ProxyRequestResponseBody: "Err",
-					RespContentType:          "application/json",
-					RespStatusCodes: map[int64]int{
-						1: 400,
-						2: 401,
-					},
-					RespBodys: map[int64]string{
-						1: "err1",
-						2: "err2",
-					},
+				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
+					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
+					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
+					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
+					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					}))
+
+					return transformer.ProxyRequestResponse{
+						ProxyRequestStatusCode:   400,
+						ProxyRequestResponseBody: "Err",
+						RespContentType:          "application/json",
+						RespStatusCodes: map[int64]int{
+							1: 400,
+							2: 401,
+						},
+						RespBodys: map[int64]string{
+							1: "err1",
+							2: "err2",
+						},
+					}
 				})
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
@@ -295,6 +323,11 @@ var _ = Describe("Proxy Request", func() {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: gaDestinationID,
+					Config: map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: map[string]interface{}{
 							"auth": map[string]interface{}{
@@ -338,18 +371,29 @@ var _ = Describe("Proxy Request", func() {
 
 			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
-				Return(transformer.ProxyRequestResponse{
-					ProxyRequestStatusCode:   400,
-					ProxyRequestResponseBody: "Err",
-					RespContentType:          "application/json",
-					RespStatusCodes: map[int64]int{
-						1: 500,
-						2: 501,
-					},
-					RespBodys: map[int64]string{
-						1: "err1",
-						2: "err2",
-					},
+				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
+					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
+					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
+					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
+					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					}))
+
+					return transformer.ProxyRequestResponse{
+						ProxyRequestStatusCode:   400,
+						ProxyRequestResponseBody: "Err",
+						RespContentType:          "application/json",
+						RespStatusCodes: map[int64]int{
+							1: 500,
+							2: 501,
+						},
+						RespBodys: map[int64]string{
+							1: "err1",
+							2: "err2",
+						},
+					}
 				})
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
@@ -377,6 +421,11 @@ var _ = Describe("Proxy Request", func() {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: gaDestinationID,
+					Config: map[string]interface{}{
+						"x": map[string]interface{}{
+							"y": "z",
+						},
+					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: map[string]interface{}{
 							"auth": map[string]interface{}{
