@@ -208,7 +208,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
 	}).LastValue(), float64(20))
-
+	require.Len(t, statsStore.GetAll(), 5)
 	t.Cleanup(func() {
 		cancel()
 		<-subscribeDone
