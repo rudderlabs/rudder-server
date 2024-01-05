@@ -862,7 +862,6 @@ func TestHTTPApi(t *testing.T) {
 
 			t.Run("fetch tables", func(t *testing.T) {
 				for _, u := range []string{
-					fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
 					fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
 				} {
 					req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`

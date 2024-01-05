@@ -172,8 +172,6 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 
 			r.Post("/jobs", a.logMiddleware(a.sourceManager.InsertJobHandler))       // TODO: add degraded mode
 			r.Get("/jobs/status", a.logMiddleware(a.sourceManager.StatusJobHandler)) // TODO: add degraded mode
-
-			r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
 		})
 	})
 	r.Route("/internal", func(r chi.Router) {
