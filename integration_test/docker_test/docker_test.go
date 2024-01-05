@@ -136,38 +136,39 @@ func TestMainFlow(t *testing.T) {
 
 	t.Run("postgres", func(t *testing.T) {
 		var myEvent event
+
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		err := db.QueryRow(eventSql).Scan(&myEvent.count)
-		require.NoError(t, err)
-		require.Equal(t, myEvent.count, "2")
+		require.Eventually(t, func() bool {
+			eventSql := "select count(*) from dev_integration_test_1.identifies;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
+			return myEvent.count == "2"
+		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		eventSql := "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies;"
+		err := db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.contextID, "0.0.0.0")
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.users"
+			eventSql := "select count(*) from dev_integration_test_1.users;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
+		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users;"
 		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
@@ -175,26 +176,21 @@ func TestMainFlow(t *testing.T) {
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-			err = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
-			require.NoError(t, err)
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.screens"
-			err = db.QueryRow(eventSql).Scan(&myEvent.count)
-			require.NoError(t, err)
+			eventSql := "select count(*) from dev_integration_test_1.screens;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		require.Eventually(t, func() bool {
-			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-			err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
-			require.NoError(t, err)
-			return myEvent.myUniqueID == "identified_user_idanonymousId_1"
-		}, time.Minute, 10*time.Millisecond)
-
+		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+		err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+		require.NoError(t, err)
+		require.Equal(t, myEvent.myUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.propKey, "prop_value_edited")
 		require.Equal(t, myEvent.ip, "0.0.0.0")
 	})
