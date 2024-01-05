@@ -96,7 +96,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
-	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config)})
+	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
 	g.Go(func() error {
 		syncer()
 		return nil

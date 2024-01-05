@@ -181,7 +181,7 @@ func migrate(db *sql.DB) error {
 
 // setupDBConn sets up the database connection
 func setupDBConn(conf *config.Config) (*sql.DB, error) {
-	psqlInfo := misc.GetConnectionString(conf)
+	psqlInfo := misc.GetConnectionString(conf, "drain-config")
 	if conf.IsSet("SharedDB.dsn") {
 		psqlInfo = conf.GetString("SharedDB.dsn", "")
 	}
