@@ -65,6 +65,7 @@ type Metadata struct {
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
 	OAuthAccessToken    string                            `json:"oauthAccessToken"`
+	TraceParent         string                            `json:"traceparent"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`

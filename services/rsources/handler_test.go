@@ -19,6 +19,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/ksuid"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -643,6 +644,85 @@ var _ = Describe("Using sources handler", func() {
 					}
 				}
 			}
+		})
+
+		It("should be able to add failed concurrently", func() {
+			jobRunId := newJobRunId()
+			tx0, err := resource.db.Begin()
+			Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
+			// Create a record in the rsources_failed_keys_v2 table without committing the transaction
+			_, err = tx0.Exec("INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES ($1, $2, $3, $4, $5)",
+				ksuid.New().String(), jobRunId, defaultJobTargetKey.TaskRunID, defaultJobTargetKey.SourceID, defaultJobTargetKey.DestinationID)
+			Expect(err).ShouldNot(HaveOccurred(), "it should be able to insert a record in the rsources_failed_keys_v2 table")
+			// Start 2 goroutines both trying to add failed records for the same job target key
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			g, ctx := errgroup.WithContext(ctx)
+			g.Go(func() error {
+				tx1, err := resource.db.BeginTx(ctx, nil)
+				if err != nil {
+					return fmt.Errorf("beginning tx1: %w", err)
+				}
+				if err := sh.AddFailedRecords(ctx, tx1, jobRunId, defaultJobTargetKey, []FailedRecord{
+					{Record: []byte(`"record-1"`)},
+					{Record: []byte(`"record-2"`)},
+				}); err != nil {
+					return fmt.Errorf("adding failed records during tx1: %w", err)
+				}
+				if err := tx1.Commit(); err != nil {
+					return fmt.Errorf("committing tx1: %w", err)
+				}
+				return nil
+			})
+			g.Go(func() error {
+				tx2, err := resource.db.Begin()
+				if err != nil {
+					return fmt.Errorf("beginning tx2: %w", err)
+				}
+				if err := sh.AddFailedRecords(ctx, tx2, jobRunId, defaultJobTargetKey, []FailedRecord{
+					{Record: []byte(`"record-2"`)},
+					{Record: []byte(`"record-3"`)},
+				}); err != nil {
+					return fmt.Errorf("adding failed records during tx2: %w", err)
+				}
+				if err := tx2.Commit(); err != nil {
+					return fmt.Errorf("committing tx2: %w", err)
+				}
+				return nil
+			})
+
+			// wait for the goroutines to block on the query
+			time.Sleep(1 * time.Second)
+
+			// rollback tx0 so that the goroutines can continue
+			Expect(tx0.Rollback()).ShouldNot(HaveOccurred(), "it should be able to rollback tx0")
+			Expect(g.Wait()).ShouldNot(HaveOccurred(), "it should be able to add failed records concurrently")
+
+			jobFilters := JobFilter{
+				SourceID:  []string{"source_id"},
+				TaskRunID: []string{"task_run_id"},
+			}
+
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			expcetedRecords := JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: "task_run_id",
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: "source_id",
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: "destination_id",
+							Records: []FailedRecord{
+								{Record: []byte(`"record-1"`)},
+								{Record: []byte(`"record-2"`)},
+								{Record: []byte(`"record-3"`)},
+							},
+						}},
+					}},
+				}},
+			}
+			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
 		})
 	})
 

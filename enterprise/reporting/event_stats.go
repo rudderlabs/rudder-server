@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -51,7 +52,7 @@ func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 	}
 }
 
-func (es *EventStatsReporter) Report(metrics []*types.PUReportedMetric, tx *Tx) error {
+func (es *EventStatsReporter) Report(_ context.Context, metrics []*types.PUReportedMetric, tx *Tx) error {
 	tx.AddSuccessListener(func() {
 		es.Record(metrics)
 	})

@@ -218,7 +218,8 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
@@ -353,8 +354,6 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
-
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
@@ -370,13 +369,13 @@ func TestWorkerWriter(t *testing.T) {
 			defer cancel()
 
 			limiterGroup := sync.WaitGroup{}
-			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, stats.NOP)
 			defer func() {
 				cancel()
 				limiterGroup.Wait()
 			}()
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
+			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
 
 			require.True(t, w.Work())
@@ -476,8 +475,6 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
-
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
@@ -493,13 +490,13 @@ func TestWorkerWriter(t *testing.T) {
 			defer cancel()
 
 			limiterGroup := sync.WaitGroup{}
-			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, stats.NOP)
 			defer func() {
 				cancel()
 				limiterGroup.Wait()
 			}()
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
+			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
 
 			for i := 0; i < count/eventsLimit; i++ {

@@ -79,6 +79,7 @@ type Handle struct {
 	// state
 
 	logger                         logger.Logger
+	tracer                         stats.Tracer
 	destinationResponseHandler     ResponseHandler
 	telemetry                      *Diagnostic
 	netHandle                      NetHandle
@@ -216,6 +217,13 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		statusList = nil
 	}
 
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
 	// Identify jobs which can be processed
 	var iterationInterrupted bool
 	for iterator.HasNext() {
@@ -230,6 +238,22 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		lastJob = job
 		slot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
 		if err == nil {
+			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
+			if traceParent != "" {
+				if _, ok := traces[traceParent]; !ok {
+					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+						"workspaceId":   job.WorkspaceId,
+						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
+						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
+						"destType":      rt.destType,
+					}))
+					traces[traceParent] = span
+				}
+			} else {
+				rt.logger.Debugn("traceParent is empty during router pickup", logger.NewIntField("jobId", job.JobID))
+			}
+
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -421,7 +445,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if err != nil {
 					return err
 				}
-				if err = rt.Reporting.Report(reportMetrics, tx.Tx()); err != nil {
+				if err = rt.Reporting.Report(ctx, reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 				return nil

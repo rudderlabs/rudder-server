@@ -64,7 +64,8 @@ type ProxyRequestMetadata struct {
 
 type ProxyRequestPayload struct {
 	integrations.PostParametersT
-	Metadata []ProxyRequestMetadata `json:"metadata"`
+	Metadata          []ProxyRequestMetadata `json:"metadata"`
+	DestinationConfig map[string]interface{} `json:"destinationConfig"`
 }
 
 type ProxyRequestParams struct {

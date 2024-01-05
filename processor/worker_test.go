@@ -159,6 +159,10 @@ type mockWorkerHandle struct {
 	limitsReached bool
 }
 
+func (m *mockWorkerHandle) tracer() stats.Tracer {
+	return stats.NOP.NewTracer("")
+}
+
 func (m *mockWorkerHandle) validate(t *testing.T) {
 	m.statsMu.RLock()
 	defer m.statsMu.RUnlock()

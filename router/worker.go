@@ -173,6 +173,7 @@ func (w *worker) workLoop() {
 				WorkspaceID:        parameters.WorkspaceID,
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          parameters.DontBatch,
+				TraceParent:        parameters.TraceParent,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -258,6 +259,31 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
 
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range routerJobs {
+		traceParent := job.JobMetadata.TraceParent
+		if traceParent != "" {
+			if _, ok := traces[traceParent]; !ok {
+				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+				_, span := w.rt.tracer.Start(ctx, "rt.transform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"sourceId":      job.JobMetadata.SourceID,
+					"destinationId": job.JobMetadata.DestinationID,
+					"destType":      w.rt.destType,
+				}))
+				traces[traceParent] = span
+			}
+		} else {
+			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+		}
+	}
+
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
@@ -277,6 +303,31 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 	defer func() {
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
+
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range routerJobs {
+		traceParent := job.JobMetadata.TraceParent
+		if traceParent != "" {
+			if _, ok := traces[traceParent]; !ok {
+				ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+				_, span := w.rt.tracer.Start(ctx, "rt.batchTransform", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+					"workspaceId":   job.JobMetadata.WorkspaceID,
+					"sourceId":      job.JobMetadata.SourceID,
+					"destinationId": job.JobMetadata.DestinationID,
+					"destType":      w.rt.destType,
+				}))
+				traces[traceParent] = span
+			}
+		} else {
+			w.rt.logger.Debugn("traceParent is empty during router batch transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
+		}
+	}
 
 	inputJobsLength := len(routerJobs)
 	w.rt.batchInputCountStat.Count(inputJobsLength)
@@ -307,6 +358,33 @@ func (w *worker) processDestinationJobs() {
 	defer w.batchTimeStat.RecordDuration()()
 
 	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
+
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
+	for _, job := range w.destinationJobs {
+		for _, jobMetadata := range job.JobMetadataArray {
+			traceParent := jobMetadata.TraceParent
+			if traceParent != "" {
+				if _, ok := traces[traceParent]; !ok {
+					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+					_, span := w.rt.tracer.Start(ctx, "rt.process", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+						"workspaceId":   jobMetadata.WorkspaceID,
+						"sourceId":      jobMetadata.SourceID,
+						"destinationId": jobMetadata.DestinationID,
+						"destType":      w.rt.destType,
+					}))
+					traces[traceParent] = span
+				}
+			} else {
+				w.rt.logger.Debugn("traceParent is empty during router process", logger.NewIntField("jobId", jobMetadata.JobID))
+			}
+		}
+	}
 
 	var respContentType string
 
@@ -684,8 +762,9 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	proxyReqparams := &transformer.ProxyRequestParams{
 		DestName: w.rt.destType,
 		ResponseData: transformer.ProxyRequestPayload{
-			PostParametersT: val,
-			Metadata:        m,
+			PostParametersT:   val,
+			Metadata:          m,
+			DestinationConfig: destinationJob.Destination.Config,
 		},
 		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}

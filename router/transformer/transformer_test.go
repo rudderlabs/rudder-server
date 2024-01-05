@@ -141,6 +141,10 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -180,6 +184,10 @@ func TestProxyRequest(t *testing.T) {
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
 					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
 				},
 			},
 		},
@@ -223,6 +231,10 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -264,6 +276,10 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -303,6 +319,10 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -335,6 +355,10 @@ func TestProxyRequest(t *testing.T) {
 						"XML":        map[string]interface{}{},
 					},
 					Files: map[string]interface{}{},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
 				},
 			},
 		},

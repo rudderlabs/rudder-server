@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -658,7 +659,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -675,7 +676,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -701,7 +702,7 @@ func TestIntegration(t *testing.T) {
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
-				pg := postgres.New(c, logger.NOP, memstats.New())
+				pg := postgres.New(c, logger.NOP, stats.NOP)
 				err := pg.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -753,7 +754,7 @@ func TestIntegration(t *testing.T) {
 				c := config.New()
 				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
 
-				pg := postgres.New(config.New(), logger.NOP, memstats.New())
+				pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 				err := pg.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
 
@@ -810,7 +811,7 @@ func TestIntegration(t *testing.T) {
 			appendWarehouse := th.Clone(t, warehouse)
 			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
 
-			pg := postgres.New(c, logger.NOP, memstats.New())
+			pg := postgres.New(c, logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, appendWarehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -860,7 +861,7 @@ func TestIntegration(t *testing.T) {
 			}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -883,7 +884,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -906,7 +907,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
@@ -929,7 +930,7 @@ func TestIntegration(t *testing.T) {
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
-			pg := postgres.New(config.New(), logger.NOP, memstats.New())
+			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
