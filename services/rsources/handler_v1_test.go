@@ -37,10 +37,11 @@ var _ = Describe("Using sources handler v1", func() {
 			Expect(err).NotTo(HaveOccurred())
 			resource = newDBResource(pool, "", "postgres")
 			config := JobServiceConfig{
-				LocalHostname: "postgres",
-				MaxPoolSize:   1,
-				LocalConn:     resource.externalDSN,
-				Log:           testlog.GinkgoLogger,
+				LocalHostname:       "postgres",
+				MaxPoolSize:         1,
+				LocalConn:           resource.externalDSN,
+				Log:                 testlog.GinkgoLogger,
+				ShouldSetupSharedDB: true,
 			}
 			sh = createService(config)
 		})
@@ -364,6 +365,7 @@ var _ = Describe("Using sources handler v1", func() {
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgA.internalDSN,
 				Log:                    testlog.GinkgoLogger,
+				ShouldSetupSharedDB:    true,
 			}
 
 			configB = JobServiceConfig{
@@ -373,6 +375,7 @@ var _ = Describe("Using sources handler v1", func() {
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgB.internalDSN,
 				Log:                    testlog.GinkgoLogger,
+				ShouldSetupSharedDB:    true,
 			}
 
 			// Start 2 JobServices

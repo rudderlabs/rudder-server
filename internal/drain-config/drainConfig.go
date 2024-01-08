@@ -39,15 +39,17 @@ type drainConfigManager struct {
 	wg   sync.WaitGroup
 }
 
+// NewDrainConfigManager returns a drainConfigManager
+// If migration fails while setting up drain config, drainConfigManager object will be returned along with error
+// Consumers must handle errors and non-nil drainConfigManager object according to their use case.
 func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
 	db, err := setupDBConn(conf)
 	if err != nil {
 		log.Errorw("db setup", "error", err)
 		return nil, fmt.Errorf("db setup: %v", err)
 	}
-	if err := migrate(db); err != nil {
+	if err = migrate(db); err != nil {
 		log.Errorw("db migrations", "error", err)
-		return nil, fmt.Errorf("db migrations: %v", err)
 	}
 	return &drainConfigManager{
 		log:  log,
@@ -55,7 +57,7 @@ func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfig
 		db:   db,
 
 		done: &atomic.Bool{},
-	}, nil
+	}, err
 }
 
 func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
@@ -188,9 +190,6 @@ func setupDBConn(conf *config.Config) (*sql.DB, error) {
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return nil, fmt.Errorf("db open: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("db ping: %v", err)
 	}
 	db.SetMaxIdleConns(conf.GetInt("drainConfig.maxIdleConns", 1))
 	db.SetMaxOpenConns(conf.GetInt("drainConfig.maxOpenConns", 2))
