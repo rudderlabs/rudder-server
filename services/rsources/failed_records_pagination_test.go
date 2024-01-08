@@ -43,10 +43,11 @@ func TestFailedRecords(t *testing.T) {
 	require.NoError(t, err)
 
 	service, err := NewJobService(JobServiceConfig{
-		LocalHostname: postgresContainer.Host,
-		MaxPoolSize:   1,
-		LocalConn:     postgresContainer.DBDsn,
-		Log:           logger.NOP,
+		LocalHostname:       postgresContainer.Host,
+		MaxPoolSize:         1,
+		LocalConn:           postgresContainer.DBDsn,
+		Log:                 logger.NOP,
+		ShouldSetupSharedDB: true,
 	})
 	require.NoError(t, err)
 	// Create 2 different job run ids with 10 records each
@@ -85,10 +86,11 @@ func RunFailedRecordsPerformanceTest(t testing.TB, recordCount, pageSize int) ti
 	require.NoError(t, err)
 
 	service, err := NewJobService(JobServiceConfig{
-		LocalHostname: postgresContainer.Host,
-		MaxPoolSize:   1,
-		LocalConn:     postgresContainer.DBDsn,
-		Log:           logger.NOP,
+		LocalHostname:       postgresContainer.Host,
+		MaxPoolSize:         1,
+		LocalConn:           postgresContainer.DBDsn,
+		Log:                 logger.NOP,
+		ShouldSetupSharedDB: true,
 	})
 	require.NoError(t, err)
 
