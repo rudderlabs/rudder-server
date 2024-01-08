@@ -457,7 +457,7 @@ var _ = Describe("Using sources handler v1", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 	})
 })

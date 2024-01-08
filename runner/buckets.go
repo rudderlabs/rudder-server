@@ -1,6 +1,19 @@
 package runner
 
+import "github.com/rudderlabs/rudder-go-kit/bytesize"
+
 var customBuckets = map[string][]float64{
+	"gateway.request_size": {
+		float64(10 * bytesize.B),
+		float64(100 * bytesize.B),
+		float64(1 * bytesize.KB),
+		float64(10 * bytesize.KB),
+		float64(100 * bytesize.KB),
+		float64(1 * bytesize.MB),
+		float64(3 * bytesize.MB),
+		float64(5 * bytesize.MB),
+		float64(10 * bytesize.MB),
+	},
 	"gateway.response_time": {
 		0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
 	},

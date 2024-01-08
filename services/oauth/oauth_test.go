@@ -126,6 +126,7 @@ func TestMultipleRequestsForOAuth(t *testing.T) {
 		totalGoRoutines := 5
 		var wg sync.WaitGroup
 		var allJobStatus []int
+		var allJobStatusMu sync.Mutex
 
 		dest := &backendconfig.DestinationT{
 			ID: "dId",
@@ -151,14 +152,16 @@ func TestMultipleRequestsForOAuth(t *testing.T) {
 					RudderAccountId: "accountId",
 					AuthStatus:      oauth.AuthStatusInactive,
 				})
+				allJobStatusMu.Lock()
 				allJobStatus = append(allJobStatus, status)
+				allJobStatusMu.Unlock()
 				wg.Done()
 			}()
 		}
 		wg.Wait()
 		countMap := lo.CountValues(allJobStatus)
 
-		require.Equal(t, countMap[http.StatusConflict], totalGoRoutines-1)
-		require.Equal(t, countMap[http.StatusBadRequest], 1)
+		require.Equal(t, countMap[http.StatusConflict], totalGoRoutines-1, countMap)
+		require.Equal(t, countMap[http.StatusBadRequest], 1, countMap)
 	})
 }

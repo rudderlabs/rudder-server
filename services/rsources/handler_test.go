@@ -918,7 +918,7 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 
 		It("should be able to create the same services again and not affect publications and subscriptions", func() {
@@ -1203,7 +1203,7 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 
 			jobRunId := newJobRunId()
 			addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []FailedRecord{
@@ -1270,7 +1270,7 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 
 		It("should be able to add a code column to rsources_failed_keys_v2_records table seamlessly, without affecting logical replication", func() {
@@ -1417,7 +1417,7 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 
 			jobRunId := newJobRunId()
 			addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []FailedRecord{
@@ -1484,7 +1484,7 @@ var _ = Describe("Using sources handler", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 	})
 })
