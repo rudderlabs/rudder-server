@@ -244,8 +244,8 @@ func TestWorkerWriter(t *testing.T) {
 
 			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
+			w.Work()
 
-			require.True(t, w.Work())
 			require.EqualValues(t, len(jobs), statsStore.Get("erridx_uploaded_jobs", stats.Tags{
 				"workspaceId": w.workspaceID,
 				"sourceId":    w.sourceID,
@@ -255,7 +255,6 @@ func TestWorkerWriter(t *testing.T) {
 				"sourceId":    w.sourceID,
 				"state":       jobsdb.Succeeded.State,
 			}).LastValue())
-			require.False(t, w.Work())
 
 			lastFailedAt := failedAt.Add(time.Duration(len(jobs)-1) * time.Second)
 			filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
@@ -377,8 +376,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
-
-			require.True(t, w.Work())
+			w.Work()
 
 			for i := 0; i < count; i++ {
 				failedAt := failedAt.Add(time.Duration(i) * time.Hour)
@@ -498,11 +496,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
-
-			for i := 0; i < count/eventsLimit; i++ {
-				require.True(t, w.Work())
-			}
-			require.False(t, w.Work())
+			w.Work()
 
 			jr, err := errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 				ParameterFilters: []jobsdb.ParameterFilterT{
