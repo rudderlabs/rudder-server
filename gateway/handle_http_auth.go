@@ -4,6 +4,10 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/samber/lo"
+
+	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -119,6 +123,57 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// authDestIDForSource middleware to authenticate destinationId in the X-Rudder-Destination-Id header.
+// If the destinationId is invalid, the request is rejected.
+// destinationID authentication should be performed only after source is authenticated and source is present in context
+// Following validations are performed
+//  1. Destination should be present for source config
+//  2. Destination should be enabled for the source
+func (gw *Handle) authDestIDForSource(delegate http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errorMessage, reqType string
+		var arctx *gwtypes.AuthRequestContext
+		defer func() {
+			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, reqType, arctx)
+		}()
+		reqType, ok := gwCtx.GetRequestTypeFromCtx(r.Context())
+		if !ok {
+			errorMessage = "unable to get request type from context"
+			return
+		}
+		arctx, ok = gwCtx.GetAuthRequestFromCtx(r.Context())
+		if !ok {
+			errorMessage = "unable to get AuthRequest from context"
+			return
+		}
+
+		destinationID := r.Header.Get("X-Rudder-Destination-Id")
+		if destinationID == "" {
+			// TODO: make default value true once rETL team migrates to sending destination ID in header
+			if !gw.config.GetBool("Gateway.requireDestinationIdHeader", false) {
+				delegate.ServeHTTP(w, r)
+				return
+			}
+			errorMessage = response.NoDestinationIDInHeader
+			return
+		}
+		destination, found := lo.Find(arctx.Source.Destinations, func(dest backendconfig.DestinationT) bool {
+			return dest.ID == destinationID
+		})
+		if !found {
+			errorMessage = response.InvalidDestinationID
+			return
+		}
+		if !destination.Enabled {
+			errorMessage = response.DestinationDisabled
+			return
+		}
+		arctx.DestinationID = destinationID
+		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
+	}
+}
+
 // replaySourceIDAuth middleware to authenticate sourceID in the X-Rudder-Source-Id header.
 // If the sourceID is valid, i.e. it is a replay source and enabled, the source auth info is added to the request context.
 // If the sourceID is invalid, the request is rejected.
@@ -133,6 +188,13 @@ func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc
 		}
 		delegate.ServeHTTP(w, r)
 	})
+}
+
+// sourceDestIDAuth middleware to authenticate sourceID and destinationID
+// in the X-Rudder-Source-Id and X-Rudder-Destination-Id header respectively.
+// If the sourceID or destinationID is invalid, the request is rejected.
+func (gw *Handle) sourceDestIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
+	return gw.sourceIDAuth(gw.authDestIDForSource(delegate))
 }
 
 // augmentAuthRequestContext adds source job run id and task run id from the request to the authentication context.
@@ -225,7 +287,7 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 				ReqType:  reqType,
 				Source:   "noSourceIDInHeader",
 			}
-		case response.SourceDisabled:
+		case response.SourceDisabled, response.NoDestinationIDInHeader, response.InvalidDestinationID, response.DestinationDisabled:
 			stat = gwstats.SourceStat{
 				SourceID:    arctx.SourceID,
 				WriteKey:    arctx.WriteKey,
