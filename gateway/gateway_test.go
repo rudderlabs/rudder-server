@@ -266,11 +266,14 @@ var _ = Describe("Gateway Enterprise", func() {
 
 	Context("Suppress users", func() {
 		BeforeEach(func() {
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			var err error
+			statsStore, err = memstats.New()
 			Expect(err).To(BeNil())
-			statsStore = memstats.New()
-			gateway.stats = statsStore
+
+			gateway = &Handle{}
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+
 			waitForBackendConfigInit(gateway)
 		})
 
@@ -403,7 +406,7 @@ var _ = Describe("Gateway", func() {
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -413,10 +416,9 @@ var _ = Describe("Gateway", func() {
 
 	Context("Test All endpoints", func() {
 		var (
-			gateway    *Handle
-			statsStore *memstats.Store
-			whServer   *httptest.Server
-			serverURL  string
+			gateway   *Handle
+			whServer  *httptest.Server
+			serverURL string
 		)
 
 		BeforeEach(func() {
@@ -436,14 +438,12 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
 			gateway.rrh = mockRequestHandler{}
 			gateway.webhook = c.mockWebhook
-			statsStore = memstats.New()
-			gateway.stats = statsStore
 		})
 		AfterEach(func() {
 			err := gateway.Shutdown()
@@ -521,17 +521,19 @@ var _ = Describe("Gateway", func() {
 
 	Context("Valid requests", func() {
 		var (
+			err        error
 			gateway    *Handle
 			statsStore *memstats.Store
 		)
 
 		BeforeEach(func() {
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
+
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
-			statsStore = memstats.New()
-			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -544,10 +546,13 @@ var _ = Describe("Gateway", func() {
 
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
-			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled))
+			expectedStr := []byte(fmt.Sprintf(
+				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "", "traceparent": ""}`,
+				SourceIDEnabled,
+			))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-			Expect(equals).To(Equal(true))
+			Expect(equals).To(BeTrue())
 
 			Expect(job.CustomVal).To(Equal(customVal))
 
@@ -848,19 +853,20 @@ var _ = Describe("Gateway", func() {
 
 	Context("Bots", func() {
 		var (
+			err        error
 			gateway    *Handle
 			statsStore *memstats.Store
 		)
 
 		BeforeEach(func() {
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
+
 			gateway = &Handle{}
 
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
-
-			statsStore = memstats.New()
-			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -953,19 +959,20 @@ var _ = Describe("Gateway", func() {
 
 	Context("Rate limits", func() {
 		var (
+			err        error
 			gateway    *Handle
 			statsStore *memstats.Store
 		)
 
 		BeforeEach(func() {
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
+
 			gateway = &Handle{}
 			conf.Set("Gateway.enableRateLimit", true)
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
-
-			statsStore = memstats.New()
-			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -1046,18 +1053,19 @@ var _ = Describe("Gateway", func() {
 
 	Context("Invalid requests", func() {
 		var (
+			err        error
 			gateway    *Handle
 			statsStore *memstats.Store
 		)
 
 		BeforeEach(func() {
+			statsStore, err = memstats.New()
+			Expect(err).To(BeNil())
+
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
-
-			statsStore = memstats.New()
-			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -1335,7 +1343,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1361,7 +1369,7 @@ var _ = Describe("Gateway", func() {
 		)
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1542,7 +1550,7 @@ var _ = Describe("Gateway", func() {
 		var gateway *Handle
 		BeforeEach(func() {
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.Default, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1564,7 +1572,7 @@ var _ = Describe("Gateway", func() {
 						jobs []*jobsdb.JobT,
 					) error {
 						for idx, job := range jobs {
-							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
+							Expect(misc.IsValidUUID(job.UUID.String())).To(BeTrue())
 							Expect(job.CustomVal).To(Equal("WEBHOOK"))
 
 							var paramsMap, expectedParamsMap map[string]interface{}
@@ -1582,7 +1590,7 @@ var _ = Describe("Gateway", func() {
 							_ = json.Unmarshal(job.Parameters, &paramsMap)
 							_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-							Expect(equals).To(Equal(true))
+							Expect(equals).To(BeTrue())
 						}
 						return nil
 					}).

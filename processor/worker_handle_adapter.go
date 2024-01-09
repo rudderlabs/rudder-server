@@ -2,6 +2,7 @@ package processor
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
@@ -31,4 +32,8 @@ func (h *workerHandleAdapter) rsourcesService() rsources.JobService {
 
 func (h *workerHandleAdapter) stats() *processorStats {
 	return &h.Handle.stats
+}
+
+func (h *workerHandleAdapter) tracer() stats.Tracer {
+	return h.Handle.tracer
 }

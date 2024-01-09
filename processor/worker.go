@@ -121,42 +121,42 @@ func (w *worker) start() {
 
 // Work picks the next set of jobs from the jobsdb and returns [true] if jobs were picked, [false] otherwise
 func (w *worker) Work() (worked bool) {
-	if w.handle.config().enablePipelining {
-		start := time.Now()
-		jobs := w.handle.getJobs(w.partition)
-		afterGetJobs := time.Now()
-		if len(jobs.Jobs) == 0 {
-			return
-		}
-		worked = true
-
-		if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
-			w.logger.Error(err)
-			panic(err)
-		}
-
-		w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
-
-		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService())
-		rsourcesStats.BeginProcessing(jobs.Jobs)
-		subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
-		for _, subJob := range subJobs {
-			w.channel.preprocess <- subJob
-		}
-
-		if !jobs.LimitsReached {
-			readLoopSleep := w.handle.config().readLoopSleep
-			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
-				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep.Load()-elapsed); err != nil {
-					return
-				}
-			}
-		}
-
-		return
-	} else {
+	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
+
+	start := time.Now()
+	jobs := w.handle.getJobs(w.partition)
+	afterGetJobs := time.Now()
+	if len(jobs.Jobs) == 0 {
+		return
+	}
+	worked = true
+
+	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
+		w.logger.Error(err)
+		panic(err)
+	}
+
+	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
+
+	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService())
+	rsourcesStats.BeginProcessing(jobs.Jobs)
+	subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
+	for _, subJob := range subJobs {
+		w.channel.preprocess <- subJob
+	}
+
+	if !jobs.LimitsReached {
+		readLoopSleep := w.handle.config().readLoopSleep
+		if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
+			if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep.Load()-elapsed); err != nil {
+				return
+			}
+		}
+	}
+
+	return
 }
 
 func (w *worker) SleepDurations() (min, max time.Duration) {

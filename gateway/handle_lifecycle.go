@@ -56,6 +56,7 @@ func (gw *Handle) Setup(
 	gw.config = config
 	gw.logger = logger
 	gw.stats = stat
+	gw.tracer = stat.NewTracer("gateway")
 	gw.application = application
 	gw.backendConfig = backendConfig
 	gw.jobsDB = jobsDB

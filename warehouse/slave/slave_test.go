@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
@@ -103,9 +103,9 @@ func TestSlave(t *testing.T) {
 	slave := New(
 		config.New(),
 		logger.NOP,
-		memstats.New(),
+		stats.NOP,
 		slaveNotifier,
-		bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+		bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 		constraints.New(config.New()),
 		encoding.NewFactory(config.New()),
 	)

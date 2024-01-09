@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
@@ -62,6 +62,12 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 			},
 			{
 				"Deltalake user does not have permission to create on catalog", warehouseutils.DELTALAKE, errors.New("{\"creating_remote_schema_failed\":{\"attempt\":2,\"errors\":[\"error while executing with response: [42000] [Simba][Hardy] (80) Syntax or semantic analysis error thrown in server while executing query. Error message from server: org.apache.hive.service.cli.HiveSQLException: Error running query: java.lang.SecurityException: User does not have permission CREATE on CATALOG.\tat org.apache.spark.sql.hive.thriftserver.HiveThriftServerErrors$.runningQueryError(HiveThriftServerErrors.sc (80) (SQLExecDirectW)\"]}}"), model.PermissionError,
+			},
+			{
+				"Deltalake endpoint not found", warehouseutils.DELTALAKE, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":5,\"errors\":[\"fetching schema from warehouse: fetching schema: creating schema: checking if schema exists: schema exists: databricks: request error: error connecting: host=*** port=***, httpPath=***: databricks: request error: open session request error: Post ***: ENDPOINT_NOT_FOUND: SQL warehouse *** does not exist at all in the database: request error after 1 attempt(s): unexpected HTTP status 404 Not Found\"]}}"), model.ResourceNotFoundError,
+			},
+			{
+				"Deltalake resource does not exist", warehouseutils.DELTALAKE, errors.New("{\"fetching_remote_schema_failed\":{\"attempt\":2,\"errors\":[\"fetching schema from warehouse: fetching schema: creating schema: checking if schema exists: schema exists: databricks: request error: error connecting: host=*** port=443, httpPath=***: databricks: request error: open session request error: Post ***: RESOURCE_DOES_NOT_EXIST: No cluster found matching: ***: request error after 1 attempt(s): unexpected HTTP status 404 Not Found\"]}}"), model.ResourceNotFoundError,
 			},
 
 			{
@@ -179,7 +185,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				m, err := manager.New(tc.destType, config.New(), logger.NOP, memstats.New())
+				m, err := manager.New(tc.destType, config.New(), logger.NOP, stats.NOP)
 				require.NoError(t, err)
 
 				er := &router.ErrorHandler{Mapper: m}
@@ -191,7 +197,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 	})
 
 	t.Run("UnKnown errors", func(t *testing.T) {
-		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, memstats.New())
+		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, stats.NOP)
 		require.NoError(t, err)
 
 		er := &router.ErrorHandler{Mapper: m}
@@ -206,7 +212,7 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 	})
 
 	t.Run("Nil error: ", func(t *testing.T) {
-		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, memstats.New())
+		m, err := manager.New(warehouseutils.RS, config.New(), logger.NOP, stats.NOP)
 		require.NoError(t, err)
 
 		er := &router.ErrorHandler{Mapper: m}

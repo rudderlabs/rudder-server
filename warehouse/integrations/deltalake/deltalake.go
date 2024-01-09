@@ -109,6 +109,14 @@ var errorsMappings = []model.JobError{
 		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`SecurityException: User does not have permission CREATE on CATALOG`),
 	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`ENDPOINT_NOT_FOUND`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`RESOURCE_DOES_NOT_EXIST`),
+	},
 }
 
 type Deltalake struct {

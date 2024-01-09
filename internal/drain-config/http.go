@@ -41,3 +41,9 @@ func (dcm *drainConfigManager) insert(ctx context.Context, key, value string) er
 	}
 	return nil
 }
+
+func ErrorResponder(errMsg string) http.Handler {
+	return http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, errMsg, http.StatusInternalServerError)
+	}))
+}
