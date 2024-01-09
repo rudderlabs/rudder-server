@@ -45,16 +45,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/track:
     post:
       tags:
@@ -81,16 +78,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/page:
     post:
       tags:
@@ -117,16 +111,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/screen:
     post:
       tags:
@@ -154,16 +145,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/group:
     post:
       tags:
@@ -192,16 +180,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/alias:
     post:
       tags:
@@ -226,16 +211,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
   /v1/batch:
     post:
       tags:
@@ -262,16 +244,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
 
   /internal/v1/extract:
     post:
@@ -292,16 +271,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
       security:
         - writeKeyAuth: []
   /internal/v1/retl:
@@ -323,16 +299,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
       security:
         - writeKeyAuth: []
   /internal/v1/audiencelist:
@@ -354,16 +327,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
       security:
         - writeKeyAuth: []
   /internal/v1/replay:
@@ -385,16 +355,13 @@ paths:
           description: Invalid request
         '401':
           description: Invalid Authorization Header
-        '402':
-          description: Non Identifiable Request
         '403':
           description: Request Body Read Failed
         '413':
           description: Request size too large
         '429':
           description: Too many requests
-        '498':
-          description: Missing Authorization Header
+      
       security:
         - writeKeyAuth: []
 
