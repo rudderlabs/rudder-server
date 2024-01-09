@@ -3088,7 +3088,7 @@ func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
-func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId string, destinationID string) bool {
+func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId, destinationID string) bool {
 	enabledDestTypes := integrations.FilterClientIntegrations(
 		event,
 		proc.getBackendEnabledDestinationTypes(sourceId),
