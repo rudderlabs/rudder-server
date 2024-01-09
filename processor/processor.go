@@ -1734,7 +1734,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			// event will be dropped if no valid destination is present
 			// if empty string destinationID is all the destinations for the source is validated
 			// else only passed destinationID will be validated
-			if !proc.isDestinationAvailable(singularEvent, sourceId, destinationID) {
+			if !proc.isDestinationAvailable(singularEvent, sourceID, destinationID) {
 				continue
 			}
 
