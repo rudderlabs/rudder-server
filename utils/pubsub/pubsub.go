@@ -120,17 +120,17 @@ type listener struct {
 	// the last value waiting to be published to the channel
 	lastValue *DataEvent
 
-	// used for initialization
-	startedOnce sync.Once
 	// channel for signaling the loop to read a new value
 	ping chan struct{}
 }
 
 func newListener(channel chan DataEvent) *listener {
-	return &listener{
+	l := &listener{
 		ping:    make(chan struct{}, 1),
 		channel: channel,
 	}
+	go l.startLoop()
+	return l
 }
 
 // publish sets the publisher's lastValue and starts the
@@ -139,12 +139,6 @@ func (r *listener) publish(data *DataEvent) {
 	r.lastValueLock.Lock()
 	r.lastValue = data
 	r.lastValueLock.Unlock()
-
-	r.startedOnce.Do(func() {
-		r.ping = make(chan struct{}, 1)
-		go r.startLoop()
-	})
-
 	select {
 	case r.ping <- struct{}{}: // signals the startLoop that it has to read the value
 	default:
@@ -166,7 +160,5 @@ func (r *listener) startLoop() {
 }
 
 func (r *listener) close() {
-	if r.ping != nil {
-		close(r.ping)
-	}
+	close(r.ping)
 }
