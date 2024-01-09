@@ -388,7 +388,6 @@ func TestExtractErrorDetails(t *testing.T) {
 
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
 	for _, tc := range testCases {
-
 		t.Run(tc.caseDescription, func(t *testing.T) {
 			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
 
