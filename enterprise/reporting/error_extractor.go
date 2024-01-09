@@ -62,6 +62,10 @@ var (
 	}
 )
 
+var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ int, key string) string {
+	return strings.ToLower(key)
+})
+
 type ExtractorHandle struct {
 	log                              logger.Logger
 	ErrorMessageKeys                 []string // the keys where in we may have error message
@@ -294,7 +298,7 @@ func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
 	var errorCode string
 
 	errorMessage = strings.ToLower(errorMessage)
-	for keyword, s := range deprecationKeywords {
+	for keyword, s := range lowercasedDeprecationKeywords {
 		if strings.Contains(errorMessage, keyword) {
 			score += s
 		}
