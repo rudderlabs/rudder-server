@@ -166,7 +166,8 @@ func TestNotifier(t *testing.T) {
 			Priority:     50,
 		}
 
-		statsStore := memstats.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		c := config.New()
 		c.Set("PgNotifier.maxAttempt", 1)
@@ -179,7 +180,7 @@ func TestNotifier(t *testing.T) {
 		g, gCtx := errgroup.WithContext(groupCtx)
 
 		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
-		err := n.Setup(groupCtx, pgResource.DBDsn)
+		err = n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		const (
@@ -502,9 +503,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		statsStore := memstats.New()
-
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 

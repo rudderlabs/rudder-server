@@ -13,9 +13,9 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 
 	// mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/stretchr/testify/assert"

@@ -41,6 +41,7 @@ type Handle struct {
 	config          *config.Config
 	logger          logger.Logger
 	stats           stats.Stats
+	tracer          stats.Tracer
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
@@ -261,8 +262,9 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 // - user in the payload is not allowed to send events (suppressed)
 func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, err error) {
 	var (
-		arctx    = req.authContext
-		sourceID = arctx.SourceID
+		arctx         = req.authContext
+		sourceID      = arctx.SourceID
+		destinationID = arctx.DestinationID
 		// Should be function of body
 		workspaceId  = arctx.WorkspaceID
 		userIDHeader = req.userIDHeader
@@ -271,6 +273,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// values retrieved from first event in batch
 		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
+
+		// tracing
+		traceParent = req.traceParent
 	)
 
 	fillMessageID := func(event map[string]interface{}) {
@@ -423,10 +428,14 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		return
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"source_id":          sourceID,
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
+		"traceparent":        traceParent,
+	}
+	if len(destinationID) != 0 {
+		params["destination_id"] = destinationID
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {
@@ -588,6 +597,20 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 	}
 	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, authContext: arctx, ipAddr: ipAddr, userIDHeader: userIDHeader}
+
+	traceParent := stats.GetTraceParentFromContext(req.Context())
+	if traceParent == "" {
+		gw.logger.Debugw("traceParent not found in request")
+	}
+
+	webReq := webRequestT{
+		done:           done,
+		reqType:        reqType,
+		requestPayload: requestPayload,
+		authContext:    arctx,
+		traceParent:    traceParent,
+		ipAddr:         ipAddr,
+		userIDHeader:   userIDHeader,
+	}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
