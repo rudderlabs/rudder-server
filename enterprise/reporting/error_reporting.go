@@ -180,7 +180,17 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
-		_, err = stmt.ExecContext(ctx,
+
+		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
+			"namespace":     edr.namespace,
+			"errorCode":     errDets.ErrorCode,
+			"workspaceId":   workspaceID,
+			"destType":      destinationDetail.destType,
+			"sourceId":      metric.ConnectionDetails.SourceID,
+			"destinationId": metric.ConnectionDetails.DestinationID,
+		}).Count(int(metric.StatusDetail.Count))
+
+		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
 			edr.instanceID,
@@ -240,8 +250,10 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg)
 	return errorDetails{
 		ErrorMessage: cleanedErrMsg,
+		ErrorCode:    errorCode,
 	}
 }
 

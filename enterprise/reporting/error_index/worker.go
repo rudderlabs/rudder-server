@@ -110,43 +110,47 @@ func newWorker(
 // 3. If job limits are not reached and upload frequency is not met, returns.
 // 4. Uploads jobs to object storage.
 // 5. Updates job status in the jobsDB.
-func (w *worker) Work() (worked bool) {
-	jobResult, err := w.fetchJobs()
-	if err != nil && w.lifecycle.ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		panic(fmt.Errorf("failed to fetch jobs for error index: %s", err.Error()))
-	}
-	if len(jobResult.Jobs) == 0 {
-		return
-	}
-	if !jobResult.LimitsReached && time.Since(w.lastUploadTime) < w.config.uploadFrequency {
-		return
-	}
+func (w *worker) Work() bool {
+	for {
+		jobResult, err := w.fetchJobs()
+		if err != nil && w.lifecycle.ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to fetch jobs for error index: %s", err.Error()))
+		}
+		if len(jobResult.Jobs) == 0 {
+			return false
+		}
+		if !jobResult.LimitsReached && time.Since(w.lastUploadTime) < w.config.uploadFrequency {
+			return false
+		}
 
-	statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
-	if err != nil {
-		w.log.Warnw("failed to upload jobs", "error", err)
-		return
-	}
-	w.lastUploadTime = w.now()
+		statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
+		if err != nil {
+			w.log.Warnw("failed to upload jobs", "error", err)
+			return false
+		}
+		w.lastUploadTime = w.now()
 
-	err = w.markJobsStatus(statusList)
-	if err != nil && w.lifecycle.ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		panic(fmt.Errorf("failed to mark jobs: %s", err.Error()))
-	}
-	worked = true
+		err = w.markJobsStatus(statusList)
+		if err != nil && w.lifecycle.ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to mark jobs: %s", err.Error()))
+		}
 
-	tags := stats.Tags{
-		"workspaceId": w.workspaceID,
-		"sourceId":    w.sourceID,
+		tags := stats.Tags{
+			"workspaceId": w.workspaceID,
+			"sourceId":    w.sourceID,
+		}
+		w.statsFactory.NewTaggedStat("erridx_uploaded_jobs", stats.CountType, tags).Count(len(jobResult.Jobs))
+
+		if !jobResult.LimitsReached {
+			return true
+		}
 	}
-	w.statsFactory.NewTaggedStat("erridx_uploaded_jobs", stats.CountType, tags).Count(len(jobResult.Jobs))
-	return
 }
 
 func (w *worker) fetchJobs() (jobsdb.JobsResult, error) {
