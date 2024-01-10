@@ -16,11 +16,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
