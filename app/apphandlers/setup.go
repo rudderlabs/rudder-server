@@ -57,7 +57,7 @@ func rudderCoreWorkSpaceTableSetup() error {
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
-func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
+func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
 	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
@@ -81,6 +81,8 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 			return nil, fmt.Errorf("deployment type %s requires SharedDB.dsn to be provided", deploymentType)
 		}
 	}
+
+	rsourcesConfig.ShouldSetupSharedDB = shouldSetupSharedDB
 
 	return rsources.NewJobService(rsourcesConfig)
 }

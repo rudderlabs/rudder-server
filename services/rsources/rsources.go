@@ -203,6 +203,7 @@ type JobServiceConfig struct {
 	SubscriptionTargetConn      string
 	SkipFailedRecordsCollection bool
 	Log                         logger.Logger
+	ShouldSetupSharedDB         bool
 }
 
 // JobService manages information about jobs created by rudder-sources

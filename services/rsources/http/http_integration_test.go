@@ -34,10 +34,11 @@ func prepare(
 	require.NoError(t, err)
 
 	config := rsources.JobServiceConfig{
-		LocalHostname: postgresContainer.Host,
-		MaxPoolSize:   1,
-		LocalConn:     postgresContainer.DBDsn,
-		Log:           logger.NOP,
+		LocalHostname:       postgresContainer.Host,
+		MaxPoolSize:         1,
+		LocalConn:           postgresContainer.DBDsn,
+		Log:                 logger.NOP,
+		ShouldSetupSharedDB: true,
 	}
 	service, err = rsources.NewJobService(config)
 	require.NoError(t, err)
