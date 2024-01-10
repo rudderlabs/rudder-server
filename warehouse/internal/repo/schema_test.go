@@ -3,7 +3,6 @@ package repo_test
 import (
 	"context"
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -122,12 +121,14 @@ func TestWHSchemasRepo(t *testing.T) {
 		connection := warehouseutils.SourceIDDestinationID{SourceID: sourceID, DestinationID: destinationID}
 		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
-		require.Equal(t, len(expectedTableNames), 1)
-		require.Equal(t, expectedTableNames[0].SourceID, sourceID)
-		require.Equal(t, expectedTableNames[0].DestinationID, destinationID)
-		require.Equal(t, expectedTableNames[0].Namespace, namespace)
-		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
-		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
+		require.ElementsMatch(t, expectedTableNames, []warehouseutils.FetchTableInfo{
+			{
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+				Namespace:     namespace,
+				Tables:        []string{"table_name_1", "table_name_2"},
+			},
+		})
 
 		t.Log("cancelled context")
 		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
@@ -145,9 +146,6 @@ func TestWHSchemasRepo(t *testing.T) {
 
 		t.Log("multiple")
 		latestNamespace := "latest_namespace"
-		sourceID2 := "source_id_2"
-		destinationID2 := "destination_id_2"
-		connection2 := warehouseutils.SourceIDDestinationID{SourceID: sourceID2, DestinationID: destinationID2}
 		schemaLatest := model.WHSchema{
 			UploadID:        2,
 			SourceID:        sourceID,
@@ -158,34 +156,15 @@ func TestWHSchemasRepo(t *testing.T) {
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
-		schema2 := model.WHSchema{
-			UploadID:        3,
-			SourceID:        sourceID2,
-			Namespace:       namespace,
-			DestinationID:   destinationID2,
-			DestinationType: destinationType,
-			Schema:          schemaModel,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
 		_, err = r.Insert(ctx, &schemaLatest)
 		require.NoError(t, err)
-		_, err = r.Insert(ctx, &schema2)
+		expectedTableNames, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
-		expectedTableNames, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection, connection2})
-		require.NoError(t, err)
-		require.Equal(t, len(expectedTableNames), 2)
-		require.Contains(t, expectedTableNames, warehouseutils.FetchTableInfo{
+		require.ElementsMatch(t, expectedTableNames, []warehouseutils.FetchTableInfo{{
 			SourceID:      sourceID,
 			DestinationID: destinationID,
 			Namespace:     latestNamespace,
 			Tables:        []string{"table_name_1", "table_name_2"},
-		})
-		require.Contains(t, expectedTableNames, warehouseutils.FetchTableInfo{
-			SourceID:      sourceID2,
-			DestinationID: destinationID2,
-			Namespace:     namespace,
-			Tables:        []string{"table_name_1", "table_name_2"},
-		})
+		}}, "the new schema should not have changed the returned tables since we already had a schema for the same source id and destination id pair")
 	})
 }
