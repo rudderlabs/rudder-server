@@ -262,8 +262,9 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 // - user in the payload is not allowed to send events (suppressed)
 func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, err error) {
 	var (
-		arctx    = req.authContext
-		sourceID = arctx.SourceID
+		arctx         = req.authContext
+		sourceID      = arctx.SourceID
+		destinationID = arctx.DestinationID
 		// Should be function of body
 		workspaceId  = arctx.WorkspaceID
 		userIDHeader = req.userIDHeader
@@ -432,6 +433,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
 		"traceparent":        traceParent,
+	}
+	if len(destinationID) != 0 {
+		params["destination_id"] = destinationID
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {

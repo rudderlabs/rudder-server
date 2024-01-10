@@ -21,6 +21,8 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -195,7 +197,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
 		t.Logf("Starting postgres container")
-		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
