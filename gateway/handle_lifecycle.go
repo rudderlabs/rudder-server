@@ -331,7 +331,7 @@ func (gw *Handle) dbWriterWorkerProcess() {
 			}
 
 			// rsources stats
-			rsourcesStats := rsources.NewStatsCollector(gw.rsourcesService)
+			rsourcesStats := rsources.NewStatsCollector(gw.rsourcesService, rsources.IgnoreDestinationID())
 			rsourcesStats.JobsStoredWithErrors(lo.Flatten(jobBatches), errorMessagesMap)
 			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})

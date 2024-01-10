@@ -216,7 +216,7 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 				(source_id, destination_id) IN (` + strings.Join(sourceIDDestinationIDPairs, ", ") + `)
 			AND
 				schema::text <> '{}'::text
-			GROUP BY id
+			GROUP BY source_id, destination_id
 		)`
 	rows, err := sh.db.QueryContext(
 		ctx,
