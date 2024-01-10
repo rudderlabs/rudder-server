@@ -1,6 +1,9 @@
 package v2
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -10,9 +13,10 @@ import (
 
 type OAuthHandler struct {
 	tokenProvider
-	logger         logger.Logger
-	rudderFlowType RudderFlow
-	CpConn         *ControlPlaneConnector
+	logger          logger.Logger
+	rudderFlowType  RudderFlow
+	CpConn          *ControlPlaneConnector
+	destAuthInfoMap map[string]*AuthResponse
 }
 
 var (
@@ -53,4 +57,44 @@ func WithRudderFlow(rudderFlow RudderFlow) func(*OAuthHandler) {
 	return func(h *OAuthHandler) {
 		h.rudderFlowType = rudderFlow
 	}
+}
+
+func (oauthHandler *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse) {
+	// authStats := &OAuthStats{
+	// 	id:              fetchTokenParams.AccountId,
+	// 	workspaceId:     fetchTokenParams.WorkspaceId,
+	// 	rudderCategory:  "destination",
+	// 	statName:        "",
+	// 	isCallToCpApi:   false,
+	// 	authErrCategory: "",
+	// 	errorMessage:    "",
+	// 	destDefName:     fetchTokenParams.DestDefName,
+	// 	isTokenFetch:    true,
+	// 	flowType:        oauthHandler.rudderFlowType,
+	// 	action:          "fetch_token",
+	// }
+	return oauthHandler.GetTokenInfo(fetchTokenParams, "Fetch token")
+}
+
+func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string) (int, *AuthResponse) {
+	body := RefreshTokenBodyParams{}
+	res, err := json.Marshal(body)
+	if err != nil {
+		return 400, nil
+	}
+	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
+	cpReq := &ControlPlaneRequestT{
+		Body:           string(res),
+		ContentType:    "application/json; charset=utf-8",
+		Url:            refreshUrl,
+		destName:       refTokenParams.DestDefName,
+		Method:         http.MethodPost,
+		RequestType:    "test",
+		rudderFlowType: RudderFlow_Delivery,
+		basicAuthUser:  "",
+	}
+	statusCode, res1 := oauthHandler.CpConn.cpApiCall(cpReq)
+	res2 := &AuthResponse{}
+	json.Unmarshal([]byte(res1), res2)
+	return statusCode, res2
 }

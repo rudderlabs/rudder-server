@@ -235,7 +235,7 @@ type TrackingPlanT struct {
 }
 
 func (d *DestinationT) IsOAuthDestination() bool {
-	if authValue, err := misc.NestedMapLookup(d.Config, "auth", "type"); err == nil {
+	if authValue, err := misc.NestedMapLookup(d.DestinationDefinition.Config, "auth", "type"); err == nil {
 		if authType, ok := authValue.(string); ok {
 			return authType == "OAuth"
 		}

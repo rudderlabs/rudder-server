@@ -1,6 +1,7 @@
 package v2
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -40,4 +41,30 @@ type ControlPlaneRequestT struct {
 	// New fields
 	basicAuthUser  string
 	rudderFlowType RudderFlow
+}
+type AccountSecret struct {
+	ExpirationDate string          `json:"expirationDate"`
+	Secret         json.RawMessage `json:"secret"`
+}
+type AuthResponse struct {
+	Account      AccountSecret
+	Err          string
+	ErrorMessage string
+}
+type RefreshTokenParams struct {
+	AccountId   string
+	WorkspaceId string
+	DestDefName string
+	WorkerId    int
+	Secret      json.RawMessage
+}
+
+type Authorizer interface {
+	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
+	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
+}
+
+type RefreshTokenBodyParams struct {
+	HasExpired    bool            `json:"hasExpired"`
+	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }

@@ -131,7 +131,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
-
+		req = req.WithContext(context.WithValue(req.Context(), "destination", &transformMessage.Data[0].Destination))
 		resp, err = trans.client.Do(req)
 
 		if err == nil {

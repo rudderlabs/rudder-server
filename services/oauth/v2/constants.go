@@ -4,11 +4,11 @@ const (
 	OAuth           AuthType = "OAuth"
 	InvalidAuthType AuthType = "InvalidAuthType"
 
-	RudderFlow_Delivery RudderFlow = "delivery"
-	RudderFlow_Delete   RudderFlow = "delete"
-
-	DeleteAccountIdKey   = "rudderDeleteAccountId"
-	DeliveryAccountIdKey = "rudderAccountId"
+	RudderFlow_Delivery       RudderFlow = "delivery"
+	RudderFlow_Delete         RudderFlow = "delete"
+	RudderFlow_Transformation RudderFlow = "transformation"
+	DeleteAccountIdKey                   = "rudderDeleteAccountId"
+	DeliveryAccountIdKey                 = "rudderAccountId"
 
 	AuthStatusInactive = "inactive"
 )
