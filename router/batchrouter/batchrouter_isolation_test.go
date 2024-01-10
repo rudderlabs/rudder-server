@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -195,7 +196,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
 		t.Logf("Starting postgres container")
-		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
