@@ -82,7 +82,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.19.0
-	github.com/rudderlabs/sql-tunnels v0.1.5
+	github.com/rudderlabs/sql-tunnels v0.1.6
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.44
 	github.com/segmentio/ksuid v1.0.4
@@ -143,7 +143,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/actgardner/gogen-avro/v10 v10.2.1 // indirect
-	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v12 v12.0.1 // indirect
 	github.com/apache/thrift v0.17.0 // indirect

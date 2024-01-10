@@ -187,6 +187,7 @@ github.com/allisson/go-pglock/v2 v2.0.1 h1:6DS80/u9Et0kchyc8YP/wTFm8se7Klv/KG3DH
 github.com/allisson/go-pglock/v2 v2.0.1/go.mod h1:v9tHdoMVwA/2p0/xWoux4RSFLAHUP/d7s242ejs8PrQ=
 github.com/andybalholm/brotli v1.0.5 h1:8uQZIdzKmjc/iuPu7O2ioW48L81FgatrcpfFmiq/cCs=
 github.com/andybalholm/brotli v1.0.5/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
+github.com/andybalholm/brotli v1.0.6/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
@@ -966,6 +967,8 @@ github.com/rudderlabs/rudder-go-kit v0.19.0 h1:Q4LzoS/mGHjb4Q8Yws5UAvs92hBfPwgTL
 github.com/rudderlabs/rudder-go-kit v0.19.0/go.mod h1:UawoeYHo1KnKan4hmSbj/HW3w/U51mXSyknuTaDrhmE=
 github.com/rudderlabs/sql-tunnels v0.1.5 h1:L/e9GQtqJlTVMauAE+ym/XUqhg+Va6RZQiOvBgbhspY=
 github.com/rudderlabs/sql-tunnels v0.1.5/go.mod h1:ZwQkCLb/5hHm5U90juAj9idkkFGv2R2dzDHJoPbKIto=
+github.com/rudderlabs/sql-tunnels v0.1.6 h1:v2KA2cq8ZV5LXRJQpqigq1Q4V64oDL+XlfckW/0K2/4=
+github.com/rudderlabs/sql-tunnels v0.1.6/go.mod h1:Jew/XwojzFTK4KTDj/wvChI7iZCgAKYyKjFK1nnHlNM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ruudk/golang-pdf417 v0.0.0-20181029194003-1af4ab5afa58/go.mod h1:6lfFZQK844Gfx8o5WFuvpxWRwnSoipWe/p622j1v06w=
