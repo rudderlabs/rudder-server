@@ -69,7 +69,6 @@ require (
 	github.com/marcboeker/go-duckdb v1.5.6
 	github.com/minio/minio-go/v7 v7.0.64
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/mkmik/multierror v0.4.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
