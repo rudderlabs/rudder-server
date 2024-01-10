@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/samber/lo"
@@ -191,6 +193,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 		if err != nil {
 			return nil, fmt.Errorf("uploading aggregated payloads: %w", err)
 		}
+		w.log.Debugn("successfully uploaded aggregated payloads", logger.NewStringField("location", uploadFile.Location))
 
 		statusList = append(statusList, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) *jobsdb.JobStatusT {
 			return &jobsdb.JobStatusT{
@@ -225,7 +228,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
-	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
+	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
 
 	f, err := os.Create(filePath)
 	if err != nil {

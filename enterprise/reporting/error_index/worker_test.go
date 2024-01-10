@@ -12,10 +12,11 @@ import (
 	"path"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
@@ -257,7 +258,7 @@ func TestWorkerWriter(t *testing.T) {
 			}).LastValue())
 
 			lastFailedAt := failedAt.Add(time.Duration(len(jobs)-1) * time.Second)
-			filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+			filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s**.parquet",
 				minioResource.BucketName,
 				w.sourceID,
 				failedAt.Format("2006-01-02"),
@@ -270,7 +271,7 @@ func TestWorkerWriter(t *testing.T) {
 			require.Len(t, failedMessages, len(jobs))
 			require.EqualValues(t, payloads, failedMessages)
 
-			s3SelectPath := fmt.Sprintf("%s/%s/%s/%d_%d_%s.parquet",
+			s3SelectPathPrefix := fmt.Sprintf("%s/%s/%s/%d_%d_%s",
 				w.sourceID,
 				failedAt.Format("2006-01-02"),
 				strconv.Itoa(failedAt.Hour()),
@@ -278,8 +279,11 @@ func TestWorkerWriter(t *testing.T) {
 				lastFailedAt.Unix(),
 				instanceID,
 			)
+			objects := minioObjects(t, ctx, minioResource, s3SelectPathPrefix)
+			require.Len(t, objects, 1)
+
 			s3SelectQuery := fmt.Sprintf("SELECT message_id, source_id, destination_id, transformation_id, tracking_plan_id, failed_stage, event_type, event_name, received_at, failed_at FROM S3Object WHERE failed_at >= %d AND failed_at <= %d", failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro())
-			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, s3SelectPath, s3SelectQuery)
+			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, objects[0], s3SelectQuery)
 			slices.SortFunc(failedMessagesUsing3Select, func(a, b payload) int {
 				return a.FailedAtTime().Compare(b.FailedAtTime())
 			})
@@ -298,7 +302,17 @@ func TestWorkerWriter(t *testing.T) {
 			require.Len(t, jr.Jobs, len(jobs))
 
 			lo.ForEach(jr.Jobs, func(item *jobsdb.JobT, index int) {
-				require.EqualValues(t, string(item.LastJobStatus.ErrorResponse), fmt.Sprintf(`{"location": "%s"}`, strings.Replace(filePath, "s3://", fmt.Sprintf("http://%s/", minioResource.Endpoint), 1)))
+				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.+.parquet",
+					minioResource.Endpoint,
+					minioResource.BucketName,
+					w.sourceID,
+					failedAt.Format("2006-01-02"),
+					strconv.Itoa(failedAt.Hour()),
+					failedAt.Unix(),
+					lastFailedAt.Unix(),
+					instanceID,
+				)
+				require.Regexp(t, filePath, gjson.GetBytes(item.LastJobStatus.ErrorResponse, "location").String())
 			})
 		})
 		t.Run("multiple hours and days", func(t *testing.T) {
@@ -380,7 +394,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			for i := 0; i < count; i++ {
 				failedAt := failedAt.Add(time.Duration(i) * time.Hour)
-				filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+				filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s**.parquet",
 					minioResource.BucketName,
 					w.sourceID,
 					failedAt.Format("2006-01-02"),
@@ -406,7 +420,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			lo.ForEach(jr.Jobs, func(item *jobsdb.JobT, index int) {
 				failedAt := failedAt.Add(time.Duration(index) * time.Hour)
-				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.parquet",
+				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.+.parquet",
 					minioResource.Endpoint,
 					minioResource.BucketName,
 					w.sourceID,
@@ -416,7 +430,7 @@ func TestWorkerWriter(t *testing.T) {
 					failedAt.Unix(),
 					instanceID,
 				)
-				require.EqualValues(t, string(item.LastJobStatus.ErrorResponse), fmt.Sprintf(`{"location": "%s"}`, strings.Replace(filePath, "s3://", fmt.Sprintf("http://%s/", minioResource.Endpoint), 1)))
+				require.Regexp(t, filePath, gjson.GetBytes(item.LastJobStatus.ErrorResponse, "location").String())
 			})
 		})
 		t.Run("limits reached but few left without crossing upload frequency", func(t *testing.T) {
@@ -510,6 +524,18 @@ func TestWorkerWriter(t *testing.T) {
 			require.Len(t, jr.Jobs, 4)
 		})
 	})
+}
+
+func minioObjects(t testing.TB, ctx context.Context, mr *resource.MinioResource, prefix string) (objects []string) {
+	t.Helper()
+
+	for objInfo := range mr.Client.ListObjects(ctx, mr.BucketName, minio.ListObjectsOptions{
+		Recursive: true,
+		Prefix:    prefix,
+	}) {
+		objects = append(objects, objInfo.Key)
+	}
+	return
 }
 
 func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *resource.MinioResource, filePath, query string) []payload {
