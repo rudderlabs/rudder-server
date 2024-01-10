@@ -161,8 +161,8 @@ github.com/ClickHouse/ch-go v0.58.2 h1:jSm2szHbT9MCAB1rJ3WuCJqmGLi5UTjlNu+f530UT
 github.com/ClickHouse/ch-go v0.58.2/go.mod h1:Ap/0bEmiLa14gYjCiRkYGbXvbe8vwdrfTYWhsuQ99aw=
 github.com/ClickHouse/clickhouse-go v1.5.4 h1:cKjXeYLNWVJIx2J1K6H2CqyRmfwVJVY1OV1coaaFcI0=
 github.com/ClickHouse/clickhouse-go v1.5.4/go.mod h1:EaI/sW7Azgz9UATzd5ZdZHRUhHgv5+JMS9NSr2smCJI=
-github.com/ClickHouse/clickhouse-go/v2 v2.13.4 h1:NcvYN9ONZn3vlPMfQVUBSG5LKz+1y2wk4vaaz5QZXIg=
-github.com/ClickHouse/clickhouse-go/v2 v2.13.4/go.mod h1:u1AUh8E0XqN1sU1EDzbiGLTI4KWOd+lOHimNSsdyJec=
+github.com/ClickHouse/clickhouse-go/v2 v2.16.0 h1:rhMfnPewXPnY4Q4lQRGdYuTLRBRKJEIEYHtbUMrzmvI=
+github.com/ClickHouse/clickhouse-go/v2 v2.16.0/go.mod h1:J7SPfIxwR+x4mQ+o8MLSe0oY50NNntEqCIjFe/T1VPM=
 github.com/DATA-DOG/go-sqlmock v1.5.0 h1:Shsta01QNfFxHCfpW6YH2STWB0MudeXXEWMr20OEh60=
 github.com/DATA-DOG/go-sqlmock v1.5.0/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
 github.com/DataDog/zstd v1.5.5 h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=
@@ -185,8 +185,7 @@ github.com/alexeyco/simpletable v1.0.0 h1:ZQ+LvJ4bmoeHb+dclF64d0LX+7QAi7awsfCrpt
 github.com/alexeyco/simpletable v1.0.0/go.mod h1:VJWVTtGUnW7EKbMRH8cE13SigKGx/1fO2SeeOiGeBkk=
 github.com/allisson/go-pglock/v2 v2.0.1 h1:6DS80/u9Et0kchyc8YP/wTFm8se7Klv/KG3DHe/yN9I=
 github.com/allisson/go-pglock/v2 v2.0.1/go.mod h1:v9tHdoMVwA/2p0/xWoux4RSFLAHUP/d7s242ejs8PrQ=
-github.com/andybalholm/brotli v1.0.5 h1:8uQZIdzKmjc/iuPu7O2ioW48L81FgatrcpfFmiq/cCs=
-github.com/andybalholm/brotli v1.0.5/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
+github.com/andybalholm/brotli v1.0.6 h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=
 github.com/andybalholm/brotli v1.0.6/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
@@ -965,8 +964,6 @@ github.com/rudderlabs/parquet-go v0.0.2 h1:ZXRdZdimB0PdJtmxeSSxfI0fDQ3kZjwzBxRi6
 github.com/rudderlabs/parquet-go v0.0.2/go.mod h1:g6guum7o8uhj/uNhunnt7bw5Vabu/goI5i21/3fnxWQ=
 github.com/rudderlabs/rudder-go-kit v0.19.0 h1:Q4LzoS/mGHjb4Q8Yws5UAvs92hBfPwgTLw8aVOEsrLY=
 github.com/rudderlabs/rudder-go-kit v0.19.0/go.mod h1:UawoeYHo1KnKan4hmSbj/HW3w/U51mXSyknuTaDrhmE=
-github.com/rudderlabs/sql-tunnels v0.1.5 h1:L/e9GQtqJlTVMauAE+ym/XUqhg+Va6RZQiOvBgbhspY=
-github.com/rudderlabs/sql-tunnels v0.1.5/go.mod h1:ZwQkCLb/5hHm5U90juAj9idkkFGv2R2dzDHJoPbKIto=
 github.com/rudderlabs/sql-tunnels v0.1.6 h1:v2KA2cq8ZV5LXRJQpqigq1Q4V64oDL+XlfckW/0K2/4=
 github.com/rudderlabs/sql-tunnels v0.1.6/go.mod h1:Jew/XwojzFTK4KTDj/wvChI7iZCgAKYyKjFK1nnHlNM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
