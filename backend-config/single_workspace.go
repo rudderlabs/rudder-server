@@ -36,6 +36,12 @@ type singleWorkspaceConfig struct {
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
+	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
+
+	if wc.logger == nil {
+		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
+	}
+
 	if configFromFile {
 		if wc.configJSONPath == "" {
 			return fmt.Errorf("valid configJSONPath is required when configFromFile is set to true")
@@ -49,11 +55,6 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 		return fmt.Errorf("single workspace: empty workspace config token")
 	}
 
-	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
-
-	if wc.logger == nil {
-		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
-	}
 	wc.logger.Infon("Setup backend config complete")
 
 	return nil
