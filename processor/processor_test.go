@@ -2585,7 +2585,7 @@ var _ = Describe("Processor", Ordered, func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
-
+			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
