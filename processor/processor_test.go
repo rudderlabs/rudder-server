@@ -33,6 +33,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
+	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -2583,6 +2584,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
@@ -2601,7 +2603,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
-				getMockTransformerService(),
+				mockTransformerFeaturesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -4969,31 +4971,4 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
-}
-
-func getMockTransformerService() transformerFeaturesService.FeaturesService {
-	return &mockTransformerService{}
-}
-
-type mockTransformerService struct{}
-
-// Regulation implements transformer.FeaturesService.
-func (*mockTransformerService) Regulation() []string {
-	return []string{}
-}
-
-func (*mockTransformerService) SourceTransformerVersion() string {
-	return "random-version"
-}
-
-func (*mockTransformerService) TransformerProxyVersion() string {
-	return "random-version"
-}
-
-func (*mockTransformerService) Wait() chan struct{} {
-	return make(chan struct{})
-}
-
-func (*mockTransformerService) RouterTransform(destType string) bool {
-	return false
 }

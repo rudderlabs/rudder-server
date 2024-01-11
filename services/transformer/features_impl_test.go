@@ -132,5 +132,30 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 			Expect(handler.Regulation()).To(Equal([]string{"AM"}))
 		})
+
+		It("Get should return empty array when features doesn't have regulation", func() {
+			mockTransformerResp := `{
+				"routerTransform": {
+				  "a": true,
+				  "b": true
+				},
+				"supportSourceTransformV1": true,
+				"supportTransformerProxyV1": true
+			  }`
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(mockTransformerResp))
+				}))
+
+			handler := NewFeaturesService(context.TODO(), FeaturesServiceConfig{
+				PollInterval:             time.Duration(1),
+				TransformerURL:           transformerServer.URL,
+				FeaturesRetryMaxAttempts: 1,
+			})
+
+			<-handler.Wait()
+
+			Expect(handler.Regulation()).To(Equal([]string{}))
+		})
 	})
 })
