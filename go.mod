@@ -106,7 +106,7 @@ require (
 	golang.org/x/crypto v0.17.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/oauth2 v0.15.0
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0
 	google.golang.org/api v0.155.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231212172506-995d672761c0

@@ -22,9 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper"
@@ -86,7 +88,7 @@ func Test_RouterThrottling(t *testing.T) {
 		transformerContainer *destination.TransformerResource
 	)
 	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
 		return
 	})
 	group.Go(func() (err error) {

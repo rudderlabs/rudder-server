@@ -8,8 +8,10 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
@@ -17,7 +19,7 @@ import (
 func TestEventOrderDebugInfo(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgres, err := resource.SetupPostgres(pool, t)
+	postgres, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err)
 
 	m := &migrator.Migrator{
