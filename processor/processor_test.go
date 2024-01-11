@@ -4977,6 +4977,11 @@ func getMockTransformerService() transformerFeaturesService.FeaturesService {
 
 type mockTransformerService struct{}
 
+// Regulation implements transformer.FeaturesService.
+func (*mockTransformerService) Regulation() []string {
+	return []string{}
+}
+
 func (*mockTransformerService) SourceTransformerVersion() string {
 	return "random-version"
 }
