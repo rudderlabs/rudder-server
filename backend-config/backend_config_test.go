@@ -129,8 +129,6 @@ func TestBadResponse(t *testing.T) {
 
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("WORKSPACE_TOKEN", "foobar")
-
 			ctx := context.Background()
 			pkgLogger = logger.NOP
 			atomic.StoreInt32(&calls, 0)
