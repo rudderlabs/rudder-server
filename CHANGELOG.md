@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.19.0-rc-2](https://github.com/rudderlabs/rudder-server/compare/v1.18.0...v1.19.0-rc-2) (2024-01-10)
+
+
+### Features
+
+* add 'config' field to proxy request ([#4264](https://github.com/rudderlabs/rudder-server/issues/4264)) ([1c3fb01](https://github.com/rudderlabs/rudder-server/commit/1c3fb01f65bd74a1def1d2e8c1bd1f45340834c7))
+* add destinationID to rETL endpoint ([#4234](https://github.com/rudderlabs/rudder-server/issues/4234)) ([2c02dc2](https://github.com/rudderlabs/rudder-server/commit/2c02dc25a81cfe4aa60302d27db1bc44169ccbdc))
+* add version deprecation error-code identification logic ([#3995](https://github.com/rudderlabs/rudder-server/issues/3995)) ([866393d](https://github.com/rudderlabs/rudder-server/commit/866393d6dfd2bf9f60819bc8bfebd0c2fb2b2f54))
+* support for adaptive rate limiting [PIPE-481] ([#4160](https://github.com/rudderlabs/rudder-server/issues/4160)) ([40586e5](https://github.com/rudderlabs/rudder-server/commit/40586e51a4948ea72c698608bcaf393a9afdaa82))
+* tracing support for gateway, processor and router ([#4248](https://github.com/rudderlabs/rudder-server/issues/4248)) ([7dc7747](https://github.com/rudderlabs/rudder-server/commit/7dc7747e252214c0e0f2a39381ee96c75b4024c7))
+* warehouse append vs merge ([#4139](https://github.com/rudderlabs/rudder-server/issues/4139)) ([40586e5](https://github.com/rudderlabs/rudder-server/commit/40586e51a4948ea72c698608bcaf393a9afdaa82))
+
+
+### Bug Fixes
+
+* adapt connection timeout for sql for redshift ([#4253](https://github.com/rudderlabs/rudder-server/issues/4253)) ([1ff6f90](https://github.com/rudderlabs/rudder-server/commit/1ff6f90c895476ae2659273eaea1dca0fdb57a1c))
+* bigquery job statistics for rate limit ([#4272](https://github.com/rudderlabs/rudder-server/issues/4272)) ([9842f64](https://github.com/rudderlabs/rudder-server/commit/9842f64571f8f5cc08cce90192383e5ddc375fcf))
+* changing eventNames longer than configured max length to ":max-length-exceeded:" before sending to reporting ([#4244](https://github.com/rudderlabs/rudder-server/issues/4244)) ([719396f](https://github.com/rudderlabs/rudder-server/commit/719396fcb20e561a58d69465399f33a380fb305e))
+* **ci:** fix distpatch event action typo ([#4252](https://github.com/rudderlabs/rudder-server/issues/4252)) ([1057ee1](https://github.com/rudderlabs/rudder-server/commit/1057ee165f31e7a09a410b2d447f4c67e9ee552c))
+* exhaust error index jobs when work is called ([#4295](https://github.com/rudderlabs/rudder-server/issues/4295)) ([b7b75ad](https://github.com/rudderlabs/rudder-server/commit/b7b75ad1b45e6e5864dbc58f8e2608da1e28ab02))
+* gateway stat tags when source is disabled ([#4215](https://github.com/rudderlabs/rudder-server/issues/4215)) ([85235bb](https://github.com/rudderlabs/rudder-server/commit/85235bba0d72832f00243431c1304b6cb00485f7))
+* ignore destinationID in gateway rsources.statCollector ([#4299](https://github.com/rudderlabs/rudder-server/issues/4299)) ([eece12b](https://github.com/rudderlabs/rudder-server/commit/eece12b7df16a0068bcb595f09388a531254d14e))
+* **processor:** duplicate rsources out stats can be recorded in case of a retry due to an operation timeout ([#4223](https://github.com/rudderlabs/rudder-server/issues/4223)) ([a7c373a](https://github.com/rudderlabs/rudder-server/commit/a7c373ab89068d933bff390e4e6eb97203960e7d))
+* pubsub channel not closing during close if no value has been published ([#4269](https://github.com/rudderlabs/rudder-server/issues/4269)) ([ab0e0d9](https://github.com/rudderlabs/rudder-server/commit/ab0e0d9f6010c19126e676945961765b4f7c582f))
+* return only the latest namespace entry when fetching tables from warehouse ([#4287](https://github.com/rudderlabs/rudder-server/issues/4287)) ([8f1e6b1](https://github.com/rudderlabs/rudder-server/commit/8f1e6b10d37b3b0e6c25a84b6948d85757a71c1d))
+* server panics during shutdown with reporting metrics: failed to store jobs: context canceled ([#4228](https://github.com/rudderlabs/rudder-server/issues/4228)) ([68e52d5](https://github.com/rudderlabs/rudder-server/commit/68e52d553dba42e465958c106554b68f79a5919a))
+
+
+### Miscellaneous
+
+* adapt rudder-go-kit v0.19.0 changes ([#4227](https://github.com/rudderlabs/rudder-server/issues/4227)) ([08c0864](https://github.com/rudderlabs/rudder-server/commit/08c0864f5cb1721aaeca57c63ed490a7c9779128))
+* additional error mappings for deltalake ([#4265](https://github.com/rudderlabs/rudder-server/issues/4265)) ([35cc8e9](https://github.com/rudderlabs/rudder-server/commit/35cc8e9aef8d2eb1129149f01472a37c9914df29))
+* autofix corrupted job-status stats ([#4224](https://github.com/rudderlabs/rudder-server/issues/4224)) ([781f24f](https://github.com/rudderlabs/rudder-server/commit/781f24f546302b0e76d07ba91ffae92739495526))
+* change the max limit to take multiplier of the existing limits ([#4263](https://github.com/rudderlabs/rudder-server/issues/4263)) ([7c4cc03](https://github.com/rudderlabs/rudder-server/commit/7c4cc03eb884bb5b8c00dbd97f9015dbe10d4b69))
+* **ci:** automated deployment ([875cc54](https://github.com/rudderlabs/rudder-server/commit/875cc54c14db28202be68db55ef8f06e07537645))
+* custom buckets for gw request size ([#4275](https://github.com/rudderlabs/rudder-server/issues/4275)) ([6466a9b](https://github.com/rudderlabs/rudder-server/commit/6466a9bd25abb124f2f344e8477e1565bc1c37e1))
+* **deps:** bump actions/download-artifact from 3 to 4 ([#4240](https://github.com/rudderlabs/rudder-server/issues/4240)) ([d8d980d](https://github.com/rudderlabs/rudder-server/commit/d8d980d277015633c7b447163421ef2bc3654d5f))
+* **deps:** bump actions/labeler from 4 to 5 ([#4192](https://github.com/rudderlabs/rudder-server/issues/4192)) ([21c5fab](https://github.com/rudderlabs/rudder-server/commit/21c5fabdc484989b8105ba866fb5a2823e9232e5))
+* **deps:** bump actions/stale from 8 to 9 ([#4216](https://github.com/rudderlabs/rudder-server/issues/4216)) ([6f88c3f](https://github.com/rudderlabs/rudder-server/commit/6f88c3f5749f3d0e240f4dce37d1a1460f6883d1))
+* **deps:** bump actions/upload-artifact from 3 to 4 ([#4239](https://github.com/rudderlabs/rudder-server/issues/4239)) ([426d3bf](https://github.com/rudderlabs/rudder-server/commit/426d3bf9e0dbb68eb6f5d5950be2248b3c5d5575))
+* **deps:** bump cloud.google.com/go/storage from 1.34.1 to 1.36.0 ([#4236](https://github.com/rudderlabs/rudder-server/issues/4236)) ([db00c39](https://github.com/rudderlabs/rudder-server/commit/db00c39692da4c981b90683270f159ffde865e27))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.48.11 to 1.49.15 ([#4283](https://github.com/rudderlabs/rudder-server/issues/4283)) ([78a64d3](https://github.com/rudderlabs/rudder-server/commit/78a64d3b35914b90737a70a22d36bed6f81f5ecc))
+* **deps:** bump github.com/dvsekhvalnov/jose2go from 1.5.0 to 1.6.0 ([#4260](https://github.com/rudderlabs/rudder-server/issues/4260)) ([bfa407f](https://github.com/rudderlabs/rudder-server/commit/bfa407fa915a543b27a076cf50f20bab17f0e9c3))
+* **deps:** bump github.com/marcboeker/go-duckdb from 1.5.1 to 1.5.6 ([#4277](https://github.com/rudderlabs/rudder-server/issues/4277)) ([854242c](https://github.com/rudderlabs/rudder-server/commit/854242cf16f7b8067afe03ccab439f55a005cbab))
+* **deps:** bump github.com/snowflakedb/gosnowflake from 1.6.25 to 1.7.0 ([#4190](https://github.com/rudderlabs/rudder-server/issues/4190)) ([40586e5](https://github.com/rudderlabs/rudder-server/commit/40586e51a4948ea72c698608bcaf393a9afdaa82))
+* **deps:** bump github.com/snowflakedb/gosnowflake from 1.6.25 to 1.7.0 ([#4190](https://github.com/rudderlabs/rudder-server/issues/4190)) ([2072e2e](https://github.com/rudderlabs/rudder-server/commit/2072e2e4064a87b1c32c41084f0322aea350fd2e))
+* **deps:** bump github.com/spf13/cast from 1.5.1 to 1.6.0 ([#4191](https://github.com/rudderlabs/rudder-server/issues/4191)) ([8aa4294](https://github.com/rudderlabs/rudder-server/commit/8aa4294deb6207cc50ab3177730df26fdccb4012))
+* **deps:** bump go.etcd.io/etcd/client/v3 from 3.5.10 to 3.5.11 ([#4254](https://github.com/rudderlabs/rudder-server/issues/4254)) ([c1758a6](https://github.com/rudderlabs/rudder-server/commit/c1758a6d7ae198586749f30b89370316aa889309))
+* **deps:** bump golang.org/x/sync from 0.5.0 to 0.6.0 ([#4291](https://github.com/rudderlabs/rudder-server/issues/4291)) ([266fb11](https://github.com/rudderlabs/rudder-server/commit/266fb11839ebcb30aac400385f7debfb82fd16dc))
+* **deps:** bump google.golang.org/api from 0.153.0 to 0.155.0 ([#4282](https://github.com/rudderlabs/rudder-server/issues/4282)) ([3ecc0a6](https://github.com/rudderlabs/rudder-server/commit/3ecc0a61e599a2200a60a4c05150668668eadc15))
+* enabling gateway to ingest events even when sharedDB is down ([#4262](https://github.com/rudderlabs/rudder-server/issues/4262)) ([bd365b5](https://github.com/rudderlabs/rudder-server/commit/bd365b50d7b537c5144cee495af6f491ed2736c1))
+* error index file path collision ([#4297](https://github.com/rudderlabs/rudder-server/issues/4297)) ([37b2e35](https://github.com/rudderlabs/rudder-server/commit/37b2e35575e362c894c03e176dbb650f61d9c6af))
+* flaky docker test ([#4286](https://github.com/rudderlabs/rudder-server/issues/4286)) ([b928bfe](https://github.com/rudderlabs/rudder-server/commit/b928bfe1ef8e9dd73214c7e3bf162d78a57055c3))
+* flaky oauth test ([#4280](https://github.com/rudderlabs/rudder-server/issues/4280)) ([d078c93](https://github.com/rudderlabs/rudder-server/commit/d078c9350f496186e11d4dfe7f8ab32a4563ee21))
+* improve error logging ([#4288](https://github.com/rudderlabs/rudder-server/issues/4288)) ([9cb9caf](https://github.com/rudderlabs/rudder-server/commit/9cb9caff24ba945825610ca280609c754ed400f2))
+* include the component in application_name of postgres connection ([#4225](https://github.com/rudderlabs/rudder-server/issues/4225)) ([dcf73f0](https://github.com/rudderlabs/rudder-server/commit/dcf73f07d290b3fa52578b0c51f05ed2809e4fd5))
+* remove events schemas v1 ([#3923](https://github.com/rudderlabs/rudder-server/issues/3923)) ([40586e5](https://github.com/rudderlabs/rudder-server/commit/40586e51a4948ea72c698608bcaf393a9afdaa82))
+* remove events schemas v1 ([#3923](https://github.com/rudderlabs/rudder-server/issues/3923)) ([14466dc](https://github.com/rudderlabs/rudder-server/commit/14466dc8d8f2344ca5c690d40a0e790e1dbeeb9b))
+* source category set to event stream as default ([#4226](https://github.com/rudderlabs/rudder-server/issues/4226)) ([af82a6f](https://github.com/rudderlabs/rudder-server/commit/af82a6f60521847ae98cbad7dd938ee44c7a9b13))
+* support concurrent addition of failed keys for the same target ([#4241](https://github.com/rudderlabs/rudder-server/issues/4241)) ([95ff5ae](https://github.com/rudderlabs/rudder-server/commit/95ff5ae4286dba8b82da90a5f220d43fa64f871b))
+* tune shared db connection pooling ([#4213](https://github.com/rudderlabs/rudder-server/issues/4213)) ([cfe458a](https://github.com/rudderlabs/rudder-server/commit/cfe458a498417ced20393ee7fef3088b68331d0f))
+* upgrade 'pinned' go package versions ([#4270](https://github.com/rudderlabs/rudder-server/issues/4270)) ([befbc96](https://github.com/rudderlabs/rudder-server/commit/befbc96c1a7a1b195a1ad6c737ae45b9fd50af54))
+* upgrade sql tunnels to v0.1.6 ([#4296](https://github.com/rudderlabs/rudder-server/issues/4296)) ([47dc055](https://github.com/rudderlabs/rudder-server/commit/47dc055ed8f57ef2777558fe516cd6c4df47b635))
+* use local db in rsources handler for verifying job completed status ([#4245](https://github.com/rudderlabs/rudder-server/issues/4245)) ([d53aa80](https://github.com/rudderlabs/rudder-server/commit/d53aa8074359927547e601cbe68039f51f7c375c))
+
 ## [1.18.2](https://github.com/rudderlabs/rudder-server/compare/v1.18.1...v1.18.2) (2023-12-12)
 
 
