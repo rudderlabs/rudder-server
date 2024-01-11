@@ -14,6 +14,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -27,6 +30,9 @@ type singleWorkspaceConfig struct {
 
 	workspaceIDOnce sync.Once
 	workspaceID     string
+
+	logger        logger.Logger
+	httpCallsStat stats.Counter
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
@@ -42,6 +48,14 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 	if wc.token == "" {
 		return fmt.Errorf("single workspace: empty workspace config token")
 	}
+
+	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
+
+	if wc.logger == nil {
+		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
+	}
+	wc.logger.Infon("Setup backend config complete")
+
 	return nil
 }
 
@@ -60,9 +74,9 @@ func (wc *singleWorkspaceConfig) Get(ctx context.Context) (map[string]ConfigT, e
 
 // getFromApi gets the workspace config from api
 func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
-	config := make(map[string]ConfigT)
+	conf := make(map[string]ConfigT)
 	if wc.configBackendURL == nil {
-		return config, fmt.Errorf("single workspace: config backend url is nil")
+		return conf, fmt.Errorf("single workspace: config backend url is nil")
 	}
 
 	var (
@@ -78,13 +92,15 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 
 	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		wc.logger.Warnn("Failed to fetch backend config from API",
+			obskit.Error(err), logger.NewDurationField("retryAfter", t),
+		)
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			pkgLogger.Errorf("Error sending request to the server: %v", err)
+			wc.logger.Errorn("Error sending request to the server", obskit.Error(err))
 		}
-		return config, err
+		return conf, err
 	}
 
 	configEnvHandler := wc.configEnvHandler
@@ -95,8 +111,8 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		pkgLogger.Errorf("Error while parsing request: %v", err)
-		return config, err
+		wc.logger.Errorn("Error while parsing request", obskit.Error(err))
+		return conf, err
 	}
 	sourcesJSON.ApplyReplaySources()
 	workspaceID := sourcesJSON.WorkspaceID
@@ -104,32 +120,37 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	wc.workspaceIDOnce.Do(func() {
 		wc.workspaceID = workspaceID
 	})
-	config[workspaceID] = sourcesJSON
+	conf[workspaceID] = sourcesJSON
 
-	return config, nil
+	return conf, nil
 }
 
 // getFromFile reads the workspace config from JSON file
 func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
-	pkgLogger.Debug("Reading workspace config from JSON file")
-	config := make(map[string]ConfigT)
+	wc.logger.Debugn("Reading workspace config from JSON file")
+
+	conf := make(map[string]ConfigT)
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
-		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", wc.configJSONPath, err.Error())
-		return config, err
+		wc.logger.Errorn("Unable to read backend config from file",
+			logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
+		)
+		return conf, err
 	}
 	var configJSON ConfigT
 	if err = json.Unmarshal(data, &configJSON); err != nil {
-		pkgLogger.Errorf("Unable to parse backend config from file: %s", wc.configJSONPath)
-		return config, err
+		wc.logger.Errorn("Unable to parse backend config from file",
+			logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
+		)
+		return conf, err
 	}
 	workspaceID := configJSON.WorkspaceID
 	wc.workspaceIDOnce.Do(func() {
-		pkgLogger.Info("Read workspace config from JSON file")
+		wc.logger.Infon("Read workspace config from JSON file")
 		wc.workspaceID = workspaceID
 	})
-	config[workspaceID] = configJSON
-	return config, nil
+	conf[workspaceID] = configJSON
+	return conf, nil
 }
 
 func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
@@ -145,6 +166,8 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 		q.Add("region", wc.region)
 		req.URL.RawQuery = q.Encode()
 	}
+
+	defer wc.httpCallsStat.Increment()
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
