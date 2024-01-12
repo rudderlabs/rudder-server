@@ -96,7 +96,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 	}
 
 	for _, job := range importingList {
-		firstAttemptedAt, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
+		_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			JobState:      defaultStatus.JobState,
@@ -111,8 +111,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 		}
 
 		if defaultStatus.JobState == jobsdb.Failed.State {
-			timeElapsed := time.Since(firstAttemptedAt)
-			if timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
+			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
 				abortedJobsList = append(abortedJobsList, job)
 			}
@@ -633,8 +632,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				status.ErrorCode = strconv.Itoa(types.RouterTimedOutStatusCode)
 			}
 
-			timeElapsed := time.Since(firstAttemptedAts[jobId])
-			if timeElapsed > brt.retryTimeWindow.Load() && attemptNums[jobId] >= brt.maxFailedCountForJob.Load() {
+			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
 				completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, originalJobParameters[jobId]))
 			}
