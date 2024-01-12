@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 
 	"github.com/stretchr/testify/require"
 )
@@ -175,6 +176,7 @@ func TestGetSupportedDestinations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(gomock.NewController(t))
+			mockTransformerFeaturesService.EXPECT().Wait().Return(testutils.GetClosedEmptyChannel()).AnyTimes()
 			mockTransformerFeaturesService.EXPECT().Regulations().Return(tt.fromFeatures)
 			api := api.APIManager{
 				TransformerFeaturesService: mockTransformerFeaturesService,
@@ -182,6 +184,26 @@ func TestGetSupportedDestinations(t *testing.T) {
 			destinations := api.GetSupportedDestinations()
 			require.Equal(t, tt.expectedDestinations, destinations)
 		})
+	}
+}
+
+func TestGetSupportedDestinationsShouldBlockUntilFeaturesAreAvailable(t *testing.T) {
+	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(gomock.NewController(t))
+	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
+	mockTransformerFeaturesService.EXPECT().Regulations().Return([]string{"AM"}).AnyTimes()
+	api := api.APIManager{
+		TransformerFeaturesService: mockTransformerFeaturesService,
+	}
+	resultsChan := make(chan []string)
+
+	go func() {
+		resultsChan <- api.GetSupportedDestinations()
+	}()
+	select {
+	case <-time.After(10 * time.Millisecond):
+		close(resultsChan)
+	case result := <-resultsChan:
+		require.Fail(t, "GetSupportedDestinations should block until features are available, but returned %v", result)
 	}
 }
 
