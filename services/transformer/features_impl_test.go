@@ -78,6 +78,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeTrue())
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
+			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
 
 		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
@@ -106,6 +107,7 @@ var _ = Describe("Transformer features", func() {
 				  "a": true,
 				  "b": true
 				},
+				"regulations": ["AM"],
 				"supportSourceTransformV1": true,
 				"supportTransformerProxyV1": true
 			  }`
@@ -128,6 +130,35 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("b")).To(BeTrue())
 			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
+			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
+		})
+
+		It("Get should return empty array when features doesn't have regulations", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{}`),
+			}
+
+			Expect(featuresService.Regulations()).To(Equal([]string{}))
+		})
+
+		It("Get should return empty array when features has empty regulations", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"regulations": []
+				}`),
+			}
+
+			Expect(featuresService.Regulations()).To(Equal([]string{}))
+		})
+
+		It("Get should return regulations when feature has regultions", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"regulations": ["AM"]
+				}`),
+			}
+
+			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
 		})
 	})
 })
