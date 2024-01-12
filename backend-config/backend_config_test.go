@@ -22,6 +22,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -112,13 +113,18 @@ func TestBadResponse(t *testing.T) {
 
 	configs := map[string]workspaceConfig{
 		"namespace": &namespaceConfig{
-			configBackendURL: parsedURL,
-			namespace:        "some-namespace",
-			client:           http.DefaultClient,
-			logger:           logger.NOP,
+			configBackendURL:     parsedURL,
+			namespace:            "some-namespace",
+			client:               http.DefaultClient,
+			logger:               logger.NOP,
+			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
 		},
 		"single-workspace": &singleWorkspaceConfig{
-			configBackendURL: parsedURL,
+			configBackendURL:     parsedURL,
+			logger:               logger.NOP,
+			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
 		},
 	}
 	disableCache()
