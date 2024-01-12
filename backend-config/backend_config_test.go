@@ -113,16 +113,18 @@ func TestBadResponse(t *testing.T) {
 
 	configs := map[string]workspaceConfig{
 		"namespace": &namespaceConfig{
-			configBackendURL: parsedURL,
-			namespace:        "some-namespace",
-			client:           http.DefaultClient,
-			logger:           logger.NOP,
-			httpCallsStat:    stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			configBackendURL:     parsedURL,
+			namespace:            "some-namespace",
+			client:               http.DefaultClient,
+			logger:               logger.NOP,
+			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
 		},
 		"single-workspace": &singleWorkspaceConfig{
-			configBackendURL: parsedURL,
-			logger:           logger.NOP,
-			httpCallsStat:    stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			configBackendURL:     parsedURL,
+			logger:               logger.NOP,
+			httpCallsStat:        stats.NOP.NewStat("backend_config_http_calls", stats.CountType),
+			httpResponseSizeStat: stats.NOP.NewStat("backend_config_http_response_size", stats.HistogramType),
 		},
 	}
 	disableCache()

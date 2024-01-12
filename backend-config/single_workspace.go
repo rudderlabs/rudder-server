@@ -31,12 +31,14 @@ type singleWorkspaceConfig struct {
 	workspaceIDOnce sync.Once
 	workspaceID     string
 
-	logger        logger.Logger
-	httpCallsStat stats.Counter
+	logger               logger.Logger
+	httpCallsStat        stats.Counter
+	httpResponseSizeStat stats.Histogram
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
 	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
+	wc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
 
 	if wc.logger == nil {
 		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
@@ -181,6 +183,8 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 	if err != nil {
 		return nil, err
 	}
+
+	wc.httpResponseSizeStat.Observe(float64(len(respBody)))
 
 	if resp.StatusCode >= 300 {
 		return nil, getNotOKError(respBody, resp.StatusCode)
