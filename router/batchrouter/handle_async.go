@@ -73,8 +73,8 @@ func getPollInput(job *jobsdb.JobT) common.AsyncPoll {
 	return common.AsyncPoll{ImportId: importId}
 }
 
-func enhanceErrorResponseWithFirstAttemptedAtt(msg stdjson.RawMessage, errorResp []byte) []byte {
-	return routerutils.EnhanceJsonWithTime(getFirstAttemptAtFromErrorResponse(msg), "firstAttemptedAt", errorResp)
+func enhanceResponseWithFirstAttemptedAt(msg stdjson.RawMessage, resp []byte) []byte {
+	return routerutils.EnhanceJsonWithTime(getFirstAttemptAtFromErrorResponse(msg), "firstAttemptedAt", resp)
 }
 
 func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
@@ -95,7 +95,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 	}
 
 	for _, job := range importingList {
-		resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
+		resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			JobState:      defaultStatus.JobState,
@@ -174,7 +174,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				if slices.Contains(successfulJobIDs, jobID) {
 					warningRespString := uploadStatsResp.Metadata.WarningReasons[jobID]
 					warningResp, _ := json.Marshal(WarningResponse{Remarks: warningRespString})
-					resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, warningResp)
+					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, warningResp)
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Succeeded.State,
@@ -191,7 +191,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
-					resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, errorResp)
+					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Aborted.State,

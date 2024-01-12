@@ -301,6 +301,7 @@ var _ = Describe("BatchRouter", func() {
 		})
 
 		It("should abort jobs that have retry limits, with lesser(default) limits for rSources jobs", func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			batchrouter := &Handle{}
 			batchrouter.Setup(
 				s3DestinationDefinition.Name,
@@ -311,7 +312,7 @@ var _ = Describe("BatchRouter", func() {
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
-				config.Default,
+				config.New(),
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -372,14 +373,24 @@ var _ = Describe("BatchRouter", func() {
 
 			payloadLimit := batchrouter.payloadLimit
 			var getJobsListCalled bool
-			c.mockBatchRouterJobsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit.Load()}).DoAndReturn(func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-				var res jobsdb.JobsResult
-				if !getJobsListCalled {
-					getJobsListCalled = true
-					res.Jobs = toRetryJobsList
-				}
-				return res, nil
-			}).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetJobs(
+				gomock.Any(),
+				[]string{jobsdb.Failed.State, jobsdb.Unprocessed.State},
+				jobsdb.GetQueryParams{
+					CustomValFilters: []string{CustomVal["S3"]},
+					JobsLimit:        c.jobQueryBatchSize,
+					PayloadSizeLimit: payloadLimit.Load(),
+				},
+			).DoAndReturn(
+				func(ctx context.Context, states []string, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+					var res jobsdb.JobsResult
+					if !getJobsListCalled {
+						getJobsListCalled = true
+						res.Jobs = toRetryJobsList
+					}
+					return res, nil
+				},
+			).AnyTimes()
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -395,22 +406,23 @@ var _ = Describe("BatchRouter", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt1.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 130)
 					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt2.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 4)
 				}).Return(nil)
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).Return(nil)
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+				func(ctx context.Context, _ []*jobsdb.JobT) error {
+					cancel()
+					return nil
+				},
+			)
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
 			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
 			batchrouter.mainLoopFreq = misc.SingleValueLoader(time.Microsecond)
-			ctx, cancel := context.WithCancel(context.Background())
-			var wg sync.WaitGroup
-			wg.Add(1)
+			done := make(chan struct{})
 			go func() {
+				defer close(done)
 				batchrouter.mainLoop(ctx)
-				wg.Done()
 			}()
-			time.Sleep(1 * time.Second)
-			cancel()
-			wg.Wait()
+			<-done
 		})
 	})
 })
