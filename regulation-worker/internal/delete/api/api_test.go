@@ -175,7 +175,7 @@ func TestGetSupportedDestinations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(gomock.NewController(t))
-			mockTransformerFeaturesService.EXPECT().Regulation().Return(tt.fromFeatures)
+			mockTransformerFeaturesService.EXPECT().Regulations().Return(tt.fromFeatures)
 			api := api.APIManager{
 				TransformerFeaturesService: mockTransformerFeaturesService,
 			}

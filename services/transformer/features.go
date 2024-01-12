@@ -23,7 +23,7 @@ type FeaturesServiceConfig struct {
 }
 
 type FeaturesService interface {
-	Regulation() []string
+	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
 	TransformerProxyVersion() string
@@ -35,7 +35,7 @@ var defaultTransformerFeatures = `{
 	  "MARKETO": true,
 	  "HS": true
 	},
-	"regulation": ["AM"],
+	"regulations": ["AM"],
   }`
 
 func NewFeaturesService(ctx context.Context, config FeaturesServiceConfig) FeaturesService {
@@ -57,8 +57,7 @@ func NewNoOpService() FeaturesService {
 
 type noopService struct{}
 
-// Regulation implements FeaturesService.
-func (*noopService) Regulation() []string {
+func (*noopService) Regulations() []string {
 	return []string{}
 }
 

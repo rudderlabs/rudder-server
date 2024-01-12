@@ -45,7 +45,7 @@ type oauthDetail struct {
 }
 
 func (m *APIManager) GetSupportedDestinations() []string {
-	destinations := m.TransformerFeaturesService.Regulation()
+	destinations := m.TransformerFeaturesService.Regulations()
 	if len(destinations) == 0 {
 		// Fallback to default supported destinations
 		destinations = SupportedDestinations

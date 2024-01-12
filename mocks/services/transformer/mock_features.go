@@ -33,18 +33,18 @@ func (m *MockFeaturesService) EXPECT() *MockFeaturesServiceMockRecorder {
 	return m.recorder
 }
 
-// Regulation mocks base method.
-func (m *MockFeaturesService) Regulation() []string {
+// Regulations mocks base method.
+func (m *MockFeaturesService) Regulations() []string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Regulation")
+	ret := m.ctrl.Call(m, "Regulations")
 	ret0, _ := ret[0].([]string)
 	return ret0
 }
 
-// Regulation indicates an expected call of Regulation.
-func (mr *MockFeaturesServiceMockRecorder) Regulation() *gomock.Call {
+// Regulations indicates an expected call of Regulations.
+func (mr *MockFeaturesServiceMockRecorder) Regulations() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Regulation", reflect.TypeOf((*MockFeaturesService)(nil).Regulation))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Regulations", reflect.TypeOf((*MockFeaturesService)(nil).Regulations))
 }
 
 // RouterTransform mocks base method.

@@ -78,7 +78,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeTrue())
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
-			Expect(handler.Regulation()).To(Equal([]string{"AM"}))
+			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
 
 		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
@@ -107,7 +107,7 @@ var _ = Describe("Transformer features", func() {
 				  "a": true,
 				  "b": true
 				},
-				"regulation": ["AM"],
+				"regulations": ["AM"],
 				"supportSourceTransformV1": true,
 				"supportTransformerProxyV1": true
 			  }`
@@ -130,32 +130,36 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("b")).To(BeTrue())
 			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
-			Expect(handler.Regulation()).To(Equal([]string{"AM"}))
+			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
 
-		It("Get should return empty array when features doesn't have regulation", func() {
-			mockTransformerResp := `{
-				"routerTransform": {
-				  "a": true,
-				  "b": true
-				},
-				"supportSourceTransformV1": true,
-				"supportTransformerProxyV1": true
-			  }`
-			transformerServer := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					_, _ = w.Write([]byte(mockTransformerResp))
-				}))
 
-			handler := NewFeaturesService(context.TODO(), FeaturesServiceConfig{
-				PollInterval:             time.Duration(1),
-				TransformerURL:           transformerServer.URL,
-				FeaturesRetryMaxAttempts: 1,
-			})
+		It("Get should return empty array when features doesn't have regulations", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{}`),
+			}
+			
+			Expect(featuresService.Regulations()).To(Equal([]string{}))
+		})
 
-			<-handler.Wait()
+		It("Get should return empty array when features has empty regulations", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"regulations": []
+				}`),
+			}
+			
+			Expect(featuresService.Regulations()).To(Equal([]string{}))
+		})
 
-			Expect(handler.Regulation()).To(Equal([]string{}))
+		It("Get should return regulations when feature has regultions", func() {
+			featuresService := &featuresService{
+				features: json.RawMessage(`{
+					"regulations": ["AM"]
+				}`),
+			}
+			
+			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
 		})
 	})
 })

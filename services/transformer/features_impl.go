@@ -43,8 +43,8 @@ func (t *featuresService) RouterTransform(destType string) bool {
 	return gjson.GetBytes(t.features, "routerTransform."+destType).Bool()
 }
 
-func (t *featuresService) Regulation() []string {
-	regulationFeatures := gjson.GetBytes(t.features, "regulation")
+func (t *featuresService) Regulations() []string {
+	regulationFeatures := gjson.GetBytes(t.features, "regulations")
 	if regulationFeatures.Exists() && regulationFeatures.IsArray() {
 		return lo.Map(regulationFeatures.Array(), func(f gjson.Result, _ int) string {
 			return f.String()
