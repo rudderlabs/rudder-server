@@ -133,12 +133,11 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
 
-
 		It("Get should return empty array when features doesn't have regulations", func() {
 			featuresService := &featuresService{
 				features: json.RawMessage(`{}`),
 			}
-			
+
 			Expect(featuresService.Regulations()).To(Equal([]string{}))
 		})
 
@@ -148,7 +147,7 @@ var _ = Describe("Transformer features", func() {
 					"regulations": []
 				}`),
 			}
-			
+
 			Expect(featuresService.Regulations()).To(Equal([]string{}))
 		})
 
@@ -158,7 +157,7 @@ var _ = Describe("Transformer features", func() {
 					"regulations": ["AM"]
 				}`),
 			}
-			
+
 			Expect(featuresService.Regulations()).To(Equal([]string{"AM"}))
 		})
 	})
