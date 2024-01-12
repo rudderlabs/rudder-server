@@ -98,7 +98,7 @@ func TestMainFlow(t *testing.T) {
 	sendEventsToGateway(t)
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
-			return webhook.RequestsCount() == 10
+			return webhook.RequestsCount() == 11
 		}, time.Minute, 300*time.Millisecond)
 
 		i := -1
@@ -224,7 +224,7 @@ func TestMainFlow(t *testing.T) {
 
 		var (
 			msgCount      = 0 // Count how many message processed
-			expectedCount = 10
+			expectedCount = 15
 			timeout       = time.After(2 * time.Minute)
 		)
 
@@ -532,6 +532,131 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
+
+	payloadRetlWebhook := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendEvent(t, payloadRetlWebhook, "retl", writeKey,
+		withHeader("X-Rudder-Source-Id", "xxxyyyzzEaEurW247ad9WYZLUyk"),
+		withHeader("X-Rudder-Destination-Id", "xxxyyyzzP9kQfzOoKd1tuxchYAG"),
+		withUrlPath("/internal/v1/retl"))
+
+	payloadRetlKafka := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"messageId":"messageId_11",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendEvent(t, payloadRetlKafka, "retl", writeKey,
+		withHeader("X-Rudder-Source-Id", "xxxyyyzzEaEurW247ad9WYZLUyk"),
+		withHeader("X-Rudder-Destination-Id", "xxxyyyzzhyrw8v0CrTMrDZ4ovej"),
+		withUrlPath("/internal/v1/retl"))
 }
 
 func blockOnHold(t *testing.T) {
@@ -597,7 +722,20 @@ func sendPixelEvents(t *testing.T, writeKey string) {
 	}
 }
 
-func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string) {
+func withHeader(key, value string) func(r *http.Request) {
+	return func(req *http.Request) {
+		req.Header.Add(key, value)
+	}
+}
+
+// withUrlPath will override the path of url in request
+func withUrlPath(urlPath string) func(r *http.Request) {
+	return func(req *http.Request) {
+		req.URL.Path = urlPath
+	}
+}
+
+func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string, reqOptions ...func(r *http.Request)) {
 	t.Helper()
 	t.Logf("Sending %s Event", callType)
 
@@ -617,6 +755,10 @@ func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string)
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
 		[]byte(fmt.Sprintf("%s:", writeKey)),
 	)))
+
+	for _, reqOption := range reqOptions {
+		reqOption(req)
+	}
 
 	res, err := httpClient.Do(req)
 	if err != nil {
