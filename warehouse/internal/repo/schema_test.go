@@ -121,14 +121,11 @@ func TestWHSchemasRepo(t *testing.T) {
 		connection := warehouseutils.SourceIDDestinationID{SourceID: sourceID, DestinationID: destinationID}
 		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
-		require.ElementsMatch(t, expectedTableNames, []warehouseutils.FetchTableInfo{
-			{
-				SourceID:      sourceID,
-				DestinationID: destinationID,
-				Namespace:     namespace,
-				Tables:        []string{"table_name_1", "table_name_2"},
-			},
-		})
+		require.Len(t, expectedTableNames, 1)
+		require.Equal(t, sourceID, expectedTableNames[0].SourceID)
+		require.Equal(t, destinationID, expectedTableNames[0].DestinationID)
+		require.Equal(t, namespace, expectedTableNames[0].Namespace)
+		require.ElementsMatch(t, []string{"table_name_1", "table_name_2"}, expectedTableNames[0].Tables)
 
 		t.Log("cancelled context")
 		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
@@ -160,11 +157,10 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.NoError(t, err)
 		expectedTableNames, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
-		require.ElementsMatch(t, expectedTableNames, []warehouseutils.FetchTableInfo{{
-			SourceID:      sourceID,
-			DestinationID: destinationID,
-			Namespace:     latestNamespace,
-			Tables:        []string{"table_name_1", "table_name_2"},
-		}}, "the new schema should not have changed the returned tables since we already had a schema for the same source id and destination id pair")
+		require.Len(t, expectedTableNames, 1)
+		require.Equal(t, sourceID, expectedTableNames[0].SourceID)
+		require.Equal(t, destinationID, expectedTableNames[0].DestinationID)
+		require.Equal(t, latestNamespace, expectedTableNames[0].Namespace)
+		require.ElementsMatch(t, []string{"table_name_1", "table_name_2"}, expectedTableNames[0].Tables)
 	})
 }
