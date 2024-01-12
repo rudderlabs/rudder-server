@@ -44,7 +44,8 @@ type namespaceConfig struct {
 	lastUpdatedAt            time.Time
 	workspacesConfig         map[string]ConfigT
 
-	httpCallsStat stats.Counter
+	httpCallsStat        stats.Counter
+	httpResponseSizeStat stats.Histogram
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
@@ -77,6 +78,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 	nc.workspacesConfig = make(map[string]ConfigT)
 	nc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
+	nc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
 
 	if nc.logger == nil {
 		nc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.Namespace(nc.namespace))
@@ -209,6 +211,8 @@ func (nc *namespaceConfig) makeHTTPRequest(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	nc.httpResponseSizeStat.Observe(float64(len(respBody)))
 
 	if resp.StatusCode >= 300 {
 		return nil, getNotOKError(respBody, resp.StatusCode)
