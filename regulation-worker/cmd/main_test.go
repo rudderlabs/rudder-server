@@ -89,7 +89,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 	t.Setenv("WORKSPACE_NAMESPACE", "216Co97d9So9TkqphM0cxBzRxc3")
 
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
-	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	t.Setenv("DEST_TRANSFORM_URL", srv.URL)
 	t.Setenv("URL_PREFIX", srv.URL)
 	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "0.1")
 	t.Setenv("REGULATION_WORKER_BATCH_DESTINATIONS_ENABLED", "true")
@@ -410,7 +410,12 @@ func handler(t *testing.T, minioConfig map[string]interface{}, redisAddress stri
 	srvMux.Patch("/dataplane/namespaces/{workspace_id}/regulations/workerJobs/{job_id}", updateMultiTenantJobStatus)
 	srvMux.Get("/workspaceConfig", getSingleTenantWorkspaceConfig(minioConfig, redisAddress))
 	srvMux.Get("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig(minioConfig, redisAddress))
-
+	srvMux.Get("/features", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"regulations": ["BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP", "GA", "ITERABLE", "ENGAGE", "CUSTIFY", "SENDGRID", "SPRIG"]
+		}`))
+	})
 	return srvMux
 }
 
