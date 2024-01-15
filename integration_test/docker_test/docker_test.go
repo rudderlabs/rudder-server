@@ -556,10 +556,7 @@ func sendEventsToGateway(t *testing.T) {
 			}
 		]
 	}`)
-	sendEvent(t, payloadRetlWebhook, "retl", writeKey,
-		withHeader("X-Rudder-Source-Id", "xxxyyyzzEaEurW247ad9WYZLUyk"),
-		withHeader("X-Rudder-Destination-Id", "xxxyyyzzP9kQfzOoKd1tuxchYAG"),
-		withUrlPath("/internal/v1/retl"))
+	sendRETL(t, payloadRetlWebhook, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzP9kQfzOoKd1tuxchYAG")
 
 	payloadRetlKafka := strings.NewReader(`{
 		"batch":
@@ -653,10 +650,7 @@ func sendEventsToGateway(t *testing.T) {
 			}
 		]
 	}`)
-	sendEvent(t, payloadRetlKafka, "retl", writeKey,
-		withHeader("X-Rudder-Source-Id", "xxxyyyzzEaEurW247ad9WYZLUyk"),
-		withHeader("X-Rudder-Destination-Id", "xxxyyyzzhyrw8v0CrTMrDZ4ovej"),
-		withUrlPath("/internal/v1/retl"))
+	sendRETL(t, payloadRetlKafka, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzhyrw8v0CrTMrDZ4ovej")
 }
 
 func blockOnHold(t *testing.T) {
@@ -722,20 +716,46 @@ func sendPixelEvents(t *testing.T, writeKey string) {
 	}
 }
 
-func withHeader(key, value string) func(r *http.Request) {
-	return func(req *http.Request) {
-		req.Header.Add(key, value)
+func sendRETL(t *testing.T, payload *strings.Reader, sourceID, DestinationID string) {
+	t.Helper()
+	t.Logf("Sending rETL Event")
+
+	var (
+		httpClient = &http.Client{}
+		method     = "POST"
+		url        = fmt.Sprintf("http://localhost:%s/internal/v1/retl", httpPort)
+	)
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
 	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Rudder-Source-Id", sourceID)
+	req.Header.Add("X-Rudder-Destination-Id", DestinationID)
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	defer func() { httputil.CloseResponse(res) }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	if res.Status != "200 OK" {
+		return
+	}
+
+	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
-// withUrlPath will override the path of url in request
-func withUrlPath(urlPath string) func(r *http.Request) {
-	return func(req *http.Request) {
-		req.URL.Path = urlPath
-	}
-}
-
-func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string, reqOptions ...func(r *http.Request)) {
+func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string) {
 	t.Helper()
 	t.Logf("Sending %s Event", callType)
 
@@ -755,10 +775,6 @@ func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string,
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
 		[]byte(fmt.Sprintf("%s:", writeKey)),
 	)))
-
-	for _, reqOption := range reqOptions {
-		reqOption(req)
-	}
 
 	res, err := httpClient.Do(req)
 	if err != nil {

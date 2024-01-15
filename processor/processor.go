@@ -1544,8 +1544,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
-	// map of messageID to destinationID: for messages that needs to be delivered to a specific destinations only
-	msgToDestMap := make(map[string]string)
+	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
+	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
 	spans := make([]stats.TraceSpan, 0, len(jobList))
 	defer func() {
@@ -1564,6 +1564,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		sourceID := eventParams.SourceId
 		traceParent := eventParams.TraceParent
 		destinationID := eventParams.DestinationID
+		if destinationID != "" {
+			jobIDToSpecificDestMapOnly[batchEvent.JobID] = destinationID
+		}
 
 		var span stats.TraceSpan
 		if traceParent == "" {
@@ -1621,9 +1624,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			if len(destinationID) != 0 {
-				msgToDestMap[messageId] = destinationID
-			}
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
@@ -1730,9 +1730,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 			// REPORTING - GATEWAY metrics - END
 
-			// Getting all the destinations which are enabled for this
-			// event will be dropped if no valid destination is present
-			// if empty string destinationID is all the destinations for the source is validated
+			// Getting all the destinations which are enabled for this event.
+			// Event will be dropped if no valid destination is present
+			// if empty destinationID is passed in this fn all the destinations for the source are validated
 			// else only passed destinationID will be validated
 			if !proc.isDestinationAvailable(singularEvent, sourceID, destinationID) {
 				continue
@@ -1903,11 +1903,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
 					lo.Filter(proc.getEnabledDestinations(sourceId, *destType), func(item backendconfig.DestinationT, index int) bool {
-						destId := msgToDestMap[event.Metadata.MessageID]
-						if len(destId) != 0 {
+						destId := jobIDToSpecificDestMapOnly[event.Metadata.JobID]
+						if destId != "" {
 							return destId == item.ID
 						}
-						return len(destId) == 0
+						return destId == ""
 					}),
 				)
 
