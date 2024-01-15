@@ -98,7 +98,7 @@ func TestMainFlow(t *testing.T) {
 	sendEventsToGateway(t)
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
-			return webhook.RequestsCount() == 10
+			return webhook.RequestsCount() == 11
 		}, time.Minute, 300*time.Millisecond)
 
 		i := -1
@@ -136,38 +136,39 @@ func TestMainFlow(t *testing.T) {
 
 	t.Run("postgres", func(t *testing.T) {
 		var myEvent event
+
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		err := db.QueryRow(eventSql).Scan(&myEvent.count)
-		require.NoError(t, err)
-		require.Equal(t, myEvent.count, "2")
+		require.Eventually(t, func() bool {
+			eventSql := "select count(*) from dev_integration_test_1.identifies;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
+			return myEvent.count == "2"
+		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		eventSql := "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies;"
+		err := db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.contextID, "0.0.0.0")
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.users"
+			eventSql := "select count(*) from dev_integration_test_1.users;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
+		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users;"
 		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
@@ -175,26 +176,21 @@ func TestMainFlow(t *testing.T) {
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-			err = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
-			require.NoError(t, err)
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.screens"
-			err = db.QueryRow(eventSql).Scan(&myEvent.count)
-			require.NoError(t, err)
+			eventSql := "select count(*) from dev_integration_test_1.screens;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		require.Eventually(t, func() bool {
-			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-			err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
-			require.NoError(t, err)
-			return myEvent.myUniqueID == "identified_user_idanonymousId_1"
-		}, time.Minute, 10*time.Millisecond)
-
+		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+		err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+		require.NoError(t, err)
+		require.Equal(t, myEvent.myUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.propKey, "prop_value_edited")
 		require.Equal(t, myEvent.ip, "0.0.0.0")
 	})
@@ -228,7 +224,7 @@ func TestMainFlow(t *testing.T) {
 
 		var (
 			msgCount      = 0 // Count how many message processed
-			expectedCount = 10
+			expectedCount = 15
 			timeout       = time.After(2 * time.Minute)
 		)
 
@@ -536,6 +532,125 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
+
+	payloadRetlWebhook := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendRETL(t, payloadRetlWebhook, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzP9kQfzOoKd1tuxchYAG")
+
+	payloadRetlKafka := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"messageId":"messageId_11",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendRETL(t, payloadRetlKafka, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzhyrw8v0CrTMrDZ4ovej")
 }
 
 func blockOnHold(t *testing.T) {
@@ -599,6 +714,45 @@ func sendPixelEvents(t *testing.T, writeKey string) {
 		t.Logf("sendPixelEvents error: %v", err)
 		t.Logf("sendPixelEvents body: %s", resBody)
 	}
+}
+
+func sendRETL(t *testing.T, payload *strings.Reader, sourceID, DestinationID string) {
+	t.Helper()
+	t.Logf("Sending rETL Event")
+
+	var (
+		httpClient = &http.Client{}
+		method     = "POST"
+		url        = fmt.Sprintf("http://localhost:%s/internal/v1/retl", httpPort)
+	)
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Rudder-Source-Id", sourceID)
+	req.Header.Add("X-Rudder-Destination-Id", DestinationID)
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	defer func() { httputil.CloseResponse(res) }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	if res.Status != "200 OK" {
+		return
+	}
+
+	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
 func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string) {

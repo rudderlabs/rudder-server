@@ -176,7 +176,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "it should be able to create a new docker pool")
 	t.Logf("Starting postgres container")
-	postgresContainer, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+	postgresContainer, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "it should be able to start postgres container without an error")
 	transformerContainer, err := destination.SetupTransformer(pool, t)
 	require.NoError(t, err)

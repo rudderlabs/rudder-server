@@ -31,7 +31,6 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -885,7 +884,7 @@ func ConcatErrors(givenErrors []error) error {
 		}
 		errorsToJoin = append(errorsToJoin, err)
 	}
-	return multierror.Join(errorsToJoin)
+	return errors.Join(errorsToJoin...)
 }
 
 func isWarehouseMasterEnabled() bool {

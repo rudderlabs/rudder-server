@@ -17,7 +17,7 @@ type adaptiveThrottleConfig struct {
 }
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
-	c.window = config.GetReloadableDurationVar(0, time.Second,
+	c.window = config.GetReloadableDurationVar(1, time.Second,
 		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
 		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
 		`Router.throttler.adaptive.timeWindow`)

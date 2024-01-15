@@ -3,7 +3,6 @@ package repo_test
 import (
 	"context"
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -122,12 +121,11 @@ func TestWHSchemasRepo(t *testing.T) {
 		connection := warehouseutils.SourceIDDestinationID{SourceID: sourceID, DestinationID: destinationID}
 		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
-		require.Equal(t, len(expectedTableNames), 1)
-		require.Equal(t, expectedTableNames[0].SourceID, sourceID)
-		require.Equal(t, expectedTableNames[0].DestinationID, destinationID)
-		require.Equal(t, expectedTableNames[0].Namespace, namespace)
-		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
-		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
+		require.Len(t, expectedTableNames, 1)
+		require.Equal(t, sourceID, expectedTableNames[0].SourceID)
+		require.Equal(t, destinationID, expectedTableNames[0].DestinationID)
+		require.Equal(t, namespace, expectedTableNames[0].Namespace)
+		require.ElementsMatch(t, []string{"table_name_1", "table_name_2"}, expectedTableNames[0].Tables)
 
 		t.Log("cancelled context")
 		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
@@ -142,5 +140,27 @@ func TestWHSchemasRepo(t *testing.T) {
 		t.Log("empty")
 		_, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{})
 		require.EqualError(t, err, errors.New("no source id and destination id pairs provided").Error())
+
+		t.Log("multiple")
+		latestNamespace := "latest_namespace"
+		schemaLatest := model.WHSchema{
+			UploadID:        2,
+			SourceID:        sourceID,
+			Namespace:       latestNamespace,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			Schema:          schemaModel,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		_, err = r.Insert(ctx, &schemaLatest)
+		require.NoError(t, err)
+		expectedTableNames, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
+		require.NoError(t, err)
+		require.Len(t, expectedTableNames, 1)
+		require.Equal(t, sourceID, expectedTableNames[0].SourceID)
+		require.Equal(t, destinationID, expectedTableNames[0].DestinationID)
+		require.Equal(t, latestNamespace, expectedTableNames[0].Namespace)
+		require.ElementsMatch(t, []string{"table_name_1", "table_name_2"}, expectedTableNames[0].Tables)
 	})
 }
