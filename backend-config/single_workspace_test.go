@@ -41,6 +41,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            token,
 			configBackendURL: parsedSrvURL,
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromAPI(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
@@ -60,6 +61,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            "testToken",
 			configBackendURL: configBackendURL,
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromAPI(context.Background())
 		require.ErrorContains(t, err, "unsupported protocol scheme")
 		require.Equal(t, map[string]ConfigT{}, conf)
@@ -70,6 +72,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            "testToken",
 			configBackendURL: nil,
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromAPI(context.Background())
 		require.ErrorContains(t, err, "config backend url is nil")
 		require.Equal(t, map[string]ConfigT{}, conf)
@@ -84,6 +87,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 			token:          "testToken",
 			configJSONPath: "invalid-path",
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
 		require.Equal(t, map[string]ConfigT{}, conf)
@@ -99,6 +103,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 			token:          "testToken",
 			configJSONPath: tmpFile.Name(),
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
 		require.Equal(t, map[string]ConfigT{}, conf)
@@ -144,6 +149,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 			token:          "testToken",
 			configJSONPath: tmpFile.Name(),
 		}
+		require.NoError(t, wc.SetUp())
 		conf, err := wc.getFromFile()
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)

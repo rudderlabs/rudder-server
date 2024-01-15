@@ -37,10 +37,11 @@ var _ = Describe("Using sources handler v1", func() {
 			Expect(err).NotTo(HaveOccurred())
 			resource = newDBResource(pool, "", "postgres")
 			config := JobServiceConfig{
-				LocalHostname: "postgres",
-				MaxPoolSize:   1,
-				LocalConn:     resource.externalDSN,
-				Log:           testlog.GinkgoLogger,
+				LocalHostname:       "postgres",
+				MaxPoolSize:         1,
+				LocalConn:           resource.externalDSN,
+				Log:                 testlog.GinkgoLogger,
+				ShouldSetupSharedDB: true,
 			}
 			sh = createService(config)
 		})
@@ -364,6 +365,7 @@ var _ = Describe("Using sources handler v1", func() {
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgA.internalDSN,
 				Log:                    testlog.GinkgoLogger,
+				ShouldSetupSharedDB:    true,
 			}
 
 			configB = JobServiceConfig{
@@ -373,6 +375,7 @@ var _ = Describe("Using sources handler v1", func() {
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgB.internalDSN,
 				Log:                    testlog.GinkgoLogger,
+				ShouldSetupSharedDB:    true,
 			}
 
 			// Start 2 JobServices
@@ -457,7 +460,7 @@ var _ = Describe("Using sources handler v1", func() {
 					return false
 				}
 				return true
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", string(mustMarshal(failedKeysA)), string(mustMarshal(failedKeysB)), string(mustMarshal(expected)), err)
 		})
 	})
 })
