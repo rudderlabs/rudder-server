@@ -136,6 +136,22 @@ func TestEventStatsReporter(t *testing.T) {
 				StatusCode: 500,
 			},
 		},
+		{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:       sourceID,
+				DestinationID:  destinationID,
+				SourceCategory: "",
+			},
+			PUDetails: types.PUDetails{
+				PU:         reportedBy,
+				TerminalPU: true,
+			},
+			StatusDetail: &types.StatusDetail{
+				Count:      20,
+				Status:     jobsdb.Succeeded.State,
+				StatusCode: 200,
+			},
+		},
 	}
 	esr := NewEventStatsReporter(cs, statsStore)
 	esr.Record(testReports)
@@ -183,7 +199,18 @@ func TestEventStatsReporter(t *testing.T) {
 		"terminal":        "false",
 		"status":          "non-terminal",
 	}).LastValue(), float64(100))
-
+	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
+		"workspaceId":     workspaceID,
+		"sourceId":        sourceID,
+		"destinationId":   destinationID,
+		"reportedBy":      reportedBy,
+		"sourceCategory":  EventStream,
+		"statusCode":      "200",
+		"destinationType": "test-destination-name",
+		"terminal":        "true",
+		"status":          jobsdb.Succeeded.State,
+	}).LastValue(), float64(20))
+	require.Len(t, statsStore.GetAll(), 5)
 	t.Cleanup(func() {
 		cancel()
 		<-subscribeDone

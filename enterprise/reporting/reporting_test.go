@@ -357,6 +357,46 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 	}
 }
 
+func TestExtractErrorDetails(t *testing.T) {
+	type depTcOutput struct {
+		errorMsg  string
+		errorCode string
+	}
+	type depTc struct {
+		caseDescription string
+		inputErrMsg     string
+		output          depTcOutput
+	}
+	testCases := []depTc{
+		{
+			caseDescription: "should validate the deprecation correctly",
+			inputErrMsg:     "Offline Conversions API is deprecated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until.",
+			output: depTcOutput{
+				errorMsg:  "Offline Conversions API is deprecated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until ",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should validate the deprecation correctly even though we have upper-case keywords",
+			inputErrMsg:     "Offline Conversions API is DeprEcated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until.",
+			output: depTcOutput{
+				errorMsg:  "Offline Conversions API is DeprEcated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until ",
+				errorCode: "deprecation",
+			},
+		},
+	}
+
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
+	for _, tc := range testCases {
+		t.Run(tc.caseDescription, func(t *testing.T) {
+			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
+
+			require.Equal(t, tc.output.errorMsg, errorDetails.ErrorMessage)
+			require.Equal(t, tc.output.errorCode, errorDetails.ErrorCode)
+		})
+	}
+}
+
 func TestCleanUpErrorMessage(t *testing.T) {
 	ext := NewErrorDetailExtractor(logger.NOP)
 	type testCase struct {
