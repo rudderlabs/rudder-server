@@ -63,20 +63,23 @@ func (f *factory) Get(destName, destID string) Throttler {
 		config:  conf,
 	}
 
-	var adaptiveConf adaptiveThrottleConfig
-	adaptiveConf.readThrottlingConfig(f.config, destName, destID)
-	var limitFactorMeasurement stats.Measurement = nil
-	if f.Stats != nil {
-		limitFactorMeasurement = f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
-			"destinationId": destID,
-			"destType":      destName,
-		})
-	}
-	at := &adaptiveThrottler{
-		limiter:                f.adaptiveLimiter,
-		algorithm:              newAdaptiveAlgorithm(f.config, adaptiveConf.window),
-		config:                 adaptiveConf,
-		limitFactorMeasurement: limitFactorMeasurement,
+	var at Throttler = &noOpThrottler{}
+	if f.config.GetBool("Router.throttlerV2.enabled", true) {
+		var adaptiveConf adaptiveThrottleConfig
+		adaptiveConf.readThrottlingConfig(f.config, destName, destID)
+		var limitFactorMeasurement stats.Measurement = nil
+		if f.Stats != nil {
+			limitFactorMeasurement = f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
+				"destinationId": destID,
+				"destType":      destName,
+			})
+		}
+		at = &adaptiveThrottler{
+			limiter:                f.adaptiveLimiter,
+			algorithm:              newAdaptiveAlgorithm(f.config, adaptiveConf.window),
+			config:                 adaptiveConf,
+			limitFactorMeasurement: limitFactorMeasurement,
+		}
 	}
 
 	f.throttlers[destID] = &switchingThrottler{

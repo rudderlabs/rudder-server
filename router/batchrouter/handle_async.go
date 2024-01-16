@@ -73,9 +73,8 @@ func getPollInput(job *jobsdb.JobT) common.AsyncPoll {
 	return common.AsyncPoll{ImportId: importId}
 }
 
-func enhanceErrorResponseWithFirstAttemptedAtt(msg stdjson.RawMessage, errorResp []byte) (time.Time, []byte) {
-	firstAttemptedAt := getFirstAttemptAtFromErrorResponse(msg)
-	return firstAttemptedAt, routerutils.EnhanceJsonWithTime(firstAttemptedAt, "firstAttemptedAt", errorResp)
+func enhanceResponseWithFirstAttemptedAt(msg stdjson.RawMessage, resp []byte) []byte {
+	return routerutils.EnhanceJsonWithTime(getFirstAttemptAtFromErrorResponse(msg), "firstAttemptedAt", resp)
 }
 
 func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
@@ -96,7 +95,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 	}
 
 	for _, job := range importingList {
-		firstAttemptedAt, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
+		resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			JobState:      defaultStatus.JobState,
@@ -111,8 +110,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 		}
 
 		if defaultStatus.JobState == jobsdb.Failed.State {
-			timeElapsed := time.Since(firstAttemptedAt)
-			if timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
+			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
 				abortedJobsList = append(abortedJobsList, job)
 			}
@@ -176,7 +174,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				if slices.Contains(successfulJobIDs, jobID) {
 					warningRespString := uploadStatsResp.Metadata.WarningReasons[jobID]
 					warningResp, _ := json.Marshal(WarningResponse{Remarks: warningRespString})
-					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, warningResp)
+					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, warningResp)
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Succeeded.State,
@@ -193,7 +191,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
-					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, errorResp)
+					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Aborted.State,
@@ -633,8 +631,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				status.ErrorCode = strconv.Itoa(types.RouterTimedOutStatusCode)
 			}
 
-			timeElapsed := time.Since(firstAttemptedAts[jobId])
-			if timeElapsed > brt.retryTimeWindow.Load() && attemptNums[jobId] >= brt.maxFailedCountForJob.Load() {
+			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
 				completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, originalJobParameters[jobId]))
 			}
