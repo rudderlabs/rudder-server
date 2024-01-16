@@ -36,6 +36,7 @@ type EventParams struct {
 	SourceId        string `json:"source_id"`
 	SourceTaskRunId string `json:"source_task_run_id"`
 	TraceParent     string `json:"traceparent"`
+	DestinationID   string `json:"destination_id"`
 }
 
 // UserSuppression is interface to access Suppress user feature

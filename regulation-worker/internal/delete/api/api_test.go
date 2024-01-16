@@ -16,9 +16,12 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/transformer"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 
 	"github.com/stretchr/testify/require"
 )
@@ -136,8 +139,9 @@ func TestDelete(t *testing.T) {
 			defer svr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			api := api.APIManager{
-				Client:           &http.Client{},
-				DestTransformURL: svr.URL,
+				Client:                     &http.Client{},
+				DestTransformURL:           svr.URL,
+				TransformerFeaturesService: transformer.NewNoOpService(),
 			}
 			dest := model.Destination{
 				Config: tt.destConfig,
@@ -148,6 +152,58 @@ func TestDelete(t *testing.T) {
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
 		})
+	}
+}
+
+func TestGetSupportedDestinations(t *testing.T) {
+	tests := []struct {
+		name                 string
+		fromFeatures         []string
+		expectedDestinations []string
+	}{
+		{
+			name:                 "test get supported destinations when there is no transformer features",
+			expectedDestinations: api.SupportedDestinations,
+			fromFeatures:         []string{},
+		},
+		{
+			name:                 "test get supported destinations when there is transformer features",
+			expectedDestinations: []string{"AM", "GA4"},
+			fromFeatures:         []string{"AM", "GA4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(gomock.NewController(t))
+			mockTransformerFeaturesService.EXPECT().Wait().Return(testutils.GetClosedEmptyChannel()).AnyTimes()
+			mockTransformerFeaturesService.EXPECT().Regulations().Return(tt.fromFeatures)
+			api := api.APIManager{
+				TransformerFeaturesService: mockTransformerFeaturesService,
+			}
+			destinations := api.GetSupportedDestinations()
+			require.Equal(t, tt.expectedDestinations, destinations)
+		})
+	}
+}
+
+func TestGetSupportedDestinationsShouldBlockUntilFeaturesAreAvailable(t *testing.T) {
+	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(gomock.NewController(t))
+	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
+	mockTransformerFeaturesService.EXPECT().Regulations().Return([]string{"AM"}).AnyTimes()
+	api := api.APIManager{
+		TransformerFeaturesService: mockTransformerFeaturesService,
+	}
+	resultsChan := make(chan []string)
+
+	go func() {
+		resultsChan <- api.GetSupportedDestinations()
+	}()
+	select {
+	case <-time.After(10 * time.Millisecond):
+		close(resultsChan)
+	case result := <-resultsChan:
+		require.Fail(t, "GetSupportedDestinations should block until features are available, but returned %v", result)
 	}
 }
 

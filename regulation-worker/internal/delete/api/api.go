@@ -22,12 +22,13 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 var (
 	pkgLogger             = logger.NewLogger().Child("api")
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP", "GA", "ITERABLE", "ENGAGE", "CUSTIFY", "SENDGRID", "SPRIG"}
+	SupportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP", "GA", "ITERABLE", "ENGAGE", "CUSTIFY", "SENDGRID", "SPRIG"}
 )
 
 type APIManager struct {
@@ -35,6 +36,7 @@ type APIManager struct {
 	DestTransformURL             string
 	OAuth                        oauth.Authorizer
 	MaxOAuthRefreshRetryAttempts int
+	TransformerFeaturesService   transformer.FeaturesService
 }
 
 type oauthDetail struct {
@@ -42,8 +44,15 @@ type oauthDetail struct {
 	id          string
 }
 
-func (*APIManager) GetSupportedDestinations() []string {
-	return supportedDestinations
+func (m *APIManager) GetSupportedDestinations() []string {
+	// Wait for transformer features to be available
+	<-m.TransformerFeaturesService.Wait()
+	destinations := m.TransformerFeaturesService.Regulations()
+	if len(destinations) == 0 {
+		// Fallback to default supported destinations
+		destinations = SupportedDestinations
+	}
+	return destinations
 }
 
 func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {

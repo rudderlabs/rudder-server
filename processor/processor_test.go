@@ -33,6 +33,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
+	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -2583,7 +2584,8 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-
+			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
+			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
 			// crash recover returns empty list
@@ -2601,7 +2603,7 @@ var _ = Describe("Processor", Ordered, func() {
 				transientsource.NewEmptyService(),
 				fileuploader.NewDefaultProvider(),
 				c.MockRsourcesService,
-				getMockTransformerService(),
+				mockTransformerFeaturesService,
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
@@ -2772,7 +2774,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsents,
@@ -2783,7 +2785,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(3)) // all except D1 and D3
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsents, SourceIDOneTrustConsent, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsents,
@@ -2794,7 +2796,18 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(5)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "")).To(BeTrue())
+			Expect(
+				len(processor.getConsentFilteredDestinations(
+					eventWithoutConsentManagementData,
+					processor.getEnabledDestinations(
+						SourceIDOneTrustConsent,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(5)) // all
+
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDOneTrustConsent, "dest-id-1")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
@@ -2853,7 +2866,7 @@ var _ = Describe("Processor", Ordered, func() {
 				),
 			)
 			Expect(len(filteredDestinations)).To(Equal(4)) // all except dest-id-5 since both purpose1 and purpose2 are denied
-			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(event, SourceIDKetchConsent, "")).To(BeTrue())
 		})
 
 		It("should filter based on generic consent management preferences", func() {
@@ -3010,7 +3023,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutConsentManagementData, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
@@ -3021,7 +3034,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithoutDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsentsGCM,
@@ -3032,7 +3045,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(9)) // all
 
-			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithCustomConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithCustomConsentsGCM,
@@ -3043,7 +3056,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(8)) // all except D13
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCM,
@@ -3054,7 +3067,7 @@ var _ = Describe("Processor", Ordered, func() {
 				)),
 			).To(Equal(7)) // all except D6 and D7
 
-			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCMKetch,
@@ -3064,6 +3077,15 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 				)),
 			).To(Equal(8)) // all except D7
+
+			// some unknown destination ID is passed destination will be unavailable
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
+
+			// known destination ID is passed and destination is enabled
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDEnabledA)).To(BeTrue())
+
+			// know destination ID is passed and destination is not enabled
+			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDTransient, DestinationIDDisabled)).To(BeFalse())
 		})
 	})
 
@@ -4969,26 +4991,4 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
-}
-
-func getMockTransformerService() transformerFeaturesService.FeaturesService {
-	return &mockTransformerService{}
-}
-
-type mockTransformerService struct{}
-
-func (*mockTransformerService) SourceTransformerVersion() string {
-	return "random-version"
-}
-
-func (*mockTransformerService) TransformerProxyVersion() string {
-	return "random-version"
-}
-
-func (*mockTransformerService) Wait() chan struct{} {
-	return make(chan struct{})
-}
-
-func (*mockTransformerService) RouterTransform(destType string) bool {
-	return false
 }

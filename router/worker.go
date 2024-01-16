@@ -1070,13 +1070,23 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 }
 
 func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
+	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
+	switch respStatusCode {
+	case types.RouterTimedOutStatusCode,
+		types.RouterUnMarshalErrorCode: // 5xx errors
+		return false
+	}
+
+	if respStatusCode < 500 {
+		return false
+	}
+
 	firstAttemptedAtTime := time.Now()
 	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
 	}
-	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
 
 	maxFailedCountForJob := w.rt.reloadableConfig.maxFailedCountForJob.Load()
 	retryTimeWindow := w.rt.reloadableConfig.retryTimeWindow.Load()
@@ -1085,10 +1095,7 @@ func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
 		retryTimeWindow = w.rt.reloadableConfig.sourcesRetryTimeWindow.Load()
 	}
 
-	return (respStatusCode >= 500 &&
-		respStatusCode != types.RouterTimedOutStatusCode &&
-		respStatusCode != types.RouterUnMarshalErrorCode) && // 5xx errors
-		time.Since(firstAttemptedAtTime) > retryTimeWindow &&
+	return time.Since(firstAttemptedAtTime) > retryTimeWindow &&
 		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }
 
