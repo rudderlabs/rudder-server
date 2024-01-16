@@ -3000,7 +3000,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 		return false
 	}
 
-	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService, rsources.IgnoreDestinationID())
 	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
 
 	proc.Store(partition,
