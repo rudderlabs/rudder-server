@@ -182,7 +182,6 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
 
 		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
-			"namespace":     edr.namespace,
 			"errorCode":     errDets.ErrorCode,
 			"workspaceId":   workspaceID,
 			"destType":      destinationDetail.destType,

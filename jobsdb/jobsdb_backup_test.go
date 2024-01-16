@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -121,7 +123,9 @@ func TestBackupTable(t *testing.T) {
 		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5).Next()
 
 		if len(file) != 3 {
-			t.Log("file list: ", file, " err: ", err)
+			t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+				return item.Key
+			}), err)
 			fm, _ = filemanager.New(&filemanager.Settings{
 				Logger:   logger.NOP,
 				Provider: "MINIO",
@@ -317,14 +321,18 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 			file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 10).Next()
 
 			if len(file) != 3 {
-				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
+				t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+					return item.Key
+				}), err)
 				fm, err = fileuploaderProvider.GetFileManager(workspace)
 				require.NoError(t, err)
 				return false
 			}
 			return true
 		}, 30*time.Second, 1*time.Second, fmt.Errorf("less than 3 backup files found in backup store for workspace:%s. Error: %w ", workspace, err))
-		t.Log("file list: ", file, " err: ", err)
+		t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+			return item.Key
+		}), err)
 
 		var jobStatusBackupFilename, jobsBackupFilename, abortedJobsBackupFilename string
 		for j := 0; j < len(file); j++ {
