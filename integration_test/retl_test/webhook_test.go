@@ -45,5 +45,5 @@ func (w *Webhook) Shutdown(t *testing.T) {
 	w.Recorder.Close()
 }
 func (w *Webhook) Count() int {
-	return len(w.Recorder.Requests())
+	return w.Recorder.RequestsCount()
 }

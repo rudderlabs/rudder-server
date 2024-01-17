@@ -143,6 +143,13 @@ func (s *SUT) Start(t *testing.T) {
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
+	// quick looops
+	t.Setenv("RSERVER_PROCESSOR_READ_LOOP_SLEEP", "50ms")
+	t.Setenv("RSERVER_PROCESSOR_MAX_LOOP_SLEEP", "100ms")
+	t.Setenv("RSERVER_ROUTER_READ_SLEEP", "50ms")
+	t.Setenv("RSERVER_ROUTER_UPDATE_STATUS_BATCH_SIZE", "10")
+	t.Setenv("RSERVER_ROUTER_MAX_STATUS_UPDATE_WAIT", "50ms")
+
 	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
 	require.NoError(t, err)
 	defer func() { _ = tmpFile.Close() }()

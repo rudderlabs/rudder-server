@@ -81,9 +81,6 @@ func TestRETL(t *testing.T) {
 	require.Zero(t, webhook_2.Count(), "webhook_2 should not receive any events")
 
 	t.Run("second task is sending to webhook_2", func(t *testing.T) {
-
-		t.Skip("TODO: fix this test")
-
 		taskRunID_2 := rand.String(27)
 		jobRunID_2 := rand.String(27)
 		numOfRecords_2 := 8
