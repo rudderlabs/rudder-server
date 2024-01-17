@@ -1,23 +1,16 @@
-swagger: '2.0'
+openapi: 3.0.0
 info:
   title: RudderStack HTTP API
-  version: 1.0.0
+  version: 1.0.0-oas3
   description: >-
     The RudderStack HTTP API lets you track your customer event data and route
     it to your desired destinations.
-  termsOfService: 'https://www.rudderstack.com/master-service-agreement/'
+  termsOfService: https://www.rudderstack.com/master-service-agreement/
   contact:
     email: support@rudderstack.com
   license:
     name: Apache 2.0
-    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
-basePath: /v1
-consumes:
-  - application/json
-produces:
-  - application/json
-schemes:
-  - http
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
 paths:
   /v1/identify:
     post:
@@ -28,16 +21,12 @@ paths:
         The identify call lets you associate a visiting user to their actions
         and record any associated traits.
       operationId: Identify
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/IdentifyPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentifyPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -51,7 +40,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/track:
     post:
       tags:
@@ -61,16 +49,12 @@ paths:
         The track call lets you track user actions along with any properties
         associated with them.
       operationId: Track
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/TrackPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -84,7 +68,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/page:
     post:
       tags:
@@ -94,16 +77,12 @@ paths:
         The page call lets you record your website’s page views with any
         additional relevant information about the viewed page.
       operationId: Page
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/PagePayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagePayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -117,7 +96,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/screen:
     post:
       tags:
@@ -128,16 +106,12 @@ paths:
         record whenever your user views their mobile screen with any additional
         relevant information about the screen.
       operationId: Screen
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/ScreenPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScreenPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -151,7 +125,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/group:
     post:
       tags:
@@ -163,16 +136,12 @@ paths:
         traits associated with that group, like the name of the company, the
         number of employees, etc.
       operationId: Group
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/GroupPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -186,7 +155,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/alias:
     post:
       tags:
@@ -194,16 +162,12 @@ paths:
       summary: Alias
       description: The alias call lets you merge different identities of a known user.
       operationId: Alias
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/AliasPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AliasPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -217,7 +181,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
   /v1/batch:
     post:
       tags:
@@ -227,16 +190,12 @@ paths:
         The batch call enables you to send a batch of events (identify, track,
         page, group, screen, alias) in a single request.
       operationId: Batch
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters:
-        - name: body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/BatchPayload'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPayload'
+        required: true
       responses:
         '200':
           description: OK
@@ -250,8 +209,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
-
   /internal/v1/extract:
     post:
       tags:
@@ -259,11 +216,6 @@ paths:
       summary: Extract
       description: Handles extract requests.
       operationId: Extract
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters: []
       responses:
         '200':
           description: OK
@@ -277,7 +229,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
       security:
         - writeKeyAuth: []
   /internal/v1/retl:
@@ -287,11 +238,6 @@ paths:
       summary: Retl
       description: Handles retl (real-time ETL) requests.
       operationId: Retl
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters: []
       responses:
         '200':
           description: OK
@@ -305,7 +251,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
       security:
         - writeKeyAuth: []
   /internal/v1/audiencelist:
@@ -315,11 +260,6 @@ paths:
       summary: Audience List
       description: Handles audience list requests.
       operationId: AudienceList
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters: []
       responses:
         '200':
           description: OK
@@ -333,7 +273,6 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
       security:
         - writeKeyAuth: []
   /internal/v1/replay:
@@ -343,11 +282,6 @@ paths:
       summary: Replay
       description: Handles replay requests.
       operationId: Replay
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      parameters: []
       responses:
         '200':
           description: OK
@@ -361,273 +295,267 @@ paths:
           description: Request size too large
         '429':
           description: Too many requests
-      
       security:
         - writeKeyAuth: []
-
-definitions:
-  IdentifyPayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      anonymousId:
-        type: string
-        description: >-
-          Sets the user ID for cases where there is no unique identifier for the
-          user.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          traits:
-            type: object
-            properties:
-              trait1:
-                type: string
-                description: New value for trait1.
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  TrackPayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      anonymousId:
-        type: string
-        description: >-
-          Sets the user ID for cases where there is no unique identifier for the
-          user.
-      event:
-        type: string
-        description: Name of the event being performed by the user.
+servers:
+  - url: /v1
+components:
+  securitySchemes:
+    writeKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Write Key Authentication
+  schemas:
+    IdentifyPayload:
+      type: object
       properties:
-        type: object
-        description: Dictionary of the properties associated with a particular event.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  PagePayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      anonymousId:
-        type: string
-        description: >-
-          Sets the user ID for cases where there is no unique identifier for the
-          user.
-      name:
-        type: string
-        description: Name of the page being viewed.
-      properties:
-        type: object
-        description: Dictionary of the properties associated with a particular event.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  ScreenPayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      anonymousId:
-        type: string
-        description: >-
-          Sets the user ID for cases where there is no unique identifier for the
-          user.
-      name:
-        type: string
-        description: Name of the screen being viewed.
-      properties:
-        type: object
-        description: >-
-          Dictionary of the properties associated with the page being viewed,
-          such as url and referrer.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  GroupPayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      anonymousId:
-        type: string
-        description: >-
-          Sets the user ID for cases where there is no unique identifier for the
-          user.
-      groupId:
-        type: string
-        description: 'Unique identifier of the group, as present in your database.'
-      traits:
-        type: object
-        description: >-
-          Dictionary of the traits associated with the group, such as name or
-          email.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          traits:
-            type: object
-            properties:
-              trait1:
-                type: string
-                description: New value for trait1.
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  AliasPayload:
-    type: object
-    properties:
-      userId:
-        type: string
-        description: Unique identifier for a particular user in your database.
-      previousId:
-        type: string
-        description: The previous unique identifier of the user.
-      context:
-        type: object
-        description: Dictionary of information that provides context about a message.
-        properties:
-          traits:
-            type: object
-            properties:
-              trait1:
-                type: string
-                description: New value for trait1.
-          ip:
-            type: string
-            description: IP address.
-          library:
-            type: object
-            properties:
-              name:
-                type: string
-                description: Name of the library.
-      timestamp:
-        type: string
-        format: date-time
-        description: The timestamp of the message’s arrival.
-
-  BatchPayload:
-    type: object
-    properties:
-      batch:
-        type: array
-        items:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        context:
           type: object
-          allOf:
-            - $ref: '#/definitions/IdentifyPayload'
-            - $ref: '#/definitions/TrackPayload'
-            - $ref: '#/definitions/PagePayload'
-            - $ref: '#/definitions/ScreenPayload'
-            - $ref: '#/definitions/GroupPayload'
-            - $ref: '#/definitions/AliasPayload'
+          description: Dictionary of information that provides context about a message.
           properties:
-            userId:
-              type: string
-            anonymousId:
-              type: string
-            type:
-              type: string
-            context:
+            traits:
               type: object
               properties:
-                traits:
-                  type: object
-                  properties:
-                    trait1:
-                      type: string
-                ip:
+                trait1:
                   type: string
-                library:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-            timestamp:
+                  description: New value for trait1.
+            ip:
               type: string
-    required:
-      - batch
-
-securityDefinitions:
-  writeKeyAuth:
-    type: apiKey
-    in: header
-    name: Authorization
-    description: Write Key Authentication
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    TrackPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        event:
+          type: string
+          description: Name of the event being performed by the user.
+        properties:
+          type: object
+          description: Dictionary of the properties associated with a particular event.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    PagePayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        name:
+          type: string
+          description: Name of the page being viewed.
+        properties:
+          type: object
+          description: Dictionary of the properties associated with a particular event.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    ScreenPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        name:
+          type: string
+          description: Name of the screen being viewed.
+        properties:
+          type: object
+          description: >-
+            Dictionary of the properties associated with the page being viewed,
+            such as url and referrer.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    GroupPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        groupId:
+          type: string
+          description: Unique identifier of the group, as present in your database.
+        traits:
+          type: object
+          description: >-
+            Dictionary of the traits associated with the group, such as name or
+            email.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            traits:
+              type: object
+              properties:
+                trait1:
+                  type: string
+                  description: New value for trait1.
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    AliasPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        previousId:
+          type: string
+          description: The previous unique identifier of the user.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            traits:
+              type: object
+              properties:
+                trait1:
+                  type: string
+                  description: New value for trait1.
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    BatchPayload:
+      type: object
+      properties:
+        batch:
+          type: array
+          items:
+            type: object
+            allOf:
+              - $ref: '#/components/schemas/IdentifyPayload'
+              - $ref: '#/components/schemas/TrackPayload'
+              - $ref: '#/components/schemas/PagePayload'
+              - $ref: '#/components/schemas/ScreenPayload'
+              - $ref: '#/components/schemas/GroupPayload'
+              - $ref: '#/components/schemas/AliasPayload'
+            properties:
+              userId:
+                type: string
+              anonymousId:
+                type: string
+              type:
+                type: string
+              context:
+                type: object
+                properties:
+                  traits:
+                    type: object
+                    properties:
+                      trait1:
+                        type: string
+                  ip:
+                    type: string
+                  library:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+              timestamp:
+                type: string
+      required:
+        - batch
