@@ -1,5 +1,13 @@
 # Changelog
 
+
+## [1.19.1](https://github.com/rudderlabs/rudder-server/compare/v1.19.0...v1.19.1) (2024-01-16)
+
+
+### Bug Fixes
+
+* ignore gwJobs' destinationID in processor rsources.statCollector ([#4321](https://github.com/rudderlabs/rudder-server/issues/4321)) ([8d58bd5](https://github.com/rudderlabs/rudder-server/commit/8d58bd5bbe8399070f826cdb442fbbfcc867e41e))
+
 ## [1.19.0](https://github.com/rudderlabs/rudder-server/compare/v1.18.0...v1.19.0) (2024-01-15)
 
 

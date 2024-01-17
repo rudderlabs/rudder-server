@@ -140,7 +140,7 @@ func (w *worker) Work() (worked bool) {
 
 	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
 
-	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService())
+	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
 	rsourcesStats.BeginProcessing(jobs.Jobs)
 	subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
 	for _, subJob := range subJobs {
