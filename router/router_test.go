@@ -152,6 +152,12 @@ func initRouter() {
 	misc.Init()
 }
 
+type drainer struct{}
+
+func (d *drainer) Drain(job *jobsdb.JobT) (bool, string) {
+	return false, ""
+}
+
 func TestBackoff(t *testing.T) {
 	t.Run("nextAttemptAfter", func(t *testing.T) {
 		min := 10 * time.Second
@@ -218,6 +224,11 @@ func TestBackoff(t *testing.T) {
 			noOfWorkers:           1,
 			workerInputBufferSize: 3,
 			barrier:               barrier,
+			reloadableConfig: &reloadableConfig{
+				maxFailedCountForJob: misc.SingleValueLoader(3),
+				retryTimeWindow:      misc.SingleValueLoader(180 * time.Minute),
+			},
+			drainer: &drainer{},
 		}
 		workers := []*worker{{
 			logger:  logger.NOP,
@@ -241,8 +252,8 @@ func TestBackoff(t *testing.T) {
 			require.NoError(t, err)
 
 			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, map[string]struct{}{})
-			require.NotNil(t, slot)
 			require.NoError(t, err)
+			require.NotNil(t, slot)
 
 			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, map[string]struct{}{})
 			require.Nil(t, slot)

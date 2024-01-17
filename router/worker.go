@@ -89,12 +89,10 @@ func (w *worker) workLoop() {
 			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
-			abort, abortReason := w.rt.drainer.Drain(
-				job,
-			)
+			abort, abortReason := w.rt.drainer.Drain(job)
 			abortTag := abortReason
 			if !abort {
-				abort = w.retryLimitReached(&job.LastJobStatus)
+				abort = w.rt.retryLimitReached(&job.LastJobStatus)
 				abortReason = string(job.LastJobStatus.ErrorResponse)
 				abortTag = "retry limit reached"
 			}
@@ -977,7 +975,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
 		} else {
 			status.JobState = jobsdb.Failed.State
-			if !w.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
+			if !w.rt.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
 				status.RetryTime = status.ExecTime.Add(nextAttemptAfter(status.AttemptNum, w.rt.reloadableConfig.minRetryBackoff.Load(), w.rt.reloadableConfig.maxRetryBackoff.Load()))
 			}
 		}
@@ -1067,36 +1065,6 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 		}
 		w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
-}
-
-func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
-	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
-	switch respStatusCode {
-	case types.RouterTimedOutStatusCode,
-		types.RouterUnMarshalErrorCode: // 5xx errors
-		return false
-	}
-
-	if respStatusCode < 500 {
-		return false
-	}
-
-	firstAttemptedAtTime := time.Now()
-	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
-		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
-			firstAttemptedAtTime = t
-		}
-	}
-
-	maxFailedCountForJob := w.rt.reloadableConfig.maxFailedCountForJob.Load()
-	retryTimeWindow := w.rt.reloadableConfig.retryTimeWindow.Load()
-	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
-		maxFailedCountForJob = w.rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
-		retryTimeWindow = w.rt.reloadableConfig.sourcesRetryTimeWindow.Load()
-	}
-
-	return time.Since(firstAttemptedAtTime) > retryTimeWindow &&
-		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }
 
 // AvailableSlots returns the number of available slots in the worker's input channel

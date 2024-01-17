@@ -537,23 +537,29 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			"destinationId": parameters.DestinationID,
 		}).Increment()
 	}
+	abortedJob := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to it's worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
 			return nil, types.ErrWorkerNoSlot
 		}
+		slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot()
+		if slot == nil {
+			return nil, types.ErrWorkerNoSlot
+		}
+		if abortedJob {
+			return slot, nil
+		}
 		if rt.shouldBackoff(job) {
+			slot.Release()
 			return nil, types.ErrJobBackoff
 		}
 		if rt.shouldThrottle(ctx, job, parameters) {
+			slot.Release()
 			return nil, types.ErrDestinationThrottled
 		}
 
-		if slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot(); slot != nil { // skipcq: GSC-G404
-			return slot, nil
-		}
-		return nil, types.ErrWorkerNoSlot
-
+		return slot, nil
 	}
 
 	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
@@ -564,7 +570,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	}
 
 	//#JobOrder (see other #JobOrder comment)
-	if rt.shouldBackoff(job) { // backoff
+	if rt.shouldBackoff(job) && !abortedJob { // backoff
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrJobBackoff
 	}
@@ -586,7 +592,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if rt.shouldThrottle(ctx, job, parameters) {
+	if rt.shouldThrottle(ctx, job, parameters) && !abortedJob {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -594,6 +600,45 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	}
 	return slot, nil
 	//#EndJobOrder
+}
+
+// checks if job is configured to drain or if it's retry limit is reached
+func (rt *Handle) drainOrRetryLimitReached(job *jobsdb.JobT) bool {
+	drain, _ := rt.drainer.Drain(job)
+	if drain {
+		return true
+	}
+	return rt.retryLimitReached(&job.LastJobStatus)
+}
+
+func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
+	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
+	switch respStatusCode {
+	case types.RouterTimedOutStatusCode,
+		types.RouterUnMarshalErrorCode: // 5xx errors
+		return false
+	}
+
+	if respStatusCode < 500 {
+		return false
+	}
+
+	firstAttemptedAtTime := time.Now()
+	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
+		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
+			firstAttemptedAtTime = t
+		}
+	}
+
+	maxFailedCountForJob := rt.reloadableConfig.maxFailedCountForJob.Load()
+	retryTimeWindow := rt.reloadableConfig.retryTimeWindow.Load()
+	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+		maxFailedCountForJob = rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
+		retryTimeWindow = rt.reloadableConfig.sourcesRetryTimeWindow.Load()
+	}
+
+	return time.Since(firstAttemptedAtTime) > retryTimeWindow &&
+		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }
 
 func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
