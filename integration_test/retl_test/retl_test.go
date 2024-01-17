@@ -48,7 +48,6 @@ func (s *rETLSource) ID() string {
 }
 
 func TestRETL(t *testing.T) {
-
 	rETLSource := &rETLSource{}
 	webhook_1 := &Webhook{name: "webhook_1"}
 	webhook_2 := &Webhook{name: "webhook_2"}
@@ -94,7 +93,6 @@ func TestRETL(t *testing.T) {
 		require.Eventually(t, func() bool {
 			t.Logf("webhook count %d", webhook_2.Count())
 			return !pendingTask(s.JobStatus(t, rETLSource.ID(), jobRunID_2, taskRunID_2))
-
 		}, 10*time.Second, 2*time.Second, "using job-status to check if the task is completed")
 
 		require.Equal(t, numOfRecords, webhook_1.Count())

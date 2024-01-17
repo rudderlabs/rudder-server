@@ -76,7 +76,6 @@ type event struct {
 	ip                string
 }
 
-
 func TestMainFlow(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")

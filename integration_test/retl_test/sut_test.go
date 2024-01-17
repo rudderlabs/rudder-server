@@ -154,7 +154,7 @@ func (s *SUT) Start(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tmpFile.Close() }()
 
-	require.NoError(t, json.NewEncoder(tmpFile).Encode(s.generateConfig(t)))
+	require.NoError(t, json.NewEncoder(tmpFile).Encode(s.generateConfig()))
 	require.NoError(t, tmpFile.Close())
 
 	workspaceConfigPath := tmpFile.Name()
@@ -187,10 +187,9 @@ func (s *SUT) Start(t *testing.T) {
 		time.Second,
 		"serviceHealthEndpoint",
 	)
-
 }
 
-func (s *SUT) generateConfig(t *testing.T) map[string]any {
+func (s *SUT) generateConfig() map[string]any {
 	ss := make([]map[string]any, len(s.Sources))
 	for i, srcWithDst := range s.Sources {
 		ss[i] = map[string]any{
@@ -315,7 +314,6 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 // JobStatus hits the job-status endpoint and returns the status for a sourceID, jobRunID, jobTaskID.
 // If the job is not found, the second return value is false. Any other error is logged and the test is failed.
 func (s *SUT) JobStatus(t *testing.T, sourceID, jobRunID, jobTaskID string) (rsources.JobStatus, bool) {
-
 	var (
 		httpClient = &http.Client{}
 		url        = fmt.Sprintf("%s/v1/job-status/%s?%s", s.URL, jobRunID, url.Values{
