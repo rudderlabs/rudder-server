@@ -330,14 +330,17 @@ func (eir *ErrorIndexReporter) resolveJobsDB(tx *Tx) (jobsdb.JobsDB, error) {
 		return nil, fmt.Errorf("failed to get current tx's db identity: %w", err)
 	}
 
+	databaseIdentities := make([]string, len(eir.dbs))
 	for key := range eir.dbs {
 		var databaseIdentity string
 		if err := eir.dbs[key].sqlDB.QueryRow(dbIdentityQuery).Scan(&databaseIdentity); err != nil {
 			return nil, fmt.Errorf("failed to get db identity for %q: %w", key, err)
 		}
+		databaseIdentities = append(databaseIdentities, databaseIdentity)
+
 		if databaseIdentity == txDatabaseIdentity {
 			return eir.dbs[key].Handle, nil
 		}
 	}
-	return nil, fmt.Errorf("no jobsdb found matching the current transaction")
+	return nil, fmt.Errorf("no jobsdb found matching the current transaction, txDatabaseIdentity: %q, databaseIdentities: %#v", txDatabaseIdentity, databaseIdentities)
 }
