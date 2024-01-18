@@ -769,6 +769,10 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 
 // uploadInterval calculates the upload interval for the destination
 func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time.Duration {
+	if config.IsSet(fmt.Sprintf("BatchRouter.%s.uploadInterval", brt.destType)) {
+		return config.GetDuration(fmt.Sprintf("BatchRouter.%s.uploadInterval", brt.destType), 1, time.Minute)
+	}
+
 	uploadInterval, ok := destinationConfig["uploadInterval"]
 	if !ok {
 		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)

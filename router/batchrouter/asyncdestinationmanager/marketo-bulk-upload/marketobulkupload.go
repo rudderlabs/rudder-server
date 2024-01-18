@@ -288,6 +288,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	payloadSizeStat.Observe(float64(len(payload)))
 	b.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
+	b.logger.Infof("[Async Destination Manager] File Upload Finished for Dest Type %v. Statuscode: %d. ResponseBody: %s", destType, statusCodeHTTP, string(responseBody))
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
@@ -295,7 +296,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if statusCodeHTTP != 200 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
+			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d. RespBody: %s`, statusCodeHTTP, string(responseBody)),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
