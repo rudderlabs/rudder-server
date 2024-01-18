@@ -25,10 +25,11 @@ type bodyAugmenter struct{}
 
 // Augment adds the authorization information to the request body and sets the new request body to the request.
 func (t *bodyAugmenter) Augment(r *http.Request, body, token []byte) error {
-	augmentedBody, err := sjson.SetRawBytes(body, "metadata.secret", token)
+	augmentedBody, err := sjson.SetRawBytes(body, "input.0.metadata.secret", token)
 	if err != nil {
 		return fmt.Errorf("failed to augment request body: %w", err)
 	}
+	r.ContentLength = int64(len(augmentedBody))
 	r.Body = io.NopCloser(bytes.NewReader(augmentedBody))
 	return nil
 }

@@ -361,6 +361,7 @@ func (w *worker) processDestinationJobs() {
 	for _, destinationJob := range w.destinationJobs {
 		var errorAt string
 		respBodyArr := make([]string, 0)
+		ctx = context.WithValue(ctx, "destination", &destinationJob.Destination)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if w.canSendJobToDestination(prevRespStatusCode, failedJobOrderKeys, &destinationJob) {
 				diagnosisStartTime := time.Now()
@@ -448,19 +449,19 @@ func (w *worker) processDestinationJobs() {
 									respStatusCode, respBodyTemp, respContentType = w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									w.routerProxyStat.SendTiming(time.Since(rtlTime))
 									w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
-									authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-									if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
-										w.logger.Debugf(`Sending for OAuth destination`)
-										// Token from header of the request
-										respStatusCode, respBodyTemp = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
-											ctx:            ctx,
-											destinationJob: destinationJob,
-											workerID:       w.id,
-											trRespStCd:     respStatusCode,
-											trRespBody:     respBodyTemp,
-											secret:         firstJobMetadata.Secret,
-										})
-									}
+									// authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
+									// if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+									// 	w.logger.Debugf(`Sending for OAuth destination`)
+									// 	// Token from header of the request
+									// 	respStatusCode, respBodyTemp = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
+									// 		ctx:            ctx,
+									// 		destinationJob: destinationJob,
+									// 		workerID:       w.id,
+									// 		trRespStCd:     respStatusCode,
+									// 		trRespBody:     respBodyTemp,
+									// 		secret:         firstJobMetadata.Secret,
+									// 	})
+									// }
 								} else {
 									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
 									rdlTime := time.Now()

@@ -313,9 +313,10 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery)
+	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.TransformHandler, oauth.RudderFlow_Delivery)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
+	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.DeliveryHandler, oauth.RudderFlow_Delivery)
+	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
 
@@ -353,6 +354,8 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 
 	httpReqStTime := time.Now()
+	temp := ctx.Value("destination")
+	req = req.WithContext(context.WithValue(req.Context(), "destination", temp))
 	resp, err := trans.proxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
