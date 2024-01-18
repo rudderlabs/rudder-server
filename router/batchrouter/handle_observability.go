@@ -232,6 +232,7 @@ func (brt *Handle) updateRudderSourcesStats(
 func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
 	eventsPerStateAndCode := map[string]map[string]int{}
 	for i := range statusList {
+		
 		state := statusList[i].JobState
 		code := statusList[i].ErrorCode
 		if _, ok := eventsPerStateAndCode[state]; !ok {

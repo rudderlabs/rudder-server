@@ -108,6 +108,10 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 			Parameters:    routerutils.EmptyPayload,
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
+			ConnectionDetails: &jobsdb.ConnectionDetailsT{
+				SourceId: gjson.Get(string(job.Parameters), "source_id").String(),
+				DestinationId:   gjson.Get(string(job.Parameters), "destination_id").String(),
+			},
 		}
 
 		if defaultStatus.JobState == jobsdb.Failed.State {

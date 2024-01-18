@@ -110,6 +110,10 @@ func (w *worker) workLoop() {
 					JobParameters: job.Parameters,
 					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
 					WorkspaceId:   job.WorkspaceId,
+					ConnectionDetails: &jobsdb.ConnectionDetailsT{
+						SourceId:      parameters.SourceID,
+						DestinationId: parameters.DestinationID,
+					},
 				}
 				// Enhancing job parameter with the drain reason.
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
@@ -152,6 +156,10 @@ func (w *worker) workLoop() {
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
+						ConnectionDetails: &jobsdb.ConnectionDetailsT{
+							SourceId:      parameters.SourceID,
+							DestinationId: parameters.DestinationID,
+						},
 					}
 					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
 					continue
@@ -640,6 +648,10 @@ func (w *worker) processDestinationJobs() {
 			Parameters:    routerutils.EmptyPayload,
 			JobParameters: destinationJobMetadata.JobT.Parameters,
 			WorkspaceId:   destinationJobMetadata.WorkspaceID,
+			ConnectionDetails: &jobsdb.ConnectionDetailsT{
+				SourceId:      destinationJobMetadata.SourceID,
+				DestinationId: destinationJobMetadata.DestinationID,
+			},
 		}
 
 		routerJobResponse.status = &status
