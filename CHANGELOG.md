@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.19.2](https://github.com/rudderlabs/rudder-server/compare/v1.19.1...v1.19.2) (2024-01-18)
+
+
+### Bug Fixes
+
+* nil load statistics for bigquery ([#4328](https://github.com/rudderlabs/rudder-server/issues/4328)) ([48cd75c](https://github.com/rudderlabs/rudder-server/commit/48cd75cc9ada8a7ad401089e9204ce1e6d81a5f6))
+
+## [1.19.1](https://github.com/rudderlabs/rudder-server/compare/v1.19.0...v1.19.1) (2024-01-16)
+
+
+### Bug Fixes
+
+* ignore gwJobs' destinationID in processor rsources.statCollector ([#4321](https://github.com/rudderlabs/rudder-server/issues/4321)) ([8d58bd5](https://github.com/rudderlabs/rudder-server/commit/8d58bd5bbe8399070f826cdb442fbbfcc867e41e))
+
 ## [1.19.0](https://github.com/rudderlabs/rudder-server/compare/v1.18.0...v1.19.0) (2024-01-15)
 
 
