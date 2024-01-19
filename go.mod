@@ -258,7 +258,7 @@ require (
 	github.com/rivo/uniseg v0.1.0 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
-	github.com/rudderlabs/bing-ads-go-sdk v0.2.0
+	github.com/rudderlabs/bing-ads-go-sdk v0.2.1
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/backo-go v1.0.1 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.10 // indirect
