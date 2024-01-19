@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 openapi: 3.1.0
+=======
+>>>>>>> c74347453b49d8f47ffded961665fd2bcbd0fc86
 info:
   title: RudderStack HTTP API
   version: 1.0.0-oas3
@@ -558,4 +561,8 @@ components:
               timestamp:
                 type: string
       required:
+<<<<<<< HEAD
         - batch
+=======
+        - batch
+>>>>>>> c74347453b49d8f47ffded961665fd2bcbd0fc86
