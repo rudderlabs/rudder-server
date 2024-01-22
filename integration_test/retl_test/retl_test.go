@@ -11,30 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
-type batch struct {
-	Batch []record `json:"batch"`
-}
-
-type record struct {
-	Context recordContext `json:"context"`
-
-	Type      string    `json:"type"`
-	MessageID string    `json:"messageId"`
-	UserID    string    `json:"userId"`
-	SentAt    time.Time `json:"sentAt"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-type rudderSource struct {
-	JobID     string `json:"job_id"`
-	JobRunID  string `json:"job_run_id"`
-	TaskRunID string `json:"task_run_id"`
-}
-
-type recordContext struct {
-	Sources rudderSource `json:"sources"`
-}
-
 type rETLSource struct {
 	id   string
 	once sync.Once
@@ -49,8 +25,8 @@ func (s *rETLSource) ID() string {
 
 func TestRETL(t *testing.T) {
 	rETLSource := &rETLSource{}
-	webhook_1 := &Webhook{name: "webhook_1"}
-	webhook_2 := &Webhook{name: "webhook_2"}
+	webhook_1 := &webhook{name: "webhook_1"}
+	webhook_2 := &webhook{name: "webhook_2"}
 
 	s := &SUT{
 		Sources: []srcWithDst{
@@ -66,7 +42,7 @@ func TestRETL(t *testing.T) {
 	taskRunID := rand.String(27)
 	numOfRecords := 10
 
-	s.SendRETL(t, rETLSource.ID(), webhook_1.ID(), ManyRecords(rudderSource{
+	s.SendRETL(t, rETLSource.ID(), webhook_1.ID(), manyRecords(rudderSource{
 		JobID:     jobID,
 		JobRunID:  jobRunID,
 		TaskRunID: taskRunID,
@@ -74,29 +50,29 @@ func TestRETL(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return !pendingTask(s.JobStatus(t, rETLSource.ID(), jobRunID, taskRunID))
-	}, 10*time.Second, 2*time.Second, "using job-status to check if the task is completed")
+	}, 15*time.Second, 250*time.Millisecond, "using job-status to check if the task is completed")
 
 	require.Equal(t, numOfRecords, webhook_1.Count())
 	require.Zero(t, webhook_2.Count(), "webhook_2 should not receive any events")
 
 	t.Run("second task is sending to webhook_2", func(t *testing.T) {
-		taskRunID_2 := rand.String(27)
-		jobRunID_2 := rand.String(27)
-		numOfRecords_2 := 8
+		taskRunID2 := rand.String(27)
+		jobRunID2 := rand.String(27)
+		numOfRecords2 := 8
 
-		s.SendRETL(t, rETLSource.ID(), webhook_2.ID(), ManyRecords(rudderSource{
+		s.SendRETL(t, rETLSource.ID(), webhook_2.ID(), manyRecords(rudderSource{
 			JobID:     jobID,
-			JobRunID:  jobRunID_2,
-			TaskRunID: taskRunID_2,
-		}, "identify", numOfRecords_2))
+			JobRunID:  jobRunID2,
+			TaskRunID: taskRunID2,
+		}, "identify", numOfRecords2))
 
 		require.Eventually(t, func() bool {
 			t.Logf("webhook count %d", webhook_2.Count())
-			return !pendingTask(s.JobStatus(t, rETLSource.ID(), jobRunID_2, taskRunID_2))
+			return !pendingTask(s.JobStatus(t, rETLSource.ID(), jobRunID2, taskRunID2))
 		}, 10*time.Second, 2*time.Second, "using job-status to check if the task is completed")
 
 		require.Equal(t, numOfRecords, webhook_1.Count())
-		require.Equal(t, numOfRecords_2, webhook_2.Count())
+		require.Equal(t, numOfRecords2, webhook_2.Count())
 	})
 
 	// TODO: add test for failed-records and delete failed-records
@@ -120,8 +96,8 @@ func pendingTask(status rsources.JobStatus, found bool) bool {
 	return false
 }
 
-// ManyRecords helper function to generate a batch of records for rETL endpoint.
-func ManyRecords(sources rudderSource, eventType string, num int) batch {
+// manyRecords helper function to generate a batch of records for rETL endpoint.
+func manyRecords(sources rudderSource, eventType string, num int) batch {
 	rr := make([]record, num)
 	for i := 0; i < num; i++ {
 		rr[i] = record{

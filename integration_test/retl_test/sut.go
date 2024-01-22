@@ -57,19 +57,43 @@ type SUT struct {
 
 	URL string
 
-	WorkspaceID string
+	workspaceID string
 	Sources     []srcWithDst
 }
 
 type srcWithDst struct {
-	Source       src
-	Destinations []dst
+	source       src
+	destinations []dst
+}
+
+type batch struct {
+	Batch []record `json:"batch"`
+}
+
+type record struct {
+	Context recordContext `json:"context"`
+
+	Type      string    `json:"type"`
+	MessageID string    `json:"messageId"`
+	UserID    string    `json:"userId"`
+	SentAt    time.Time `json:"sentAt"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type rudderSource struct {
+	JobID     string `json:"job_id"`
+	JobRunID  string `json:"job_run_id"`
+	TaskRunID string `json:"task_run_id"`
+}
+
+type recordContext struct {
+	Sources rudderSource `json:"sources"`
 }
 
 func Connect(s src, d ...dst) srcWithDst {
 	return srcWithDst{
-		Source:       s,
-		Destinations: d,
+		source:       s,
+		destinations: d,
 	}
 }
 
@@ -79,7 +103,7 @@ func (s *SUT) Start(t *testing.T) {
 	s.cancel = svcCancel
 	s.done = make(chan struct{})
 
-	s.WorkspaceID = rand.String(27)
+	s.workspaceID = rand.String(27)
 
 	setupStart := time.Now()
 	if testing.Verbose() {
@@ -111,7 +135,7 @@ func (s *SUT) Start(t *testing.T) {
 	})
 
 	for _, srcWithDst := range s.Sources {
-		for _, dst := range srcWithDst.Destinations {
+		for _, dst := range srcWithDst.destinations {
 			dst := dst
 			containersGroup.Go(func() (err error) {
 				dst.Start(t)
@@ -147,7 +171,7 @@ func (s *SUT) Start(t *testing.T) {
 	t.Setenv("RSERVER_PROCESSOR_READ_LOOP_SLEEP", "50ms")
 	t.Setenv("RSERVER_PROCESSOR_MAX_LOOP_SLEEP", "100ms")
 	t.Setenv("RSERVER_ROUTER_READ_SLEEP", "50ms")
-	t.Setenv("RSERVER_ROUTER_UPDATE_STATUS_BATCH_SIZE", "10")
+	t.Setenv("RSERVER_ROUTER_UPDATE_STATUS_BATCH_SIZE", "5")
 	t.Setenv("RSERVER_ROUTER_MAX_STATUS_UPDATE_WAIT", "50ms")
 
 	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
@@ -193,19 +217,19 @@ func (s *SUT) generateConfig() map[string]any {
 	ss := make([]map[string]any, len(s.Sources))
 	for i, srcWithDst := range s.Sources {
 		ss[i] = map[string]any{
-			"id":                 srcWithDst.Source.ID(),
+			"id":                 srcWithDst.source.ID(),
 			"name":               fmt.Sprintf("test_source_ %d", i),
 			"writeKey":           "{{.writeKey}}",
 			"enabled":            true,
 			"sourceDefinitionId": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
 			"createdBy":          "xxxyyyzzueyoBz4jb7bRdOzDxai",
-			"workspaceId":        s.WorkspaceID,
+			"workspaceId":        s.workspaceID,
 			"createdAt":          "2021-08-27T06:33:00.305Z",
 			"updatedAt":          "2021-08-27T06:33:00.305Z",
 			"destinations":       []any{},
 		}
-		dd := make([]map[string]any, len(srcWithDst.Destinations))
-		for i, dst := range srcWithDst.Destinations {
+		dd := make([]map[string]any, len(srcWithDst.destinations))
+		for i, dst := range srcWithDst.destinations {
 			dd[i] = map[string]any{
 				"id":                      dst.ID(),
 				"name":                    dst.TypeName(),
@@ -214,7 +238,7 @@ func (s *SUT) generateConfig() map[string]any {
 				"enabled":                 true,
 				"destinationDefinitionId": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
 				"createdBy":               "xxxyyyzzueyoBz4jb7bRdOzDxai",
-				"workspaceId":             s.WorkspaceID,
+				"workspaceId":             s.workspaceID,
 				"createdAt":               "2021-08-27T06:33:00.305Z",
 				"updatedAt":               "2021-08-27T06:33:00.305Z",
 				"isConnectionEnabled":     true,
@@ -245,7 +269,7 @@ func (s *SUT) generateConfig() map[string]any {
 	}
 	c := map[string]any{
 		"enableMetrics": false,
-		"workspaceId":   s.WorkspaceID,
+		"workspaceId":   s.workspaceID,
 		"sources":       ss,
 		"libraries":     []any{},
 	}
@@ -254,7 +278,7 @@ func (s *SUT) generateConfig() map[string]any {
 
 func (s *SUT) Shutdown(t *testing.T) {
 	for _, srcWithDst := range s.Sources {
-		for _, dst := range srcWithDst.Destinations {
+		for _, dst := range srcWithDst.destinations {
 			dst.Shutdown(t)
 		}
 	}
@@ -270,8 +294,7 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 
 	var (
 		httpClient = &http.Client{}
-		method     = "POST"
-		url        = fmt.Sprintf("%s/internal/v1/retl", s.URL)
+		retlURL    = fmt.Sprintf("%s/internal/v1/retl", s.URL)
 	)
 
 	b, err := json.MarshalIndent(payload, "", "  ")
@@ -279,7 +302,7 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 
 	t.Logf("sending records: %s", b)
 
-	req, err := http.NewRequest(method, url, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, retlURL, bytes.NewReader(b))
 	if err != nil {
 		t.Logf("sendEvent error: %v", err)
 		return
@@ -315,15 +338,15 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 // If the job is not found, the second return value is false. Any other error is logged and the test is failed.
 func (s *SUT) JobStatus(t *testing.T, sourceID, jobRunID, jobTaskID string) (rsources.JobStatus, bool) {
 	var (
-		httpClient = &http.Client{}
-		url        = fmt.Sprintf("%s/v1/job-status/%s?%s", s.URL, jobRunID, url.Values{
+		httpClient   = &http.Client{}
+		jobStatusURL = fmt.Sprintf("%s/v1/job-status/%s?%s", s.URL, jobRunID, url.Values{
 			"task_run_id": []string{jobTaskID},
 		}.Encode()) // job_run_id
 	)
 
 	var status rsources.JobStatus
 
-	res, err := httpClient.Get(url)
+	res, err := httpClient.Get(jobStatusURL)
 	if err != nil {
 		t.Logf("job-status error: %v", err)
 		return status, false
