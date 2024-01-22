@@ -90,6 +90,26 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 		suppression.WithLogger(e.Log),
 		suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
+		suppression.WithTokenPublisher(func(token []byte) {
+			var Token struct {
+				_         time.Time
+				SyncSeqId int
+			}
+			decodedToken, err := base64.StdEncoding.DecodeString(string(token))
+			if err != nil {
+				e.Log.Errorf("could not decode token: %v", err)
+				config.Set(model.MigrationFullExportSeqID, -1)
+				return
+			}
+			err = json.Unmarshal(decodedToken, &Token)
+			if err != nil {
+				e.Log.Errorf("could not unmarshal token: %v", err)
+				config.Set(model.MigrationFullExportSeqID, -1)
+				return
+			}
+			config.Set(model.MigrationFullExportSeqID, Token.SyncSeqId)
+		},
+		),
 	)
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)

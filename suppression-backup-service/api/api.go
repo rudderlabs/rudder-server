@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rudderlabs/rudder-go-kit/chiware"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
@@ -39,6 +40,10 @@ func (api *API) Handler(ctx context.Context) http.Handler {
 	}))
 	srvMux.Get("/full-export", ServeFile(api.fullBackup))
 	srvMux.Get("/latest-export", ServeFile(api.latestBackup))
+	srvMux.Get("/full-export/checkpoint", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Println(w, config.GetInt(model.MigrationFullExportSeqID, -1))
+	})
 
 	api.log.Info("Suppression backup service Handler declared")
 	return srvMux

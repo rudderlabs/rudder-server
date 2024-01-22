@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -52,13 +53,16 @@ func WithLogger(log logger.Logger) SyncerOpt {
 	}
 }
 
+// publish latest token
+func WithTokenPublisher(publisher func([]byte)) SyncerOpt {
+	return func(c *Syncer) {
+		c.tokenPublisher = publisher
+	}
+}
+
 // MustNewSyncer creates a new syncer, panics if an error occurs
 func MustNewSyncer(baseURL string, identifier identity.Identifier, r Repository, opts ...SyncerOpt) *Syncer {
-	s, err := NewSyncer(baseURL, identifier, r, opts...)
-	if err != nil {
-		panic(err)
-	}
-	return s
+	return lo.Must(NewSyncer(baseURL, identifier, r, opts...))
 }
 
 // NewSyncer creates a new syncer
@@ -100,6 +104,7 @@ type Syncer struct {
 	pageSize           int
 	pollIntervalFn     func() time.Duration
 	defaultWorkspaceID string
+	tokenPublisher     func([]byte)
 }
 
 // SyncLoop runs the sync loop until the provided context is done
@@ -132,6 +137,9 @@ again:
 		}
 		s.log.Errorf("Failed to get token from repository: %w", err)
 		return err
+	}
+	if s.tokenPublisher != nil {
+		s.tokenPublisher(token)
 	}
 
 	suppressions, nextToken, err := s.sync(token)
