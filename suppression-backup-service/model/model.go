@@ -7,4 +7,8 @@ type File struct {
 	Mu   *sync.RWMutex
 }
 
-var MigrationFullExportSeqID = "Migration.FullExport.syncID"
+var (
+	MigrationFullExportSeqID   = "Migration.FullExport.seqID"
+	MigrationSyncInProgress    = "Migration.FullExport.syncInProgress"
+	MigrationSyncSeqIDOverride = "Migration.FullExport.syncSeqIDOverride"
+)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -69,7 +70,13 @@ type Exporter struct {
 	Log  logger.Logger
 }
 
-func (e *Exporter) FullExporterLoop(ctx context.Context) error {
+func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error {
+	options := &Opt{
+		syncInProgress: &atomic.Bool{},
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
 	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
 	tmpDir, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -82,6 +89,15 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	defer func() {
 		_ = repo.Stop()
 	}()
+	if options.repoSharing != nil {
+		options.repoSharing.SetRepo(repo)
+	}
+	var tokenPublisher func([]byte)
+	if options.currentToken != nil {
+		tokenPublisher = func(token []byte) {
+			options.currentToken.Store(token)
+		}
+	}
 
 	syncer, err := suppression.NewSyncer(
 		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
@@ -90,26 +106,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 		suppression.WithLogger(e.Log),
 		suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
-		suppression.WithTokenPublisher(func(token []byte) {
-			var Token struct {
-				_         time.Time
-				SyncSeqId int
-			}
-			decodedToken, err := base64.StdEncoding.DecodeString(string(token))
-			if err != nil {
-				e.Log.Errorf("could not decode token: %v", err)
-				config.Set(model.MigrationFullExportSeqID, -1)
-				return
-			}
-			err = json.Unmarshal(decodedToken, &Token)
-			if err != nil {
-				e.Log.Errorf("could not unmarshal token: %v", err)
-				config.Set(model.MigrationFullExportSeqID, -1)
-				return
-			}
-			config.Set(model.MigrationFullExportSeqID, Token.SyncSeqId)
-		},
-		),
+		suppression.WithTokenPublisher(tokenPublisher),
 	)
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
@@ -120,11 +117,16 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		default:
+			if !options.syncInProgress.CompareAndSwap(false, true) {
+				continue
+			}
 			syncStart := time.Now()
 			if err := syncer.Sync(ctx); err != nil {
 				return fmt.Errorf("fullExporterLoop: %w", err)
 			}
 			stats.Default.NewStat("suppression_backup_service_full_sync_time", stats.TimerType).Since(syncStart)
+			options.syncInProgress.Store(false)
+
 			exportStart := time.Now()
 			if err = Export(repo, e.File); err != nil {
 				return fmt.Errorf("fullExporterLoop: %w", err)
@@ -217,4 +219,34 @@ func latestToken() (string, error) {
 type Token struct {
 	SyncStartTime time.Time
 	SyncSeqId     int
+}
+
+type Opt struct {
+	repoSharing    repoDependent
+	syncInProgress *atomic.Bool
+	currentToken   *atomic.Value
+}
+
+type OptFunc func(*Opt)
+
+func WithRepoSharing(r repoDependent) OptFunc {
+	return func(o *Opt) {
+		o.repoSharing = r
+	}
+}
+
+func WithSyncInProgress(syncInProgress *atomic.Bool) OptFunc {
+	return func(o *Opt) {
+		o.syncInProgress = syncInProgress
+	}
+}
+
+func WithCurrentToken(currentToken *atomic.Value) OptFunc {
+	return func(o *Opt) {
+		o.currentToken = currentToken
+	}
+}
+
+type repoDependent interface {
+	SetRepo(suppression.Repository)
 }

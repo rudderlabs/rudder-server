@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -65,6 +67,10 @@ func Run(ctx context.Context) error {
 	fullExportFile := model.File{Path: path.Join(fullExportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(latestExportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
 
+	syncInProgress := &atomic.Bool{}
+	repoDep := &repoDependent{}
+	currentToken := &atomic.Value{}
+
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		fullExporter := exporter.Exporter{
@@ -72,7 +78,12 @@ func Run(ctx context.Context) error {
 			File: fullExportFile,
 			Log:  pkgLogger,
 		}
-		return fullExporter.FullExporterLoop(gCtx)
+		return fullExporter.FullExporterLoop(
+			gCtx,
+			exporter.WithSyncInProgress(syncInProgress),
+			exporter.WithRepoSharing(repoDep),
+			exporter.WithCurrentToken(currentToken),
+		)
 	})
 
 	g.Go(func() error {
@@ -86,10 +97,18 @@ func Run(ctx context.Context) error {
 
 	var httpServer *http.Server
 	g.Go(func() error {
-		api := api.NewAPI(pkgLogger, fullExportFile, latestExportFile)
 		httpServer = &http.Server{
-			Addr:              fmt.Sprintf(":%s", config.GetString("HTTP_PORT", "8000")),
-			Handler:           api.Handler(gCtx),
+			Addr: fmt.Sprintf(":%s", config.GetString("HTTP_PORT", "8000")),
+			Handler: api.NewAPI(
+				pkgLogger,
+				fullExportFile,
+				latestExportFile,
+			).Handler(
+				gCtx,
+				api.WithSyncInProgress(syncInProgress),
+				api.WithRepo(repoDep.repo),
+				api.WithCurrentToken(currentToken),
+			),
 			ReadHeaderTimeout: config.GetDuration("HTTP_READ_HEADER_TIMEOUT", 3, time.Second),
 		}
 		return httpServer.ListenAndServe()
@@ -142,4 +161,12 @@ func exportPath() (baseDir string, err error) {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
 	return
+}
+
+type repoDependent struct {
+	repo suppression.Repository
+}
+
+func (r *repoDependent) SetRepo(repo suppression.Repository) {
+	r.repo = repo
 }
