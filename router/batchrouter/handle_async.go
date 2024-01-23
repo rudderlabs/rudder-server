@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -696,6 +697,12 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 		panic(err)
 	}
 	brt.updateProcessedEventsMetrics(statusList)
+	rmetrics.DecreasePendingEvents(
+		"batch_rt",
+		workspaceID,
+		brt.destType,
+		float64(len(asyncOutput.AbortJobIDs)+len(asyncOutput.SucceededJobIDs)),
+	)
 
 	if attempted {
 		var sourceID string
