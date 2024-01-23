@@ -701,7 +701,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 		"batch_rt",
 		workspaceID,
 		brt.destType,
-		float64(len(asyncOutput.AbortJobIDs)+len(asyncOutput.SucceededJobIDs)),
+		float64(len(completedJobsList)),
 	)
 
 	if attempted {
