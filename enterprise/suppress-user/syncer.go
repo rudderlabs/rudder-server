@@ -142,7 +142,7 @@ again:
 		s.tokenPublisher(token)
 	}
 
-	suppressions, nextToken, err := s.sync(token)
+	suppressions, nextToken, err := s.sync(ctx, token)
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
@@ -158,7 +158,7 @@ again:
 }
 
 // sync fetches suppressions from the backend
-func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
+func (s *Syncer) sync(ctx context.Context, token []byte) ([]model.Suppression, []byte, error) {
 	urlStr := s.url
 	urlValQuery := url.Values{}
 	if s.pageSize > 0 {
@@ -176,7 +176,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 
 	operation := func() error {
 		var err error
-		req, err := http.NewRequest("GET", urlStr, http.NoBody)
+		req, err := http.NewRequestWithContext(ctx, "GET", urlStr, http.NoBody)
 		s.log.Debugf("regulation service URL: %s", urlStr)
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)

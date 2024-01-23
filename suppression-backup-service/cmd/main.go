@@ -118,10 +118,12 @@ func Run(ctx context.Context) error {
 	g.Go(func() error {
 		<-gCtx.Done()
 		pkgLogger.Info("context.Done triggered... shutting down httpserver")
-		return httpServer.Shutdown(context.Background())
+		defer pkgLogger.Info("http server shutdown complete")
+		return httpServer.Shutdown(gCtx)
 	})
 
 	if err := g.Wait(); err != nil {
+		pkgLogger.Errorw("backup service stopped", "error", err)
 		if err == http.ErrServerClosed && ctx.Err() == nil {
 			return fmt.Errorf("http server exited unexpectedly with error: %v", err)
 		}

@@ -100,7 +100,7 @@ func generateTests(getRepo func() Repository) {
 	})
 	Context("sync error scenarios", func() {
 		It("returns an error when a wrong server address is provided", func() {
-			_, _, err := MustNewSyncer("", identifier, h.r).sync(nil)
+			_, _, err := MustNewSyncer("", identifier, h.r).sync(context.TODO(), nil)
 			Expect(err.Error()).NotTo(Equal(nil))
 		})
 
@@ -109,7 +109,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 500,
 				respBody:   []byte(""),
 			}
-			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
+			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(context.TODO(), nil)
 			Expect(err.Error()).To(Equal("failed to fetch source regulations: statusCode: 500"))
 		})
 
@@ -118,7 +118,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 200,
 				respBody:   []byte(""),
 			}
-			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
+			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(context.TODO(), nil)
 			Expect(err.Error()).To(Equal("unexpected end of JSON input"))
 		})
 
@@ -127,7 +127,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 200,
 				respBody:   []byte("{w"),
 			}
-			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
+			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(context.TODO(), nil)
 			Expect(err.Error()).To(Equal("invalid character 'w' looking for beginning of object key string"))
 		})
 
@@ -139,7 +139,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 200,
 				respBody:   respBody,
 			}
-			suppressions, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
+			suppressions, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(context.TODO(), nil)
 			Expect(err.Error()).To(Equal("no token returned in regulation API response"))
 			Expect(suppressions).To(Equal(defaultResponse.Items))
 		})

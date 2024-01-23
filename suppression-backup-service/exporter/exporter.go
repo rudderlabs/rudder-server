@@ -71,6 +71,7 @@ type Exporter struct {
 }
 
 func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error {
+	defer e.Log.Info("Full Exporter Loop Stopped")
 	options := &Opt{
 		syncInProgress: &atomic.Bool{},
 	}
@@ -120,6 +121,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error 
 			if !options.syncInProgress.CompareAndSwap(false, true) {
 				continue
 			}
+			e.Log.Infow("Starting full sync")
 			syncStart := time.Now()
 			if err := syncer.Sync(ctx); err != nil {
 				return fmt.Errorf("fullExporterLoop: %w", err)
@@ -128,9 +130,12 @@ func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error 
 			options.syncInProgress.Store(false)
 
 			exportStart := time.Now()
+			e.Log.Infow("Completed full sync")
+			e.Log.Infow("Starting full export")
 			if err = Export(repo, e.File); err != nil {
 				return fmt.Errorf("fullExporterLoop: %w", err)
 			}
+			e.Log.Infow("Completed full export")
 			stats.Default.NewStat("suppression_backup_service_full_export_time", stats.TimerType).Since(exportStart)
 			if err = misc.SleepCtx(ctx, pollInterval); err != nil {
 				return fmt.Errorf("fullExporterLoop: %w", err)
@@ -140,6 +145,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error 
 }
 
 func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
+	defer e.Log.Info("Latest Exporter Loop Stopped")
 	pollInterval := config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour)
 	for {
 		select {
