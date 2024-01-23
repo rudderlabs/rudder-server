@@ -574,6 +574,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]int)
+	jobIdConnectionDetailsMap := make(map[int64]*jobsdb.ConnectionDetailsT)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -632,6 +633,10 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			abortedEvents = append(abortedEvents, job)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
+		jobIdConnectionDetailsMap[job.JobID] = &jobsdb.ConnectionDetailsT{
+			SourceID:              parameters.SourceID,
+			DestinationID:         parameters.DestinationID,
+		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    attemptNum,
@@ -773,7 +778,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList)
+	brt.updateProcessedEventsMetrics(statusList, jobIdConnectionDetailsMap)
 	sendDestStatusStats(batchJobs.Connection, jobStateCounts, brt.destType, isWarehouse)
 }
 

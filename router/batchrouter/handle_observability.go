@@ -3,6 +3,7 @@ package batchrouter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/router"
@@ -229,25 +230,43 @@ func (brt *Handle) updateRudderSourcesStats(
 	return nil
 }
 
-func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	eventsPerStateAndCode := map[string]map[string]int{}
+func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT, jobIdConnectionDetailsMap map[int64]*jobsdb.ConnectionDetailsT) {
+	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
 	for i := range statusList {
-		
+		sourceId := jobIdConnectionDetailsMap[statusList[i].JobID].SourceID
+		destinationId := jobIdConnectionDetailsMap[statusList[i].JobID].DestinationID
+		connectionKey := strings.Join([]string{sourceId, destinationId}, ",")
 		state := statusList[i].JobState
 		code := statusList[i].ErrorCode
-		if _, ok := eventsPerStateAndCode[state]; !ok {
+		if _, ok := eventsPerConnectionInfoAndStateAndCode[connectionKey]; !ok {
+			eventsPerConnectionInfoAndStateAndCode[connectionKey] = map[string]map[string]int{}
+			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
 			eventsPerStateAndCode[state] = map[string]int{}
+			eventsPerStateAndCode[state][code]++
+
+		} else {
+			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
+			if _, ok := eventsPerStateAndCode[state]; !ok {
+				eventsPerStateAndCode[state] = map[string]int{}
+			}
+			eventsPerStateAndCode[state][code]++
 		}
-		eventsPerStateAndCode[state][code]++
+
 	}
-	for state, codes := range eventsPerStateAndCode {
-		for code, count := range codes {
-			stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-				"module":   "batch_router",
-				"destType": brt.destType,
-				"state":    state,
-				"code":     code,
-			}).Count(count)
+	for connectionKey, eventsPerStateAndCode := range eventsPerConnectionInfoAndStateAndCode {
+		sourceId := strings.Split(connectionKey, ",")[0]
+		destinationId := strings.Split(connectionKey, ",")[1]
+		for state, codes := range eventsPerStateAndCode {
+			for code, count := range codes {
+				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+					"module":        "batch_router",
+					"destType":      brt.destType,
+					"state":         state,
+					"code":          code,
+					"sourceId":      sourceId,
+					"destinationId": destinationId,
+				}).Count(count)
+			}
 		}
 	}
 }

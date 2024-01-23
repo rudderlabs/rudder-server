@@ -353,22 +353,21 @@ job status. State can be one of
 ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
-	JobID             int64              `json:"JobID"`
-	JobState          string             `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry, filtered, failed, aborted, migrating, migrated, wont_migrate
-	AttemptNum        int                `json:"AttemptNum"`
-	ExecTime          time.Time          `json:"ExecTime"`
-	RetryTime         time.Time          `json:"RetryTime"`
-	ErrorCode         string             `json:"ErrorCode"`
-	ErrorResponse     json.RawMessage    `json:"ErrorResponse"`
-	Parameters        json.RawMessage    `json:"Parameters"`
-	JobParameters     json.RawMessage    `json:"-"`
-	WorkspaceId       string             `json:"WorkspaceId"`
-	ConnectionDetails *ConnectionDetailsT `json:"ConnectionDetails"`
+	JobID         int64           `json:"JobID"`
+	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry, filtered, failed, aborted, migrating, migrated, wont_migrate
+	AttemptNum    int             `json:"AttemptNum"`
+	ExecTime      time.Time       `json:"ExecTime"`
+	RetryTime     time.Time       `json:"RetryTime"`
+	ErrorCode     string          `json:"ErrorCode"`
+	ErrorResponse json.RawMessage `json:"ErrorResponse"`
+	Parameters    json.RawMessage `json:"Parameters"`
+	JobParameters json.RawMessage `json:"-"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
 type ConnectionDetailsT struct {
-	SourceId      string
-	DestinationId string
+	SourceID      string
+	DestinationID string
 }
 
 func (r *JobStatusT) sanitizeJson() {

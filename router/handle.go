@@ -314,6 +314,11 @@ func (rt *Handle) stopIteration(err error) bool {
 	return rt.isolationStrategy.StopIteration(err)
 }
 
+type connectionDetails struct {
+	sourceId      string
+	destinationId string
+}
+
 // commitStatusList commits the status of the jobs to the jobsDB
 func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
@@ -324,6 +329,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
+	jobIdConnectionDetailsMap := make(map[int64]*jobsdb.ConnectionDetailsT)
 	for _, workerJobStatus := range *workerJobStatuses {
 		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
@@ -337,6 +343,10 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		workspaceID := workerJobStatus.status.WorkspaceId
 		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		jobIdConnectionDetailsMap[workerJobStatus.job.JobID] = &jobsdb.ConnectionDetailsT{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
@@ -454,7 +464,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		rt.updateProcessedEventsMetrics(statusList)
+		rt.updateProcessedEventsMetrics(statusList, jobIdConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",
