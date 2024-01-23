@@ -3,6 +3,7 @@ package api
 import (
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -51,39 +52,53 @@ func (api *API) Handler(ctx context.Context, opts ...OptFunc) http.Handler {
 	srvMux.Get("/latest-export", ServeFile(api.latestBackup))
 	srvMux.Get("/full-export/checkpoint", func(w http.ResponseWriter, r *http.Request) {
 		if opt.currentToken == nil {
+			api.log.Errorw("getCheckpoint failed", "error", "current token is nil")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		token, ok := opt.currentToken.Load().([]byte)
 		if !ok {
+			api.log.Errorw("getCheckpoint failed", "error", "token type assertion failed")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		t, err := base64.StdEncoding.DecodeString(string(token))
+		if err != nil {
+			api.log.Errorw("getCheckpoint failed", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		api.log.Infow("getCheckpoint", "token", string(t), "error", err)
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, token)
+		fmt.Fprintln(w, t)
 	})
-	srvMux.Get("/full-export/setCheckpoint", func(w http.ResponseWriter, r *http.Request) {
+	srvMux.Get("/full-export/setCheckpoint/{seqID}", func(w http.ResponseWriter, r *http.Request) {
 		seqID := chi.URLParam(r, "seqID")
 		if seqID == "" {
+			api.log.Errorw("setCheckpoint failed", "error", "seqID is empty")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		seqIDInt, err := strconv.Atoi(seqID)
 		if err != nil {
+			api.log.Errorw("setCheckpoint failed", "error", "converting seqID to int")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		if opt.syncInProgress == nil {
+			api.log.Errorw("setCheckpoint failed", "error", "syncInProgress is nil")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		if !opt.syncInProgress.CompareAndSwap(false, true) {
+			api.log.Errorw("setCheckpoint failed", "error", "syncInProgress is true")
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
 		defer opt.syncInProgress.Store(false)
 
 		if opt.repo == nil {
+			api.log.Errorw("setCheckpoint failed", "error", "repo is nil")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -96,10 +111,12 @@ func (api *API) Handler(ctx context.Context, opts ...OptFunc) http.Handler {
 		tokenStruct.SyncSeqId = seqIDInt
 		token, err := json.Marshal(tokenStruct)
 		if err != nil {
+			api.log.Errorw("setCheckpoint failed", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		if err := opt.repo.Add(nil, token); err != nil {
+			api.log.Errorw("setCheckpoint failed", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
