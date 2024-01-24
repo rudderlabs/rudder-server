@@ -67,7 +67,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 	t.Log("Redis server is up and running")
 
 	// starting minio server for batch-destination
-	minioResource, err := resource.SetupMinio(pool, t)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 	minioConfig := map[string]interface{}{
 		"bucketName":       minioResource.BucketName,

@@ -7,8 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -88,7 +86,7 @@ func TestDownloader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("minio:", minioResource.Endpoint)

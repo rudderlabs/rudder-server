@@ -9,17 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -37,9 +35,9 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 
-	minioResource := make([]*resource.MinioResource, uniqueWorkspaces)
+	minioResource := make([]*minio.Resource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = resource.SetupMinio(pool, t)
+		minioResource[i], err = minio.Setup(pool, t)
 		require.NoError(t, err)
 	}
 

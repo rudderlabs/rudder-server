@@ -8,7 +8,6 @@ import (
 
 	"github.com/minio/minio-go/v7"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/ory/dockertest/v3"
@@ -38,9 +37,9 @@ func TestValidator(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	minioResource, err := resource.SetupMinio(pool, t)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	err = minioResource.Client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{

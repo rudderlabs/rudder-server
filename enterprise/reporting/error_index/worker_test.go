@@ -37,7 +37,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -171,9 +170,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -319,9 +318,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -437,9 +436,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			eventsLimit := 24
@@ -526,7 +525,7 @@ func TestWorkerWriter(t *testing.T) {
 	})
 }
 
-func minioObjects(t testing.TB, ctx context.Context, mr *resource.MinioResource, prefix string) (objects []string) {
+func minioObjects(t testing.TB, ctx context.Context, mr *minio.Resource, prefix string) (objects []string) {
 	t.Helper()
 
 	for objInfo := range mr.Client.ListObjects(ctx, mr.BucketName, minio.ListObjectsOptions{
@@ -538,7 +537,7 @@ func minioObjects(t testing.TB, ctx context.Context, mr *resource.MinioResource,
 	return
 }
 
-func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *resource.MinioResource, filePath, query string) []payload {
+func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *minio.Resource, filePath, query string) []payload {
 	t.Helper()
 
 	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, minio.SelectObjectOptions{
@@ -593,7 +592,7 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *res
 	return payloads
 }
 
-func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *resource.MinioResource, query string, queryArgs []interface{}) []payload {
+func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *minio.Resource, query string, queryArgs []interface{}) []payload {
 	t.Helper()
 
 	db := duckDB(t)

@@ -16,7 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -215,7 +214,7 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				postgresContainer, err := resource.SetupPostgres(pool, t)
+				postgresContainer, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				c := config.New()
@@ -282,7 +281,7 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("graceful shutdown", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -316,9 +315,9 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	t.Run("using 1 syncer", func(t *testing.T) {
 		t.Run("wrong transaction", func(t *testing.T) {
-			pg1, err := resource.SetupPostgres(pool, t)
+			pg1, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			pg2, err := resource.SetupPostgres(pool, t)
+			pg2, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -377,11 +376,11 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("using 2 syncers", func(t *testing.T) {
-		pg1, err := resource.SetupPostgres(pool, t)
+		pg1, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		pg2, err := resource.SetupPostgres(pool, t)
+		pg2, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		pg3, err := resource.SetupPostgres(pool, t)
+		pg3, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -478,9 +477,9 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("sync data", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		reports := []*types.PUReportedMetric{

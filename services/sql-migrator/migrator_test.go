@@ -29,7 +29,7 @@ func TestMigrate(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgre, err := resource.SetupPostgres(pool, t)
+	postgre, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	for _, dir := range migrationDir {

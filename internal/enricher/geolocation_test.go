@@ -7,8 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -445,7 +443,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minio, err := resource.SetupMinio(pool, t)
+	minio, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	minioManager, err := filemanager.New(

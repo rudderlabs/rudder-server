@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -156,7 +154,7 @@ func TestSlaveJob(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -452,7 +450,7 @@ func TestSlaveJob(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				minioResource, err := resource.SetupMinio(pool, t)
+				minioResource, err := minio.Setup(pool, t)
 				require.NoError(t, err)
 
 				conf := map[string]any{

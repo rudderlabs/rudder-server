@@ -114,7 +114,7 @@ func TestApp(t *testing.T) {
 				subTC := subTC
 
 				t.Run(tc.name+" with "+subTC.name, func(t *testing.T) {
-					pgResource, err := resource.SetupPostgres(pool, t)
+					pgResource, err := postgres.Setup(pool, t)
 					require.NoError(t, err)
 
 					webPort, err := kithelper.GetFreePort()
@@ -151,7 +151,7 @@ func TestApp(t *testing.T) {
 		}
 	})
 	t.Run("Serving GRPC", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		webPort, err := kithelper.GetFreePort()
@@ -253,7 +253,7 @@ func TestApp(t *testing.T) {
 		require.NoError(t, g.Wait())
 	})
 	t.Run("incompatible postgres", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t, postgres.WithTag("9-alpine"))
+		pgResource, err := postgres.Setup(pool, t, postgres.WithTag("9-alpine"))
 		require.NoError(t, err)
 
 		c := config.New()
@@ -280,7 +280,7 @@ func TestApp(t *testing.T) {
 		require.ErrorContains(t, err, "setting up database: could not check compatibility:")
 	})
 	t.Run("without warehouse env vars", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -295,7 +295,7 @@ func TestApp(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("monitor routers", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		webPort, err := kithelper.GetFreePort()
@@ -382,7 +382,7 @@ func TestApp(t *testing.T) {
 		})
 
 		t.Run("stand alone", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			webPort, err := kithelper.GetFreePort()
@@ -418,7 +418,7 @@ func TestApp(t *testing.T) {
 			require.NoError(t, g.Wait())
 		})
 		t.Run("not stand alone", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			webPort, err := kithelper.GetFreePort()

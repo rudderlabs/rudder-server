@@ -375,7 +375,7 @@ func setupUploadTest(t testing.TB, migrationsPath string) *sql.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)

@@ -10,8 +10,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 
@@ -59,7 +57,7 @@ func TestSlave(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minioResource, err := resource.SetupMinio(pool, t)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

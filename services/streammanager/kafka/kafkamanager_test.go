@@ -12,26 +12,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/linkedin/goavro/v2"
-	"github.com/ory/dockertest/v3"
-	"github.com/segmentio/kafka-go"
-
 	kafkaConfluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/golang/mock/gomock"
+	"github.com/linkedin/goavro/v2"
+	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	client "github.com/rudderlabs/rudder-go-kit/kafkaclient"
+	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	dockerKafka "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
-	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -158,9 +157,7 @@ func TestNewProducer(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-			dockerKafka.WithLogger(t),
-			dockerKafka.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
@@ -203,7 +200,6 @@ func TestNewProducer(t *testing.T) {
 		// Start Kafka cluster with ZooKeeper and one broker
 		_, err = dockerKafka.Setup(pool, &testCleanup{t},
 			dockerKafka.WithBrokers(1),
-			dockerKafka.WithLogger(t),
 			dockerKafka.WithNetwork(network),
 			dockerKafka.WithoutDockerHostListeners(),
 		)
@@ -222,7 +218,6 @@ func TestNewProducer(t *testing.T) {
 			sshserver.WithPublicKeyPath(publicKeyPath),
 			sshserver.WithCredentials("linuxserver.io", ""),
 			sshserver.WithDockerNetwork(network),
-			sshserver.WithLogger(t),
 		)
 		require.NoError(t, err)
 
@@ -294,9 +289,7 @@ func TestIntegration(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-			dockerKafka.WithLogger(t),
-			dockerKafka.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 
 		destConfig := map[string]interface{}{
@@ -1117,7 +1110,6 @@ func TestAvroSchemaRegistry(t *testing.T) {
 
 	t.Log("Creating Kafka cluster")
 	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-		dockerKafka.WithLogger(t),
 		dockerKafka.WithBrokers(1),
 		dockerKafka.WithSchemaRegistry())
 	require.NoError(t, err)

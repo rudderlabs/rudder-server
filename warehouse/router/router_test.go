@@ -77,7 +77,7 @@ func TestRouter(t *testing.T) {
 	}
 
 	t.Run("Graceful shutdown", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -140,7 +140,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("CreateJobs", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -301,7 +301,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("handlePriorityForWaitingUploads", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -433,7 +433,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Scheduler", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -544,7 +544,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("UploadsToProcess", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -677,7 +677,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Processor", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -831,7 +831,7 @@ func TestRouter(t *testing.T) {
 
 	t.Run("Preemptable", func(t *testing.T) {
 		t.Run("Processor with workers < 1", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -940,7 +940,7 @@ func TestRouter(t *testing.T) {
 		})
 
 		t.Run("Scheduler is not enabled", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -1057,7 +1057,7 @@ func TestRouter(t *testing.T) {
 				pool, err := dockertest.NewPool("")
 				require.NoError(t, err)
 
-				pgResource, err := resource.SetupPostgres(pool, t)
+				pgResource, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				t.Log("db:", pgResource.DBDsn)
@@ -1097,7 +1097,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Backend config subscriber", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)

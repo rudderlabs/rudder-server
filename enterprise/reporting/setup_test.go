@@ -51,7 +51,7 @@ func TestSetupForDelegates(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	config.Set("DB.port", postgresContainer.Port)

@@ -16,14 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper"
@@ -52,13 +51,13 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 	var (
 		group                errgroup.Group
-		postgresContainer    *resource.PostgresResource
+		postgresContainer    *postgres.Resource
 		transformerContainer *destination.TransformerResource
 		workspaceToken       = "workspace-token"
 	)
 
 	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = postgres.Setup(pool, t)
 		if err != nil {
 			return fmt.Errorf("could not start postgres: %v", err)
 		}

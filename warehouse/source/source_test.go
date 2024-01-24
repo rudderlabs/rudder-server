@@ -478,7 +478,7 @@ func TestSource(t *testing.T) {
 func setupDB(t *testing.T, pool *dockertest.Pool) *sqlmiddleware.DB {
 	t.Helper()
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	t.Log("db:", pgResource.DBDsn)
 

@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -34,7 +33,7 @@ import (
 func TestJobsArchival(t *testing.T) {
 	var (
 		prefixByWorkspace = map[int]string{0: trand.String(10), 1: trand.String(10), 2: trand.String(10)}
-		minioResource     []*resource.MinioResource
+		minioResource     []*minio.Resource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
 		seedJobsFileName    = "testdata/MultiWorkspaceBackupJobs.json.gz"
@@ -47,7 +46,7 @@ func TestJobsArchival(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 
-	postgresResource, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
+	postgresResource, err := postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres resource")
 	c := config.New()
 	c.Set("DB.name", postgresResource.Database)
@@ -60,9 +59,9 @@ func TestJobsArchival(t *testing.T) {
 	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
 	require.NoError(t, jd.Start())
 
-	minioResource = make([]*resource.MinioResource, uniqueWorkspaces)
+	minioResource = make([]*minio.Resource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = resource.SetupMinio(pool, t)
+		minioResource[i], err = minio.Setup(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 

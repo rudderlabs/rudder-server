@@ -46,7 +46,7 @@ func TestRunner(t *testing.T) {
 func startJobsDBPostgresql(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	r, err := resource.SetupPostgres(pool, t)
+	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	config.Set("DB.port", r.Port)
 	config.Set("DB.user", r.User)
@@ -63,7 +63,7 @@ func startJobsDBPostgresql(t *testing.T) {
 func startWarehousePostgresql(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	r, err := resource.SetupPostgres(pool, t)
+	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	config.Set("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	config.Set("WAREHOUSE_JOBS_DB_PORT", r.Port)
