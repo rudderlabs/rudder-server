@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -443,7 +444,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minio, err := minio.Setup(pool, t)
+	minio, err := miniodocker.Setup(pool, t)
 	require.NoError(t, err)
 
 	minioManager, err := filemanager.New(

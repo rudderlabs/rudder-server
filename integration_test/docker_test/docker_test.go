@@ -852,7 +852,3 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 		}
 	}
 }
-
-type testLogger struct{ logger.Logger }
-
-func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

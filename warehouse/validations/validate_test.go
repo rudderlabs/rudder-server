@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/minio/minio-go/v7"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
+	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -42,7 +42,7 @@ func TestValidator(t *testing.T) {
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
-	err = minioResource.Client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{
+	err = minioResource.Client.MakeBucket(ctx, bucket, miniogo.MakeBucketOptions{
 		Region: "us-east-1",
 	})
 	require.NoError(t, err)

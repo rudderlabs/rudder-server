@@ -8,27 +8,22 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/golang/mock/gomock"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/docker/docker/pkg/fileutils"
+	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -163,7 +158,7 @@ func TestLoadUsersTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			pgResource, err := postgres.Setup(pool, t)
+			pgResource, err := pgdocker.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)

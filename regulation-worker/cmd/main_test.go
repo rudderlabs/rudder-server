@@ -24,7 +24,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
@@ -61,7 +62,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	// starting redis server to mock redis-destination
-	redisResource, err := resource.SetupRedis(context.Background(), pool, t)
+	redisResource, err := redis.Setup(context.Background(), pool, t)
 	require.NoError(t, err)
 	insertRedisData(t, redisResource.Addr)
 	t.Log("Redis server is up and running")
