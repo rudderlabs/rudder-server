@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
@@ -27,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestReportingDroppedEvents(t *testing.T) {

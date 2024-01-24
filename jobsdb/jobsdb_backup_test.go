@@ -15,6 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,9 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
-	"github.com/samber/lo"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestBackupTable(t *testing.T) {
