@@ -93,7 +93,7 @@ func Test_PulsarInterface(t *testing.T) {
 func PulsarResource(t *testing.T) *resource.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	pulsarContainer, err := resource.SetupPulsar(pool, t)
+	pulsarContainer, err := resource.Setup(pool, t)
 	require.NoError(t, err)
 	return pulsarContainer
 }

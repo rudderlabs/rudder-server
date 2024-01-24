@@ -127,7 +127,7 @@ func Test_JobsForwarder(t *testing.T) {
 func PulsarResource(t *testing.T) *pulsardocker.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	pulsarContainer, err := pulsardocker.SetupPulsar(pool, t)
+	pulsarContainer, err := pulsardocker.Setup(pool, t)
 	require.NoError(t, err)
 	return pulsarContainer
 }
