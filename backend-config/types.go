@@ -78,21 +78,6 @@ func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
 }
 
-type WorkspaceRegulationT struct {
-	ID             string
-	RegulationType string
-	WorkspaceID    string
-	UserID         string
-}
-
-type SourceRegulationT struct {
-	ID             string
-	RegulationType string
-	WorkspaceID    string
-	SourceID       string
-	UserID         string
-}
-
 type ConfigT struct {
 	EnableMetrics   bool                         `json:"enableMetrics"`
 	WorkspaceID     string                       `json:"workspaceId"`
