@@ -171,24 +171,6 @@ type ConnectionFlags struct {
 	Services map[string]bool `json:"services"`
 }
 
-type WRegulationsT struct {
-	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
-	Start                int                    `json:"start"`
-	Limit                int                    `json:"limit"`
-	Size                 int                    `json:"size"`
-	End                  bool                   `json:"end"`
-	Next                 int                    `json:"next"`
-}
-
-type SRegulationsT struct {
-	SourceRegulations []SourceRegulationT `json:"sourceRegulations"`
-	Start             int                 `json:"start"`
-	Limit             int                 `json:"limit"`
-	Size              int                 `json:"size"`
-	End               bool                `json:"end"`
-	Next              int                 `json:"next"`
-}
-
 type TransformationT struct {
 	VersionID string
 	ID        string
