@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 type (
@@ -98,4 +99,14 @@ type OAuthStats struct {
 	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
 	flowType        RudderFlow
 	action          string // refresh_token, fetch_token, auth_status_toggle
+}
+type AuthStatusToggleParams struct {
+	Destination     *backendconfig.DestinationT
+	WorkspaceId     string
+	RudderAccountId string
+	AuthStatus      string
+}
+
+type AuthStatusToggleResponse struct {
+	Message string `json:"message,omitempty"`
 }

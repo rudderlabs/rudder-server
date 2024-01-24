@@ -17,9 +17,11 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -313,9 +315,11 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.TransformHandler, oauth.RudderFlow_Delivery)
+	cache := cachettl.New[oauth.CacheKey, *oauth.AccessToken]()
+	locker := sync.NewPartitionLocker()
+	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery, "output.0", cache, locker)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.DeliveryHandler, oauth.RudderFlow_Delivery)
+	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery, "output", cache, locker)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }

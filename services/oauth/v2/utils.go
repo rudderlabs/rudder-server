@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/tidwall/gjson"
 )
 
@@ -169,4 +171,120 @@ func (authErrHandler *OAuthHandler) getRefreshTokenErrResp(response string, acco
 		errorType = REF_TOKEN_INVALID_GRANT
 	}
 	return errorType, message
+}
+
+func (authErrHandler *OAuthHandler) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
+	inactiveAuthStatusStatTags := stats.Tags{
+		"id":          destination.ID,
+		"destType":    destination.DestinationDefinition.Name,
+		"workspaceId": workspaceID,
+		"success":     "true",
+		"flowType":    string(oauth.RudderFlow_Delivery),
+	}
+	errCatStatusCode, _ := authErrHandler.AuthStatusToggle(&AuthStatusToggleParams{
+		Destination:     destination,
+		WorkspaceId:     workspaceID,
+		RudderAccountId: rudderAccountId,
+		AuthStatus:      oauth.AuthStatusInactive,
+	})
+	if errCatStatusCode != http.StatusOK {
+		// Error while inactivating authStatus
+		inactiveAuthStatusStatTags["success"] = "false"
+	}
+	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
+	// Abort the jobs as the destination is disabled
+	return http.StatusBadRequest
+}
+
+func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
+	authErrHandlerTimeStart := time.Now()
+	destinationId := params.Destination.ID
+	authStatusToggleMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
+	action := fmt.Sprintf("auth_status_%v", params.AuthStatus)
+
+	authStatusToggleStats := &OAuthStats{
+		id:              destinationId,
+		workspaceId:     params.WorkspaceId,
+		rudderCategory:  "destination",
+		statName:        "",
+		isCallToCpApi:   false,
+		authErrCategory: AUTH_STATUS_INACTIVE,
+		errorMessage:    "",
+		destDefName:     params.Destination.DestinationDefinition.Name,
+		flowType:        authErrHandler.rudderFlowType,
+		action:          action,
+	}
+	defer func() {
+		authStatusToggleStats.statName = getOAuthActionStatName("total_latency")
+		authStatusToggleStats.isCallToCpApi = false
+		authStatusToggleStats.SendTimerStats(authErrHandlerTimeStart)
+	}()
+
+	authStatusToggleMutex.Lock()
+	isAuthStatusUpdateActive, isAuthStatusUpdateReqPresent := authErrHandler.authStatusUpdateActiveMap[destinationId]
+	authStatusUpdateActiveReq := strconv.FormatBool(isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive)
+	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
+		authStatusToggleMutex.Unlock()
+		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request Active : %s\n", loggerNm, authStatusUpdateActiveReq)
+		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
+	}
+
+	authErrHandler.authStatusUpdateActiveMap[destinationId] = true
+	authStatusToggleMutex.Unlock()
+
+	defer func() {
+		authStatusToggleMutex.Lock()
+		authErrHandler.authStatusUpdateActiveMap[destinationId] = false
+		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request is inactive!", loggerNm)
+		authStatusToggleMutex.Unlock()
+		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
+		// This is being done to obtain new token after an update such as re-authorisation is done
+		accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, params.RudderAccountId)
+		accountMutex.Lock()
+		delete(authErrHandler.destAuthInfoMap, params.RudderAccountId)
+		accountMutex.Unlock()
+	}()
+
+	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, params.WorkspaceId, destinationId)
+
+	authStatusInactiveCpReq := &ControlPlaneRequestT{
+		Url:         authStatusToggleUrl,
+		Method:      http.MethodPut,
+		Body:        fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
+		ContentType: "application/json",
+		destName:    params.Destination.DestinationDefinition.Name,
+		RequestType: action,
+	}
+
+	authStatusToggleStats.statName = getOAuthActionStatName("request_sent")
+	authStatusToggleStats.isCallToCpApi = true
+	authStatusToggleStats.SendCountStat()
+
+	cpiCallStartTime := time.Now()
+	statusCode, respBody = authErrHandler.CpConn.cpApiCall(authStatusInactiveCpReq)
+	authStatusToggleStats.statName = getOAuthActionStatName("request_latency")
+	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
+	authErrHandler.logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
+
+	var authStatusToggleRes *AuthStatusToggleResponse
+	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusToggleRes)
+	if router_utils.IsNotEmptyString(respBody) && (unmarshalErr != nil || !router_utils.IsNotEmptyString(authStatusToggleRes.Message) || statusCode != http.StatusOK) {
+		var msg string
+		if unmarshalErr != nil {
+			msg = unmarshalErr.Error()
+		} else {
+			msg = fmt.Sprintf("Could not update authStatus to inactive for destination: %v", authStatusToggleRes.Message)
+		}
+		authStatusToggleStats.statName = getOAuthActionStatName("failure")
+		authStatusToggleStats.errorMessage = msg
+		authStatusToggleStats.SendCountStat()
+		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
+	}
+
+	authErrHandler.logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
+	authStatusToggleStats.statName = getOAuthActionStatName("success")
+	authStatusToggleStats.errorMessage = ""
+	authStatusToggleStats.SendCountStat()
+
+	return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 }
