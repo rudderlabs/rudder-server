@@ -6,23 +6,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
+	rudderlabsSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 var (
-	configBEURL string
-	pkgLogger   logger.Logger
-	loggerNm    string
+	configBEURL      string
+	pkgLogger        logger.Logger
+	loggerNm         string
+	globalTokenCache *cachettl.Cache[CacheKey, *AccessToken]
+	globalLock       *rudderlabsSync.PartitionLocker
 )
 
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthHandler")
 	loggerNm = "OAuthHandler"
+	globalTokenCache = cachettl.New[CacheKey, *AccessToken]()
+	globalLock = rudderlabsSync.NewPartitionLocker()
 }
 
 // This function creates a new OauthErrorResponseHandler
@@ -140,39 +145,3 @@ func (authErrHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenPar
 	}
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
-
-// func (h *OAuthHandler) Handler(r *http.Request, t *Oauth2Transport) (*http.Response, error) {
-// 	destination := r.Context().Value("destination").(*backendconfig.DestinationT)
-// 	if destination == nil {
-// 		return nil, fmt.Errorf("no destination found in context")
-// 	}
-// 	if !destination.IsOAuthDestination() {
-// 		return t.Transport.RoundTrip(r)
-// 	}
-// 	accountId := destination.GetAccountID("rudderAccountId")
-// 	refreshTokenParams := &RefreshTokenParams{
-// 		AccountId:   accountId,
-// 		WorkspaceId: destination.WorkspaceID,
-// 		DestDefName: destination.DestinationDefinition.Name,
-// 	}
-// 	fetchStatus, response := h.FetchToken(refreshTokenParams)
-// 	body, _ := io.ReadAll(r.Body)
-// 	if fetchStatus == 200 {
-// 		t.Augment(r, body, response.Account.Secret)
-// 	}
-// 	t.keyLocker.Lock(accountId)
-// 	t.keyLocker.Unlock(accountId)
-// 	res, err := t.Transport.RoundTrip(r)
-// 	respData, err := io.ReadAll(res.Body)
-// 	destinationJobs := []DestinationJobT{}
-// 	err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
-// 	if err != nil {
-// 		return res, err
-// 	}
-// 	destinationJob := destinationJobs[0]
-// 	if destinationJob.AuthErrorCategory == "REFRESH_TOKEN" {
-// 		t.log.Info("refreshing token")
-// 		t.oauthHandler.RefreshToken(refreshTokenParams)
-// 	}
-// 	return res, err
-// }
