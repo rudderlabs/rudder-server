@@ -1132,7 +1132,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	require.NoError(t, err)
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-	path := func(file string) string { return filepath.Join(cwd, "client", "testdata", file) }
+	path := func(file string) string { return filepath.Join(cwd, "testdata", file) }
 	_, schemaID1 := registerSchema(t, "user1", path("user1.avsc"), schemaRegistryClient)
 	schema2, schemaID2 := registerSchema(t, "user2", path("user2.avsc"), schemaRegistryClient)
 	t.Logf("Schema IDs: %d, %d", schemaID1, schemaID2)
