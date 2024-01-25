@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -206,9 +207,9 @@ func TestNewProducer(t *testing.T) {
 		require.NoError(t, err)
 
 		// Read key pair
-		publicKeyPath, err := filepath.Abs("./client/testdata/ssh/test_key.pub")
+		publicKeyPath, err := filepath.Abs("./testdata/test_key.pub")
 		require.NoError(t, err)
-		privateKey, err := os.ReadFile("./client/testdata/ssh/test_key")
+		privateKey, err := os.ReadFile("./testdata/test_key")
 		require.NoError(t, err)
 		publicKey, err := os.ReadFile(publicKeyPath)
 		require.NoError(t, err)
@@ -252,7 +253,7 @@ func TestNewProducer(t *testing.T) {
 			"port":     "9092",
 			"useSSH":   true,
 			"sshHost":  "localhost",
-			"sshPort":  sshServer.Port,
+			"sshPort":  strconv.Itoa(sshServer.Port),
 			"sshUser":  "linuxserver.io",
 		}
 		dest := backendconfig.DestinationT{ID: "123", Config: destConfig}
