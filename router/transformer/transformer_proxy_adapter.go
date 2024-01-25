@@ -64,7 +64,6 @@ type (
 )
 
 func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
-	fmt.Println("In v0 adapter")
 	proxyReqPayload := &ProxyRequestPayloadV0{
 		PostParametersT:   proxyReqParams.ResponseData.PostParametersT,
 		Metadata:          proxyReqParams.ResponseData.Metadata[0],
