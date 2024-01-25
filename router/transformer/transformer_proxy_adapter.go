@@ -25,7 +25,8 @@ type transformerProxyAdapter interface {
 
 type ProxyRequestPayloadV0 struct {
 	integrations.PostParametersT
-	Metadata ProxyRequestMetadata `json:"metadata"`
+	Metadata          ProxyRequestMetadata   `json:"metadata"`
+	DestinationConfig map[string]interface{} `json:"destinationConfig"`
 }
 
 type ProxyResponseV0 struct {
@@ -63,9 +64,11 @@ type (
 )
 
 func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
+	fmt.Println("In v0 adapter")
 	proxyReqPayload := &ProxyRequestPayloadV0{
-		PostParametersT: proxyReqParams.ResponseData.PostParametersT,
-		Metadata:        proxyReqParams.ResponseData.Metadata[0],
+		PostParametersT:   proxyReqParams.ResponseData.PostParametersT,
+		Metadata:          proxyReqParams.ResponseData.Metadata[0],
+		DestinationConfig: proxyReqParams.ResponseData.DestinationConfig,
 	}
 	return jsonfast.Marshal(proxyReqPayload)
 }
