@@ -70,7 +70,7 @@ func (api *API) Handler(ctx context.Context, opts ...OptFunc) http.Handler {
 		}
 		api.log.Infow("getCheckpoint", "token", string(t), "error", err)
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, t)
+		fmt.Fprintln(w, string(t))
 	})
 	srvMux.Get("/full-export/setCheckpoint/{seqID}", func(w http.ResponseWriter, r *http.Request) {
 		seqID := chi.URLParam(r, "seqID")
