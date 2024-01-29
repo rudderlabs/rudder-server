@@ -48,6 +48,9 @@ var ErrorDetailReportsColumns = []string{
 	"count",
 	"status_code",
 	"event_type",
+	"event_name",
+	"sample_event",
+	"sample_response",
 	"error_code",
 	"error_message",
 }
@@ -188,7 +191,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"sourceId":      metric.ConnectionDetails.SourceID,
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
-
+		sampleEvent, _ := json.Marshal(metric.StatusDetail.SampleEvent)
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
@@ -203,6 +206,9 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.Count,
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.EventType,
+			metric.StatusDetail.EventName,
+			string(sampleEvent),
+			metric.StatusDetail.SampleResponse,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
 		)
@@ -398,6 +404,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		"count",
 		"status_code",
 		"event_type",
+		"event_name",
 		"error_code",
 		"error_message",
 		"dest_type",
@@ -427,6 +434,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			"count",
 			"status_code",
 			"event_type",
+			"event_name"
 			"error_code",
 			"error_message",
 			"dest_type",
@@ -448,6 +456,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.Count,
 			&dbEdMetric.EDErrorDetails.StatusCode,
 			&dbEdMetric.EDErrorDetails.EventType,
+			&dbEdMetric.EDErrorDetails.EventName,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
