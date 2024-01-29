@@ -64,7 +64,17 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasFailed:  true,
 		}
 	}
-	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+b.pollUrl, payload, b.timeout)
+
+	pollURL, err := url.JoinPath(b.transformUrl, b.pollUrl)
+	if err != nil {
+		b.logger.Errorf("Error in preparing poll url: %v", err)
+		return common.PollStatusResponse{
+			StatusCode: 500,
+			HasFailed:  true,
+		}
+	}
+
+	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(pollURL, payload, b.timeout)
 	if transformerConnectionStatus != 200 {
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
@@ -218,26 +228,23 @@ func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, sta
 
 func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	resolveURL := func(base, relative string) string {
-		baseURL, err := url.Parse(base)
-		if err != nil {
-			b.logger.Error("Error in Parsing Base URL: %w", err)
-		}
-		relURL, err := url.Parse(relative)
-		if err != nil {
-			b.logger.Error("Error in Parsing Relative URL: %w", err)
-		}
-		destURL := baseURL.ResolveReference(relURL).String()
-		return destURL
-	}
 	destinationID := destination.ID
-	destinationUploadUrl := asyncDestStruct.DestinationUploadURL
-	url := resolveURL(b.transformUrl, destinationUploadUrl)
 	filePath := asyncDestStruct.FileName
 	destConfig := destination.Config
 	destType := destination.DestinationDefinition.Name
 	failedJobIDs := asyncDestStruct.FailedJobIDs
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
+
+	destinationUploadUrl := asyncDestStruct.DestinationUploadURL
+	uploadURL, err := url.JoinPath(b.transformUrl, destinationUploadUrl)
+	if err != nil {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+			FailedReason:  "BRT: Failed to prepare upload url " + err.Error(),
+			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+			DestinationID: destinationID,
+		}
+	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -287,7 +294,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	startTime := time.Now()
 	payloadSizeStat.Observe(float64(len(payload)))
 	b.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(uploadURL, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
