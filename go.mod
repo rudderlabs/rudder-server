@@ -13,6 +13,7 @@ replace (
 	github.com/docker/docker => github.com/docker/docker v24.0.6+incompatible
 	github.com/elazarl/goproxy => github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a // indirect
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.9.1
+	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.1
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.9
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.16.0
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
@@ -161,7 +162,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
-	github.com/containerd/containerd v1.6.8 // indirect
+	github.com/containerd/containerd v1.6.26 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.5.0 // indirect
@@ -183,7 +184,7 @@ require (
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.0 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
