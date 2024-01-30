@@ -15,6 +15,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -41,6 +43,9 @@ type namespaceConfig struct {
 	incrementalConfigUpdates bool
 	lastUpdatedAt            time.Time
 	workspacesConfig         map[string]ConfigT
+
+	httpCallsStat        stats.Counter
+	httpResponseSizeStat stats.Histogram
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
@@ -71,25 +76,28 @@ func (nc *namespaceConfig) SetUp() (err error) {
 			Timeout: nc.config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
 		}
 	}
-	if nc.logger == nil {
-		nc.logger = logger.NewLogger().Child("backend-config")
-	}
 	nc.workspacesConfig = make(map[string]ConfigT)
-	nc.logger.Infof("Setup config for namespace %s complete", nc.namespace)
+	nc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
+	nc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
+
+	if nc.logger == nil {
+		nc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.Namespace(nc.namespace))
+	}
+	nc.logger.Infon("Setup backend config complete")
 
 	return nil
 }
 
 // Get returns sources from the workspace
 func (nc *namespaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) {
-	config, err := nc.getFromAPI(ctx)
+	conf, err := nc.getFromAPI(ctx)
 	if errors.Is(err, ErrIncrementalUpdateFailed) {
 		// reset state here
 		// this triggers a full update
 		nc.lastUpdatedAt = time.Time{}
 		return nc.getFromAPI(ctx)
 	}
-	return config, err
+	return conf, err
 }
 
 // getFromApi gets the workspace config from api
@@ -115,18 +123,21 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	}
 
 	operation := func() (fetchError error) {
-		nc.logger.Debugf("Fetching config from %s", urlString)
+		defer nc.httpCallsStat.Increment()
+		nc.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
 		respBody, fetchError = nc.makeHTTPRequest(req)
 		return fetchError
 	}
 
 	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		nc.logger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		nc.logger.Warnn("Failed to fetch backend config from API",
+			obskit.Error(err), logger.NewDurationField("retryAfter", t),
+		)
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			nc.logger.Errorf("Error sending request to the server: %v", err)
+			nc.logger.Errorn("Error sending request to the server", obskit.Error(err))
 		}
 		return configOnError, err
 	}
@@ -138,7 +149,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	var requestData map[string]*ConfigT
 	err = jsonfast.Unmarshal(respBody, &requestData)
 	if err != nil {
-		nc.logger.Errorf("Error while parsing request: %v", err)
+		nc.logger.Errorn("Error while parsing request", obskit.Error(err))
 		return configOnError, err
 	}
 
@@ -147,10 +158,10 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		if workspace == nil { // this workspace was not updated, populate it with the previous config
 			previousConfig, ok := nc.workspacesConfig[workspaceID]
 			if !ok {
-				nc.logger.Errorw(
+				nc.logger.Errorn(
 					"workspace was not updated but was not present in previous config",
-					"workspaceID", workspaceID,
-					"req", req,
+					obskit.WorkspaceID(workspaceID),
+					logger.NewField("req", req),
 				)
 				return configOnError, ErrIncrementalUpdateFailed
 			}
@@ -200,6 +211,8 @@ func (nc *namespaceConfig) makeHTTPRequest(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	nc.httpResponseSizeStat.Observe(float64(len(respBody)))
 
 	if resp.StatusCode >= 300 {
 		return nil, getNotOKError(respBody, resp.StatusCode)

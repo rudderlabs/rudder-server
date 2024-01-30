@@ -20,9 +20,11 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -94,7 +96,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			require.NoError(t, err)
 			containersGroup, _ := errgroup.WithContext(ctx)
 			containersGroup.Go(func() (err error) {
-				postgresContainer, err = resource.SetupPostgres(pool, t)
+				postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
 				return err
 			})
 			containersGroup.Go(func() (err error) {
