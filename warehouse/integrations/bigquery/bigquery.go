@@ -439,8 +439,9 @@ func (bq *BigQuery) loadTableByAppend(
 
 	log.Infow("completed loading")
 
-	tableStats := &types.LoadTableStats{
-		RowsInserted: statistics.Load.OutputRows,
+	tableStats := &types.LoadTableStats{}
+	if statistics.Load != nil {
+		tableStats.RowsInserted = statistics.Load.OutputRows
 	}
 	response := &loadTableResponse{
 		partitionDate: partitionDate,
@@ -448,6 +449,8 @@ func (bq *BigQuery) loadTableByAppend(
 	return tableStats, response, nil
 }
 
+// jobStatistics returns statistics for a job
+// In case of rate limit error, it returns empty statistics
 func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,

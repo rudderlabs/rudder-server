@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -100,6 +101,11 @@ func Run(ctx context.Context) error {
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				OAuth:                        OAuth,
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
+				TransformerFeaturesService: transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
+					PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+					TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+					FeaturesRetryMaxAttempts: 10,
+				}),
 			}),
 		MaxFailedAttempts: config.GetInt("REGULATION_DELETION_MAX_FAILED_ATTEMPTS", 4),
 	}

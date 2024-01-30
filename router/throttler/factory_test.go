@@ -11,8 +11,8 @@ import (
 )
 
 func TestFactory(t *testing.T) {
-	config := config.New()
 	t.Run("when adaptive throttling is enabled", func(t *testing.T) {
+		config := config.New()
 		config.Set("Router.throttler.adaptive.enabled", true)
 		maxLimit := int64(300)
 		config.Set("Router.throttler.adaptive.maxLimit", maxLimit)
@@ -51,6 +51,25 @@ func TestFactory(t *testing.T) {
 				return floatCheck(ta.getLimit(), maxLimit*5/10) // reduces by 30% since there is an error in the last 1 second
 			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.getLimit(), maxLimit*5/10)
 		})
+	})
+
+	t.Run("when throttlerV2 is false", func(t *testing.T) {
+		config := config.New()
+		config.Set("Router.throttlerV2.enabled", false)
+		config.Set("Router.throttler.destName.timeWindow", time.Second)
+		config.Set("Router.throttler.destName.limit", int64(100))
+		f, err := NewFactory(config, nil)
+		require.NoError(t, err)
+		defer f.Shutdown()
+		ta := f.Get("destName", "destID")
+		require.Eventually(t, func() bool {
+			return ta.getLimit() == int64(100)
+		}, 2*time.Second, 100*time.Millisecond)
+
+		config.Set("Router.throttler.adaptive.enabled", true)
+		require.Eventually(t, func() bool {
+			return ta.getLimit() == int64(0)
+		}, 2*time.Second, 100*time.Millisecond)
 	})
 }
 

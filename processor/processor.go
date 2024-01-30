@@ -1544,6 +1544,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
+	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
+	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
 	spans := make([]stats.TraceSpan, 0, len(jobList))
 	defer func() {
@@ -1551,6 +1553,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			span.End()
 		}
 	}()
+
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
 		err := jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
@@ -1560,6 +1563,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		sourceID := eventParams.SourceId
 		traceParent := eventParams.TraceParent
+		destinationID := eventParams.DestinationID
+		if destinationID != "" {
+			jobIDToSpecificDestMapOnly[batchEvent.JobID] = destinationID
+		}
 
 		var span stats.TraceSpan
 		if traceParent == "" {
@@ -1723,9 +1730,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 			// REPORTING - GATEWAY metrics - END
 
-			// Getting all the destinations which are enabled for this
-			// event
-			if !proc.isDestinationAvailable(singularEvent, sourceID) {
+			// Getting all the destinations which are enabled for this event.
+			// Event will be dropped if no valid destination is present
+			// if empty destinationID is passed in this fn all the destinations for the source are validated
+			// else only passed destinationID will be validated
+			if !proc.isDestinationAvailable(singularEvent, sourceID, destinationID) {
 				continue
 			}
 
@@ -1893,7 +1902,13 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				destType := &enabledDestTypes[i]
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
-					proc.getEnabledDestinations(sourceId, *destType),
+					lo.Filter(proc.getEnabledDestinations(sourceId, *destType), func(item backendconfig.DestinationT, index int) bool {
+						destId := jobIDToSpecificDestMapOnly[event.Metadata.JobID]
+						if destId != "" {
+							return destId == item.ID
+						}
+						return destId == ""
+					}),
 				)
 
 				// Adding a singular event multiple times if there are multiple destinations of same type
@@ -2985,7 +3000,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 		return false
 	}
 
-	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService, rsources.IgnoreDestinationID())
 	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
 
 	proc.Store(partition,
@@ -3073,7 +3088,7 @@ func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
-func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId string) bool {
+func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId, destinationID string) bool {
 	enabledDestTypes := integrations.FilterClientIntegrations(
 		event,
 		proc.getBackendEnabledDestinationTypes(sourceId),
@@ -3083,7 +3098,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 		return false
 	}
 
-	if enabledDestinationsList := proc.getConsentFilteredDestinations(
+	if enabledDestinationsList := lo.Filter(proc.getConsentFilteredDestinations(
 		event,
 		lo.Flatten(
 			lo.Map(
@@ -3093,7 +3108,9 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId 
 				},
 			),
 		),
-	); len(enabledDestinationsList) == 0 {
+	), func(dest backendconfig.DestinationT, index int) bool {
+		return len(destinationID) == 0 || dest.ID == destinationID
+	}); len(enabledDestinationsList) == 0 {
 		proc.logger.Debug("No destination to route this event to")
 		return false
 	}
