@@ -405,6 +405,8 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		"status_code",
 		"event_type",
 		"event_name",
+		"sample_event",
+		"sample_response",
 		"error_code",
 		"error_message",
 		"dest_type",
@@ -435,6 +437,8 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			"status_code",
 			"event_type",
 			"event_name"
+			"sample_event",
+			"sample_response",
 			"error_code",
 			"error_message",
 			"dest_type",
@@ -457,6 +461,8 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EDErrorDetails.StatusCode,
 			&dbEdMetric.EDErrorDetails.EventType,
 			&dbEdMetric.EDErrorDetails.EventName,
+			&dbEdMetric.EDErrorDetails.SampleEvent,
+			&dbEdMetric.EDErrorDetails.SampleResponse,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
@@ -518,10 +524,13 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 
 		reportsCountMap := lo.CountValuesBy(reports, func(rep *types.EDReportsDB) types.EDErrorDetails {
 			return types.EDErrorDetails{
-				StatusCode:   rep.StatusCode,
-				ErrorCode:    rep.ErrorCode,
-				ErrorMessage: rep.ErrorMessage,
-				EventType:    rep.EventType,
+				StatusCode:     rep.StatusCode,
+				ErrorCode:      rep.ErrorCode,
+				ErrorMessage:   rep.ErrorMessage,
+				EventType:      rep.EventType,
+				SampleEvent:    rep.SampleEvent,
+				SampleResponse: rep.SampleResponse,
+				Count:          int(rep.Count),
 			}
 		})
 
@@ -536,11 +545,13 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		})
 		for _, rep := range reportGrpKeys {
 			errs = append(errs, types.EDErrorDetails{
-				StatusCode:   rep.StatusCode,
-				ErrorCode:    rep.ErrorCode,
-				ErrorMessage: rep.ErrorMessage,
-				EventType:    rep.EventType,
-				Count:        reportsCountMap[rep],
+				StatusCode:     rep.StatusCode,
+				ErrorCode:      rep.ErrorCode,
+				ErrorMessage:   rep.ErrorMessage,
+				EventType:      rep.EventType,
+				SampleResponse: rep.SampleResponse,
+				SampleEvent:    rep.SampleEvent,
+				Count:          rep.Count,
 			})
 		}
 		edrSchema.Errors = errs
