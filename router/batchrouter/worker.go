@@ -70,17 +70,17 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		var drainList []*jobsdb.JobStatusT
 		var drainJobList []*jobsdb.JobT
 		drainStatsbyDest := make(map[string]*routerutils.DrainStats)
-		jobIdConnectionDetailsMap := make(map[int64]*jobsdb.ConnectionDetailsT)
+		jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
-			jobIdConnectionDetailsMap[job.JobID] = &jobsdb.ConnectionDetailsT{
+			jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
 				SourceID:      gjson.GetBytes(job.Parameters, "source_id").String(),
 				DestinationID: destWithSources.Destination.ID,
 			}
 			if drain, reason := brt.drainer.Drain(
 				job,
-			); drain {	
+			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -158,7 +158,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if err != nil {
 				panic(err)
 			}
-			brt.updateProcessedEventsMetrics(statusList, jobIdConnectionDetailsMap)
+			brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
 			for destID, destDrainStat := range drainStatsbyDest {
 				stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 					"destType":    brt.destType,

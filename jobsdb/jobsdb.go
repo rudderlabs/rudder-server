@@ -365,7 +365,7 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
-type ConnectionDetailsT struct {
+type ConnectionDetails struct {
 	SourceID      string
 	DestinationID string
 }

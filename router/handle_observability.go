@@ -103,12 +103,12 @@ func (rt *Handle) updateRudderSourcesStats(
 	return err
 }
 
-func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT, jobIdConnectionDetailsMap map[int64]*jobsdb.ConnectionDetailsT) {
+func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails) {
 	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
 	for i := range statusList {
-		sourceId := jobIdConnectionDetailsMap[statusList[i].JobID].SourceID
-		destinationId := jobIdConnectionDetailsMap[statusList[i].JobID].DestinationID
-		connectionKey := strings.Join([]string{sourceId, destinationId}, ",")
+		sourceID := jobIDConnectionDetailsMap[statusList[i].JobID].SourceID
+		destinationID := jobIDConnectionDetailsMap[statusList[i].JobID].DestinationID
+		connectionKey := strings.Join([]string{sourceID, destinationID}, ",")
 		state := statusList[i].JobState
 		code := statusList[i].ErrorCode
 		if _, ok := eventsPerConnectionInfoAndStateAndCode[connectionKey]; !ok {
@@ -127,8 +127,8 @@ func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT, 
 
 	}
 	for connectionKey, eventsPerStateAndCode := range eventsPerConnectionInfoAndStateAndCode {
-		sourceId := strings.Split(connectionKey, ",")[0]
-		destinationId := strings.Split(connectionKey, ",")[1]
+		sourceID := strings.Split(connectionKey, ",")[0]
+		destinationID := strings.Split(connectionKey, ",")[1]
 		for state, codes := range eventsPerStateAndCode {
 			for code, count := range codes {
 				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
@@ -136,8 +136,8 @@ func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT, 
 					"destType":      rt.destType,
 					"state":         state,
 					"code":          code,
-					"sourceId":      sourceId,
-					"destinationId": destinationId,
+					"sourceId":      sourceID,
+					"destinationId": destinationID,
 				}).Count(count)
 			}
 		}

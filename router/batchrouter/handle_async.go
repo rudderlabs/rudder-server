@@ -88,13 +88,13 @@ func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
 	return res
 }
 
-func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT, sourceId string, destinationId string) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, map[int64]*jobsdb.ConnectionDetailsT) {
+func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT, sourceID, destinationID string) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, map[int64]jobsdb.ConnectionDetails) {
 	var abortedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	if defaultStatus.ErrorResponse == nil {
 		defaultStatus.ErrorResponse = routerutils.EmptyPayload
 	}
-	jobIdConnectionDetailsMap := make(map[int64]*jobsdb.ConnectionDetailsT)
+	jobIdConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, job := range importingList {
 		firstAttemptedAt, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, defaultStatus.ErrorResponse)
 		status := jobsdb.JobStatusT{
@@ -109,9 +109,9 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 		}
-		jobIdConnectionDetailsMap[job.JobID] = &jobsdb.ConnectionDetailsT{
-			SourceID:      sourceId,
-			DestinationID: destinationId,
+		jobIdConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      sourceID,
+			DestinationID: destinationID,
 		}
 
 		if defaultStatus.JobState == jobsdb.Failed.State {
@@ -142,7 +142,7 @@ func (brt *Handle) updatePollStatusToDB(
 	pollResp common.PollStatusResponse,
 ) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
-	var jobIdConnectionDetailsMap map[int64]*jobsdb.ConnectionDetailsT
+	var jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails
 	list, err := brt.getImportingJobs(ctx, destinationID, brt.maxEventsInABatch)
 	if err != nil {
 		return statusList, err
@@ -150,7 +150,7 @@ func (brt *Handle) updatePollStatusToDB(
 	importingList := list.Jobs
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
 		if !pollResp.HasFailed && !pollResp.HasWarning {
-			statusList, _, jobIdConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, sourceID, destinationID)
+			statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, sourceID, destinationID)
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
 				return statusList, err
@@ -179,7 +179,7 @@ func (brt *Handle) updatePollStatusToDB(
 			successfulJobIDs := append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...)
 			for _, job := range importingList {
 				jobID := job.JobID
-				jobIdConnectionDetailsMap[jobID] = &jobsdb.ConnectionDetailsT{
+				jobIDConnectionDetailsMap[jobID] = jobsdb.ConnectionDetails{
 					SourceID:      sourceID,
 					DestinationID: destinationID,
 				}
@@ -240,7 +240,7 @@ func (brt *Handle) updatePollStatusToDB(
 			}
 		}
 	} else if pollResp.StatusCode == http.StatusBadRequest {
-		statusList, _, jobIdConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed with status code 400")}, sourceID, destinationID)
+		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed with status code 400")}, sourceID, destinationID)
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
 			return statusList, err
@@ -248,14 +248,14 @@ func (brt *Handle) updatePollStatusToDB(
 		brt.asyncAbortedJobCount.Count(len(statusList))
 	} else {
 		var abortedJobsList []*jobsdb.JobT
-		statusList, abortedJobsList, jobIdConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
+		statusList, abortedJobsList, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, abortedJobsList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
 			return statusList, err
 		}
 		brt.asyncFailedJobCount.Count(len(statusList))
 	}
-	brt.updateProcessedEventsMetrics(statusList, jobIdConnectionDetailsMap)
+	brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
 
 	return statusList, nil
 }
@@ -587,12 +587,12 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	workspaceID := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	jobIdConnectionDetailsMap := make(map[int64]*jobsdb.ConnectionDetailsT)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	if len(asyncOutput.ImportingJobIDs) > 0 {
 		for _, jobId := range asyncOutput.ImportingJobIDs {
-			jobIdConnectionDetailsMap[jobId] = &jobsdb.ConnectionDetailsT{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: asyncOutput.DestinationID,
-				SourceID: gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
 			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
@@ -611,9 +611,9 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	}
 	if len(asyncOutput.SucceededJobIDs) > 0 {
 		for _, jobId := range asyncOutput.SucceededJobIDs {
-			jobIdConnectionDetailsMap[jobId] = &jobsdb.ConnectionDetailsT{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: asyncOutput.DestinationID,
-				SourceID: gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
 			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
@@ -633,9 +633,9 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	}
 	if len(asyncOutput.FailedJobIDs) > 0 {
 		for _, jobId := range asyncOutput.FailedJobIDs {
-			jobIdConnectionDetailsMap[jobId] = &jobsdb.ConnectionDetailsT{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: asyncOutput.DestinationID,
-				SourceID: gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
 			}
 			resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", asyncOutput.FailedReason)
 			status := jobsdb.JobStatusT{
@@ -666,9 +666,9 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	}
 	if len(asyncOutput.AbortJobIDs) > 0 {
 		for _, jobId := range asyncOutput.AbortJobIDs {
-			jobIdConnectionDetailsMap[jobId] = &jobsdb.ConnectionDetailsT{
+			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: asyncOutput.DestinationID,
-				SourceID: gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
 			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
@@ -725,7 +725,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList, jobIdConnectionDetailsMap)
+	brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
 
 	if attempted {
 		var sourceID string
