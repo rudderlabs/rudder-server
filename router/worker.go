@@ -55,8 +55,9 @@ type worker struct {
 }
 
 type workerJob struct {
-	job        *jobsdb.JobT
-	assignedAt time.Time
+	job         *jobsdb.JobT
+	assignedAt  time.Time
+	drainReason string
 }
 
 func (w *worker) workLoop() {
@@ -89,13 +90,10 @@ func (w *worker) workLoop() {
 			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
-			abort, abortReason := w.rt.drainer.Drain(job)
+			abortReason := message.drainReason
+			abort := abortReason != ""
 			abortTag := abortReason
-			if !abort {
-				abort = w.rt.retryLimitReached(&job.LastJobStatus)
-				abortReason = string(job.LastJobStatus.ErrorResponse)
-				abortTag = "retry limit reached"
-			}
+			errResponse := routerutils.EnhanceJSON(job.LastJobStatus.ErrorResponse, "reason", abortReason)
 			if abort {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -106,7 +104,7 @@ func (w *worker) workLoop() {
 					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
 					Parameters:    routerutils.EmptyPayload,
 					JobParameters: job.Parameters,
-					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
+					ErrorResponse: errResponse,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				// Enhancing job parameter with the drain reason.
