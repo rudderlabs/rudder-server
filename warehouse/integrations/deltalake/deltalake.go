@@ -1124,7 +1124,6 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	)
 
 	_, err = d.DB.ExecContext(ctx, query)
-
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
