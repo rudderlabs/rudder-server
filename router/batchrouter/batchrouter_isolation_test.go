@@ -22,13 +22,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
@@ -189,20 +188,20 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 
 	t.Logf("Starting docker containers")
 	var (
-		postgresContainer *resource.PostgresResource
-		minioDestination  *resource.MinioResource
+		postgresContainer *postgres.Resource
+		minioDestination  *minio.Resource
 	)
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "it should be able to create a new docker pool")
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
 		t.Logf("Starting postgres container")
-		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
+		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
 		t.Logf("Starting minio container")
-		minioDestination, err = resource.SetupMinio(pool, t)
+		minioDestination, err = minio.Setup(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait(), "it should be able to start all containers without an error")

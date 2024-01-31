@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	resource "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/pulsar"
 )
 
 func Test_Pulsar(t *testing.T) {
@@ -90,10 +90,10 @@ func Test_PulsarInterface(t *testing.T) {
 }
 
 // PulsarResource returns a pulsar container resource
-func PulsarResource(t *testing.T) *resource.PulsarResource {
+func PulsarResource(t *testing.T) *resource.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	pulsarContainer, err := resource.SetupPulsar(pool, t)
+	pulsarContainer, err := resource.Setup(pool, t)
 	require.NoError(t, err)
 	return pulsarContainer
 }

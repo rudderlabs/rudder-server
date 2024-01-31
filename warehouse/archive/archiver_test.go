@@ -12,26 +12,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/golang/mock/gomock"
+	miniogo "github.com/minio/minio-go/v7"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/ory/dockertest/v3"
-
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -70,8 +66,8 @@ func TestArchiver(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
 				prefix        = "test-prefix"
-				minioResource *resource.MinioResource
-				pgResource    *resource.PostgresResource
+				minioResource *minio.Resource
+				pgResource    *postgres.Resource
 			)
 
 			pool, err := dockertest.NewPool("")
@@ -79,7 +75,7 @@ func TestArchiver(t *testing.T) {
 
 			g := errgroup.Group{}
 			g.Go(func() error {
-				pgResource, err = resource.SetupPostgres(pool, t)
+				pgResource, err = postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				t.Log("db:", pgResource.DBDsn)
@@ -99,7 +95,7 @@ func TestArchiver(t *testing.T) {
 				return nil
 			})
 			g.Go(func() error {
-				minioResource, err = resource.SetupMinio(pool, t)
+				minioResource, err = minio.Setup(pool, t)
 				require.NoError(t, err)
 
 				t.Log("minio:", minioResource.Endpoint)
@@ -213,18 +209,18 @@ func TestArchiver(t *testing.T) {
 	}
 }
 
-func minioContents(t require.TestingT, ctx context.Context, dest *resource.MinioResource, prefix string) map[string]string {
+func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {
 	contents := make(map[string]string)
 
 	doneCh := make(chan struct{})
 	defer close(doneCh)
 
-	opts := minio.ListObjectsOptions{
+	opts := miniogo.ListObjectsOptions{
 		Recursive: true,
 		Prefix:    prefix,
 	}
 	for objInfo := range dest.Client.ListObjects(ctx, dest.BucketName, opts) {
-		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, minio.GetObjectOptions{})
+		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, miniogo.GetObjectOptions{})
 		require.NoError(t, err)
 
 		g, err := gzip.NewReader(o)
