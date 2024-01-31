@@ -50,43 +50,42 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 	}
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
-		// This field differentiates legacy and generic consent management
-		if consentManagementInfo.Provider != "" {
-			// Generic consent management
+		// Generic consent management
+		if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
-			if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
+			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 
-				finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
-
-				// For custom provider, the resolution strategy is to be picked from the destination config
-				if consentManagementInfo.Provider == "custom" {
-					finalResolutionStrategy = cmpData.ResolutionStrategy
-				}
-
-				switch finalResolutionStrategy {
-				// The user must consent to at least one of the configured consents in the destination
-				case "or":
-					return !lo.Every(consentManagementInfo.DeniedConsentIDs, cmpData.Consents)
-
-				// The user must consent to all of the configured consents in the destination
-				default: // "and"
-					return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
-				}
+			// For custom provider, the resolution strategy is to be picked from the destination config
+			if consentManagementInfo.Provider == "custom" {
+				finalResolutionStrategy = cmpData.ResolutionStrategy
 			}
-			return true
+
+			switch finalResolutionStrategy {
+			// The user must consent to at least one of the configured consents in the destination
+			case "or":
+				return !lo.Every(consentManagementInfo.DeniedConsentIDs, cmpData.Consents)
+
+			// The user must consent to all of the configured consents in the destination
+			default: // "and"
+				return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
+			}
 		}
 
 		// Legacy consent management
-
-		// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
-		if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
-			return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIDs)) == 0
+		if consentManagementInfo.Provider == "" || consentManagementInfo.Provider == "oneTrust" {
+			// If the destination has oneTrustCookieCategories, returns false if any of the oneTrustCategories are present in deniedCategories
+			if oneTrustCategories := proc.getOneTrustConsentData(dest.ID); len(oneTrustCategories) > 0 {
+				return len(lo.Intersect(oneTrustCategories, consentManagementInfo.DeniedConsentIDs)) == 0
+			}
 		}
 
-		// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
-		if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
-			return !lo.Every(consentManagementInfo.DeniedConsentIDs, ketchPurposes)
+		if consentManagementInfo.Provider == "" || consentManagementInfo.Provider == "ketch" {
+			// If the destination has ketchConsentPurposes, returns false if all ketchPurposes are present in deniedCategories
+			if ketchPurposes := proc.getKetchConsentData(dest.ID); len(ketchPurposes) > 0 {
+				return !lo.Every(consentManagementInfo.DeniedConsentIDs, ketchPurposes)
+			}
 		}
+
 		return true
 	})
 }
