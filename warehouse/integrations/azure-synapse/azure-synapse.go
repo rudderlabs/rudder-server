@@ -699,7 +699,6 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	as.logger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
-
 	if err != nil {
 		as.logger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
 		_ = tx.Rollback()
