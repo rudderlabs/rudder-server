@@ -150,7 +150,6 @@ func getSuppressions(w http.ResponseWriter, r *http.Request) {
 	if pt == tokenKey {
 		w.WriteHeader(http.StatusOK)
 		body, err = json.Marshal(suppressionsResponse{Token: tokenKey})
-
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
