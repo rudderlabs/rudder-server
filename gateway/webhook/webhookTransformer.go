@@ -192,7 +192,6 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	*/
 	var responses []transformerResponse
 	err = json.Unmarshal(respBody, &responses)
-
 	if err != nil {
 		statusCode := response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat)
 		err := errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat))
