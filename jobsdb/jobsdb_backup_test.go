@@ -682,7 +682,6 @@ func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList
 
 	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 		"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
-
 	if err != nil {
 		return err
 	}
@@ -697,7 +696,6 @@ func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList
 
 		_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
 			string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
-
 		if err != nil {
 			return err
 		}
