@@ -26,12 +26,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -1561,7 +1561,7 @@ func (*ginkgoTestingT) FailNow() {
 }
 
 func (*ginkgoTestingT) Setenv(key, value string) {
-	os.Setenv(key, value) // skipcq: GO-W1032
+	_ = os.Setenv(key, value) // skipcq: GO-W1032
 }
 
 func (*ginkgoTestingT) Log(args ...interface{}) {
@@ -1573,10 +1573,10 @@ func (t *ginkgoTestingT) Cleanup(f func()) {
 }
 
 // startPostgres starts a postgres container and (re)initializes global vars
-func startPostgres(t testingT) *resource.PostgresResource {
+func startPostgres(t testingT) *postgres.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)

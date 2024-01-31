@@ -16,33 +16,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tidwall/gjson"
-
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
-	"github.com/minio/minio-go/v7"
-
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
 	"github.com/google/uuid"
+	_ "github.com/marcboeker/go-duckdb"
+	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"github.com/xitongsys/parquet-go-source/buffer"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 func TestWorkerWriter(t *testing.T) {
@@ -171,9 +167,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -319,9 +315,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -437,9 +433,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			eventsLimit := 24
@@ -526,10 +522,10 @@ func TestWorkerWriter(t *testing.T) {
 	})
 }
 
-func minioObjects(t testing.TB, ctx context.Context, mr *resource.MinioResource, prefix string) (objects []string) {
+func minioObjects(t testing.TB, ctx context.Context, mr *minio.Resource, prefix string) (objects []string) {
 	t.Helper()
 
-	for objInfo := range mr.Client.ListObjects(ctx, mr.BucketName, minio.ListObjectsOptions{
+	for objInfo := range mr.Client.ListObjects(ctx, mr.BucketName, miniogo.ListObjectsOptions{
 		Recursive: true,
 		Prefix:    prefix,
 	}) {
@@ -538,18 +534,18 @@ func minioObjects(t testing.TB, ctx context.Context, mr *resource.MinioResource,
 	return
 }
 
-func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *resource.MinioResource, filePath, query string) []payload {
+func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *minio.Resource, filePath, query string) []payload {
 	t.Helper()
 
-	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, minio.SelectObjectOptions{
+	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, miniogo.SelectObjectOptions{
 		Expression:     query,
-		ExpressionType: minio.QueryExpressionTypeSQL,
-		InputSerialization: minio.SelectObjectInputSerialization{
-			CompressionType: minio.SelectCompressionNONE,
-			Parquet:         &minio.ParquetInputOptions{},
+		ExpressionType: miniogo.QueryExpressionTypeSQL,
+		InputSerialization: miniogo.SelectObjectInputSerialization{
+			CompressionType: miniogo.SelectCompressionNONE,
+			Parquet:         &miniogo.ParquetInputOptions{},
 		},
-		OutputSerialization: minio.SelectObjectOutputSerialization{
-			CSV: &minio.CSVOutputOptions{
+		OutputSerialization: miniogo.SelectObjectOutputSerialization{
+			CSV: &miniogo.CSVOutputOptions{
 				RecordDelimiter: "\n",
 				FieldDelimiter:  ",",
 			},
@@ -593,7 +589,7 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *res
 	return payloads
 }
 
-func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *resource.MinioResource, query string, queryArgs []interface{}) []payload {
+func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *minio.Resource, query string, queryArgs []interface{}) []payload {
 	t.Helper()
 
 	db := duckDB(t)
