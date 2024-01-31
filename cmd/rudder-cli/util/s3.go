@@ -31,7 +31,6 @@ func testFileCreation() (string, error) {
 	}
 
 	err = os.WriteFile(testFilePath, data, 0o644)
-
 	if err != nil {
 		return "Could not write to temp file", err
 	}
@@ -69,7 +68,6 @@ func TestUpload() (string, error) {
 		Key:    aws.String(splitFileName[len(splitFileName)-1]),
 		Body:   fileToUpload,
 	})
-
 	if err != nil {
 		return "Failed to upload to S3. Check Credentials.", err
 	}

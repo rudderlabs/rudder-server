@@ -715,7 +715,6 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	ms.logger.Infof("MSSQL: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
-
 	if err != nil {
 		ms.logger.Errorf("MSSQL: Error inserting into users table from staging table: %v\n", err)
 		_ = tx.Rollback()

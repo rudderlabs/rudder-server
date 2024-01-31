@@ -728,7 +728,10 @@ func TestIntegration(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
 			loadFiles := []warehouseutils.LoadFile{{
-				Location: "https://account.blob.core.windows.net/container/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/a01af26e-4548-49ff-a895-258829cc1a83-load_file_not_exists_test_table/load.csv.gz",
+				Location: fmt.Sprintf("https://%s.blob.core.windows.net/%s/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/a01af26e-4548-49ff-a895-258829cc1a83-load_file_not_exists_test_table/load.csv.gz",
+					deltaLakeCredentials.AccountName,
+					deltaLakeCredentials.ContainerName,
+				),
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
