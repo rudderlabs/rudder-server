@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -46,7 +46,7 @@ func TestWebhook(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	transformerContainer, err := destination.SetupTransformer(pool, t)
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestWebhook(t *testing.T) {
 func runGateway(
 	ctx context.Context,
 	port int,
-	postgresContainer *resource.PostgresResource,
+	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
 ) (err error) {
 	// first run node migrations
@@ -98,7 +98,7 @@ func runGateway(
 
 	err = mg.Migrate("node")
 	if err != nil {
-		return fmt.Errorf("Unable to run the migrations for the node, err: %w", err)
+		return fmt.Errorf("unable to run the migrations for the node, err: %w", err)
 	}
 
 	// then start the server

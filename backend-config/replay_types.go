@@ -9,13 +9,13 @@ type EventReplayConfigs map[string]*EventReplayConfig
 // ApplyReplaySources reads the event replay configuration and adds replay sources to the config
 // A replay source is a copy of the original source with a different ID and source definition
 // This replay source contains as destinations replay destinations which are copies of the original destinations but with a different ID
-func (config *ConfigT) ApplyReplaySources() {
-	if len(config.EventReplays) == 0 {
+func (c *ConfigT) ApplyReplaySources() {
+	if len(c.EventReplays) == 0 {
 		return
 	}
-	originalSources := config.SourcesMap()
-	originalDestinations := config.DestinationsMap()
-	for _, replay := range config.EventReplays {
+	originalSources := c.SourcesMap()
+	originalDestinations := c.DestinationsMap()
+	for _, replay := range c.EventReplays {
 		sources := lo.OmitByValues(lo.MapValues(replay.Sources, func(value EventReplaySource, id string) *SourceT {
 			s, ok := originalSources[value.OriginalSourceID]
 			if !ok {
@@ -54,7 +54,7 @@ func (config *ConfigT) ApplyReplaySources() {
 		}
 
 		// add replay sources to config, only the ones that have destinations
-		config.Sources = append(config.Sources, lo.FilterMap(lo.Values(sources), func(source *SourceT, _ int) (SourceT, bool) {
+		c.Sources = append(c.Sources, lo.FilterMap(lo.Values(sources), func(source *SourceT, _ int) (SourceT, bool) {
 			return *source, len(source.Destinations) > 0
 		})...)
 	}

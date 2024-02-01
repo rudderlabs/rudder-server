@@ -15,41 +15,35 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/gateway/response"
-
-	"go.opentelemetry.io/otel"
-
-	"github.com/rudderlabs/rudder-server/processor/transformer"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/assert"
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/jobsdb"
-
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
-
 	_ "github.com/marcboeker/go-duckdb"
+	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/assert"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/zipkin"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
 )
 
 type testConfig struct {
 	zipkinURL        string
 	zipkinTracesURL  string
-	postgresResource *resource.PostgresResource
+	postgresResource *postgres.Resource
 	gwPort           int
 	prometheusPort   int
 }
@@ -505,9 +499,9 @@ func setup(t testing.TB) testConfig {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	zipkinResource, err := resource.SetupZipkin(pool, t)
+	zipkinResource, err := zipkin.Setup(pool, t)
 	require.NoError(t, err)
-	postgresResource, err := resource.SetupPostgres(pool, t)
+	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	zipkinURL := "http://localhost:" + zipkinResource.Port + "/api/v2/spans"
@@ -532,7 +526,7 @@ func runRudderServer(
 	ctx context.Context,
 	port int,
 	prometheusPort int,
-	postgresContainer *resource.PostgresResource,
+	postgresContainer *postgres.Resource,
 	zipkinURL, cbURL, transformerURL, tmpDir string,
 ) (err error) {
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)

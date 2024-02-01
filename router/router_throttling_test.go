@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -84,11 +83,11 @@ func Test_RouterThrottling(t *testing.T) {
 	require.NoError(t, err)
 	var (
 		group                errgroup.Group
-		postgresContainer    *resource.PostgresResource
+		postgresContainer    *postgres.Resource
 		transformerContainer *destination.TransformerResource
 	)
 	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
+		postgresContainer, err = postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 		return
 	})
 	group.Go(func() (err error) {
