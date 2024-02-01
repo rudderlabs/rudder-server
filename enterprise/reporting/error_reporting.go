@@ -520,19 +520,23 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				ReportedAt: firstReport.ReportedAt * 60 * 1000,
 			},
 		}
-		var errs []types.EDErrorDetails
-
-		reportsCountMap := lo.CountValuesBy(reports, func(rep *types.EDReportsDB) types.EDErrorDetails {
-			return types.EDErrorDetails{
-				StatusCode:     rep.StatusCode,
-				ErrorCode:      rep.ErrorCode,
-				ErrorMessage:   rep.ErrorMessage,
-				EventType:      rep.EventType,
-				SampleEvent:    rep.SampleEvent,
-				SampleResponse: rep.SampleResponse,
-				Count:          int(rep.Count),
+		messageMap := make(map[string]int)
+		reportsCountMap := make(map[types.EDErrorDetails]int)
+		for index, rep := range reports {
+			messageMap[rep.EDErrorDetails.ErrorMessage] = index
+			errDet := types.EDErrorDetails{
+				StatusCode:   rep.StatusCode,
+				ErrorCode:    rep.ErrorCode,
+				ErrorMessage: rep.ErrorMessage,
+				EventType:    rep.EventType,
+				EventName:    rep.EventName,
 			}
-		})
+			if _, ok := reportsCountMap[errDet]; !ok {
+				reportsCountMap[errDet] = int(rep.Count)
+				continue
+			}
+			reportsCountMap[errDet] += int(rep.Count)
+		}
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
 		sort.SliceStable(reportGrpKeys, func(i, j int) bool {
@@ -543,17 +547,18 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		for _, rep := range reportGrpKeys {
-			errs = append(errs, types.EDErrorDetails{
+		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int) types.EDErrorDetails {
+			return types.EDErrorDetails{
 				StatusCode:     rep.StatusCode,
 				ErrorCode:      rep.ErrorCode,
 				ErrorMessage:   rep.ErrorMessage,
 				EventType:      rep.EventType,
-				SampleResponse: rep.SampleResponse,
-				SampleEvent:    rep.SampleEvent,
-				Count:          rep.Count,
-			})
-		}
+				EventName:      rep.EventName,
+				SampleEvent:    reports[messageMap[rep.ErrorMessage]].SampleEvent,
+				SampleResponse: reports[messageMap[rep.ErrorMessage]].SampleResponse,
+				Count:          count,
+			}
+		})
 		edrSchema.Errors = errs
 		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}
