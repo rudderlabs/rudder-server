@@ -17,15 +17,14 @@ import (
 	"testing"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"golang.org/x/sync/errgroup"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -68,7 +67,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	var (
 		group                errgroup.Group
 		etcdContainer        *thEtcd.Resource
-		postgresContainer    *resource.PostgresResource
+		postgresContainer    *postgres.Resource
 		transformerContainer *destination.TransformerResource
 		serverInstanceID     = "1"
 		workspaceNamespace   = "test-workspace-namespace"
@@ -77,7 +76,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	)
 
 	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = postgres.Setup(pool, t)
 		return err
 	})
 	group.Go(func() (err error) {

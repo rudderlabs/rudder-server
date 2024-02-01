@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 )
 
 func TestFailedRecordsPerformanceTest(t *testing.T) {
@@ -39,7 +39,7 @@ func TestFailedRecordsPerformanceTest(t *testing.T) {
 func TestFailedRecords(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	service, err := NewJobService(JobServiceConfig{
@@ -82,7 +82,7 @@ func BenchmarkFailedRecordsPerformanceTest(b *testing.B) {
 func RunFailedRecordsPerformanceTest(t testing.TB, recordCount, pageSize int) time.Duration {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	service, err := NewJobService(JobServiceConfig{

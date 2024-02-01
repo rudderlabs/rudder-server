@@ -7,23 +7,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
-
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
 type jobRunTaskRun struct {
@@ -478,7 +474,7 @@ func TestSource(t *testing.T) {
 func setupDB(t *testing.T, pool *dockertest.Pool) *sqlmiddleware.DB {
 	t.Helper()
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	t.Log("db:", pgResource.DBDsn)
 
