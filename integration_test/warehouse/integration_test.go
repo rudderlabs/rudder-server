@@ -16,52 +16,39 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/rudder-server/jobsdb"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
+	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
-
-	"go.uber.org/atomic"
-
-	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
-
-	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	whclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
-
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse"
+	whclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 const (
@@ -318,9 +305,9 @@ func TestUploads(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -458,7 +445,7 @@ func TestUploads(t *testing.T) {
 		sshPort := c.Port("ssh-server", 2222)
 
 		db, minioResource, whClient := setupServer(t, false,
-			func(m map[string]backendconfig.ConfigT, minioResource *resource.MinioResource) {
+			func(m map[string]backendconfig.ConfigT, minioResource *minio.Resource) {
 				m[workspaceID] = backendconfig.ConfigT{
 					WorkspaceID: workspaceID,
 					Sources: []backendconfig.SourceT{
@@ -644,10 +631,10 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("aborted", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, false,
-				func(m map[string]backendconfig.ConfigT, _ *resource.MinioResource) {
+				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].Destinations[0].Config["port"] = "5432"
 				},
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.minRetryAttempts", B: 2},
 						{A: "Warehouse.retryTimeWindow", B: "0s"},
@@ -716,10 +703,10 @@ func TestUploads(t *testing.T) {
 	})
 	t.Run("retries then aborts", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false,
-			func(m map[string]backendconfig.ConfigT, _ *resource.MinioResource) {
+			func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 				m[workspaceID].Sources[0].Destinations[0].Config["port"] = "5432"
 			},
-			func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+			func(_ *minio.Resource) []lo.Tuple2[string, any] {
 				return []lo.Tuple2[string, any]{
 					{A: "Warehouse.minRetryAttempts", B: 2},
 					{A: "Warehouse.retryTimeWindow", B: "0s"},
@@ -836,7 +823,7 @@ func TestUploads(t *testing.T) {
 	})
 	t.Run("archiver", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false, nil,
-			func(minioResource *resource.MinioResource) []lo.Tuple2[string, any] {
+			func(minioResource *minio.Resource) []lo.Tuple2[string, any] {
 				return []lo.Tuple2[string, any]{
 					{A: "Warehouse.archiveUploadRelatedRecords", B: true},
 					{A: "Warehouse.uploadsArchivalTimeInDays", B: 0},
@@ -986,7 +973,7 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=false,preferAppend=false", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, false, nil,
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
 					}
@@ -1075,7 +1062,7 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=true,preferAppend=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: true},
 					}
@@ -1164,7 +1151,7 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=false,preferAppend=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
 					}
@@ -1253,7 +1240,7 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=false,preferAppend=true,isSourceETL=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
 					}
@@ -1345,10 +1332,10 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=false,preferAppend=true,IsReplaySource=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true,
-				func(m map[string]backendconfig.ConfigT, _ *resource.MinioResource) {
+				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].OriginalID = sourceID
 				},
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
 					}
@@ -1437,10 +1424,10 @@ func TestUploads(t *testing.T) {
 		})
 		t.Run("allowMerge=false,preferAppend=true,sourceCategory=cloud", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true,
-				func(m map[string]backendconfig.ConfigT, _ *resource.MinioResource) {
+				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].SourceDefinition.Category = "cloud"
 				},
-				func(_ *resource.MinioResource) []lo.Tuple2[string, any] {
+				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
 					}
@@ -1609,7 +1596,7 @@ func runWarehouseServer(
 	t testing.TB,
 	ctx context.Context,
 	webPort int,
-	pgResource *resource.PostgresResource,
+	pgResource *postgres.Resource,
 	bcConfig map[string]backendconfig.ConfigT,
 	configOverrides ...lo.Tuple2[string, any],
 ) error {
@@ -1682,8 +1669,8 @@ func runWarehouseServer(
 }
 
 func defaultBackendConfig(
-	pgResource *resource.PostgresResource,
-	minioResource *resource.MinioResource,
+	pgResource *postgres.Resource,
+	minioResource *minio.Resource,
 	preferAppend bool,
 ) map[string]backendconfig.ConfigT {
 	return map[string]backendconfig.ConfigT{
@@ -1730,7 +1717,7 @@ func defaultBackendConfig(
 func prepareStagingFile(
 	t testing.TB,
 	ctx context.Context,
-	minioResource *resource.MinioResource,
+	minioResource *minio.Resource,
 	payload string,
 ) filemanager.UploadedFile {
 	t.Helper()
@@ -2017,11 +2004,11 @@ func requireReportsCount(
 
 func setupServer(
 	t *testing.T, preferAppend bool,
-	bcConfigFunc func(map[string]backendconfig.ConfigT, *resource.MinioResource),
-	configOverridesFunc func(*resource.MinioResource) []lo.Tuple2[string, any],
+	bcConfigFunc func(map[string]backendconfig.ConfigT, *minio.Resource),
+	configOverridesFunc func(*minio.Resource) []lo.Tuple2[string, any],
 ) (
 	*sqlmw.DB,
-	*resource.MinioResource,
+	*minio.Resource,
 	*whclient.Warehouse,
 ) {
 	t.Helper()
@@ -2029,9 +2016,9 @@ func setupServer(
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	minioResource, err := resource.SetupMinio(pool, t)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

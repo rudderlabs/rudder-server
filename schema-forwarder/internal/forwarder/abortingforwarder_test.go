@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -21,7 +21,7 @@ func Test_AbortingForwarder(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgres, err := resource.SetupPostgres(pool, t)
+	postgres, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
 	t.Setenv("JOBS_DB_USER", postgres.User)

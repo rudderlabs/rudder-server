@@ -23,7 +23,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -55,7 +55,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -128,7 +128,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -197,7 +197,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -266,7 +266,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -336,7 +336,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -411,7 +411,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -494,7 +494,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -543,7 +543,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 	})
 }
 
-func runRudderServer(ctx context.Context, port int, postgresContainer *resource.PostgresResource, cbURL, transformerURL, tmpDir string) (err error) {
+func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
 	config.Set("DB.port", postgresContainer.Port)

@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 )
@@ -85,7 +84,7 @@ func testSetup(t *testing.T) (*config.Config, *sql.DB) {
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	postgresResource, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
+	postgresResource, err := postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres resource")
 	conf.Set("DB.name", postgresResource.Database)
 	conf.Set("DB.host", postgresResource.Host)
