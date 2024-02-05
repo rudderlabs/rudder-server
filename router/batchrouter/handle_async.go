@@ -142,7 +142,7 @@ func (brt *Handle) updatePollStatusToDB(
 	pollResp common.PollStatusResponse,
 ) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
-	var jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	list, err := brt.getImportingJobs(ctx, destinationID, brt.maxEventsInABatch)
 	if err != nil {
 		return statusList, err
