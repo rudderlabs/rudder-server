@@ -20,25 +20,26 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
+	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
-	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -57,12 +58,10 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	kafkaContainer               *kafka.Resource
-	redisContainer               *resource.RedisResource
-	postgresContainer            *resource.PostgresResource
+	redisContainer               *redis.Resource
+	postgresContainer            *pgdocker.Resource
 	transformerContainer         *destination.TransformerResource
-	minioContainer               *resource.MinioResource
-	EventID                      string
-	VersionID                    string
+	minioContainer               *minio.Resource
 )
 
 type event struct {
@@ -286,10 +285,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	containersGroup.Go(func() (err error) {
-		kafkaContainer, err = kafka.Setup(pool, t,
-			kafka.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			kafka.WithBrokers(1),
-		)
+		kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
 		if err != nil {
 			return err
 		}
@@ -298,11 +294,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
-		redisContainer, err = resource.SetupRedis(containersCtx, pool, t)
+		redisContainer, err = redis.Setup(containersCtx, pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = pgdocker.Setup(pool, t)
 		if err != nil {
 			return err
 		}
@@ -314,7 +310,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		minioContainer, err = resource.SetupMinio(pool, t)
+		minioContainer, err = minio.Setup(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait())
@@ -856,7 +852,3 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 		}
 	}
 }
-
-type testLogger struct{ logger.Logger }
-
-func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

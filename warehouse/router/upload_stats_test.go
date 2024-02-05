@@ -7,26 +7,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-
+	"github.com/golang/mock/gomock"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-
-	"github.com/golang/mock/gomock"
-
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
 func TestUploadJob_Stats(t *testing.T) {
@@ -375,7 +369,7 @@ func setupUploadTest(t testing.TB, migrationsPath string) *sql.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)
