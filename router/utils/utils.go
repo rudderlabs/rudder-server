@@ -177,7 +177,7 @@ func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType stri
 			eventsPerConnectionInfoAndStateAndCode[connectionKey] = map[string]map[string]int{}
 			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]
 			eventsPerStateAndCode[state] = map[string]int{}
-			eventsPerStateAndCode[state][code]++	
+			eventsPerStateAndCode[state][code]++
 
 		} else {
 			eventsPerStateAndCode := eventsPerConnectionInfoAndStateAndCode[connectionKey]

@@ -3,14 +3,14 @@ package utils_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUpdateProcessedEventsMetrics(t *testing.T) {
-
 	sourceID1 := "test-source-id-1"
 	destinationID1 := "test-destination-id-1"
 	sourceID2 := "test-source-id-2"
@@ -151,5 +151,4 @@ func TestUpdateProcessedEventsMetrics(t *testing.T) {
 		"sourceId":      sourceID1,
 		"destinationId": destinationID3,
 	}).LastValue())
-
 }
