@@ -255,7 +255,7 @@ func (brt *Handle) updatePollStatusToDB(
 		}
 		brt.asyncFailedJobCount.Count(len(statusList))
 	}
-	routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 	return statusList, nil
 }
 
@@ -723,7 +723,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	if err != nil {
 		panic(err)
 	}
-	routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 	rmetrics.DecreasePendingEvents(
 		"batch_rt",
 		workspaceID,

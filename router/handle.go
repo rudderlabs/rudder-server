@@ -45,6 +45,8 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const module = "router"
+
 // Handle is the handle to this module.
 type Handle struct {
 	// external dependencies
@@ -464,7 +466,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		routerutils.UpdateProcessedEventsMetrics(stats.Default, "router", rt.destType, statusList, jobIDConnectionDetailsMap)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",
