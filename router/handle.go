@@ -316,11 +316,6 @@ func (rt *Handle) stopIteration(err error) bool {
 	return rt.isolationStrategy.StopIteration(err)
 }
 
-type connectionDetails struct {
-	sourceId      string
-	destinationId string
-}
-
 // commitStatusList commits the status of the jobs to the jobsDB
 func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
