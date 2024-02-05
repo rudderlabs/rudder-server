@@ -165,7 +165,7 @@ func (d *drainer) Drain(
 	return false, ""
 }
 
-func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module string, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails) {
+func UpdateProcessedEventsMetrics(statsHandle stats.Stats, module, destType string, statusList []*jobsdb.JobStatusT, jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails) {
 	eventsPerConnectionInfoAndStateAndCode := map[string]map[string]map[string]int{}
 	for i := range statusList {
 		sourceID := jobIDConnectionDetailsMap[statusList[i].JobID].SourceID
