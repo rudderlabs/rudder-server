@@ -45,6 +45,8 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const module = "batch_router"
+
 type Handle struct {
 	destType string
 	// dependencies
@@ -576,6 +578,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]int)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -622,6 +625,10 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			abortedEvents = append(abortedEvents, job)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
+		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    attemptNum,
@@ -763,7 +770,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList)
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 	sendDestStatusStats(batchJobs.Connection, jobStateCounts, brt.destType, isWarehouse)
 }
 

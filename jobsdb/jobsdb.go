@@ -365,6 +365,11 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
+type ConnectionDetails struct {
+	SourceID      string
+	DestinationID string
+}
+
 func (r *JobStatusT) sanitizeJson() {
 	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
 	r.Parameters = sanitizeJson(r.Parameters)
