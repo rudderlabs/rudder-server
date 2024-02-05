@@ -108,20 +108,21 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
+	capturedTableName := strings.ToLower(tableName)
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if !slices.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+	if !slices.Contains(rudderAPISupportedEventTypes, capturedTableName) {
 		// making all other tableName as other, to reduce cardinality
-		tableName = "others"
+		capturedTableName = "others"
 	}
 
 	job.counterStat(`event_delivery`, warehouseutils.Tag{
 		Name:  "tableName",
-		Value: strings.ToLower(tableName),
+		Value: capturedTableName,
 	}).Count(int(numEvents))
 
 	job.counterStat(`rows_synced`, warehouseutils.Tag{
 		Name:  "tableName",
-		Value: strings.ToLower(tableName),
+		Value: capturedTableName,
 	}).Count(int(numEvents))
 
 	// Delay for the oldest event in the batch
@@ -137,7 +138,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = conf[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			warehouseutils.Tag{Name: "tableName", Value: capturedTableName},
 			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
