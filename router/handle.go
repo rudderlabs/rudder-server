@@ -464,7 +464,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		rt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, "router", rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",

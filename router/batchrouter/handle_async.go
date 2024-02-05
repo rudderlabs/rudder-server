@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -253,8 +254,7 @@ func (brt *Handle) updatePollStatusToDB(
 		}
 		brt.asyncFailedJobCount.Count(len(statusList))
 	}
-	brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
-
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
 	return statusList, nil
 }
 
@@ -722,8 +722,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
-
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
 	if attempted {
 		var sourceID string
 		if len(statusList) > 0 {

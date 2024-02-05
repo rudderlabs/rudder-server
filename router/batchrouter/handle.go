@@ -768,7 +768,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
 	sendDestStatusStats(batchJobs.Connection, jobStateCounts, brt.destType, isWarehouse)
 }
 

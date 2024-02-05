@@ -158,7 +158,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if err != nil {
 				panic(err)
 			}
-			brt.updateProcessedEventsMetrics(statusList, jobIDConnectionDetailsMap)
+			routerutils.UpdateProcessedEventsMetrics(stats.Default, "batch_router", brt.destType, statusList, jobIDConnectionDetailsMap)
 			for destID, destDrainStat := range drainStatsbyDest {
 				stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 					"destType":    brt.destType,
