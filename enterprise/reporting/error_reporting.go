@@ -191,7 +191,6 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"sourceId":      metric.ConnectionDetails.SourceID,
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
-		sampleEvent, _ := json.Marshal(metric.StatusDetail.SampleEvent)
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
@@ -207,7 +206,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.EventType,
 			metric.StatusDetail.EventName,
-			string(sampleEvent),
+			string(metric.StatusDetail.SampleEvent),
 			metric.StatusDetail.SampleResponse,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
@@ -521,7 +520,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 			},
 		}
 		messageMap := make(map[string]int)
-		reportsCountMap := make(map[types.EDErrorDetails]int)
+		reportsCountMap := make(map[types.EDErrorDetails]int64)
 		for index, rep := range reports {
 			messageMap[rep.EDErrorDetails.ErrorMessage] = index
 			errDet := types.EDErrorDetails{
@@ -532,10 +531,10 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				EventName:    rep.EventName,
 			}
 			if _, ok := reportsCountMap[errDet]; !ok {
-				reportsCountMap[errDet] = int(rep.Count)
+				reportsCountMap[errDet] = rep.Count
 				continue
 			}
-			reportsCountMap[errDet] += int(rep.Count)
+			reportsCountMap[errDet] += rep.Count
 		}
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
@@ -547,7 +546,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int) types.EDErrorDetails {
+		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
 			return types.EDErrorDetails{
 				StatusCode:     rep.StatusCode,
 				ErrorCode:      rep.ErrorCode,

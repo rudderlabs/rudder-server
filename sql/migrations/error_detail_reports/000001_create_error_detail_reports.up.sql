@@ -17,9 +17,6 @@ CREATE TABLE IF NOT EXISTS error_detail_reports (
 		status_code INT,
 		error_message TEXT DEFAULT '',
 		event_type TEXT DEFAULT '',
-		event_name TEXT DEFAULT '',
-		sample_event TEXT DEFAULT '',
-		sample_response TEXT DEFAULT '',
 		error_code TEXT DEFAULT '',
 		count BIGINT DEFAULT 0
 		);
