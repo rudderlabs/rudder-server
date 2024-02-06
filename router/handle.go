@@ -45,6 +45,8 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const module = "router"
+
 // Handle is the handle to this module.
 type Handle struct {
 	// external dependencies
@@ -324,6 +326,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, workerJobStatus := range *workerJobStatuses {
 		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
@@ -337,6 +340,10 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		workspaceID := workerJobStatus.status.WorkspaceId
 		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
@@ -454,7 +461,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		rt.updateProcessedEventsMetrics(statusList)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",
