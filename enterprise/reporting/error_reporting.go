@@ -530,10 +530,6 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				EventType:    rep.EventType,
 				EventName:    rep.EventName,
 			}
-			if _, ok := reportsCountMap[errDet]; !ok {
-				reportsCountMap[errDet] = rep.Count
-				continue
-			}
 			reportsCountMap[errDet] += rep.Count
 		}
 
