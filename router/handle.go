@@ -543,7 +543,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			"destinationId": parameters.DestinationID,
 		}).Increment()
 	}
-	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to it's worker right away
+	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
@@ -629,7 +629,7 @@ func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 		return false
 	}
 
-	if respStatusCode < 500 {
+	if respStatusCode < http.StatusInternalServerError {
 		return false
 	}
 
