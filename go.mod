@@ -104,7 +104,7 @@ require (
 	github.com/xitongsys/parquet-go v1.5.1
 	github.com/xitongsys/parquet-go-source v0.0.0-20240122235623-d6294584ab18
 	go.etcd.io/etcd/api/v3 v3.5.12
-	go.etcd.io/etcd/client/v3 v3.5.11
+	go.etcd.io/etcd/client/v3 v3.5.12
 	go.opentelemetry.io/otel v1.22.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
@@ -278,7 +278,7 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.11 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.12 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.47.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.47.0 // indirect
