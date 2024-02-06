@@ -17,11 +17,11 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -84,9 +84,9 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) Transformer {
 	handle := &handle{}
-	handle.setup(destinationTimeout, transformTimeout)
+	handle.setup(destinationTimeout, transformTimeout, &cache, lock, backendConfig)
 	return handle
 }
 
@@ -295,7 +295,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	return respCode, string(respData), "application/json"
 }
 
-func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
+func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauth.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -315,11 +315,10 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	cache := cachettl.New[oauth.CacheKey, *oauth.AccessToken]()
-	locker := sync.NewPartitionLocker()
-	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery, "output.0", cache, locker)
+	// locker := sync.NewPartitionLocker()
+	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, "", extensions.BodyAugmenter, oauth.RudderFlow_Delivery, "output", cache, locker)
+	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
@@ -360,6 +359,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	httpReqStTime := time.Now()
 	temp := ctx.Value("destination")
 	req = req.WithContext(context.WithValue(req.Context(), "destination", temp))
+	req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata.Secret))
 	resp, err := trans.proxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req

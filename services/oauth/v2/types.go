@@ -3,11 +3,9 @@ package v2
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"sync"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -16,24 +14,19 @@ type (
 	AuthType   string
 )
 
-// AccessToken is the access token returned by the oauth server
-type AccessToken struct {
-	ExpirationDate time.Time `json:"expirationDate"`
-	Token          []byte    `json:"secret"`
+// AccountSecret is the access token returned by the oauth server
+type AccountSecret struct {
+	ExpirationDate string          `json:"expirationDate"`
+	Secret         json.RawMessage `json:"secret"`
 }
 type OAuthHandler struct {
 	tokenProvider
 	logger                    logger.Logger
 	rudderFlowType            RudderFlow
 	CpConn                    *ControlPlaneConnector
-	destAuthInfoMap           map[string]*AuthResponse
-	tr                        *http.Transport
-	client                    *http.Client
-	destLockMap               map[string]*sync.RWMutex // This mutex map is used for disable destination locking
-	accountLockMap            map[string]*sync.RWMutex // This mutex map is used for refresh token locking
-	lockMapWMutex             *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
-	refreshActiveMap          map[string]bool          // Used to check if a refresh request for an account is already InProgress
-	authStatusUpdateActiveMap map[string]bool          // Used to check if a authStatusInactive request for a destination is already InProgress
+	authStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
+	cache                     Cache
+	lock                      *rudderSync.PartitionRWLocker
 }
 type CacheKey struct {
 	WorkspaceID string
@@ -60,10 +53,7 @@ type ControlPlaneRequestT struct {
 	basicAuthUser  string
 	rudderFlowType RudderFlow
 }
-type AccountSecret struct {
-	ExpirationDate string          `json:"expirationDate"`
-	Secret         json.RawMessage `json:"secret"`
-}
+
 type AuthResponse struct {
 	Account      AccountSecret
 	Err          string
@@ -78,8 +68,8 @@ type RefreshTokenParams struct {
 }
 
 type Authorizer interface {
-	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
-	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
+	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
+	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 }
 
 type RefreshTokenBodyParams struct {
@@ -109,4 +99,7 @@ type AuthStatusToggleParams struct {
 
 type AuthStatusToggleResponse struct {
 	Message string `json:"message,omitempty"`
+}
+type TransformerResponse struct {
+	AuthErrorCategory string `json:"authErrorCategory"`
 }

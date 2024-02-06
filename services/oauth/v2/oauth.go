@@ -1,33 +1,36 @@
 package v2
 
 import (
-	"bytes"
-	"net/http"
-	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	rudderlabsSync "github.com/rudderlabs/rudder-go-kit/sync"
+	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 var (
-	configBEURL      string
-	pkgLogger        logger.Logger
-	loggerNm         string
-	globalTokenCache *cachettl.Cache[CacheKey, *AccessToken]
-	globalLock       *rudderlabsSync.PartitionLocker
+	configBEURL string
+	pkgLogger   logger.Logger
+	loggerNm    string
 )
 
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthHandler")
 	loggerNm = "OAuthHandler"
-	globalTokenCache = cachettl.New[CacheKey, *AccessToken]()
-	globalLock = rudderlabsSync.NewPartitionLocker()
+}
+
+func WithCache(cache Cache) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.cache = cache
+	}
+}
+
+func WithLocker(lock *rudderSync.PartitionRWLocker) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.lock = lock
+	}
 }
 
 // This function creates a new OauthErrorResponseHandler
@@ -38,21 +41,42 @@ func NewOAuthHandler(provider tokenProvider, options ...func(*OAuthHandler)) *OA
 		logger:        pkgLogger,
 		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger)),
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-		destLockMap:               make(map[string]*sync.RWMutex),
-		accountLockMap:            make(map[string]*sync.RWMutex),
-		lockMapWMutex:             &sync.RWMutex{},
-		destAuthInfoMap:           make(map[string]*AuthResponse),
-		refreshActiveMap:          make(map[string]bool),
-		authStatusUpdateActiveMap: make(map[string]bool),
 		rudderFlowType:            RudderFlow_Delivery,
+		authStatusUpdateActiveMap: make(map[string]bool),
 	}
 	for _, opt := range options {
 		opt(oAuthHandler)
 	}
+	if oAuthHandler.cache == nil {
+		cache := NewCache()
+		oAuthHandler.cache = cache
+	}
+	if oAuthHandler.lock == nil {
+		oAuthHandler.lock = rudderSync.NewPartitionRWLocker()
+	}
 	return oAuthHandler
 }
 
-func (oauthHandler *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse) {
+/*
+Fetch token function is used to fetch the token from the cache or from the control plane
+- It first checks if the token is present in the cache
+- If the token is present in the cache, it checks if the token has expired
+- If the token has expired, it fetches the token from the control plane
+- If the token is not present in the cache, it fetches the token from the control plane
+- It returns the status code, token and error
+- It also sends the stats to the statsd
+- It also sends the error to the control plane
+Parameters:
+  - fetchTokenParams: *RefreshTokenParams
+  - logTypeName: string
+  - authStats: *OAuthStats
+
+Return:
+  - int: status code
+  - *AuthResponse: token
+  - error: error
+*/
+func (oauthHandler *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
 		id:              fetchTokenParams.AccountId,
 		workspaceId:     fetchTokenParams.WorkspaceId,
@@ -69,68 +93,28 @@ func (oauthHandler *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParam
 	return oauthHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
 
-func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
-	startTime := time.Now()
-	defer func() {
-		authStats.statName = getOAuthActionStatName("total_latency")
-		authStats.isCallToCpApi = false
-		authStats.SendTimerStats(startTime)
-	}()
+/*
+Refresh token function is used to refresh the token from the control plane
+- It fetches the token from the cache
+- If the token is present in the cache, it checks if the token has expired
+- If the token has expired, it fetches the token from the control plane
+- If the token is present in the cache, it compares the token with the received token
+  - If it doesn't match then it is possible the stored token is not expired but the received token is expired so return the stored token
+  - Else if matches then go ahead
 
-	accountMutex := oauthHandler.getKeyMutex(oauthHandler.accountLockMap, refTokenParams.AccountId)
-	refTokenBody := RefreshTokenBodyParams{}
-	if router_utils.IsNotEmptyString(string(refTokenParams.Secret)) {
-		refTokenBody = RefreshTokenBodyParams{
-			HasExpired:    true,
-			ExpiredSecret: refTokenParams.Secret,
-		}
-	}
-	accountMutex.RLock()
-	refVal, ok := oauthHandler.destAuthInfoMap[refTokenParams.AccountId]
-	if ok {
-		isInvalidAccountSecretForRefresh := router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
-			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret)
-		if isInvalidAccountSecretForRefresh {
-			accountMutex.RUnlock()
-			oauthHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.Secret)
-			return http.StatusOK, refVal
-		}
-	}
-	accountMutex.RUnlock()
-	accountMutex.Lock()
-	if isRefreshActive, isPresent := oauthHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
-		accountMutex.Unlock()
-		if refVal != nil {
-			secret := refVal.Account.Secret
-			oauthHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received from cache(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, string(secret))
-			return http.StatusOK, refVal
-		}
-		// Empty Response(valid while many GetToken calls are happening)
-		return http.StatusOK, &AuthResponse{
-			Account: AccountSecret{
-				Secret: []byte(""),
-			},
-			Err: "",
-		}
-	}
-	// Refresh will start
-	oauthHandler.refreshActiveMap[refTokenParams.AccountId] = true
-	oauthHandler.logger.Debugf("[%s request] [rt-worker-%v] :: %v request is active!", loggerNm, logTypeName, refTokenParams.WorkerId)
-	accountMutex.Unlock()
+- It fetches the token from the control plane
+- It returns the status code, token and error
+- It also sends the stats to the statsd
+- It also sends the error to the control plane
+Parameters:
+  - refTokenParams: *RefreshTokenParams
 
-	defer func() {
-		accountMutex.Lock()
-		oauthHandler.refreshActiveMap[refTokenParams.AccountId] = false
-		oauthHandler.logger.Debugf("[%s request] [rt-worker-%v]:: %v request is inactive!", loggerNm, logTypeName, refTokenParams.WorkerId)
-		accountMutex.Unlock()
-	}()
-
-	oauthHandler.logger.Debugf("[%s] [%v request] Lock Acquired by rt-worker-%d\n", loggerNm, logTypeName, refTokenParams.WorkerId)
-	statusCode := oauthHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
-	return statusCode, oauthHandler.destAuthInfoMap[refTokenParams.AccountId]
-}
-
-func (authErrHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
+Return:
+  - int: status code
+  - *AuthResponse: token
+  - error: error
+*/
+func (authErrHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
 		id:              refTokenParams.AccountId,
 		workspaceId:     refTokenParams.WorkspaceId,
@@ -144,4 +128,29 @@ func (authErrHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenPar
 		action:          "refresh_token",
 	}
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
+}
+
+func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
+	startTime := time.Now()
+	defer func() {
+		authStats.statName = getOAuthActionStatName("total_latency")
+		authStats.isCallToCpApi = false
+		authStats.SendTimerStats(startTime)
+	}()
+	oauthHandler.lock.Lock(refTokenParams.AccountId)
+	defer oauthHandler.lock.Unlock(refTokenParams.AccountId)
+	refTokenBody := RefreshTokenBodyParams{}
+	storedCache, ok := oauthHandler.cache.Get(refTokenParams.AccountId)
+	if ok {
+		storedCache := storedCache.(*AuthResponse)
+		if checkIfTokenExpired(storedCache.Account, refTokenParams.Secret, authStats) {
+			refTokenBody = RefreshTokenBodyParams{
+				HasExpired:    true,
+				ExpiredSecret: refTokenParams.Secret,
+			}
+		} else {
+			return 200, &AuthResponse{Account: storedCache.Account}, nil
+		}
+	}
+	return oauthHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 }

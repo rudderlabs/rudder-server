@@ -1,18 +1,21 @@
 package v2
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"regexp"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
@@ -20,7 +23,6 @@ const (
 	REFRESH_TOKEN = "REFRESH_TOKEN"
 	// Identifier to be sent from destination(during transformation/delivery)
 	AUTH_STATUS_INACTIVE = "AUTH_STATUS_INACTIVE"
-
 	// Identifier for invalid_grant or access_denied errors(during refreshing the token)
 	REF_TOKEN_INVALID_GRANT = "ref_token_invalid_grant"
 )
@@ -45,26 +47,35 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
 }
 
-func (resHandler *OAuthHandler) getKeyMutex(mutexMap map[string]*sync.RWMutex, id string) *sync.RWMutex {
-	resHandler.lockMapWMutex.Lock()
-	defer resHandler.lockMapWMutex.Unlock()
-	// mutexMap will not be nil
-	if _, ok := mutexMap[id]; !ok {
-		resHandler.logger.Debugf("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
-		mutexMap[id] = &sync.RWMutex{}
+// Send count type stats related to OAuth(Destination)
+func (refStats *OAuthStats) SendCountStat() {
+	statsTags := stats.Tags{
+		"id":              refStats.id,
+		"workspaceId":     refStats.workspaceId,
+		"rudderCategory":  refStats.rudderCategory,
+		"errorMessage":    refStats.errorMessage,
+		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
+		"authErrCategory": refStats.authErrCategory,
+		"destType":        refStats.destDefName,
+		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
+		"flowType":        string(refStats.flowType),
+		"action":          refStats.action,
 	}
-	return mutexMap[id]
+	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, statsTags).Increment()
 }
 
 // This method hits the Control Plane to get the account information
 // As well update the account information into the destAuthInfoMap(which acts as an in-memory cache)
 func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
 	authStats *OAuthStats, logTypeName string,
-) (statusCode int) {
+) (int, *AuthResponse, error) {
 	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
-		panic(err)
+		authStats.statName = getOAuthActionStatName("failure")
+		authStats.errorMessage = "error in marshalling refresh token body"
+		authStats.SendCountStat()
+		return http.StatusInternalServerError, nil, err
 	}
 	refreshCpReq := &ControlPlaneRequestT{
 		Method:        http.MethodPost,
@@ -73,7 +84,7 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 		Body:          string(res),
 		destName:      refTokenParams.DestDefName,
 		RequestType:   authStats.action,
-		basicAuthUser: "1oVajZWp673TO1pq5lUK6laxdlw",
+		basicAuthUser: authErrHandler.AccessToken(),
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
@@ -95,62 +106,37 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
-		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-			Account: AccountSecret{
-				Secret: []byte(""),
-			},
-			Err: "Empty secret",
-		}
 		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
-		return http.StatusInternalServerError
+		return http.StatusInternalServerError, nil, errors.New("empty secret")
 	}
 
 	if errType, refErrMsg := authErrHandler.getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
-		if _, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]; !ok {
-			authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-				Err:          errType,
-				ErrorMessage: refErrMsg,
-			}
-		} else {
-			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = errType
-			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].ErrorMessage = refErrMsg
-		}
+		// potential oauth secret alert as we are not setting anything in the cache as secret
+		authErrHandler.cache.Set(refTokenParams.AccountId, &AuthResponse{
+			Err:          errType,
+			ErrorMessage: refErrMsg,
+		})
+
 		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
 		if refErrMsg == REF_TOKEN_INVALID_GRANT {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
-			return http.StatusBadRequest
+			return http.StatusBadRequest, nil, errors.New("invalid grant")
 		}
-		return http.StatusInternalServerError
-	}
-	// Update the refreshed account information into in-memory map(cache)
-	authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-		Account: accountSecret,
+		return http.StatusInternalServerError, nil, errors.New("error occurred while fetching/refreshing account info from CP: %v" + refErrMsg)
 	}
 	authStats.statName = getOAuthActionStatName("success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	authErrHandler.logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
-	return http.StatusOK
-}
-
-// Send count type stats related to OAuth(Destination)
-func (refStats *OAuthStats) SendCountStat() {
-	statsTags := stats.Tags{
-		"id":              refStats.id,
-		"workspaceId":     refStats.workspaceId,
-		"rudderCategory":  refStats.rudderCategory,
-		"errorMessage":    refStats.errorMessage,
-		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
-		"authErrCategory": refStats.authErrCategory,
-		"destType":        refStats.destDefName,
-		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
-		"flowType":        string(refStats.flowType),
-		"action":          refStats.action,
-	}
-	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, statsTags).Increment()
+	authErrHandler.cache.Set(refTokenParams.AccountId, &AuthResponse{
+		Account: accountSecret,
+	})
+	return http.StatusOK, &AuthResponse{
+		Account: accountSecret,
+	}, nil
 }
 
 func (authErrHandler *OAuthHandler) getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
@@ -199,7 +185,6 @@ func (authErrHandler *OAuthHandler) updateAuthStatusToInactive(destination *back
 func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := params.Destination.ID
-	authStatusToggleMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
 	action := fmt.Sprintf("auth_status_%v", params.AuthStatus)
 
 	authStatusToggleStats := &OAuthStats{
@@ -219,41 +204,40 @@ func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusTogglePar
 		authStatusToggleStats.isCallToCpApi = false
 		authStatusToggleStats.SendTimerStats(authErrHandlerTimeStart)
 	}()
-
-	authStatusToggleMutex.Lock()
+	authErrHandler.lock.Lock(params.RudderAccountId)
 	isAuthStatusUpdateActive, isAuthStatusUpdateReqPresent := authErrHandler.authStatusUpdateActiveMap[destinationId]
 	authStatusUpdateActiveReq := strconv.FormatBool(isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive)
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
-		authStatusToggleMutex.Unlock()
+		authErrHandler.lock.Unlock(params.RudderAccountId)
 		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request Active : %s\n", loggerNm, authStatusUpdateActiveReq)
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	authErrHandler.authStatusUpdateActiveMap[destinationId] = true
-	authStatusToggleMutex.Unlock()
+	authErrHandler.lock.Unlock(params.RudderAccountId)
 
 	defer func() {
-		authStatusToggleMutex.Lock()
+		authErrHandler.lock.Lock(params.RudderAccountId)
 		authErrHandler.authStatusUpdateActiveMap[destinationId] = false
 		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request is inactive!", loggerNm)
-		authStatusToggleMutex.Unlock()
+		authErrHandler.lock.Unlock(params.RudderAccountId)
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
-		accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, params.RudderAccountId)
-		accountMutex.Lock()
-		delete(authErrHandler.destAuthInfoMap, params.RudderAccountId)
-		accountMutex.Unlock()
+		authErrHandler.lock.Lock(params.RudderAccountId)
+		authErrHandler.cache.Delete(params.RudderAccountId)
+		authErrHandler.lock.Unlock(params.RudderAccountId)
 	}()
 
 	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, params.WorkspaceId, destinationId)
 
 	authStatusInactiveCpReq := &ControlPlaneRequestT{
-		Url:         authStatusToggleUrl,
-		Method:      http.MethodPut,
-		Body:        fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
-		ContentType: "application/json",
-		destName:    params.Destination.DestinationDefinition.Name,
-		RequestType: action,
+		Url:           authStatusToggleUrl,
+		Method:        http.MethodPut,
+		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
+		ContentType:   "application/json",
+		destName:      params.Destination.DestinationDefinition.Name,
+		RequestType:   action,
+		basicAuthUser: authErrHandler.AccessToken(),
 	}
 
 	authStatusToggleStats.statName = getOAuthActionStatName("request_sent")
@@ -287,4 +271,119 @@ func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusTogglePar
 	authStatusToggleStats.SendCountStat()
 
 	return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
+}
+
+func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
+	transformedJobs := &TransformerResponse{}
+	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output.0").Raw), &transformedJobs)
+	if err != nil {
+		return "", err
+	}
+	return transformedJobs.AuthErrorCategory, nil
+}
+
+func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
+	transformedJobs := &TransformerResponse{}
+	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	if err != nil {
+		return "", err
+	}
+	return transformedJobs.AuthErrorCategory, nil
+}
+
+func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats *OAuthStats) bool {
+	if secret.ExpirationDate != "" && verifyExpirationDate(secret.ExpirationDate, stats) {
+		return true
+	}
+	if router_utils.IsNotEmptyString(string(oldSecret)) {
+		if bytes.Equal(secret.Secret, oldSecret) {
+			return true
+		}
+	}
+	return false
+}
+
+func verifyExpirationDate(expirationDate string, stats *OAuthStats) bool {
+	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
+	if err != nil {
+		stats.errorMessage = "error in parsing expiration date"
+		stats.SendCountStat()
+		return false
+	}
+	if date.Before(time.Now().Add(time.Minute * 10)) {
+		return true
+	}
+	return true
+}
+
+func (t *Oauth2Transport) preTransformerCallHandling(req *http.Request) error {
+	if t.flow == RudderFlow_Delivery {
+		t.accountId = t.destination.GetAccountID("rudderAccountId")
+	} else if t.flow == RudderFlow_Delete {
+		t.accountId = t.destination.GetAccountID("rudderDeleteAccountId")
+	}
+
+	t.refreshTokenParams = &RefreshTokenParams{
+		AccountId:   t.accountId,
+		WorkspaceId: t.destination.WorkspaceID,
+		DestDefName: t.destination.DestinationDefinition.Name,
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read request body: %w", err)
+	}
+	matched, _ := regexp.MatchString(req.URL.Path, "/routerTransform")
+	if matched {
+		fetchErr := t.Augmenter.Augment(req, body, func() (json.RawMessage, error) {
+			statusCode, authResponse, err := t.oauthHandler.FetchToken(t.refreshTokenParams)
+			if statusCode == http.StatusOK {
+				return authResponse.Account.Secret, nil
+			}
+			return nil, err
+		})
+		if fetchErr != nil {
+			return fmt.Errorf("failed to fetch token: %w", fetchErr)
+		}
+	} else {
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	return nil
+}
+
+func (t *Oauth2Transport) postTransformerCallHandling(req *http.Request, res *http.Response) (*http.Response, error) {
+	respData, _ := io.ReadAll(res.Body)
+	res.Body = io.NopCloser(bytes.NewReader(respData))
+	authErrorCategory, err := t.getAuthErrorCategory(respData)
+	if err != nil {
+		return res, err
+	}
+	if authErrorCategory == REFRESH_TOKEN {
+		// since same token that was used to make the http call needs to be refreshed, we need the current token information
+		var oldSecret json.RawMessage
+		if req.Context().Value("secret") != nil {
+			oldSecret = req.Context().Value("secret").(json.RawMessage)
+		}
+		t.refreshTokenParams.Secret = oldSecret
+		t.oauthHandler.logger.Info("refreshing token")
+		statusCode, refSecret, refErr := t.oauthHandler.RefreshToken(t.refreshTokenParams)
+		if statusCode == http.StatusOK {
+			// refresh token successful --> retry the event
+			res.StatusCode = http.StatusInternalServerError
+		} else {
+			// invalid_grant -> 4xx
+			// refresh token failed -> erreneous status-code
+			if refSecret.Err == REF_TOKEN_INVALID_GRANT {
+				t.oauthHandler.updateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
+			}
+			res.StatusCode = statusCode
+		}
+		if refErr != nil {
+			err = fmt.Errorf("failed to refresh token: %w", refErr)
+		}
+		// // When expirationDate is available, only then parse
+		// refer this: router/handle.go ---> handleOAuthDestResponse & make relevant changes
+	} else if authErrorCategory == AUTH_STATUS_INACTIVE {
+		res.StatusCode = t.oauthHandler.updateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
+	}
+	return res, err
 }
