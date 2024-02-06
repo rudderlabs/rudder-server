@@ -14,17 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -119,11 +118,11 @@ func (s *SUT) Start(t *testing.T) {
 
 	containersGroup, _ := errgroup.WithContext(context.TODO())
 
-	var postgresContainer *resource.PostgresResource
+	var postgresContainer *postgres.Resource
 	var transformerContainer *destination.TransformerResource
 
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = postgres.Setup(pool, t)
 		if err != nil {
 			return err
 		}
