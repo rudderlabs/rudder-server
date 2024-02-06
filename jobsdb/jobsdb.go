@@ -1739,7 +1739,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	for {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
-			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
+			jd.logger.Warnf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
