@@ -6,6 +6,6 @@ ALTER TABLE
 ADD
     COLUMN IF NOT EXISTS event_name TEXT DEFAULT '',
 ADD
-    COLUMN IF NOT EXISTS sample_event JSONB,
+    COLUMN IF NOT EXISTS sample_event JSONB NOT NULL DEFAULT '{}'::jsonb,
 ADD
     COLUMN IF NOT EXISTS sample_response TEXT DEFAULT '';
