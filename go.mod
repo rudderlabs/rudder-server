@@ -31,7 +31,7 @@ replace (
 
 require (
 	cloud.google.com/go/bigquery v1.58.0
-	cloud.google.com/go/pubsub v1.36.0
+	cloud.google.com/go/pubsub v1.36.1
 	cloud.google.com/go/storage v1.37.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -103,7 +103,7 @@ require (
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.5.1
 	github.com/xitongsys/parquet-go-source v0.0.0-20240122235623-d6294584ab18
-	go.etcd.io/etcd/api/v3 v3.5.11
+	go.etcd.io/etcd/api/v3 v3.5.12
 	go.etcd.io/etcd/client/v3 v3.5.11
 	go.opentelemetry.io/otel v1.22.0
 	go.uber.org/atomic v1.11.0
@@ -113,7 +113,7 @@ require (
 	golang.org/x/oauth2 v0.16.0
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0
-	google.golang.org/api v0.160.0
+	google.golang.org/api v0.161.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240125205218-1f4bbc51befe
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.32.0
