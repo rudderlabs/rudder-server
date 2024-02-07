@@ -58,10 +58,6 @@ func getWorkerPartition(key eventorder.BarrierKey, noOfWorkers int) int {
 	return misc.GetHash(key.String()) % noOfWorkers
 }
 
-func jobOrderKey(userID, destinationID string) string {
-	return userID + ":" + destinationID
-}
-
 func isolationMode(destType string, config *config.Config) isolation.Mode {
 	defaultIsolationMode := isolation.ModeDestination
 	if config.IsSet("WORKSPACE_NAMESPACE") {

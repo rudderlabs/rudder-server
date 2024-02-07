@@ -483,17 +483,19 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			userID := resp.userID
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
-				orderKey := jobOrderKey(userID, gjson.GetBytes(resp.job.Parameters, "destination_id").String())
-				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.id, resp.status.JobID, orderKey, status)
-				if err := worker.barrier.StateChanged(
-					eventorder.BarrierKey{
-						UserID:        userID,
-						DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
-						WorkspaceID:   resp.job.WorkspaceId,
-					},
-					resp.status.JobID,
-					status,
-				); err != nil {
+				orderKey := eventorder.BarrierKey{
+					UserID:        userID,
+					DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
+					WorkspaceID:   resp.job.WorkspaceId,
+				}
+				rt.logger.Debugw(
+					"EventOrder",
+					"worker#", worker.id,
+					"jobID", resp.status.JobID,
+					"key", orderKey.String(),
+					"jobState", status,
+				)
+				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
 				}
 			}
