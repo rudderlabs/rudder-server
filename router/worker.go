@@ -769,6 +769,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
+	ctx = context.WithValue(ctx, "destination", &destinationJob.Destination)
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)

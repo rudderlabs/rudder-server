@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
+	OAuthHttpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -311,7 +312,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 
 	rdlTime := time.Now()
-	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams.DestName, payload)
+	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
@@ -388,9 +389,9 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
 	// locker := sync.NewPartitionLocker()
-	trans.client = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse)
+	trans.client = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = oauth.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse)
+	trans.proxyClient = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
@@ -401,9 +402,9 @@ type httpProxyResponse struct {
 	err        error
 }
 
-func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl, destName string, payload []byte) httpProxyResponse {
+func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
 	var respData []byte
-
+	destName := proxyReqParams.DestName
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
@@ -423,7 +424,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl, destName stri
 	httpReqStTime := time.Now()
 	temp := ctx.Value("destination")
 	req = req.WithContext(context.WithValue(req.Context(), "destination", temp))
-	req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata.Secret))
+	req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata[0].Secret))
 	resp, err := trans.proxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req

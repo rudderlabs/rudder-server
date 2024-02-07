@@ -65,6 +65,7 @@ type RefreshTokenParams struct {
 	DestDefName string
 	WorkerId    int
 	Secret      json.RawMessage
+	Destination *backendconfig.DestinationT
 }
 
 type Authorizer interface {
@@ -95,6 +96,7 @@ type AuthStatusToggleParams struct {
 	WorkspaceId     string
 	RudderAccountId string
 	AuthStatus      string
+	StatPrefix      string
 }
 
 type AuthStatusToggleResponse struct {

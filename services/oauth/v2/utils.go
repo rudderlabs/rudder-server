@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -18,6 +17,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	REFRESH_TOKEN = "REFRESH_TOKEN"
@@ -310,80 +311,66 @@ func verifyExpirationDate(expirationDate string, stats *OAuthStats) bool {
 		stats.SendCountStat()
 		return false
 	}
+	// TODO: Drive diff time via server configuration
 	if date.Before(time.Now().Add(time.Minute * 10)) {
 		return true
 	}
 	return true
 }
 
-func (t *Oauth2Transport) preTransformerCallHandling(req *http.Request) error {
-	if t.flow == RudderFlow_Delivery {
-		t.accountId = t.destination.GetAccountID("rudderAccountId")
-	} else if t.flow == RudderFlow_Delete {
-		t.accountId = t.destination.GetAccountID("rudderDeleteAccountId")
-	}
+// func (t *Oauth2Transport) preRoundTripHandling(req *http.Request) error {
+// 	if t.flow == RudderFlow_Delivery {
+// 		t.accountId = t.destination.GetAccountID(DeliveryAccountIdKey)
+// 	} else if t.flow == RudderFlow_Delete {
+// 		t.accountId = t.destination.GetAccountID(DeleteAccountIdKey)
+// 	}
 
-	t.refreshTokenParams = &RefreshTokenParams{
-		AccountId:   t.accountId,
-		WorkspaceId: t.destination.WorkspaceID,
-		DestDefName: t.destination.DestinationDefinition.Name,
-	}
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-	matched, _ := regexp.MatchString(req.URL.Path, "/routerTransform")
-	if matched {
-		fetchErr := t.Augmenter.Augment(req, body, func() (json.RawMessage, error) {
-			statusCode, authResponse, err := t.oauthHandler.FetchToken(t.refreshTokenParams)
-			if statusCode == http.StatusOK {
-				return authResponse.Account.Secret, nil
-			}
-			return nil, err
-		})
-		if fetchErr != nil {
-			return fmt.Errorf("failed to fetch token: %w", fetchErr)
-		}
-	} else {
-		req.Body = io.NopCloser(bytes.NewReader(body))
-	}
-	return nil
-}
+// 	t.refreshTokenParams = &RefreshTokenParams{
+// 		AccountId:   t.accountId,
+// 		WorkspaceId: t.destination.WorkspaceID,
+// 		DestDefName: t.destination.DestinationDefinition.Name,
+// 	}
+// 	body, err := io.ReadAll(req.Body)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to read request body: %w", err)
+// 	}
+// 	matched, _ := regexp.MatchString(req.URL.Path, "/routerTransform")
+// 	if matched {
+// 		fetchErr := t.Augmenter.Augment(req, body, func() (json.RawMessage, error) {
+// 			statusCode, authResponse, err := t.oauthHandler.FetchToken(t.refreshTokenParams)
+// 			if statusCode == http.StatusOK {
+// 				return authResponse.Account.Secret, nil
+// 			}
+// 			return nil, err
+// 		})
+// 		if fetchErr != nil {
+// 			return fmt.Errorf("failed to fetch token: %w", fetchErr)
+// 		}
+// 	} else {
+// 		req.Body = io.NopCloser(bytes.NewReader(body))
+// 	}
+// 	return nil
+// }
 
-func (t *Oauth2Transport) postTransformerCallHandling(req *http.Request, res *http.Response) (*http.Response, error) {
-	respData, _ := io.ReadAll(res.Body)
-	res.Body = io.NopCloser(bytes.NewReader(respData))
-	authErrorCategory, err := t.getAuthErrorCategory(respData)
-	if err != nil {
-		return res, err
-	}
-	if authErrorCategory == REFRESH_TOKEN {
-		// since same token that was used to make the http call needs to be refreshed, we need the current token information
-		var oldSecret json.RawMessage
-		if req.Context().Value("secret") != nil {
-			oldSecret = req.Context().Value("secret").(json.RawMessage)
-		}
-		t.refreshTokenParams.Secret = oldSecret
-		t.oauthHandler.logger.Info("refreshing token")
-		statusCode, refSecret, refErr := t.oauthHandler.RefreshToken(t.refreshTokenParams)
-		if statusCode == http.StatusOK {
-			// refresh token successful --> retry the event
-			res.StatusCode = http.StatusInternalServerError
-		} else {
-			// invalid_grant -> 4xx
-			// refresh token failed -> erreneous status-code
-			if refSecret.Err == REF_TOKEN_INVALID_GRANT {
-				t.oauthHandler.updateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
-			}
-			res.StatusCode = statusCode
-		}
-		if refErr != nil {
-			err = fmt.Errorf("failed to refresh token: %w", refErr)
-		}
-		// // When expirationDate is available, only then parse
-		// refer this: router/handle.go ---> handleOAuthDestResponse & make relevant changes
-	} else if authErrorCategory == AUTH_STATUS_INACTIVE {
-		res.StatusCode = t.oauthHandler.updateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
-	}
-	return res, err
-}
+// func (t *Oauth2Transport) postRoundTripHandling(req *http.Request, res *http.Response) (*http.Response, error) {
+// 	respData, _ := io.ReadAll(res.Body)
+// 	res.Body = io.NopCloser(bytes.NewReader(respData))
+// 	authErrorCategory, err := t.getAuthErrorCategory(respData)
+// 	if err != nil {
+// 		return res, err
+// 	}
+// 	if authErrorCategory == REFRESH_TOKEN {
+// 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
+// 		var oldSecret json.RawMessage
+// 		if req.Context().Value("secret") != nil {
+// 			oldSecret = req.Context().Value("secret").(json.RawMessage)
+// 		}
+// 		t.refreshTokenParams.Secret = oldSecret
+// 		t.refreshTokenParams.Destination = t.destination
+// 		t.oauthHandler.logger.Info("refreshing token")
+// 		res.StatusCode, _, err = t.oauthHandler.RefreshToken(t.refreshTokenParams)
+// 	} else if authErrorCategory == AUTH_STATUS_INACTIVE {
+// 		res.StatusCode = t.oauthHandler.updateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
+// 	}
+// 	return res, err
+// }

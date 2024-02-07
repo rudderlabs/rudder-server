@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -23,6 +24,7 @@ type tokenSource struct {
 	destinationName string
 	accountID       string
 	oauthClient     oauth.Authorizer
+	destination     *backendconfig.DestinationT
 }
 
 // authentication related utils
@@ -32,11 +34,30 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 		WorkspaceId: ts.workspaceID,
 		DestDefName: ts.destinationName,
 		AccountId:   ts.accountID,
+		// Destination: ts.destination // for new oauth(v2)
 	}
 	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
 	if statusCode != 200 {
 		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
 	}
+
+	/*
+		How bing-ads works?
+		1. It fetches the token using the fetchToken method
+		2. It checks if the token is expired or not
+		3. If the token is expired, it refreshes the token using the refreshToken method
+		4. If the token is not expired, it returns the token
+
+
+		step 1: fetchToken
+
+		step 2: use the token to make the request and return the response in []byte along with the function to extract the oauthError category
+		        func myFunc(string token)(string)
+
+
+		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
+	*/
+
 	secret := secretStruct{}
 	err := json.Unmarshal(authResponse.Account.Secret, &secret)
 	if err != nil {
