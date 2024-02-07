@@ -6,17 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/samber/lo"
-
 	"github.com/ory/dockertest/v3"
-
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -215,7 +213,7 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				postgresContainer, err := resource.SetupPostgres(pool, t)
+				postgresContainer, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				c := config.New()
@@ -226,7 +224,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				cs := newMockConfigSubscriber()
 				cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+				eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 				defer eir.Stop()
 
 				syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -242,7 +240,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				sqlTx, err := postgresContainer.DB.Begin()
 				require.NoError(t, err)
 				tx := &Tx{Tx: sqlTx}
-				err = eir.Report(tc.reports, tx)
+				err = eir.Report(context.Background(), tc.reports, tx)
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
 				db, err := eir.resolveJobsDB(tx)
@@ -282,7 +280,7 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("graceful shutdown", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -293,7 +291,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cf := newMockConfigSubscriber()
 		cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.NOP)
 		defer eir.Stop()
 
 		syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: postgresContainer.DBDsn})
@@ -306,7 +304,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		sqlTx, err := postgresContainer.DB.Begin()
 		require.NoError(t, err)
 		tx := &Tx{Tx: sqlTx}
-		err = eir.Report([]*types.PUReportedMetric{}, tx)
+		err = eir.Report(context.Background(), []*types.PUReportedMetric{}, tx)
 		require.NoError(t, err)
 		require.NoError(t, tx.Commit())
 
@@ -316,9 +314,9 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	t.Run("using 1 syncer", func(t *testing.T) {
 		t.Run("wrong transaction", func(t *testing.T) {
-			pg1, err := resource.SetupPostgres(pool, t)
+			pg1, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			pg2, err := resource.SetupPostgres(pool, t)
+			pg2, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -329,7 +327,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			cf := newMockConfigSubscriber()
 			cf.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, memstats.New())
+			eir := NewErrorIndexReporter(ctx, logger.NOP, cf, c, stats.NOP)
 			defer eir.Stop()
 
 			syncer := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -342,7 +340,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg2.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -377,11 +375,11 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("using 2 syncers", func(t *testing.T) {
-		pg1, err := resource.SetupPostgres(pool, t)
+		pg1, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		pg2, err := resource.SetupPostgres(pool, t)
+		pg2, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		pg3, err := resource.SetupPostgres(pool, t)
+		pg3, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -392,7 +390,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 		defer eir.Stop()
 
 		syncer1 := eir.DatabaseSyncer(types.SyncerConfig{ConnInfo: pg1.DBDsn})
@@ -409,7 +407,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg1.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -443,7 +441,7 @@ func TestErrorIndexReporter(t *testing.T) {
 			sqlTx, err := pg3.DB.Begin()
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
-			err = eir.Report([]*types.PUReportedMetric{
+			err = eir.Report(context.Background(), []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         sourceID,
@@ -478,9 +476,9 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("sync data", func(t *testing.T) {
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		reports := []*types.PUReportedMetric{
@@ -550,7 +548,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		cs := newMockConfigSubscriber()
 		cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, memstats.New())
+		eir := NewErrorIndexReporter(ctx, logger.NOP, cs, c, stats.NOP)
 		eir.now = func() time.Time {
 			return failedAt
 		}
@@ -571,7 +569,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		require.NoError(t, err)
 
 		tx := &Tx{Tx: sqlTx}
-		err = eir.Report(reports, tx)
+		err = eir.Report(context.Background(), reports, tx)
 		require.NoError(t, err)
 		require.NoError(t, tx.Commit())
 

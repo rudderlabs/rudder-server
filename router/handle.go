@@ -25,7 +25,6 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
@@ -40,23 +39,27 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const module = "router"
+
 // Handle is the handle to this module.
 type Handle struct {
 	// external dependencies
-	jobsDB           jobsdb.JobsDB
-	errorDB          jobsdb.JobsDB
-	throttlerFactory *rtThrottler.Factory
-	backendConfig    backendconfig.BackendConfig
-	Reporting        reporter
-	transientSources transientsource.Service
-	rsourcesService  rsources.JobService
-	debugger         destinationdebugger.DestinationDebugger
-	adaptiveLimit    func(int64) int64
+	jobsDB                     jobsdb.JobsDB
+	errorDB                    jobsdb.JobsDB
+	throttlerFactory           rtThrottler.Factory
+	backendConfig              backendconfig.BackendConfig
+	Reporting                  reporter
+	transientSources           transientsource.Service
+	rsourcesService            rsources.JobService
+	transformerFeaturesService transformerFeaturesService.FeaturesService
+	debugger                   destinationdebugger.DestinationDebugger
+	adaptiveLimit              func(int64) int64
 
 	// configuration
 	reloadableConfig                   *reloadableConfig
@@ -78,6 +81,7 @@ type Handle struct {
 	// state
 
 	logger                         logger.Logger
+	tracer                         stats.Tracer
 	destinationResponseHandler     ResponseHandler
 	telemetry                      *Diagnostic
 	netHandle                      NetHandle
@@ -215,6 +219,13 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		statusList = nil
 	}
 
+	traces := make(map[string]stats.TraceSpan)
+	defer func() {
+		for _, span := range traces {
+			span.End()
+		}
+	}()
+
 	// Identify jobs which can be processed
 	var iterationInterrupted bool
 	for iterator.HasNext() {
@@ -227,8 +238,24 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			firstJob = job
 		}
 		lastJob = job
-		slot, err := rt.findWorkerSlot(workers, job, blockedOrderKeys)
+		slot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
 		if err == nil {
+			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
+			if traceParent != "" {
+				if _, ok := traces[traceParent]; !ok {
+					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
+					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
+						"workspaceId":   job.WorkspaceId,
+						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
+						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
+						"destType":      rt.destType,
+					}))
+					traces[traceParent] = span
+				}
+			} else {
+				rt.logger.Debugn("traceParent is empty during router pickup", logger.NewIntField("jobId", job.JobID))
+			}
+
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -299,17 +326,24 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, workerJobStatus := range *workerJobStatuses {
 		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
 		if err != nil {
 			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
 		}
+		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
+		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
 		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
@@ -319,10 +353,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			errorCode, err := strconv.Atoi(workerJobStatus.status.ErrorCode)
-			if err != nil {
-				errorCode = 200 // TODO handle properly
-			}
 			sampleEvent := workerJobStatus.job.EventPayload
 			if rt.transientSources.Apply(parameters.SourceID) {
 				sampleEvent = routerutils.EmptyPayload
@@ -422,7 +452,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				if err != nil {
 					return err
 				}
-				if err = rt.Reporting.Report(reportMetrics, tx.Tx()); err != nil {
+				if err = rt.Reporting.Report(ctx, reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 				return nil
@@ -431,7 +461,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		rt.updateProcessedEventsMetrics(statusList)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",
@@ -486,7 +516,7 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 	return params
 }
 
-func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
@@ -515,7 +545,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		if rt.shouldBackoff(job) {
 			return nil, types.ErrJobBackoff
 		}
-		if rt.shouldThrottle(job, parameters) {
+		if rt.shouldThrottle(ctx, job, parameters) {
 			return nil, types.ErrDestinationThrottled
 		}
 
@@ -556,7 +586,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if rt.shouldThrottle(job, parameters) {
+	if rt.shouldThrottle(ctx, job, parameters) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -570,7 +600,7 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
@@ -583,7 +613,7 @@ func (rt *Handle) shouldThrottle(job *jobsdb.JobT, parameters routerutils.JobPar
 	throttler := rt.throttlerFactory.Get(rt.destType, parameters.DestinationID)
 	throttlingCost := rt.getThrottlingCost(job)
 
-	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(ctx, parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		rt.throttlingErrorStat.Count(1)
@@ -615,71 +645,58 @@ func (*Handle) crashRecover() {
 	// NO-OP
 }
 
-func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams) (int, string) {
+func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams, authErrorCategory string) (int, string, string) {
 	trRespStatusCode := params.trRespStCd
 	trRespBody := params.trRespBody
 	destinationJob := params.destinationJob
 
-	if trRespStatusCode != http.StatusOK {
-		var destErrOutput integrations.TransResponseT
-		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
-			// Errors like OOM kills of transformer, transformer down etc...
-			// If destResBody comes out with a plain string, then this will occur
-			return http.StatusInternalServerError, fmt.Sprintf(`{
-				Error: %v,
-				(trRespStCd, trRespBody): (%v, %v),
-			}`, destError, trRespStatusCode, trRespBody)
-		}
-		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
-		var errCatStatusCode int
-		// Check the category
-		// Trigger the refresh endpoint/disable endpoint
-		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
-		if strings.TrimSpace(rudderAccountID) == "" {
-			return trRespStatusCode, trRespBody
-		}
-		switch destErrOutput.AuthErrorCategory {
-		case oauth.AUTH_STATUS_INACTIVE:
-			authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
-			authStatusMsg := gjson.Get(trRespBody, "message").Raw
-			return authStatusStCd, authStatusMsg
-		case oauth.REFRESH_TOKEN:
-			var refSecret *oauth.AuthResponse
-			refTokenParams := &oauth.RefreshTokenParams{
-				Secret:      params.secret,
-				WorkspaceId: workspaceID,
-				AccountId:   rudderAccountID,
-				DestDefName: destinationJob.Destination.DestinationDefinition.Name,
-				WorkerId:    params.workerID,
-			}
-			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
-			refSec := *refSecret
-			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.REF_TOKEN_INVALID_GRANT {
-				// In-case the refresh token has been revoked, this error comes in
-				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
-				// As well as to disable destination as well.
-				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
-				stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
-					"destinationId": destinationJob.Destination.ID,
-					"workspaceId":   refTokenParams.WorkspaceId,
-					"accountId":     refTokenParams.AccountId,
-					"destType":      refTokenParams.DestDefName,
-					"flowType":      string(oauth.RudderFlow_Delivery),
-				}).Increment()
-				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
-				return authStatusInactiveStCode, refSecret.ErrorMessage
-			}
-			// Error while refreshing the token or Has an error while refreshing or sending empty access token
-			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
-				return http.StatusTooManyRequests, refSec.Err
-			}
-			// Retry with Refreshed Token by failing with 5xx
-			return http.StatusInternalServerError, trRespBody
-		}
+	workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
+	// Check the category
+	// Trigger the refresh endpoint/disable endpoint
+	rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
+	if strings.TrimSpace(rudderAccountID) == "" {
+		return trRespStatusCode, trRespBody, params.contentType
 	}
-	// By default, send the status code & response from transformed response directly
-	return trRespStatusCode, trRespBody
+	switch authErrorCategory {
+	case oauth.AUTH_STATUS_INACTIVE:
+		authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+		authStatusMsg := gjson.Get(trRespBody, "message").Raw
+		return authStatusStCd, authStatusMsg, "text/plain; charset=utf-8"
+	case oauth.REFRESH_TOKEN:
+		refTokenParams := &oauth.RefreshTokenParams{
+			Secret:      params.secret,
+			WorkspaceId: workspaceID,
+			AccountId:   rudderAccountID,
+			DestDefName: destinationJob.Destination.DestinationDefinition.Name,
+			WorkerId:    params.workerID,
+		}
+		errCatStatusCode, refSecret := rt.oauth.RefreshToken(refTokenParams)
+		if routerutils.IsNotEmptyString(refSecret.Err) && refSecret.Err == oauth.REF_TOKEN_INVALID_GRANT {
+			// In-case the refresh token has been revoked, this error comes in
+			// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
+			// As well as to disable destination as well.
+			// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
+			authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
+			stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
+				"destinationId": destinationJob.Destination.ID,
+				"workspaceId":   refTokenParams.WorkspaceId,
+				"accountId":     refTokenParams.AccountId,
+				"destType":      refTokenParams.DestDefName,
+				"flowType":      string(oauth.RudderFlow_Delivery),
+			}).Increment()
+			rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
+			return authStatusInactiveStCode, refSecret.ErrorMessage, "text/plain; charset=utf-8"
+		}
+		// Error while refreshing the token or Has an error while refreshing or sending empty access token
+		if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSecret.Err) {
+			return http.StatusTooManyRequests, refSecret.Err, "text/plain; charset=utf-8"
+		}
+		// Retry with Refreshed Token by failing with 5xx
+		return http.StatusInternalServerError, trRespBody, params.contentType
+	default:
+		// By default, send the status code & response from transformed response directly
+		return trRespStatusCode, trRespBody, params.contentType
+	}
 }
 
 func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {

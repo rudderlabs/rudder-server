@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -31,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
@@ -46,10 +48,13 @@ func (rt *Handle) Setup(
 	errorDB jobsdb.JobsDB,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
+	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
+	throttlerFactory throttler.Factory,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
+	rt.throttlerFactory = throttlerFactory
 
 	destType := destinationDefinition.Name
 	rt.logger = log.Child(destType)
@@ -57,6 +62,7 @@ func (rt *Handle) Setup(
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
+	rt.transformerFeaturesService = transformerFeaturesService
 
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
@@ -104,6 +110,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
 
 	statTags := stats.Tags{"destType": rt.destType}
+	rt.tracer = stats.Default.NewTracer("router")
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
 	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, statTags)
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
@@ -315,6 +322,17 @@ func (rt *Handle) Start() {
 		case <-rt.backendConfigInitialized:
 			// no-op, just wait
 		}
+
+		// waiting for transformer features
+		rt.logger.Info("Router: Waiting for transformer features")
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-rt.transformerFeaturesService.Wait():
+			// proceed
+		}
+		rt.logger.Info("Router: Transformer features received")
+
 		if rt.customDestinationManager != nil {
 			select {
 			case <-ctx.Done():
@@ -350,7 +368,8 @@ func (rt *Handle) Shutdown() {
 	rt.logger.Infof("Shutting down router: %s", rt.destType)
 	rt.backgroundCancel()
 
-	<-rt.startEnded     // wait for all workers to stop first
+	<-rt.startEnded // wait for all workers to stop first
+	rt.throttlerFactory.Shutdown()
 	close(rt.responseQ) // now it is safe to close the response channel
 	_ = rt.backgroundWait()
 }

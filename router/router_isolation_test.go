@@ -26,11 +26,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -175,9 +175,10 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "it should be able to create a new docker pool")
 	t.Logf("Starting postgres container")
-	postgresContainer, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+	postgresContainer, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "it should be able to start postgres container without an error")
-
+	transformerContainer, err := destination.SetupTransformer(pool, t)
+	require.NoError(t, err)
 	t.Logf("Starting the server")
 	webhook := m.newWebhook(t)
 	defer webhook.Server.Close()
@@ -210,6 +211,8 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
+
+	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,6 +26,27 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type mockAdapter struct {
+	url string
+}
+
+func (a *mockAdapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
+	return []byte(`{}`), nil
+}
+
+func (a *mockAdapter) getProxyURL(destType string) (string, error) {
+	return url.JoinPath(a.url, "v0", "destinations", strings.ToLower(destType), "proxy")
+}
+
+func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []ProxyRequestMetadata) (TransResponse, error) {
+	return TransResponse{
+		routerJobResponseCodes:       make(map[int64]int),
+		routerJobResponseBodys:       make(map[int64]string),
+		routerJobDontBatchDirectives: make(map[int64]bool),
+		authErrorCategory:            "",
+	}, nil
+}
+
 func TestProxyRequest(t *testing.T) {
 	initMocks(t)
 
@@ -34,8 +56,9 @@ func TestProxyRequest(t *testing.T) {
 	type expectedBodyType string
 
 	const (
-		JSON expectedBodyType = "json"
-		STR  expectedBodyType = "str"
+		JSON      expectedBodyType = "json"
+		STR       expectedBodyType = "str"
+		EXACT_STR expectedBodyType = "exact_str"
 	)
 
 	type expectedResponse struct {
@@ -112,6 +135,16 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -145,6 +178,16 @@ func TestProxyRequest(t *testing.T) {
 						"XML":        map[string]interface{}{},
 					},
 					Files: map[string]interface{}{},
+				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
 				},
 			},
 		},
@@ -182,6 +225,16 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
@@ -217,13 +270,23 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 		{
 			name:     "should fail with not found error for not_found_dest",
 			destName: "not_found_dest",
 			expected: expectedResponse{
-				code:        http.StatusNotFound,
+				code:        http.StatusInternalServerError,
 				body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
 				contentType: "text/plain; charset=utf-8",
 				bodyType:    STR,
@@ -250,6 +313,53 @@ func TestProxyRequest(t *testing.T) {
 					},
 					Files: map[string]interface{}{},
 				},
+				Metadata: []ProxyRequestMetadata{
+					{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
+			},
+		},
+		{
+			name:     "should fail with no metadata found error",
+			destName: "good_dest",
+			expected: expectedResponse{
+				code:        http.StatusBadRequest,
+				body:        `Input metadata is empty`,
+				contentType: "text/plain; charset=utf-8",
+				bodyType:    EXACT_STR,
+			},
+			proxy: proxyConfig{
+				code:     http.StatusBadRequest,
+				response: `Not Found`,
+			},
+			rtTimeout: 10 * time.Millisecond,
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.good_dest.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
+					},
+					Files: map[string]interface{}{},
+				},
+				DestinationConfig: map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
 			},
 		},
 	}
@@ -266,9 +376,12 @@ func TestProxyRequest(t *testing.T) {
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
-					BaseUrl:      srv.URL,
+					Adapter:      &mockAdapter{url: srv.URL},
 				}
-				stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
+				r := tr.ProxyRequest(ctx, reqParams)
+				stCd := r.ProxyRequestStatusCode
+				resp := r.ProxyRequestResponseBody
+				contentType := r.RespContentType
 				assert.Equal(t, tc.expected.code, stCd)
 				require.Equal(t, tc.expected.contentType, contentType)
 				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
@@ -301,12 +414,19 @@ func TestProxyRequest(t *testing.T) {
 			reqParams := &ProxyRequestParams{
 				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
-				BaseUrl:      srv.URL,
+				Adapter:      &mockAdapter{url: srv.URL},
 			}
-			stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
+			r := tr.ProxyRequest(ctx, reqParams)
+			stCd := r.ProxyRequestStatusCode
+			resp := r.ProxyRequestResponseBody
+			contentType := r.RespContentType
 
 			assert.Equal(t, tc.expected.code, stCd)
 			require.Equal(t, tc.expected.contentType, contentType)
+
+			require.NotNil(t, r.RespStatusCodes)
+			require.NotNil(t, r.RespBodys)
+			require.NotNil(t, r.DontBatchDirectives)
 
 			switch tc.expected.bodyType {
 			case JSON:
@@ -314,6 +434,8 @@ func TestProxyRequest(t *testing.T) {
 			case STR:
 				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
 				require.Equal(t, expectedBodyStr, resp)
+			case EXACT_STR:
+				require.Equal(t, tc.expected.body, resp)
 			}
 		})
 	}

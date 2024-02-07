@@ -25,7 +25,7 @@ type repo interface {
 }
 
 type destination interface {
-	CrashRecover(ctx context.Context)
+	CrashRecover(ctx context.Context) error
 }
 
 type Recovery struct {
@@ -34,6 +34,7 @@ type Recovery struct {
 	destinationType string
 	repo            repo
 	inRecovery      map[string]*sync.Once
+	recoveryErr     map[string]error
 }
 
 func NewRecovery(destinationType string, repo repo) *Recovery {
@@ -41,6 +42,7 @@ func NewRecovery(destinationType string, repo repo) *Recovery {
 		destinationType: destinationType,
 		repo:            repo,
 		inRecovery:      make(map[string]*sync.Once),
+		recoveryErr:     make(map[string]error),
 	}
 }
 
@@ -68,17 +70,19 @@ func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.
 		r.detectErr = r.detect(ctx)
 	})
 	if r.detectErr != nil {
-		return r.detectErr
+		return fmt.Errorf("detection: %w", r.detectErr)
 	}
 
 	once, ok := r.inRecovery[wh.Destination.ID]
 	if !ok {
 		return nil
 	}
-
 	once.Do(func() {
-		whManager.CrashRecover(ctx)
+		err := whManager.CrashRecover(ctx)
+		if err != nil {
+			r.recoveryErr[wh.Destination.ID] = fmt.Errorf("crash recover: %w", err)
+		}
 	})
 
-	return nil
+	return r.recoveryErr[wh.Destination.ID]
 }

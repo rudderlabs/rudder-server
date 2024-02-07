@@ -13,7 +13,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	pulsardocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/pulsar"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -33,7 +34,7 @@ func Test_JobsForwarder(t *testing.T) {
 	conf.Set("SchemaForwarder.loopSleepTime", time.Millisecond)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
-	postgres, err := resource.SetupPostgres(pool, t)
+	postgres, err := pgdocker.Setup(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
 	t.Setenv("JOBS_DB_USER", postgres.User)
@@ -123,10 +124,10 @@ func Test_JobsForwarder(t *testing.T) {
 }
 
 // PulsarResource returns a pulsar container resource
-func PulsarResource(t *testing.T) *resource.PulsarResource {
+func PulsarResource(t *testing.T) *pulsardocker.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	pulsarContainer, err := resource.SetupPulsar(pool, t)
+	pulsarContainer, err := pulsardocker.Setup(pool, t)
 	require.NoError(t, err)
 	return pulsarContainer
 }

@@ -8,31 +8,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
-
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 )
 
-func setup(t testing.TB) *resource.PostgresResource {
+func setup(t testing.TB) *postgres.Resource {
 	t.Helper()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+	pgResource, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
 	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)
@@ -166,7 +162,8 @@ func TestNotifier(t *testing.T) {
 			Priority:     50,
 		}
 
-		statsStore := memstats.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		c := config.New()
 		c.Set("PgNotifier.maxAttempt", 1)
@@ -179,7 +176,7 @@ func TestNotifier(t *testing.T) {
 		g, gCtx := errgroup.WithContext(groupCtx)
 
 		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
-		err := n.Setup(groupCtx, pgResource.DBDsn)
+		err = n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		const (
@@ -502,9 +499,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		statsStore := memstats.New()
-
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, stats.NOP, workspaceIdentifier)
 		err := n.Setup(groupCtx, pgResource.DBDsn)
 		require.NoError(t, err)
 

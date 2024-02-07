@@ -1,0 +1,35 @@
+name: Dispatch deploy event
+
+on: workflow_dispatch
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: "${{ secrets.PAT }}"
+          repository: rudderlabs/rudder-devops
+          event-type: deploy-event
+          client-payload: |
+            {
+              "repo": "${{ github.repository }}",
+              "commit-sha": "${{ github.sha }}",
+              "images": {
+                "server": {
+                  "tag": "${{ github.ref_name }}"
+                },
+                "gateway": {
+                  "tag": "${{ github.ref_name }}"
+                },
+                "warehouse-master": {
+                  "tag": "${{ github.ref_name }}"
+                },
+                "warehouse-slave": {
+                  "tag": "${{ github.ref_name }}"
+                }
+              },
+              "value-paths": []
+            }

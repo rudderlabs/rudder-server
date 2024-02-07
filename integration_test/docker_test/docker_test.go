@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,25 +20,26 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
+	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
-	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -58,19 +58,11 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	kafkaContainer               *kafka.Resource
-	redisContainer               *resource.RedisResource
-	postgresContainer            *resource.PostgresResource
+	redisContainer               *redis.Resource
+	postgresContainer            *pgdocker.Resource
 	transformerContainer         *destination.TransformerResource
-	minioContainer               *resource.MinioResource
-	EventID                      string
-	VersionID                    string
+	minioContainer               *minio.Resource
 )
-
-type eventSchemasObject struct {
-	EventID   string
-	EventType string
-	VersionID string
-}
 
 type event struct {
 	anonymousID       string
@@ -105,7 +97,7 @@ func TestMainFlow(t *testing.T) {
 	sendEventsToGateway(t)
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
-			return webhook.RequestsCount() == 10
+			return webhook.RequestsCount() == 11
 		}, time.Minute, 300*time.Millisecond)
 
 		i := -1
@@ -143,38 +135,39 @@ func TestMainFlow(t *testing.T) {
 
 	t.Run("postgres", func(t *testing.T) {
 		var myEvent event
+
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		err := db.QueryRow(eventSql).Scan(&myEvent.count)
-		require.NoError(t, err)
-		require.Equal(t, myEvent.count, "2")
+		require.Eventually(t, func() bool {
+			eventSql := "select count(*) from dev_integration_test_1.identifies;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
+			return myEvent.count == "2"
+		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+		eventSql := "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies;"
+		err := db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.contextID, "0.0.0.0")
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
-
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.users"
+			eventSql := "select count(*) from dev_integration_test_1.users;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
+		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users;"
 		err = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
 		require.NoError(t, err)
 		require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
@@ -182,26 +175,21 @@ func TestMainFlow(t *testing.T) {
 		require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 		require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-			err = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
-			require.NoError(t, err)
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
 		}, time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.screens"
-			err = db.QueryRow(eventSql).Scan(&myEvent.count)
-			require.NoError(t, err)
+			eventSql := "select count(*) from dev_integration_test_1.screens;"
+			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
 		}, time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
-		require.Eventually(t, func() bool {
-			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-			err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
-			require.NoError(t, err)
-			return myEvent.myUniqueID == "identified_user_idanonymousId_1"
-		}, time.Minute, 10*time.Millisecond)
-
+		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+		err = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+		require.NoError(t, err)
+		require.Equal(t, myEvent.myUniqueID, "identified_user_idanonymousId_1")
 		require.Equal(t, myEvent.propKey, "prop_value_edited")
 		require.Equal(t, myEvent.ip, "0.0.0.0")
 	})
@@ -235,7 +223,7 @@ func TestMainFlow(t *testing.T) {
 
 		var (
 			msgCount      = 0 // Count how many message processed
-			expectedCount = 10
+			expectedCount = 15
 			timeout       = time.After(2 * time.Minute)
 		)
 
@@ -259,105 +247,6 @@ func TestMainFlow(t *testing.T) {
 		}
 
 		t.Log("Processed", msgCount, "messages")
-	})
-
-	t.Run("event-models", func(t *testing.T) {
-		// GET /schemas/event-models
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
-		method := "GET"
-		resBody, _ := getEvent(url, method)
-		require.Eventually(t, func() bool {
-			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = getEvent(url, method)
-			return resBody != "[]"
-		}, time.Minute, 10*time.Millisecond)
-		require.NotEqual(t, resBody, "[]")
-		b := []byte(resBody)
-		var eventSchemas []eventSchemasObject
-
-		err := json.Unmarshal(b, &eventSchemas)
-		if err != nil {
-			t.Log(err)
-		}
-		for k := range eventSchemas {
-			if eventSchemas[k].EventType == "page" {
-				EventID = eventSchemas[k].EventID
-			}
-		}
-		require.NotEqual(t, EventID, "")
-	})
-
-	t.Run("event-versions", func(t *testing.T) {
-		// GET /schemas/event-versions
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, EventID)
-
-		b := []byte(resBody)
-		var eventSchemas []eventSchemasObject
-
-		err = json.Unmarshal(b, &eventSchemas)
-		require.NoError(t, err)
-		if err != nil {
-			t.Log(err)
-		}
-		VersionID = eventSchemas[0].VersionID
-		t.Log("Test Schemas Event ID's VersionID:", VersionID)
-	})
-
-	t.Run("event-model-key-counts", func(t *testing.T) {
-		// GET schemas/event-model/{EventID}/key-counts
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-model-metadata", func(t *testing.T) {
-		// GET /schemas/event-model/{EventID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-version-metadata", func(t *testing.T) {
-		// GET /schemas/event-version/{VersionID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "messageId")
-	})
-
-	t.Run("event-version-missing-keys", func(t *testing.T) {
-		// GET /schemas/event-version/{VersionID}/metadata
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Contains(t, resBody, "originalTimestamp")
-		require.Contains(t, resBody, "sentAt")
-		require.Contains(t, resBody, "channel")
-		require.Contains(t, resBody, "integrations.All")
-	})
-
-	t.Run("event-models-json-schemas", func(t *testing.T) {
-		// GET /schemas/event-models/json-schemas
-		url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
-		method := "GET"
-		resBody, err := getEvent(url, method)
-		require.NoError(t, err)
-		require.Eventually(t, func() bool {
-			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = getEvent(url, method)
-			return resBody != "[]"
-		}, time.Minute, 10*time.Millisecond)
-		require.NotEqual(t, resBody, "[]")
 	})
 
 	t.Run("beacon-batch", func(t *testing.T) {
@@ -396,10 +285,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	containersGroup.Go(func() (err error) {
-		kafkaContainer, err = kafka.Setup(pool, t,
-			kafka.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			kafka.WithBrokers(1),
-		)
+		kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
 		if err != nil {
 			return err
 		}
@@ -408,11 +294,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
-		redisContainer, err = resource.SetupRedis(containersCtx, pool, t)
+		redisContainer, err = redis.Setup(containersCtx, pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = pgdocker.Setup(pool, t)
 		if err != nil {
 			return err
 		}
@@ -424,7 +310,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		minioContainer, err = resource.SetupMinio(pool, t)
+		minioContainer, err = minio.Setup(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait())
@@ -642,6 +528,125 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
+
+	payloadRetlWebhook := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendRETL(t, payloadRetlWebhook, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzP9kQfzOoKd1tuxchYAG")
+
+	payloadRetlKafka := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"messageId":"messageId_11",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			},{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	sendRETL(t, payloadRetlKafka, "xxxyyyzzEaEurW247ad9WYZLUyk", "xxxyyyzzhyrw8v0CrTMrDZ4ovej")
 }
 
 func blockOnHold(t *testing.T) {
@@ -705,6 +710,45 @@ func sendPixelEvents(t *testing.T, writeKey string) {
 		t.Logf("sendPixelEvents error: %v", err)
 		t.Logf("sendPixelEvents body: %s", resBody)
 	}
+}
+
+func sendRETL(t *testing.T, payload *strings.Reader, sourceID, DestinationID string) {
+	t.Helper()
+	t.Logf("Sending rETL Event")
+
+	var (
+		httpClient = &http.Client{}
+		method     = "POST"
+		url        = fmt.Sprintf("http://localhost:%s/internal/v1/retl", httpPort)
+	)
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Rudder-Source-Id", sourceID)
+	req.Header.Add("X-Rudder-Destination-Id", DestinationID)
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	defer func() { httputil.CloseResponse(res) }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	if res.Status != "200 OK" {
+		return
+	}
+
+	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
 func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string) {
@@ -808,7 +852,3 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 		}
 	}
 }
-
-type testLogger struct{ logger.Logger }
-
-func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

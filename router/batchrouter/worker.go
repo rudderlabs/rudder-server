@@ -70,9 +70,14 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		var drainList []*jobsdb.JobStatusT
 		var drainJobList []*jobsdb.JobT
 		drainStatsbyDest := make(map[string]*routerutils.DrainStats)
+		jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
+			jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+				SourceID:      gjson.GetBytes(job.Parameters, "source_id").String(),
+				DestinationID: destWithSources.Destination.ID,
+			}
 			if drain, reason := brt.drainer.Drain(
 				job,
 			); drain {
@@ -142,7 +147,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
 					if brt.reporting != nil && brt.reportingEnabled {
-						if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
+						if err = brt.reporting.Report(ctx, reportMetrics, tx.Tx()); err != nil {
 							return fmt.Errorf("reporting metrics: %w", err)
 						}
 					}
@@ -153,7 +158,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if err != nil {
 				panic(err)
 			}
-			brt.updateProcessedEventsMetrics(statusList)
+			routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 			for destID, destDrainStat := range drainStatsbyDest {
 				stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 					"destType":    brt.destType,

@@ -158,13 +158,13 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
-func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
+func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return nil
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return fmt.Errorf("preparing statement: %v", err)
@@ -180,6 +180,15 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *T
 
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
+
+		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
+			"errorCode":     errDets.ErrorCode,
+			"workspaceId":   workspaceID,
+			"destType":      destinationDetail.destType,
+			"sourceId":      metric.ConnectionDetails.SourceID,
+			"destinationId": metric.ConnectionDetails.DestinationID,
+		}).Count(int(metric.StatusDetail.Count))
+
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
@@ -203,7 +212,7 @@ func (edr *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *T
 		}
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	if err != nil {
 		edr.log.Errorf("Failed during statement preparation: %v", err)
 		return fmt.Errorf("executing final statement: %v", err)
@@ -240,11 +249,10 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
-	// Version deprecation logic
-	errCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg)
 	return errorDetails{
 		ErrorMessage: cleanedErrMsg,
-		ErrorCode:    errCode,
+		ErrorCode:    errorCode,
 	}
 }
 

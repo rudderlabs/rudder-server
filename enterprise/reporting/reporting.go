@@ -542,12 +542,12 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) error {
+func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable,
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ReportsTable,
 		"workspace_id", "namespace", "instance_id",
 		"source_definition_id",
 		"source_category",
@@ -576,6 +576,7 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) err
 	}
 	defer func() { _ = stmt.Close() }()
 
+	eventNameMaxLength := config.GetInt("Reporting.eventNameMaxLength", 0)
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
@@ -587,6 +588,10 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) err
 
 		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
+
+		if eventNameMaxLength > 0 && len(metric.StatusDetail.EventName) > eventNameMaxLength {
+			metric.StatusDetail.EventName = types.MaxLengthExceeded
 		}
 
 		_, err = stmt.Exec(
@@ -617,7 +622,7 @@ func (r *DefaultReporter) Report(metrics []*types.PUReportedMetric, txn *Tx) err
 			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
-	if _, err = stmt.Exec(); err != nil {
+	if _, err = stmt.ExecContext(ctx); err != nil {
 		return fmt.Errorf("executing final statement: %v", err)
 	}
 

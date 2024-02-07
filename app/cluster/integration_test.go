@@ -34,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -219,13 +220,15 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
 	rtFactory := &router.Factory{
-		Logger:           logger.NOP,
-		Reporting:        &reporting.NOOP{},
-		BackendConfig:    mockBackendConfig,
-		RouterDB:         rtDB,
-		ProcErrorDB:      readErrDB,
-		TransientSources: transientsource.NewEmptyService(),
-		RsourcesService:  mockRsourcesService,
+		Logger:                     logger.NOP,
+		Reporting:                  &reporting.NOOP{},
+		BackendConfig:              mockBackendConfig,
+		RouterDB:                   rtDB,
+		ProcErrorDB:                readErrDB,
+		TransientSources:           transientsource.NewEmptyService(),
+		RsourcesService:            mockRsourcesService,
+		TransformerFeaturesService: transformer.NewNoOpService(),
+		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reporting.NOOP{},

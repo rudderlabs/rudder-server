@@ -243,13 +243,14 @@ func (n *Notifier) checkForNotifierEnvVars() bool {
 }
 
 func (n *Notifier) connectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s application_name=%s",
 		n.config.host,
 		n.config.port,
 		n.config.user,
 		n.config.password,
 		n.config.database,
 		n.config.sslMode,
+		"notifier",
 	)
 }
 

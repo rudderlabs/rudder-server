@@ -9,17 +9,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/source"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -29,13 +18,20 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -56,7 +52,7 @@ func TestSlaveWorker(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	minioResource, err := resource.SetupMinio(pool, t)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -94,9 +90,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -196,9 +192,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -325,9 +321,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -394,9 +390,9 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				config.New(),
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
-				bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New()),
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
 				constraints.New(config.New()),
 				ef,
 				workerIdx,
@@ -478,7 +474,7 @@ func TestSlaveWorker(t *testing.T) {
 	})
 
 	t.Run("async job", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -543,7 +539,7 @@ func TestSlaveWorker(t *testing.T) {
 		}).AnyTimes()
 
 		tenantManager := multitenant.New(config.New(), mockBackendConfig)
-		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, memstats.New())
+		bcm := bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP)
 		ef := encoding.NewFactory(config.New())
 
 		setupCh := make(chan struct{})
@@ -570,7 +566,7 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
 				bcm,
 				constraints.New(config.New()),
@@ -635,7 +631,7 @@ func TestSlaveWorker(t *testing.T) {
 			slaveWorker := newWorker(
 				c,
 				logger.NOP,
-				memstats.New(),
+				stats.NOP,
 				slaveNotifier,
 				bcm,
 				constraints.New(config.New()),

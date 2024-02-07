@@ -13,8 +13,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -118,7 +119,8 @@ func TestColumnCountStat(t *testing.T) {
 		},
 	}
 
-	store := memstats.New()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 
 	for _, tc := range inputs {
 		tc := tc
@@ -145,7 +147,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-				statsFactory: store,
+				statsFactory: statsStore,
 				schemaHandle: &schema.Schema{}, // TODO use constructor
 			}
 			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
@@ -159,8 +161,8 @@ func TestColumnCountStat(t *testing.T) {
 
 			j.columnCountStat(tableName)
 
-			m1 := store.Get("warehouse_load_table_column_count", tags)
-			m2 := store.Get("warehouse_load_table_column_limit", tags)
+			m1 := statsStore.Get("warehouse_load_table_column_count", tags)
+			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
 				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))
@@ -235,19 +237,19 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					pool, err := dockertest.NewPool("")
 					require.NoError(t, err)
 
-					pgResource, err := resource.SetupPostgres(pool, t)
+					pgResource, err := postgres.Setup(pool, t)
 					require.NoError(t, err)
 
 					t.Log("db:", pgResource.DBDsn)
 
-					rs := redshift.New(config.New(), logger.NOP, memstats.New())
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
 					ujf := &UploadJobFactory{
 						conf:         config.New(),
 						logger:       logger.NOP,
-						statsFactory: memstats.New(),
+						statsFactory: stats.NOP,
 						db:           sqlmiddleware.New(pgResource.DB),
 					}
 
@@ -311,19 +313,19 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New(config.New(), logger.NOP, memstats.New())
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
 			ujf := &UploadJobFactory{
 				conf:         config.New(),
 				logger:       logger.NOP,
-				statsFactory: memstats.New(),
+				statsFactory: stats.NOP,
 				db:           sqlmiddleware.New(pgResource.DB),
 			}
 

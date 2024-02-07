@@ -55,8 +55,8 @@ type FailedJobsStatsCollector interface {
 }
 
 // NewStatsCollector creates a new stats collector
-func NewStatsCollector(jobservice JobService) StatsCollector {
-	return &statsCollector{
+func NewStatsCollector(jobservice JobService, opts ...OptFunc) StatsCollector {
+	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
 		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
@@ -64,6 +64,10 @@ func NewStatsCollector(jobservice JobService) StatsCollector {
 		failedRecordsIndex:    map[statKey][]FailedRecord{},
 		parametersParser:      defaultParametersParser,
 	}
+	for _, opt := range opts {
+		opt(sc)
+	}
+	return sc
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
@@ -228,14 +232,6 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 	}
-
-	// reset state so that the collector can be
-	// reused for another stats collecting cycle
-	r.processing = false
-	r.jobIdsToStatKeyIndex = map[int64]statKey{}
-	r.statsIndex = map[statKey]*Stats{}
-	r.jobIdsToRecordIdIndex = map[int64]json.RawMessage{}
-	r.failedRecordsIndex = map[statKey][]FailedRecord{}
 
 	return nil
 }

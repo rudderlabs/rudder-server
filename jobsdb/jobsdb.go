@@ -365,6 +365,11 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
+type ConnectionDetails struct {
+	SourceID      string
+	DestinationID string
+}
+
 func (r *JobStatusT) sanitizeJson() {
 	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
 	r.Parameters = sanitizeJson(r.Parameters)
@@ -739,7 +744,7 @@ func (jd *Handle) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := misc.GetConnectionString(jd.config)
+		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 	}

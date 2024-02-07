@@ -31,22 +31,9 @@ type loadUsersTableResponse struct {
 }
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	log := pg.logger.With(
-		logfield.SourceID, pg.Warehouse.Source.ID,
-		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.Warehouse.Destination.ID,
-		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-		logfield.Namespace, pg.Namespace,
-		logfield.TableName, tableName,
-		logfield.LoadTableStrategy, pg.loadTableStrategy(),
-	)
-	log.Infow("started loading")
-
 	var loadTableStats *types.LoadTableStats
-	var err error
-
-	err = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		var err error
 		loadTableStats, _, err = pg.loadTable(
 			ctx,
 			tx,
@@ -58,8 +45,6 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.Loa
 	if err != nil {
 		return nil, fmt.Errorf("loading table: %w", err)
 	}
-
-	log.Infow("completed loading")
 
 	return loadTableStats, err
 }
@@ -78,9 +63,10 @@ func (pg *Postgres) loadTable(
 		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
-		logfield.LoadTableStrategy, pg.loadTableStrategy(),
+		logfield.ShouldMerge, pg.shouldMerge(tableName),
 	)
 	log.Infow("started loading")
+	defer log.Infow("completed loading")
 
 	log.Debugw("setting search path")
 	searchPathStmt := fmt.Sprintf(`SET search_path TO %q;`,
@@ -105,10 +91,9 @@ func (pg *Postgres) loadTable(
 	)
 
 	log.Debugw("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(`
-		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
-		ON COMMIT PRESERVE ROWS;
-`,
+	createStagingTableStmt := fmt.Sprintf(
+		`CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
+		ON COMMIT PRESERVE ROWS;`,
 		pg.Namespace,
 		stagingTableName,
 		tableName,
@@ -143,7 +128,7 @@ func (pg *Postgres) loadTable(
 	}
 
 	var rowsDeleted int64
-	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+	if pg.shouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = pg.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -225,13 +210,6 @@ func (pg *Postgres) loadDataIntoStagingTable(
 	return nil
 }
 
-func (pg *Postgres) loadTableStrategy() string {
-	if slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
-		return "APPEND"
-	}
-	return "MERGE"
-}
-
 func (pg *Postgres) deleteFromLoadTable(
 	ctx context.Context,
 	txn *sqlmiddleware.Tx,
@@ -260,8 +238,7 @@ func (pg *Postgres) deleteFromLoadTable(
 		WHERE
 		  (
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
-		  );
-	`,
+		  );`,
 		pg.Namespace,
 		tableName,
 		stagingTableName,
@@ -309,8 +286,7 @@ func (pg *Postgres) insertIntoLoadTable(
 			  %[4]q
 		  ) AS _
 		WHERE
-		  _rudder_staging_row_number = 1;
-	`,
+		  _rudder_staging_row_number = 1;`,
 		pg.Namespace,
 		tableName,
 		quotedColumnNames,
@@ -398,7 +374,8 @@ func (pg *Postgres) loadUsersTable(
 		return loadUsersTableResponse{}
 	}
 
-	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits || slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
+	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits ||
+		slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
 	if canSkipComputingLatestUserTraits {
 		if _, _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
 			return loadUsersTableResponse{
@@ -417,60 +394,40 @@ func (pg *Postgres) loadUsersTable(
 			continue
 		}
 		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
-		caseSubQuery := fmt.Sprintf(`
-			CASE WHEN (
-			  SELECT
-				true
+		caseSubQuery := fmt.Sprintf(
+			`CASE WHEN (
+			  SELECT true
 			) THEN (
-			  SELECT
-				%[1]q
-			  FROM
-				%[2]q AS staging_table
-			  WHERE
-				x.id = staging_table.id AND
-				%[1]q IS NOT NULL
-			  ORDER BY
-				received_at DESC
-			  LIMIT
-				1
-			) END AS %[1]q
-`,
+			  SELECT %[1]q
+			  FROM %[2]q AS staging_table
+			  WHERE x.id = staging_table.id AND %[1]q IS NOT NULL
+			  ORDER BY received_at DESC
+			  LIMIT 1
+			) END AS %[1]q`,
 			colName,
 			unionStagingTableName,
 		)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	query := fmt.Sprintf(`
-		CREATE TEMPORARY TABLE %[5]s AS (
-		  (
-			SELECT
-			  id,
-			  %[4]s
-			FROM
-			  %[1]q.%[2]q
-			WHERE
-			  id IN (
-				SELECT
-				  user_id
-				FROM
-				  %[3]q
-				WHERE
-				  user_id IS NOT NULL
-			  )
-		  )
-		  UNION
+	query := fmt.Sprintf(
+		`CREATE TEMPORARY TABLE %[5]s AS (
 			(
-			  SELECT
-				user_id,
-				%[4]s
-			  FROM
-				%[3]q
-			  WHERE
-				user_id IS NOT NULL
+				SELECT id, %[4]s
+				FROM %[1]q.%[2]q
+				WHERE id IN (
+					SELECT user_id
+					FROM %[3]q
+					WHERE user_id IS NOT NULL
+				)
 			)
-		);
-`,
+			UNION
+			(
+				SELECT user_id, %[4]s
+				FROM %[3]q
+				WHERE user_id IS NOT NULL
+			)
+		);`,
 		pg.Namespace,
 		warehouseutils.UsersTable,
 		identifyStagingTable,
@@ -534,13 +491,8 @@ func (pg *Postgres) loadUsersTable(
 	// Delete from users table if the id is present in the staging table
 	primaryKey := "id"
 	query = fmt.Sprintf(`
-		DELETE FROM
-		  %[1]q.%[2]q using %[3]q _source
-		WHERE
-		  (
-			_source.%[4]s = %[1]s.%[2]s.%[4]s
-		  );
-`,
+		DELETE FROM %[1]q.%[2]q using %[3]q _source
+		WHERE _source.%[4]s = %[1]s.%[2]s.%[4]s;`,
 		pg.Namespace,
 		warehouseutils.UsersTable,
 		usersStagingTableName,
@@ -595,4 +547,21 @@ func (pg *Postgres) loadUsersTable(
 	}
 
 	return loadUsersTableResponse{}
+}
+
+func (pg *Postgres) shouldMerge(tableName string) bool {
+	if !pg.config.allowMerge {
+		return false
+	}
+	if tableName == warehouseutils.UsersTable {
+		// If we are here it's because canSkipComputingLatestUserTraits is true.
+		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
+		// backwards compatibility.
+		return !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
+	}
+	if !pg.Uploader.CanAppend() {
+		return true
+	}
+	return !pg.Warehouse.GetPreferAppendSetting() &&
+		!slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID)
 }

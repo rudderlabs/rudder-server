@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -107,7 +108,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
-	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default)})
+	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default, "reporting")})
 	g.Go(misc.WithBugsnag(func() error {
 		syncer()
 		return nil
@@ -133,7 +134,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType)
+	rsourcesService, err := NewRsourcesService(deploymentType, true)
 	if err != nil {
 		return err
 	}
@@ -240,6 +241,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}
 	}()
 
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, a.log.Child("drain-config"))
+	if err != nil {
+		return fmt.Errorf("drain config manager setup: %v", err)
+	}
+	defer drainConfigManager.Stop()
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.DrainConfigRoutine(ctx)
+	}))
+	g.Go(misc.WithBugsnag(func() (err error) {
+		return drainConfigManager.CleanupRoutine(ctx)
+	}))
+
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -260,21 +273,22 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		enrichers,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.New(stats.Default)
+	throttlerFactory, err := throttler.NewFactory(config.Default, stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:           logger.NewLogger().Child("router"),
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         routerDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		ThrottlerFactory: throttlerFactory,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Logger:                     logger.NewLogger().Child("router"),
+		Reporting:                  reporting,
+		BackendConfig:              backendconfig.DefaultBackendConfig,
+		RouterDB:                   routerDB,
+		ProcErrorDB:                errDBForWrite,
+		TransientSources:           transientSources,
+		RsourcesService:            rsourcesService,
+		TransformerFeaturesService: transformerFeaturesService,
+		ThrottlerFactory:           throttlerFactory,
+		Debugger:                   destinationHandle,
+		AdaptiveLimit:              adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reporting,

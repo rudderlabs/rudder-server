@@ -15,13 +15,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -34,7 +36,7 @@ func TestBackupTable(t *testing.T) {
 	var (
 		tc                       backupTestCase
 		prefix                   = "some-prefix"
-		minioResource            *resource.MinioResource
+		minioResource            *minio.Resource
 		goldenFileJobsFileName   = "testdata/backupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/backupStatus.json.gz"
 	)
@@ -45,10 +47,10 @@ func TestBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := resource.SetupPostgres(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, cleanup)
 	require.NoError(t, err)
 
-	minioResource, err = resource.SetupMinio(pool, cleanup)
+	minioResource, err = minio.Setup(pool, cleanup)
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution
@@ -121,7 +123,9 @@ func TestBackupTable(t *testing.T) {
 		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5).Next()
 
 		if len(file) != 3 {
-			t.Log("file list: ", file, " err: ", err)
+			t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+				return item.Key
+			}), err)
 			fm, _ = filemanager.New(&filemanager.Settings{
 				Logger:   logger.NOP,
 				Provider: "MINIO",
@@ -182,7 +186,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	var (
 		tc                       backupTestCase
 		prefix                   = "some-prefix"
-		minioResource            []*resource.MinioResource
+		minioResource            []*minio.Resource
 		goldenFileJobsFileName   = "testdata/MultiWorkspaceBackupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/MultiWorkspaceBackupStatus.json.gz"
 		uniqueWorkspaces         = 3
@@ -194,12 +198,12 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := resource.SetupPostgres(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, cleanup)
 	require.NoError(t, err)
 
-	minioResource = make([]*resource.MinioResource, uniqueWorkspaces)
+	minioResource = make([]*minio.Resource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = resource.SetupMinio(pool, cleanup)
+		minioResource[i], err = minio.Setup(pool, cleanup)
 		require.NoError(t, err)
 	}
 
@@ -317,14 +321,18 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 			file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 10).Next()
 
 			if len(file) != 3 {
-				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
+				t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+					return item.Key
+				}), err)
 				fm, err = fileuploaderProvider.GetFileManager(workspace)
 				require.NoError(t, err)
 				return false
 			}
 			return true
 		}, 30*time.Second, 1*time.Second, fmt.Errorf("less than 3 backup files found in backup store for workspace:%s. Error: %w ", workspace, err))
-		t.Log("file list: ", file, " err: ", err)
+		t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
+			return item.Key
+		}), err)
 
 		var jobStatusBackupFilename, jobsBackupFilename, abortedJobsBackupFilename string
 		for j := 0; j < len(file); j++ {
@@ -674,7 +682,6 @@ func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList
 
 	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 		"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
-
 	if err != nil {
 		return err
 	}
@@ -689,7 +696,6 @@ func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList
 
 		_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
 			string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
-
 		if err != nil {
 			return err
 		}

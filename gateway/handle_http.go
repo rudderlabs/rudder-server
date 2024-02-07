@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -64,24 +66,6 @@ func (*Handle) robotsHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
 }
 
-// eventSchemaController middleware checks if the event schemas feature is enabled. If not, it returns a 400 response
-func (gw *Handle) eventSchemaController(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !gw.conf.enableEventSchemasFeature {
-			status := http.StatusBadRequest
-			responseBody := response.MakeResponse("EventSchemas feature is disabled")
-			gw.logger.Infow("response",
-				"ip", misc.GetIPFromReq(r),
-				"path", r.URL.Path,
-				"status", status,
-				"body", responseBody)
-			http.Error(w, responseBody, status)
-			return
-		}
-		wrappedFunc(w, r)
-	}
-}
-
 // webHandler - regular web request handler
 func (gw *Handle) webHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -92,12 +76,27 @@ func (gw *Handle) webHandler() http.HandlerFunc {
 // webRequestHandler - handles web requests containing rudder events as payload.
 // It parses the payload and calls the request handler to process the request.
 func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request) {
-	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
-	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+	ctx := r.Context()
+	reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
+	arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+
+	ctx, span := gw.tracer.Start(ctx, "gw.webRequestHandler", stats.SpanKindServer,
+		stats.SpanWithTimestamp(time.Now()),
+		stats.SpanWithTags(stats.Tags{
+			"reqType":     reqType,
+			"path":        r.URL.Path,
+			"workspaceId": arctx.WorkspaceID,
+			"sourceId":    arctx.SourceID,
+		}),
+	)
+	r = r.WithContext(ctx)
+
 	gw.logger.LogRequest(r)
 	var errorMessage string
 	defer func() {
+		defer span.End()
 		if errorMessage != "" {
+			span.SetStatus(stats.SpanStatusError, errorMessage)
 			status := response.GetErrorStatusCode(errorMessage)
 			responseBody := response.GetStatus(errorMessage)
 			gw.logger.Infow("response",

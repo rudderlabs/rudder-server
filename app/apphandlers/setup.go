@@ -57,12 +57,21 @@ func rudderCoreWorkSpaceTableSetup() error {
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
-func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
+func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
-	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
-	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default)
+	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
+	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
+	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default, "rsources")
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
-	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
+	sharedDBConnUrl := config.GetString("SharedDB.dsn", "")
+	if len(sharedDBConnUrl) != 0 {
+		var err error
+		sharedDBConnUrl, err = misc.SetAppNameInDBConnURL(sharedDBConnUrl, "rsources")
+		if err != nil {
+			return nil, fmt.Errorf("failed to set application name in dns: %w", err)
+		}
+	}
+	rsourcesConfig.SharedConn = sharedDBConnUrl
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)
 
 	if deploymentType == deployment.MultiTenantType {
@@ -72,6 +81,8 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 			return nil, fmt.Errorf("deployment type %s requires SharedDB.dsn to be provided", deploymentType)
 		}
 	}
+
+	rsourcesConfig.ShouldSetupSharedDB = shouldSetupSharedDB
 
 	return rsources.NewJobService(rsourcesConfig)
 }

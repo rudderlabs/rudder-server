@@ -31,7 +31,6 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -885,7 +884,7 @@ func ConcatErrors(givenErrors []error) error {
 		}
 		errorsToJoin = append(errorsToJoin, err)
 	}
-	return multierror.Join(errorsToJoin)
+	return errors.Join(errorsToJoin...)
 }
 
 func isWarehouseMasterEnabled() bool {
@@ -924,7 +923,15 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 					},
 				})
 				RecordAppError(fmt.Errorf("%v", r))
-				pkgLogger.Fatal(r)
+				pkgLogger.Fatalw("Panic detected. Application will crash.",
+					"stack", string(debug.Stack()),
+					"panic", r,
+					"team", team,
+					"goRoutines", runtime.NumGoroutine(),
+					"version", bugsnag.Config.AppVersion,
+					"releaseStage", bugsnag.Config.ReleaseStage,
+				)
+				logger.Sync()
 				panic(r)
 			})
 		}

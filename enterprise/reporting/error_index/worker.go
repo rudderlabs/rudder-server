@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/samber/lo"
@@ -88,7 +90,7 @@ func newWorker(
 
 	w.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Reporting.errorIndexReporting.parquetParallelWriters")
 	w.config.parquetRowGroupSize = conf.GetReloadableInt64Var(512*bytesize.MB, 1, "Reporting.errorIndexReporting.parquetRowGroupSize")
-	w.config.parquetPageSize = conf.GetReloadableInt64Var(8*bytesize.KB, 1, "Reporting.errorIndexReporting.parquetPageSizeInKB")
+	w.config.parquetPageSize = conf.GetReloadableInt64Var(8*bytesize.KB, 1, "Reporting.errorIndexReporting.parquetPageSize")
 	w.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	w.config.bucketName = conf.GetString("ErrorIndex.Storage.Bucket", "rudder-failed-messages")
 	w.config.payloadLimit = conf.GetReloadableInt64Var(1*bytesize.GB, 1, "Reporting.errorIndexReporting.payloadLimit")
@@ -110,43 +112,47 @@ func newWorker(
 // 3. If job limits are not reached and upload frequency is not met, returns.
 // 4. Uploads jobs to object storage.
 // 5. Updates job status in the jobsDB.
-func (w *worker) Work() (worked bool) {
-	jobResult, err := w.fetchJobs()
-	if err != nil && w.lifecycle.ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		panic(fmt.Errorf("failed to fetch jobs for error index: %s", err.Error()))
-	}
-	if len(jobResult.Jobs) == 0 {
-		return
-	}
-	if !jobResult.LimitsReached && time.Since(w.lastUploadTime) < w.config.uploadFrequency {
-		return
-	}
+func (w *worker) Work() bool {
+	for {
+		jobResult, err := w.fetchJobs()
+		if err != nil && w.lifecycle.ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to fetch jobs for error index: %s", err.Error()))
+		}
+		if len(jobResult.Jobs) == 0 {
+			return false
+		}
+		if !jobResult.LimitsReached && time.Since(w.lastUploadTime) < w.config.uploadFrequency {
+			return false
+		}
 
-	statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
-	if err != nil {
-		w.log.Warnw("failed to upload jobs", "error", err)
-		return
-	}
-	w.lastUploadTime = w.now()
+		statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
+		if err != nil {
+			w.log.Warnw("failed to upload jobs", "error", err)
+			return false
+		}
+		w.lastUploadTime = w.now()
 
-	err = w.markJobsStatus(statusList)
-	if err != nil && w.lifecycle.ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		panic(fmt.Errorf("failed to mark jobs: %s", err.Error()))
-	}
-	worked = true
+		err = w.markJobsStatus(statusList)
+		if err != nil && w.lifecycle.ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to mark jobs: %s", err.Error()))
+		}
 
-	tags := stats.Tags{
-		"workspaceId": w.workspaceID,
-		"sourceId":    w.sourceID,
+		tags := stats.Tags{
+			"workspaceId": w.workspaceID,
+			"sourceId":    w.sourceID,
+		}
+		w.statsFactory.NewTaggedStat("erridx_uploaded_jobs", stats.CountType, tags).Count(len(jobResult.Jobs))
+
+		if !jobResult.LimitsReached {
+			return true
+		}
 	}
-	w.statsFactory.NewTaggedStat("erridx_uploaded_jobs", stats.CountType, tags).Count(len(jobResult.Jobs))
-	return
 }
 
 func (w *worker) fetchJobs() (jobsdb.JobsResult, error) {
@@ -187,6 +193,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 		if err != nil {
 			return nil, fmt.Errorf("uploading aggregated payloads: %w", err)
 		}
+		w.log.Debugn("successfully uploaded aggregated payloads", logger.NewStringField("location", uploadFile.Location))
 
 		statusList = append(statusList, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) *jobsdb.JobStatusT {
 			return &jobsdb.JobStatusT{
@@ -221,7 +228,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
-	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID))
+	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
 
 	f, err := os.Create(filePath)
 	if err != nil {

@@ -14,26 +14,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -66,7 +64,7 @@ func BenchmarkArchiverIsolation(b *testing.B) {
 func dummyConfig(
 	numWorkspace,
 	numSourcesPerWorkspace int,
-	minio *resource.MinioResource,
+	minio *minio.Resource,
 ) map[string]backendconfig.ConfigT {
 	configMap := map[string]backendconfig.ConfigT{}
 	for i := 0; i < numWorkspace; i++ {
@@ -130,10 +128,10 @@ func ArchivalScenario(
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresContainer, err := resource.SetupPostgres(pool, cleanup, postgres.WithShmSize(256*bytesize.MB))
+	postgresContainer, err := postgres.Setup(pool, cleanup, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres container")
 
-	minioResource, err := resource.SetupMinio(pool, cleanup)
+	minioResource, err := minio.Setup(pool, cleanup)
 	require.NoError(t, err, "failed to setup minio container")
 	transformerContainer, err := destination.SetupTransformer(pool, cleanup)
 	require.NoError(t, err, "failed to setup transformer container")

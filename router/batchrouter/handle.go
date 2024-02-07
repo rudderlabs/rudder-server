@@ -45,6 +45,8 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const module = "batch_router"
+
 type Handle struct {
 	destType string
 	// dependencies
@@ -69,8 +71,10 @@ type Handle struct {
 	maxEventsInABatch            int
 	maxPayloadSizeInBytes        int
 	maxFailedCountForJob         misc.ValueLoader[int]
+	maxFailedCountForSourcesJob  misc.ValueLoader[int]
 	asyncUploadTimeout           misc.ValueLoader[time.Duration]
 	retryTimeWindow              misc.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow       misc.ValueLoader[time.Duration]
 	reportingEnabled             bool
 	jobQueryBatchSize            misc.ValueLoader[int]
 	pollStatusLoopSleep          misc.ValueLoader[time.Duration]
@@ -574,23 +578,13 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]int)
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
-		var firstAttemptedAt time.Time
-		firstAttemptedAtString := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
-		if firstAttemptedAtString != "" {
-			firstAttemptedAt, err = time.Parse(misc.RFC3339Milli, firstAttemptedAtString)
-			if err != nil {
-				firstAttemptedAt = time.Now()
-				firstAttemptedAtString = firstAttemptedAt.Format(misc.RFC3339Milli)
-			}
-		} else {
-			firstAttemptedAt = time.Now()
-			firstAttemptedAtString = firstAttemptedAt.Format(misc.RFC3339Milli)
-		}
-		errorRespString, err := sjson.Set(string(errorResp), "firstAttemptedAt", firstAttemptedAtString)
-		if err == nil {
-			errorResp = []byte(errorRespString)
+
+		firstAttemptedAt := getFirstAttemptAtFromErrorResponse(job.LastJobStatus.ErrorResponse)
+		if enhancedErrorResp, err := sjson.SetBytes(errorResp, "firstAttemptedAt", firstAttemptedAt.Format(misc.RFC3339Milli)); err == nil {
+			errorResp = enhancedErrorResp
 		}
 
 		var parameters routerutils.JobParameters
@@ -599,12 +593,11 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
 
-		timeElapsed := time.Since(firstAttemptedAt)
 		var failedMessage *types.FailedMessage
 		var errorCode string
 		switch jobState {
 		case jobsdb.Failed.State:
-			if !notifyWarehouseErr && timeElapsed > brt.retryTimeWindow.Load() && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob.Load() {
+			if !notifyWarehouseErr && brt.retryLimitReached(&job.LastJobStatus) {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
@@ -632,6 +625,10 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			abortedEvents = append(abortedEvents, job)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
+		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    attemptNum,
@@ -763,7 +760,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			if brt.reporting != nil && brt.reportingEnabled {
-				if err = brt.reporting.Report(reportMetrics, tx.Tx()); err != nil {
+				if err = brt.reporting.Report(ctx, reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
@@ -773,7 +770,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	if err != nil {
 		panic(err)
 	}
-	brt.updateProcessedEventsMetrics(statusList)
+	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 	sendDestStatusStats(batchJobs.Connection, jobStateCounts, brt.destType, isWarehouse)
 }
 
@@ -850,4 +847,19 @@ func (brt *Handle) splitBatchJobsOnTimeWindow(batchJobs BatchedJobs) map[time.Ti
 		splitBatches[timeWindow].Jobs = append(splitBatches[timeWindow].Jobs, job)
 	}
 	return splitBatches
+}
+
+func (brt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
+	firstAttemptedAtTime := getFirstAttemptAtFromErrorResponse(status.ErrorResponse)
+
+	maxFailedCountForJob := brt.maxFailedCountForJob.Load()
+	retryTimeWindow := brt.retryTimeWindow.Load()
+
+	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+		maxFailedCountForJob = brt.maxFailedCountForSourcesJob.Load()
+		retryTimeWindow = brt.sourcesRetryTimeWindow.Load()
+	}
+
+	return time.Since(firstAttemptedAtTime) > retryTimeWindow &&
+		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }

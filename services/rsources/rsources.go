@@ -34,13 +34,58 @@ type Stats struct {
 	Failed uint `json:"failed"`
 }
 
-func (r Stats) completed() bool {
+func (r *Stats) completed() bool {
 	return r.In == r.Out+r.Failed
+}
+
+func (r *Stats) corrupted() bool {
+	return r.In < r.Out+r.Failed
+}
+
+func (r *Stats) fixCorrupted() {
+	if r.corrupted() {
+		r.In = r.Out + r.Failed
+	}
 }
 
 type JobStatus struct {
 	ID          string       `json:"id"`
 	TasksStatus []TaskStatus `json:"tasks"`
+}
+
+func (js *JobStatus) FixCorruptedStats(log logger.Logger) {
+	isCorrupted := func() bool {
+		for ti := range js.TasksStatus {
+			for si := range js.TasksStatus[ti].SourcesStatus {
+				if js.TasksStatus[ti].SourcesStatus[si].Stats.corrupted() {
+					return true
+				}
+				for di := range js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus {
+					if js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus[di].Stats.corrupted() {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	fixCorrupted := func() {
+		for ti := range js.TasksStatus {
+			for si := range js.TasksStatus[ti].SourcesStatus {
+				js.TasksStatus[ti].SourcesStatus[si].Stats.fixCorrupted()
+				js.TasksStatus[ti].SourcesStatus[si].Completed = js.TasksStatus[ti].SourcesStatus[si].Stats.completed()
+				for di := range js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus {
+					js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus[di].Stats.fixCorrupted()
+					js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus[di].Completed = js.TasksStatus[ti].SourcesStatus[si].DestinationsStatus[di].Stats.completed()
+				}
+			}
+		}
+	}
+	if isCorrupted() {
+		corruptedJson, _ := json.Marshal(js)
+		log.Warnw("Corrupted job status stats detected, fixing", "job_status", string(corruptedJson))
+		fixCorrupted()
+	}
 }
 
 type TaskStatus struct {
@@ -153,10 +198,12 @@ type JobServiceConfig struct {
 	LocalHostname               string
 	LocalConn                   string
 	MaxPoolSize                 int
+	MinPoolSize                 int
 	SharedConn                  string
 	SubscriptionTargetConn      string
 	SkipFailedRecordsCollection bool
 	Log                         logger.Logger
+	ShouldSetupSharedDB         bool
 }
 
 // JobService manages information about jobs created by rudder-sources
@@ -202,6 +249,9 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 	if config.MaxPoolSize <= 2 {
 		config.MaxPoolSize = 2 // minimum 2 connections in the pool for proper startup
 	}
+	if config.MinPoolSize <= 0 {
+		config.MinPoolSize = 1
+	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
@@ -219,6 +269,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
 		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
+		sharedDB.SetMaxIdleConns(config.MinPoolSize)
 	}
 	handler := &sourcesHandler{
 		log:      config.Log,

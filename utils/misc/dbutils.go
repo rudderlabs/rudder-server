@@ -3,6 +3,7 @@ package misc
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/lib/pq"
@@ -11,7 +12,7 @@ import (
 )
 
 // GetConnectionString Returns Jobs DB connection configuration
-func GetConnectionString(c *config.Config) string {
+func GetConnectionString(c *config.Config, componentName string) string {
 	host := c.GetString("DB.host", "localhost")
 	user := c.GetString("DB.user", "ubuntu")
 	dbname := c.GetString("DB.name", "ubuntu")
@@ -21,9 +22,25 @@ func GetConnectionString(c *config.Config) string {
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
 	appName := DefaultString("rudder-server").OnError(os.Hostname())
+	if len(componentName) > 0 {
+		appName = fmt.Sprintf("%s-%s", componentName, appName)
+	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
 		host, port, user, password, dbname, sslmode, appName)
+}
+
+// SetAppNameInDBConnURL sets application name in db connection url
+// if application name is already present in dns it will get override by the appName
+func SetAppNameInDBConnURL(connectionUrl, appName string) (string, error) {
+	connUrl, err := url.Parse(connectionUrl)
+	if err != nil {
+		return "", err
+	}
+	queryParams := connUrl.Query()
+	queryParams.Set("application_name", appName)
+	connUrl.RawQuery = queryParams.Encode()
+	return connUrl.String(), nil
 }
 
 /*
@@ -55,7 +72,6 @@ func ReplaceDB(dbName, targetName string, c *config.Config) {
 		dbName, targetName)
 	pkgLogger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
-
 	// If execution of ALTER returns error, pacicking
 	if err != nil {
 		panic(err)

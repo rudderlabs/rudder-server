@@ -25,6 +25,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "port": "{{.port}}",
             "database": "{{.database}}",
@@ -167,6 +168,7 @@
       "destinations": [
         {
           "config": {
+            {{.preferAppend}}
             "host": "{{.host}}",
             "port": "{{.port}}",
             "database": "{{.database}}",

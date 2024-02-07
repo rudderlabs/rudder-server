@@ -23,6 +23,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -73,29 +74,13 @@ func getMockSourceTransformAdapterFunc(url string) func(ctx context.Context) (so
 	}
 }
 
-func getMockTransformerService() transformer.FeaturesService {
-	return &mockTransformerService{}
-}
-
-type mockTransformerService struct{}
-
-func (*mockTransformerService) SourceTransformerVersion() string {
-	return "random-version"
-}
-
-func (*mockTransformerService) Wait() chan struct{} {
-	return make(chan struct{})
-}
-
-func (*mockTransformerService) RouterTransform(destType string) bool {
-	return false
-}
-
 func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	webhookHandler := Setup(mockGW, getMockTransformerService(), stats.Default)
+	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
+	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).Times(1)
+	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.Default)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
@@ -374,7 +359,8 @@ func TestRecordWebhookErrors(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	statsStore := memstats.New()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
 	reqs := []*webhookT{
 		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},

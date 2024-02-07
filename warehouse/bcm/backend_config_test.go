@@ -8,24 +8,21 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
-	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -33,7 +30,7 @@ func TestBackendConfigManager(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := resource.SetupPostgres(pool, t)
+	pgResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	workspaceID := "test-workspace-id"
@@ -115,7 +112,7 @@ func TestBackendConfigManager(t *testing.T) {
 	tenantManager := multitenant.New(config.New(), mockBackendConfig)
 
 	t.Run("Subscriptions", func(t *testing.T) {
-		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
+		bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)
 
 		require.False(t, bcm.IsInitialized())
 		require.Equal(t, bcm.Connections(), map[string]map[string]model.Warehouse{})
@@ -191,7 +188,7 @@ func TestBackendConfigManager(t *testing.T) {
 	})
 
 	t.Run("Tunnelling", func(t *testing.T) {
-		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
+		bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)
 
 		testCases := []struct {
 			name     string
@@ -261,7 +258,7 @@ func TestBackendConfigManager(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		numSubscribers := 1000
-		bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
+		bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)
 		subscriptionsChs := make([]<-chan []model.Warehouse, numSubscribers)
 
 		for i := 0; i < numSubscribers; i++ {
@@ -432,7 +429,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			db := sqlquerywrapper.New(
@@ -463,7 +460,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 				backendconfig.DefaultBackendConfig,
 			)
 
-			bcm := New(c, db, tenantManager, logger.NOP, memstats.New())
+			bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)
 
 			namespace := bcm.namespace(context.Background(), tc.source, tc.destination)
 			require.Equal(t, tc.expectedNamespace, namespace)

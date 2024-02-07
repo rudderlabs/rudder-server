@@ -23,18 +23,19 @@ import (
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
+	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
-	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -51,7 +52,7 @@ func TestKafkaBatching(t *testing.T) {
 		group, containersCtx = errgroup.WithContext(ctx)
 
 		kafkaContainer       *kafka.Resource
-		postgresContainer    *resource.PostgresResource
+		postgresContainer    *postgres.Resource
 		etcdContainer        *thEtcd.Resource
 		transformerContainer *destination.TransformerResource
 
@@ -61,10 +62,7 @@ func TestKafkaBatching(t *testing.T) {
 		kafkaTopic          = "foo_bar_topic"
 	)
 	group.Go(func() error {
-		kafkaContainer, err = kafka.Setup(pool, t,
-			kafka.WithLogger(&testLogger{t}),
-			kafka.WithBrokers(1),
-		)
+		kafkaContainer, err = kafka.Setup(pool, t, kafka.WithBrokers(1))
 		if err != nil {
 			return err
 		}
@@ -73,7 +71,7 @@ func TestKafkaBatching(t *testing.T) {
 		return waitForKafka(kafkaCtx, t, kafkaTopic, kafkaContainer.Ports[0])
 	})
 	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
+		postgresContainer, err = postgres.Setup(pool, t)
 		return err
 	})
 	group.Go(func() (err error) {
@@ -282,7 +280,7 @@ func TestKafkaBatching(t *testing.T) {
 		{Name: ptr("instanceName"), Value: &serverInstanceID},
 		{Name: ptr("telemetry_sdk_language"), Value: ptr("go")},
 		{Name: ptr("telemetry_sdk_name"), Value: ptr("opentelemetry")},
-		{Name: ptr("telemetry_sdk_version"), Value: ptr("1.19.0")},
+		{Name: ptr("telemetry_sdk_version"), Value: ptr(otel.Version())},
 	}
 
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{

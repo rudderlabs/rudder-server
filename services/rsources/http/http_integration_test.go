@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 )
@@ -26,18 +26,19 @@ func prepare(
 ) (
 	handler http.Handler,
 	service rsources.JobService,
-	dbResource *resource.PostgresResource,
+	dbResource *postgres.Resource,
 ) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	config := rsources.JobServiceConfig{
-		LocalHostname: postgresContainer.Host,
-		MaxPoolSize:   1,
-		LocalConn:     postgresContainer.DBDsn,
-		Log:           logger.NOP,
+		LocalHostname:       postgresContainer.Host,
+		MaxPoolSize:         1,
+		LocalConn:           postgresContainer.DBDsn,
+		Log:                 logger.NOP,
+		ShouldSetupSharedDB: true,
 	}
 	service, err = rsources.NewJobService(config)
 	require.NoError(t, err)

@@ -12,36 +12,33 @@ import (
 	"path"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
-	"github.com/minio/minio-go/v7"
-
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
 	"github.com/google/uuid"
+	_ "github.com/marcboeker/go-duckdb"
+	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"github.com/xitongsys/parquet-go-source/buffer"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 func TestWorkerWriter(t *testing.T) {
@@ -170,9 +167,9 @@ func TestWorkerWriter(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -218,7 +215,8 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
 
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
@@ -243,8 +241,8 @@ func TestWorkerWriter(t *testing.T) {
 
 			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
+			w.Work()
 
-			require.True(t, w.Work())
 			require.EqualValues(t, len(jobs), statsStore.Get("erridx_uploaded_jobs", stats.Tags{
 				"workspaceId": w.workspaceID,
 				"sourceId":    w.sourceID,
@@ -254,10 +252,9 @@ func TestWorkerWriter(t *testing.T) {
 				"sourceId":    w.sourceID,
 				"state":       jobsdb.Succeeded.State,
 			}).LastValue())
-			require.False(t, w.Work())
 
 			lastFailedAt := failedAt.Add(time.Duration(len(jobs)-1) * time.Second)
-			filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+			filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s**.parquet",
 				minioResource.BucketName,
 				w.sourceID,
 				failedAt.Format("2006-01-02"),
@@ -270,7 +267,7 @@ func TestWorkerWriter(t *testing.T) {
 			require.Len(t, failedMessages, len(jobs))
 			require.EqualValues(t, payloads, failedMessages)
 
-			s3SelectPath := fmt.Sprintf("%s/%s/%s/%d_%d_%s.parquet",
+			s3SelectPathPrefix := fmt.Sprintf("%s/%s/%s/%d_%d_%s",
 				w.sourceID,
 				failedAt.Format("2006-01-02"),
 				strconv.Itoa(failedAt.Hour()),
@@ -278,8 +275,11 @@ func TestWorkerWriter(t *testing.T) {
 				lastFailedAt.Unix(),
 				instanceID,
 			)
+			objects := minioObjects(t, ctx, minioResource, s3SelectPathPrefix)
+			require.Len(t, objects, 1)
+
 			s3SelectQuery := fmt.Sprintf("SELECT message_id, source_id, destination_id, transformation_id, tracking_plan_id, failed_stage, event_type, event_name, received_at, failed_at FROM S3Object WHERE failed_at >= %d AND failed_at <= %d", failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro())
-			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, s3SelectPath, s3SelectQuery)
+			failedMessagesUsing3Select := failedMessagesUsingMinioS3Select(t, ctx, minioResource, objects[0], s3SelectQuery)
 			slices.SortFunc(failedMessagesUsing3Select, func(a, b payload) int {
 				return a.FailedAtTime().Compare(b.FailedAtTime())
 			})
@@ -298,16 +298,26 @@ func TestWorkerWriter(t *testing.T) {
 			require.Len(t, jr.Jobs, len(jobs))
 
 			lo.ForEach(jr.Jobs, func(item *jobsdb.JobT, index int) {
-				require.EqualValues(t, string(item.LastJobStatus.ErrorResponse), fmt.Sprintf(`{"location": "%s"}`, strings.Replace(filePath, "s3://", fmt.Sprintf("http://%s/", minioResource.Endpoint), 1)))
+				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.+.parquet",
+					minioResource.Endpoint,
+					minioResource.BucketName,
+					w.sourceID,
+					failedAt.Format("2006-01-02"),
+					strconv.Itoa(failedAt.Hour()),
+					failedAt.Unix(),
+					lastFailedAt.Unix(),
+					instanceID,
+				)
+				require.Regexp(t, filePath, gjson.GetBytes(item.LastJobStatus.ErrorResponse, "location").String())
 			})
 		})
 		t.Run("multiple hours and days", func(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -353,8 +363,6 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
-
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
@@ -370,20 +378,19 @@ func TestWorkerWriter(t *testing.T) {
 			defer cancel()
 
 			limiterGroup := sync.WaitGroup{}
-			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, stats.NOP)
 			defer func() {
 				cancel()
 				limiterGroup.Wait()
 			}()
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
+			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
-
-			require.True(t, w.Work())
+			w.Work()
 
 			for i := 0; i < count; i++ {
 				failedAt := failedAt.Add(time.Duration(i) * time.Hour)
-				filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s.parquet",
+				filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s**.parquet",
 					minioResource.BucketName,
 					w.sourceID,
 					failedAt.Format("2006-01-02"),
@@ -409,7 +416,7 @@ func TestWorkerWriter(t *testing.T) {
 
 			lo.ForEach(jr.Jobs, func(item *jobsdb.JobT, index int) {
 				failedAt := failedAt.Add(time.Duration(index) * time.Hour)
-				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.parquet",
+				filePath := fmt.Sprintf("http://%s/%s/%s/%s/%s/%d_%d_%s.+.parquet",
 					minioResource.Endpoint,
 					minioResource.BucketName,
 					w.sourceID,
@@ -419,16 +426,16 @@ func TestWorkerWriter(t *testing.T) {
 					failedAt.Unix(),
 					instanceID,
 				)
-				require.EqualValues(t, string(item.LastJobStatus.ErrorResponse), fmt.Sprintf(`{"location": "%s"}`, strings.Replace(filePath, "s3://", fmt.Sprintf("http://%s/", minioResource.Endpoint), 1)))
+				require.Regexp(t, filePath, gjson.GetBytes(item.LastJobStatus.ErrorResponse, "location").String())
 			})
 		})
 		t.Run("limits reached but few left without crossing upload frequency", func(t *testing.T) {
 			receivedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 			failedAt := time.Date(2021, 1, 1, 1, 1, 1, 0, time.UTC)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			eventsLimit := 24
@@ -476,8 +483,6 @@ func TestWorkerWriter(t *testing.T) {
 			cs := newMockConfigSubscriber()
 			cs.addWorkspaceIDForSourceID(sourceID, workspaceID)
 
-			statsStore := memstats.New()
-
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.MINIO,
 				Config: map[string]any{
@@ -493,19 +498,15 @@ func TestWorkerWriter(t *testing.T) {
 			defer cancel()
 
 			limiterGroup := sync.WaitGroup{}
-			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, statsStore)
+			limiter := kitsync.NewLimiter(ctx, &limiterGroup, "erridx_test", 1000, stats.NOP)
 			defer func() {
 				cancel()
 				limiterGroup.Wait()
 			}()
 
-			w := newWorker(sourceID, c, logger.NOP, statsStore, errIndexDB, cs, fm, limiter, limiter, limiter)
+			w := newWorker(sourceID, c, logger.NOP, stats.NOP, errIndexDB, cs, fm, limiter, limiter, limiter)
 			defer w.Stop()
-
-			for i := 0; i < count/eventsLimit; i++ {
-				require.True(t, w.Work())
-			}
-			require.False(t, w.Work())
+			w.Work()
 
 			jr, err := errIndexDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 				ParameterFilters: []jobsdb.ParameterFilterT{
@@ -521,18 +522,30 @@ func TestWorkerWriter(t *testing.T) {
 	})
 }
 
-func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *resource.MinioResource, filePath, query string) []payload {
+func minioObjects(t testing.TB, ctx context.Context, mr *minio.Resource, prefix string) (objects []string) {
 	t.Helper()
 
-	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, minio.SelectObjectOptions{
+	for objInfo := range mr.Client.ListObjects(ctx, mr.BucketName, miniogo.ListObjectsOptions{
+		Recursive: true,
+		Prefix:    prefix,
+	}) {
+		objects = append(objects, objInfo.Key)
+	}
+	return
+}
+
+func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *minio.Resource, filePath, query string) []payload {
+	t.Helper()
+
+	r, err := mr.Client.SelectObjectContent(ctx, mr.BucketName, filePath, miniogo.SelectObjectOptions{
 		Expression:     query,
-		ExpressionType: minio.QueryExpressionTypeSQL,
-		InputSerialization: minio.SelectObjectInputSerialization{
-			CompressionType: minio.SelectCompressionNONE,
-			Parquet:         &minio.ParquetInputOptions{},
+		ExpressionType: miniogo.QueryExpressionTypeSQL,
+		InputSerialization: miniogo.SelectObjectInputSerialization{
+			CompressionType: miniogo.SelectCompressionNONE,
+			Parquet:         &miniogo.ParquetInputOptions{},
 		},
-		OutputSerialization: minio.SelectObjectOutputSerialization{
-			CSV: &minio.CSVOutputOptions{
+		OutputSerialization: miniogo.SelectObjectOutputSerialization{
+			CSV: &miniogo.CSVOutputOptions{
 				RecordDelimiter: "\n",
 				FieldDelimiter:  ",",
 			},
@@ -576,7 +589,7 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *res
 	return payloads
 }
 
-func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *resource.MinioResource, query string, queryArgs []interface{}) []payload {
+func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *minio.Resource, query string, queryArgs []interface{}) []payload {
 	t.Helper()
 
 	db := duckDB(t)

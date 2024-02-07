@@ -22,7 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -170,7 +170,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := resource.SetupPostgres(pool, t)
+	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	gwPort, err := kithelper.GetFreePort()
@@ -191,7 +191,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 	return url, postgresContainer.DB, cancel, wg
 }
 
-func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, postgresContainer *resource.PostgresResource, cbURL, transformerURL, tmpDir string) (err error) {
+func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
 	config.Set("DB.port", postgresContainer.Port)

@@ -8,26 +8,22 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/docker/docker/pkg/fileutils"
+	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -162,14 +158,13 @@ func TestLoadUsersTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := pgdocker.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
 
 			db := sqlmiddleware.New(pgResource.DB)
 
-			store := memstats.New()
 			c := config.New()
 			c.Set("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", tc.skipUserTraitsWorkspaceIDs)
 			ctx := context.Background()
@@ -205,7 +200,7 @@ func TestLoadUsersTable(t *testing.T) {
 			identifiesLoadFiles := cloneFiles(t, tc.mockIdentifiesFiles)
 			require.NotEmpty(t, identifiesLoadFiles)
 
-			pg := postgres.New(c, logger.NOP, store)
+			pg := postgres.New(c, logger.NOP, stats.NOP)
 
 			var (
 				identifiesSchemaInUpload = model.TableSchema{
@@ -247,6 +242,7 @@ func TestLoadUsersTable(t *testing.T) {
 			mockUploader := mockuploader.NewMockUploader(ctrl)
 			mockUploader.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
 			mockUploader.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
+			mockUploader.EXPECT().CanAppend().AnyTimes().Return(true)
 
 			pg.DB = db
 			pg.Namespace = namespace

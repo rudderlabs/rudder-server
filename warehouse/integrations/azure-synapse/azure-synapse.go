@@ -699,7 +699,6 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	as.logger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
-
 	if err != nil {
 		as.logger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
 		_ = tx.Rollback()
@@ -834,11 +833,11 @@ func (as *AzureSynapse) Setup(_ context.Context, warehouse model.Warehouse, uplo
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(ctx context.Context) {
-	as.dropDanglingStagingTables(ctx)
+func (as *AzureSynapse) CrashRecover(ctx context.Context) error {
+	return as.dropDanglingStagingTables(ctx)
 }
 
-func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) {
+func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -853,7 +852,7 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) {
 	)
 	rows, err := as.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
-		as.logger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
+		return fmt.Errorf("querying for dangling staging tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -862,20 +861,21 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			return fmt.Errorf("scanning for dangling staging tables: %w", err)
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	if err := rows.Err(); err != nil {
-		panic(fmt.Errorf("iterating result from query: %s\nwith Error : %w", sqlStatement, err))
+		return fmt.Errorf("iterating for dangling staging tables: %w", err)
 	}
 	as.logger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
 		_, err := as.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
 		if err != nil {
-			as.logger.Errorf("WH: SYNAPSE:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			return fmt.Errorf("dropping dangling staging table %q.%q: %w", as.Namespace, stagingTableName, err)
 		}
 	}
+	return nil
 }
 
 // FetchSchema returns the schema of the warehouse
@@ -953,7 +953,21 @@ func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) (*types
 func (as *AzureSynapse) Cleanup(ctx context.Context) {
 	if as.DB != nil {
 		// extra check aside dropStagingTable(table)
-		as.dropDanglingStagingTables(ctx)
+		err := as.dropDanglingStagingTables(ctx)
+		if err != nil {
+			as.logger.Warnw("Error dropping dangling staging tables",
+				logfield.DestinationID, as.Warehouse.Destination.ID,
+				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.SourceID, as.Warehouse.Source.ID,
+				logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, as.Warehouse.Destination.ID,
+				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, as.Warehouse.WorkspaceID,
+				logfield.Namespace, as.Warehouse.Namespace,
+
+				logfield.Error, err,
+			)
+		}
 		_ = as.DB.Close()
 	}
 }

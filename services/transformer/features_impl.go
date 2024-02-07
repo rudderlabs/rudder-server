@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,8 +31,26 @@ func (t *featuresService) SourceTransformerVersion() string {
 	return V0
 }
 
+func (t *featuresService) TransformerProxyVersion() string {
+	if gjson.GetBytes(t.features, "supportTransformerProxyV1").Bool() {
+		return V1
+	}
+
+	return V0
+}
+
 func (t *featuresService) RouterTransform(destType string) bool {
 	return gjson.GetBytes(t.features, "routerTransform."+destType).Bool()
+}
+
+func (t *featuresService) Regulations() []string {
+	regulationFeatures := gjson.GetBytes(t.features, "regulations")
+	if regulationFeatures.Exists() && regulationFeatures.IsArray() {
+		return lo.Map(regulationFeatures.Array(), func(f gjson.Result, _ int) string {
+			return f.String()
+		})
+	}
+	return []string{}
 }
 
 func (t *featuresService) Wait() chan struct{} {

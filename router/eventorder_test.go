@@ -18,24 +18,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-
-	"golang.org/x/sync/errgroup"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -86,7 +84,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 
 			t.Logf("Starting docker services (postgres & transformer)")
 			var (
-				postgresContainer    *resource.PostgresResource
+				postgresContainer    *postgres.Resource
 				transformerContainer *destination.TransformerResource
 				gatewayPort          string
 			)
@@ -94,7 +92,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			require.NoError(t, err)
 			containersGroup, _ := errgroup.WithContext(ctx)
 			containersGroup.Go(func() (err error) {
-				postgresContainer, err = resource.SetupPostgres(pool, t)
+				postgresContainer, err = postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 				return err
 			})
 			containersGroup.Go(func() (err error) {

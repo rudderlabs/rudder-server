@@ -11,39 +11,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/samber/lo"
-
+	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestRouter(t *testing.T) {
@@ -77,7 +70,7 @@ func TestRouter(t *testing.T) {
 	}
 
 	t.Run("Graceful shutdown", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -92,7 +85,7 @@ func TestRouter(t *testing.T) {
 
 		ctx := context.Background()
 
-		n := notifier.New(config.New(), logger.NOP, memstats.New(), workspaceIdentifier)
+		n := notifier.New(config.New(), logger.NOP, stats.NOP, workspaceIdentifier)
 		err = n.Setup(ctx, pgResource.DBDsn)
 		require.NoError(t, err)
 
@@ -110,7 +103,7 @@ func TestRouter(t *testing.T) {
 		cp := controlplane.NewClient(s.URL, &identity.Namespace{},
 			controlplane.WithHTTPClient(s.Client()),
 		)
-		backendConfigManager := bcm.New(config.New(), db, tenantManager, logger.NOP, memstats.New())
+		backendConfigManager := bcm.New(config.New(), db, tenantManager, logger.NOP, stats.NOP)
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -123,7 +116,7 @@ func TestRouter(t *testing.T) {
 			destinationType,
 			config.New(),
 			logger.NOP,
-			memstats.New(),
+			stats.NOP,
 			db,
 			n,
 			tenantManager,
@@ -140,7 +133,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("CreateJobs", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -188,7 +181,7 @@ func TestRouter(t *testing.T) {
 		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.statsFactory = memstats.New()
+		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
@@ -301,7 +294,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("handlePriorityForWaitingUploads", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -346,7 +339,7 @@ func TestRouter(t *testing.T) {
 		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.statsFactory = memstats.New()
+		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
@@ -433,7 +426,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Scheduler", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -475,7 +468,8 @@ func TestRouter(t *testing.T) {
 			Identifier: "RS:test-source-id:test-destination-id-scheduler",
 		}
 
-		statsStore := memstats.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		r := Router{}
 		r.db = db
@@ -543,7 +537,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("UploadsToProcess", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -589,7 +583,7 @@ func TestRouter(t *testing.T) {
 		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.statsFactory = memstats.New()
+		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
@@ -676,7 +670,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Processor", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -724,7 +718,7 @@ func TestRouter(t *testing.T) {
 		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.statsFactory = memstats.New()
+		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
@@ -735,7 +729,7 @@ func TestRouter(t *testing.T) {
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
 		r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
-		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.NOP)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			reporting:    &reporting.NOOP{},
@@ -830,7 +824,7 @@ func TestRouter(t *testing.T) {
 
 	t.Run("Preemptable", func(t *testing.T) {
 		t.Run("Processor with workers < 1", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -875,7 +869,7 @@ func TestRouter(t *testing.T) {
 			r.db = db
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
-			r.statsFactory = memstats.New()
+			r.statsFactory = stats.NOP
 			r.conf = config.New()
 			r.config.allowMultipleSourcesForJobsPickup = true
 			r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
@@ -886,7 +880,7 @@ func TestRouter(t *testing.T) {
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
 			r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
-			r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
+			r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.NOP)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
 				reporting:    &reporting.NOOP{},
@@ -939,7 +933,7 @@ func TestRouter(t *testing.T) {
 		})
 
 		t.Run("Scheduler is not enabled", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -960,11 +954,9 @@ func TestRouter(t *testing.T) {
 				return now
 			}))
 
-			statsStore := memstats.New()
-
 			r := Router{}
 			r.db = db
-			r.statsFactory = statsStore
+			r.statsFactory = stats.NOP
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.conf = config.New()
@@ -1058,7 +1050,7 @@ func TestRouter(t *testing.T) {
 				pool, err := dockertest.NewPool("")
 				require.NoError(t, err)
 
-				pgResource, err := resource.SetupPostgres(pool, t)
+				pgResource, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				t.Log("db:", pgResource.DBDsn)
@@ -1098,7 +1090,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Backend config subscriber", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -1194,13 +1186,13 @@ func TestRouter(t *testing.T) {
 		r.db = db
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.statsFactory = memstats.New()
+		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.logger = logger.NOP
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
 		r.tenantManager = multitenant.New(config.New(), mockBackendConfig)
-		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, memstats.New())
+		r.bcManager = bcm.New(r.conf, r.db, r.tenantManager, r.logger, stats.NOP)
 		r.createJobMarkerMap = make(map[string]time.Time)
 		r.triggerStore = &sync.Map{}
 		r.createUploadAlways = &atomic.Bool{}

@@ -1,3 +1,5 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../mocks/services/transformer/mock_features.go -package mock_features github.com/rudderlabs/rudder-server/services/transformer FeaturesService
+
 package transformer
 
 import (
@@ -21,8 +23,10 @@ type FeaturesServiceConfig struct {
 }
 
 type FeaturesService interface {
+	Regulations() []string
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
+	TransformerProxyVersion() string
 	Wait() chan struct{}
 }
 
@@ -30,7 +34,8 @@ var defaultTransformerFeatures = `{
 	"routerTransform": {
 	  "MARKETO": true,
 	  "HS": true
-	}
+	},
+	"regulations": ["AM"],
   }`
 
 func NewFeaturesService(ctx context.Context, config FeaturesServiceConfig) FeaturesService {
@@ -52,7 +57,15 @@ func NewNoOpService() FeaturesService {
 
 type noopService struct{}
 
+func (*noopService) Regulations() []string {
+	return []string{}
+}
+
 func (*noopService) SourceTransformerVersion() string {
+	return V0
+}
+
+func (*noopService) TransformerProxyVersion() string {
 	return V0
 }
 

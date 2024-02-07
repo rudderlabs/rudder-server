@@ -23,6 +23,7 @@ type webRequestT struct {
 	reqType        string
 	requestPayload []byte
 	authContext    *gwtypes.AuthRequestContext
+	traceParent    string
 	ipAddr         string
 	userIDHeader   string
 	errors         []string

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -109,35 +108,29 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
+	capturedTableName := strings.ToLower(tableName)
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if slices.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
-		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
-		job.counterStat(`event_delivery`, warehouseutils.Tag{
-			Name:  "tableName",
-			Value: strings.ToLower(tableName),
-		}).Count(int(numEvents))
+	if !slices.Contains(rudderAPISupportedEventTypes, capturedTableName) {
+		// making all other tableName as other, to reduce cardinality
+		capturedTableName = "others"
 	}
 
-	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
-	if skipMetricTagForEachEventTable {
-		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !slices.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
-			// club all event table metric tags under one tag to avoid too many tags
-			tableName = "others"
-		}
-	}
+	job.counterStat(`event_delivery`, warehouseutils.Tag{
+		Name:  "tableName",
+		Value: capturedTableName,
+	}).Count(int(numEvents))
 
 	job.counterStat(`rows_synced`, warehouseutils.Tag{
 		Name:  "tableName",
-		Value: strings.ToLower(tableName),
+		Value: capturedTableName,
 	}).Count(int(numEvents))
+
 	// Delay for the oldest event in the batch
 	firstEventAt, err := job.stagingFileRepo.FirstEventForUpload(job.ctx, job.upload)
 	if err != nil {
 		job.logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-
 	if !job.upload.Retried {
 		conf := job.warehouse.Destination.Config
 		syncFrequency := "1440"
@@ -145,7 +138,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = conf[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			warehouseutils.Tag{Name: "tableName", Value: capturedTableName},
 			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
