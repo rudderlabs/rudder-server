@@ -347,6 +347,88 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
+func TestAIOKafka(t *testing.T) {
+	kafkaBatchingEnabled = true
+	kafkaCompression = client.CompressionZstd
+	t.Cleanup(func() {
+		kafkaBatchingEnabled = false
+		kafkaCompression = client.CompressionNone
+	})
+	ctrl := gomock.NewController(t)
+	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+	kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	kafkaNetwork, err := pool.CreateNetwork("kafka_network_" + misc.FastUUID().String())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.RemoveNetwork(kafkaNetwork); err != nil {
+			t.Logf("Error while removing Docker network: %v", err)
+		}
+	})
+
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithBrokers(1),
+		dockerKafka.WithNetwork(kafkaNetwork.Network),
+	)
+	require.NoError(t, err)
+
+	kafkaTopic := "some-topic"
+
+	destConfig := map[string]interface{}{
+		"topic":    kafkaTopic,
+		"hostname": "localhost",
+		"port":     kafkaContainer.Ports[0],
+	}
+	dest := backendconfig.DestinationT{Config: destConfig}
+
+	p, err := NewProducer(&dest, common.Opts{})
+	require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+	require.NoError(t, err)
+
+	var statusCode int
+	var returnMessage, errMessage string
+	require.Eventually(t, func() bool {
+		statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`[
+			{"message":"one","topic":"foo-bar","userId":"1234"},
+			{"message":"two","topic":"foo-bar","userId":"1234"},
+			{"message":"three","topic":"foo-bar","userId":"1234"}
+		]`), destConfig)
+		return statusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond)
+	require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
+	require.Equal(t, "Kafka: Message delivered in batch", errMessage)
+
+	consumerContainer, err := pool.BuildAndRunWithOptions("./testdata/aiokafka/Dockerfile", &dockertest.RunOptions{
+		Name:      fmt.Sprintf("aiokafka-%s", misc.FastUUID().String()),
+		NetworkID: kafkaNetwork.Network.ID,
+		Cmd:       []string{"tail", "-f", "/dev/null"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.Purge(consumerContainer); err != nil {
+			t.Logf("Error while purging Docker container: %v", err)
+		}
+	})
+
+	buf := bytes.NewBuffer(nil)
+	code, err := consumerContainer.Exec([]string{"python", "consumer.py"}, dockertest.ExecOptions{
+		Env:    []string{"KAFKA_BROKER=kafka1:9090", "KAFKA_TOPIC=foo-bar", "EXPECTED_MESSAGE_COUNT=3"},
+		StdOut: buf,
+		StdErr: os.Stderr,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+	require.JSONEq(t, `[{"key": "1234", "value": "\"one\""}, {"key": "1234", "value": "\"two\""}, {"key": "1234", "value": "\"three\""}]`, buf.String())
+}
+
 func TestNewProducerForAzureEventHubs(t *testing.T) {
 	t.Run("missing configuration data", func(t *testing.T) {
 		t.Run("missing topic", func(t *testing.T) {
