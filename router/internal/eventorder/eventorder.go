@@ -134,21 +134,15 @@ func (b *Barrier) Enter(key BarrierKey, jobID int64) (accepted bool, previousFai
 		b.barriers[key] = barrier
 	}
 
-	b.updateState(barrier)
+	b.updateState(barrier, key)
 
 	// if the barrier is in a disabled state, accept the job
 	if barrier.state == stateDisabled {
 		return true, nil
 	}
 
-	if b.orderingDisabledForKey != nil && b.orderingDisabledForKey(key) {
-		barrier.state = stateDisabled
-		barrier.stateTime = time.Now()
-		return true, nil
-	}
-
 	// if key threshold is reached, disable the barrier and accept the job
-	if barrier.ConcurrencyLimitReached(jobID, b.eventOrderKeyThreshold.Load()) {
+	if barrier.concurrencyLimitReached(jobID, b.eventOrderKeyThreshold.Load()) {
 		b.barriers[key] = &barrierInfo{
 			state:              stateDisabled,
 			stateTime:          time.Now(),
@@ -326,7 +320,11 @@ func (b *Barrier) String() string {
 //
 // 1. Disabled: transitions to half-enabled after disabledStateDuration
 // 2. Half-enabled: transitions to enabled after halfEnabledStateDuration
-func (b *Barrier) updateState(barrier *barrierInfo) {
+func (b *Barrier) updateState(barrier *barrierInfo, key BarrierKey) {
+	if b.orderingDisabledForKey != nil && b.orderingDisabledForKey(key) {
+		barrier.state = stateDisabled
+		barrier.stateTime = time.Now()
+	}
 	switch barrier.state {
 	case stateDisabled:
 		if time.Since(barrier.stateTime) > b.disabledStateDuration.Load() {
@@ -374,8 +372,8 @@ func (bi *barrierInfo) Leave(jobID int64) {
 	delete(bi.drainLimiter, jobID)
 }
 
-// ConcurrencyLimitReached returns true if the barrier's concurrency limit has been reached
-func (bi *barrierInfo) ConcurrencyLimitReached(jobID int64, limit int) bool {
+// concurrencyLimitReached returns true if the barrier's concurrency limit has been reached
+func (bi *barrierInfo) concurrencyLimitReached(jobID int64, limit int) bool {
 	if bi.concurrencyLimiter != nil {
 		if _, ok := bi.concurrencyLimiter[jobID]; !ok {
 			return len(bi.concurrencyLimiter) >= limit
