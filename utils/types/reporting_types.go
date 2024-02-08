@@ -113,8 +113,11 @@ type EDErrorDetails struct {
 	ErrorCode    string `json:"errorCode"`
 	ErrorMessage string `json:"errorMessage"`
 	// TODO: need to check with team if this makes sense ?
-	EventType string `json:"-"`
-	Count     int    `json:"count"`
+	EventType      string `json:"eventType"`
+	EventName      string `json:"eventName"`
+	Count          int64  `json:"count"`
+	SampleResponse string `json:"sampleResponse"`
+	SampleEvent    string `json:"sampleEvent"`
 }
 
 type EDReportsDB struct {
