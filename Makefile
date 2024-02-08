@@ -3,6 +3,7 @@
 GO=go
 LDFLAGS?=-s -w
 TESTFILE=_testok
+MOUNT_PATH= /local
 
 default: build
 
@@ -87,7 +88,6 @@ install-tools:
 	go install gotest.tools/gotestsum@v1.10.0
 	go install golang.org/x/tools/cmd/goimports@latest
 	bash ./scripts/install-golangci-lint.sh v1.55.2
-	bash ./scripts/install-open-api.sh
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
@@ -110,5 +110,9 @@ bench-kafka:
 
 .PHONY: generate-openapi-spec
 generate-openapi-spec: install-tools
-	openapi-generator generate -i gateway/openapi.yaml -g html2 -o gateway
+	docker run --rm \
+	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli generate \
+	  -i ${MOUNT_PATH}/gateway/openapi.yaml \
+	  -g html2 \
+	  -o ${MOUNT_PATH}/gateway
 

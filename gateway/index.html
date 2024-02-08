@@ -847,6 +847,7 @@ ul.nav-tabs {
     // Script section to load models into a JS Var
     var defs = {}
     defs["AliasPayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -868,6 +869,7 @@ ul.nav-tabs {
 };
     defs["BatchPayload"] = {
   "required" : [ "batch" ],
+  "type" : "object",
   "properties" : {
     "batch" : {
       "type" : "array",
@@ -878,14 +880,23 @@ ul.nav-tabs {
   }
 };
     defs["BatchPayload_batch_inner"] = {
+  "type" : "object",
   "properties" : {
-    "userId" : { },
-    "anonymousId" : { },
-    "type" : { },
+    "userId" : {
+      "type" : "string"
+    },
+    "anonymousId" : {
+      "type" : "string"
+    },
+    "type" : {
+      "type" : "string"
+    },
     "context" : {
       "$ref" : "#/components/schemas/BatchPayload_batch_inner_context"
     },
-    "timestamp" : { }
+    "timestamp" : {
+      "type" : "string"
+    }
   },
   "allOf" : [ {
     "$ref" : "#/components/schemas/IdentifyPayload"
@@ -902,27 +913,37 @@ ul.nav-tabs {
   } ]
 };
     defs["BatchPayload_batch_inner_context"] = {
+  "type" : "object",
   "properties" : {
     "traits" : {
       "$ref" : "#/components/schemas/BatchPayload_batch_inner_context_traits"
     },
-    "ip" : { },
+    "ip" : {
+      "type" : "string"
+    },
     "library" : {
       "$ref" : "#/components/schemas/BatchPayload_batch_inner_context_library"
     }
   }
 };
     defs["BatchPayload_batch_inner_context_library"] = {
+  "type" : "object",
   "properties" : {
-    "name" : { }
+    "name" : {
+      "type" : "string"
+    }
   }
 };
     defs["BatchPayload_batch_inner_context_traits"] = {
+  "type" : "object",
   "properties" : {
-    "trait1" : { }
+    "trait1" : {
+      "type" : "string"
+    }
   }
 };
     defs["GroupPayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -951,6 +972,7 @@ ul.nav-tabs {
   }
 };
     defs["IdentifyPayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -971,6 +993,7 @@ ul.nav-tabs {
   }
 };
     defs["IdentifyPayload_context"] = {
+  "type" : "object",
   "properties" : {
     "traits" : {
       "$ref" : "#/components/schemas/IdentifyPayload_context_traits"
@@ -986,6 +1009,7 @@ ul.nav-tabs {
   "description" : "Dictionary of information that provides context about a message."
 };
     defs["IdentifyPayload_context_library"] = {
+  "type" : "object",
   "properties" : {
     "name" : {
       "type" : "string",
@@ -994,6 +1018,7 @@ ul.nav-tabs {
   }
 };
     defs["IdentifyPayload_context_traits"] = {
+  "type" : "object",
   "properties" : {
     "trait1" : {
       "type" : "string",
@@ -1002,6 +1027,7 @@ ul.nav-tabs {
   }
 };
     defs["PagePayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -1030,6 +1056,7 @@ ul.nav-tabs {
   }
 };
     defs["ScreenPayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -1058,6 +1085,7 @@ ul.nav-tabs {
   }
 };
     defs["TrackPayload"] = {
+  "type" : "object",
   "properties" : {
     "userId" : {
       "type" : "string",
@@ -1086,6 +1114,7 @@ ul.nav-tabs {
   }
 };
     defs["TrackPayload_context"] = {
+  "type" : "object",
   "properties" : {
     "ip" : {
       "type" : "string",
@@ -1909,33 +1938,33 @@ $(document).ready(function() {
  "/v1/v1/batch" \
  -d '{
   &quot;batch&quot; : [ {
-    &quot;anonymousId&quot; : &quot;&quot;,
+    &quot;anonymousId&quot; : &quot;anonymousId&quot;,
     &quot;context&quot; : {
       &quot;traits&quot; : {
-        &quot;trait1&quot; : &quot;&quot;
+        &quot;trait1&quot; : &quot;trait1&quot;
       },
       &quot;library&quot; : {
-        &quot;name&quot; : &quot;&quot;
+        &quot;name&quot; : &quot;name&quot;
       },
-      &quot;ip&quot; : &quot;&quot;
+      &quot;ip&quot; : &quot;ip&quot;
     },
-    &quot;type&quot; : &quot;&quot;,
-    &quot;userId&quot; : &quot;&quot;,
-    &quot;timestamp&quot; : &quot;&quot;
+    &quot;type&quot; : &quot;type&quot;,
+    &quot;userId&quot; : &quot;userId&quot;,
+    &quot;timestamp&quot; : &quot;timestamp&quot;
   }, {
-    &quot;anonymousId&quot; : &quot;&quot;,
+    &quot;anonymousId&quot; : &quot;anonymousId&quot;,
     &quot;context&quot; : {
       &quot;traits&quot; : {
-        &quot;trait1&quot; : &quot;&quot;
+        &quot;trait1&quot; : &quot;trait1&quot;
       },
       &quot;library&quot; : {
-        &quot;name&quot; : &quot;&quot;
+        &quot;name&quot; : &quot;name&quot;
       },
-      &quot;ip&quot; : &quot;&quot;
+      &quot;ip&quot; : &quot;ip&quot;
     },
-    &quot;type&quot; : &quot;&quot;,
-    &quot;userId&quot; : &quot;&quot;,
-    &quot;timestamp&quot; : &quot;&quot;
+    &quot;type&quot; : &quot;type&quot;,
+    &quot;userId&quot; : &quot;userId&quot;,
+    &quot;timestamp&quot; : &quot;timestamp&quot;
   } ]
 }'
 </code></pre>
