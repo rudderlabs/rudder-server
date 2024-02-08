@@ -87,6 +87,7 @@ install-tools:
 	go install gotest.tools/gotestsum@v1.10.0
 	go install golang.org/x/tools/cmd/goimports@latest
 	bash ./scripts/install-golangci-lint.sh v1.55.2
+	bash ./scripts/install-open-api.sh
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
@@ -106,3 +107,8 @@ proto: install-tools ## Generate protobuf files
 .PHONY: bench-kafka
 bench-kafka:
 	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
+
+.PHONY: generate-openapi-spec
+generate-openapi-spec: install-tools
+	openapi-generator generate -i gateway/openapi.yaml -g html2 -o gateway
+

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	_ "embed"
 	"errors"
 	"regexp"
 )
@@ -34,3 +35,6 @@ var (
 	errRequestDropped    = errors.New("request dropped")
 	errRequestSuppressed = errors.New("request suppressed")
 )
+
+//go:embed index.html
+var openApiSpec []byte
