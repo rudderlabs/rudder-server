@@ -395,6 +395,21 @@ type JobT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
+func (job *JobT) Reset() {
+	job.UUID = uuid.UUID{}
+	job.JobID = 0
+	job.UserID = ""
+	job.CreatedAt = time.Time{}
+	job.ExpireAt = time.Time{}
+	job.CustomVal = ""
+	job.EventCount = 0
+	job.EventPayload = nil
+	job.PayloadSize = 0
+	job.LastJobStatus = JobStatusT{}
+	job.Parameters = nil
+	job.WorkspaceId = ""
+}
+
 func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }

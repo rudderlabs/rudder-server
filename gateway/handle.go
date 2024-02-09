@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -113,6 +114,10 @@ type Handle struct {
 
 	// additional internal http handlers
 	internalHttpHandlers map[string]http.Handler
+
+	jobPool         *sync.Pool
+	poolNewJobCount *atomic.Int64
+	totalJobCount   *atomic.Int64
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -203,10 +208,11 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 				jobIDReqMap[jobData.jobs[0].UUID] = req
 				jobSourceTagMap[jobData.jobs[0].UUID] = sourceTag
 				for _, job := range jobData.jobs {
+					payloadCopy := job.EventPayload
 					eventBatchesToRecord = append(
 						eventBatchesToRecord,
 						sourceDebugger{
-							data:     job.EventPayload,
+							data:     payloadCopy,
 							writeKey: arctx.WriteKey,
 						},
 					)
@@ -236,6 +242,7 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 				sourceStats[sourceTag].RequestEventsSucceeded(len(batch))
 			}
 			jobIDReqMap[batch[0].UUID].done <- err
+			lo.ForEach(batch, func(j *jobsdb.JobT, _ int) { gw.jobPool.Put(j) })
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
@@ -248,6 +255,14 @@ func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebReque
 		for _, v := range sourceStats {
 			v.Report(gw.stats)
 		}
+
+		gw.logger.Infow(
+			"jobObjectStats",
+			"newFromPool",
+			gw.poolNewJobCount.Load(),
+			"totalJobs",
+			gw.totalJobCount.Load(),
+		)
 	}
 }
 
@@ -477,15 +492,17 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			eventCount = len(userEvent.events)
 		}
 
-		jobs = append(jobs, &jobsdb.JobT{
-			UUID:         uuid.New(),
-			UserID:       userEvent.userID,
-			Parameters:   marshalledParams,
-			CustomVal:    customVal,
-			EventPayload: payload,
-			EventCount:   eventCount,
-			WorkspaceId:  workspaceId,
-		})
+		j := gw.jobPool.Get().(*jobsdb.JobT)
+		j.Reset()
+		j.UUID = uuid.New()
+		j.UserID = userEvent.userID
+		j.Parameters = marshalledParams
+		j.CustomVal = customVal
+		j.EventPayload = payload
+		j.EventCount = eventCount
+		j.WorkspaceId = workspaceId
+		jobs = append(jobs, j)
+		gw.totalJobCount.Add(1)
 	}
 	err = nil
 	jobData.jobs = jobs

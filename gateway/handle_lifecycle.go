@@ -7,6 +7,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -133,6 +135,15 @@ func (gw *Handle) Setup(
 
 	for _, opt := range opts {
 		opt(gw)
+	}
+
+	gw.poolNewJobCount = &atomic.Int64{}
+	gw.totalJobCount = &atomic.Int64{}
+	gw.jobPool = &sync.Pool{
+		New: func() interface{} {
+			gw.poolNewJobCount.Add(1)
+			return &jobsdb.JobT{}
+		},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
