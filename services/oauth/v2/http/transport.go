@@ -15,6 +15,9 @@ import (
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
+/*
+TransportArgs is a struct that contains the required parameters to create a new Oauth2Transport.
+*/
 type TransportArgs struct {
 	BackendConfig        backendconfig.BackendConfig
 	FlowType             oauth.RudderFlow
@@ -26,7 +29,10 @@ type TransportArgs struct {
 	OriginalTransport http.RoundTripper
 }
 
-// Oauth2Transport is an http.RoundTripper that adds the appropriate authorization information to oauth requests.
+/*
+Oauth2Transport is an http.RoundTripper that adds the appropriate authorization information to oauth requests.
+Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by disabling the authStatus.
+*/
 type Oauth2Transport struct {
 	oauthHandler oauth.OAuthHandler
 	oauth_exts.Augmenter

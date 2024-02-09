@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
 type (
@@ -20,13 +21,13 @@ type AccountSecret struct {
 	Secret         json.RawMessage `json:"secret"`
 }
 type OAuthHandler struct {
-	tokenProvider
-	logger                    logger.Logger
-	rudderFlowType            RudderFlow
-	CpConn                    *ControlPlaneConnector
-	authStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
-	cache                     Cache
-	lock                      *rudderSync.PartitionRWLocker
+	TokenProvider
+	Logger                    logger.Logger
+	RudderFlowType            RudderFlow
+	CpConn                    ControlPlaneConnectorI
+	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
+	Cache                     Cache
+	Lock                      *rudderSync.PartitionRWLocker
 }
 type CacheKey struct {
 	WorkspaceID string
@@ -37,20 +38,18 @@ func (c CacheKey) String() string {
 	return fmt.Sprintf("%s:%s", c.WorkspaceID, c.AccountID)
 }
 
-type tokenProvider interface {
-	AccessToken() string
+type TokenProvider interface {
+	Identity() identity.Identifier
 }
 
 type ControlPlaneRequestT struct {
-	Body        string
-	ContentType string
-	Url         string
-	Method      string
-	destName    string
-	RequestType string // This is to add more refined stat tags
-
-	// New fields
-	basicAuthUser  string
+	Body           string
+	ContentType    string
+	Url            string
+	Method         string
+	destName       string
+	RequestType    string // This is to add more refined stat tags
+	basicAuthUser  identity.Identifier
 	rudderFlowType RudderFlow
 }
 

@@ -13,12 +13,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
+type ControlPlaneConnectorI interface {
+	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
+}
+
 type ControlPlaneConnector struct {
 	client *http.Client
 	logger logger.Logger
 }
 
-func NewControlPlaneConnector(options ...func(*ControlPlaneConnector)) *ControlPlaneConnector {
+func NewControlPlaneConnector(options ...func(*ControlPlaneConnector)) ControlPlaneConnectorI {
 	cpConnector := &ControlPlaneConnector{
 		client: &http.Client{
 			Transport: http.DefaultTransport,
@@ -67,7 +71,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	return resp.StatusCode, string(respData)
 }
 
-func (cpConn *ControlPlaneConnector) cpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":         cpReq.Url,
 		"requestType": cpReq.RequestType,
@@ -91,7 +95,7 @@ func (cpConn *ControlPlaneConnector) cpApiCall(cpReq *ControlPlaneRequestT) (int
 		return http.StatusBadRequest, err.Error()
 	}
 	// Authorisation setting
-	req.SetBasicAuth(cpReq.basicAuthUser, "")
+	req.SetBasicAuth(cpReq.basicAuthUser.BasicAuth())
 
 	// Set content-type in order to send the body in request correctly
 	if cpReq.ContentType != "" {
