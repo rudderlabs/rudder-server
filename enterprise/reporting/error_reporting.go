@@ -48,9 +48,6 @@ var ErrorDetailReportsColumns = []string{
 	"count",
 	"status_code",
 	"event_type",
-	"event_name",
-	"sample_event",
-	"sample_response",
 	"error_code",
 	"error_message",
 }
@@ -191,6 +188,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"sourceId":      metric.ConnectionDetails.SourceID,
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
+
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
@@ -205,9 +203,6 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.Count,
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.EventType,
-			metric.StatusDetail.EventName,
-			string(metric.StatusDetail.SampleEvent),
-			metric.StatusDetail.SampleResponse,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
 		)
@@ -403,9 +398,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		"count",
 		"status_code",
 		"event_type",
-		"event_name",
-		"sample_event",
-		"sample_response",
 		"error_code",
 		"error_message",
 		"dest_type",
@@ -435,9 +427,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			"count",
 			"status_code",
 			"event_type",
-			"event_name"
-			"sample_event",
-			"sample_response",
 			"error_code",
 			"error_message",
 			"dest_type",
@@ -459,9 +448,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.Count,
 			&dbEdMetric.EDErrorDetails.StatusCode,
 			&dbEdMetric.EDErrorDetails.EventType,
-			&dbEdMetric.EDErrorDetails.EventName,
-			&dbEdMetric.EDErrorDetails.SampleEvent,
-			&dbEdMetric.EDErrorDetails.SampleResponse,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
@@ -519,19 +505,16 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				ReportedAt: firstReport.ReportedAt * 60 * 1000,
 			},
 		}
-		messageMap := make(map[string]int)
-		reportsCountMap := make(map[types.EDErrorDetails]int64)
-		for index, rep := range reports {
-			messageMap[rep.EDErrorDetails.ErrorMessage] = index
-			errDet := types.EDErrorDetails{
+		var errs []types.EDErrorDetails
+
+		reportsCountMap := lo.CountValuesBy(reports, func(rep *types.EDReportsDB) types.EDErrorDetails {
+			return types.EDErrorDetails{
 				StatusCode:   rep.StatusCode,
 				ErrorCode:    rep.ErrorCode,
 				ErrorMessage: rep.ErrorMessage,
 				EventType:    rep.EventType,
-				EventName:    rep.EventName,
 			}
-			reportsCountMap[errDet] += rep.Count
-		}
+		})
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
 		sort.SliceStable(reportGrpKeys, func(i, j int) bool {
@@ -542,18 +525,15 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
-			return types.EDErrorDetails{
-				StatusCode:     rep.StatusCode,
-				ErrorCode:      rep.ErrorCode,
-				ErrorMessage:   rep.ErrorMessage,
-				EventType:      rep.EventType,
-				EventName:      rep.EventName,
-				SampleEvent:    reports[messageMap[rep.ErrorMessage]].SampleEvent,
-				SampleResponse: reports[messageMap[rep.ErrorMessage]].SampleResponse,
-				Count:          count,
-			}
-		})
+		for _, rep := range reportGrpKeys {
+			errs = append(errs, types.EDErrorDetails{
+				StatusCode:   rep.StatusCode,
+				ErrorCode:    rep.ErrorCode,
+				ErrorMessage: rep.ErrorMessage,
+				EventType:    rep.EventType,
+				Count:        reportsCountMap[rep],
+			})
+		}
 		edrSchema.Errors = errs
 		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}

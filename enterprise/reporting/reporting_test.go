@@ -455,7 +455,6 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
-			Count: 5,
 		},
 		{
 			PU: "dest_transformer",
@@ -480,7 +479,6 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
-			Count: 10,
 		},
 		{
 			PU: "dest_transformer",
@@ -505,7 +503,6 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
-			Count: 10,
 		},
 		{
 			PU: "dest_transformer",
@@ -530,7 +527,6 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
 			},
-			Count: 1,
 		},
 		// error occurred at router level(assume this is batching enabled)
 		{
@@ -548,74 +544,14 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:     500,
-				ErrorCode:      "",
-				ErrorMessage:   "Cannot read type property of undefined", // some error during batching
-				EventType:      "track",
-				EventName:      "Page View",
-				SampleResponse: "some response",
-				SampleEvent:    "some sample event",
+				StatusCode:   500,
+				ErrorCode:    "",
+				ErrorMessage: "Cannot read type property of undefined", // some error during batching
+				EventType:    "identify",
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
 			},
-			Count: 6,
-		},
-		{
-			PU: "router",
-			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: "wsp1",
-				InstanceID:  "instance-1",
-				Namespace:   "nmspc",
-			},
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:                "src-1",
-				SourceDefinitionId:      "src-def-1",
-				DestinationDefinitionId: "des-def-1",
-				DestinationID:           "des-1",
-				DestType:                "DES_1",
-			},
-			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:     500,
-				ErrorCode:      "",
-				ErrorMessage:   "Cannot read type property of undefined", // some error during batching
-				EventType:      "track",
-				EventName:      "Page View",
-				SampleResponse: "different response",
-				SampleEvent:    "different sample event",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 124335446,
-			},
-			Count: 10,
-		},
-		{
-			PU: "router",
-			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: "wsp1",
-				InstanceID:  "instance-1",
-				Namespace:   "nmspc",
-			},
-			EDConnectionDetails: types.EDConnectionDetails{
-				SourceID:                "src-1",
-				SourceDefinitionId:      "src-def-1",
-				DestinationDefinitionId: "des-def-1",
-				DestinationID:           "des-1",
-				DestType:                "DES_1",
-			},
-			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:     401,
-				ErrorCode:      "",
-				ErrorMessage:   "Request had invalid authentication credentials Expected OAuth access token login cookie or other valid authentication credential See ",
-				EventType:      "track",
-				EventName:      "Page View",
-				SampleResponse: "some different response",
-				SampleEvent:    "some different sample event",
-			},
-			ReportMetadata: types.ReportMetadata{
-				ReportedAt: 124335446,
-			},
-			Count: 10,
 		},
 	}
 	configSubscriber := newConfigSubscriber(logger.NOP)
@@ -642,24 +578,18 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:     dbErrs[0].StatusCode,
-					ErrorCode:      dbErrs[0].ErrorCode,
-					ErrorMessage:   dbErrs[0].ErrorMessage,
-					EventType:      dbErrs[0].EventType,
-					EventName:      dbErrs[0].EventName,
-					Count:          5,
-					SampleResponse: dbErrs[0].SampleResponse,
-					SampleEvent:    dbErrs[0].SampleEvent,
+					StatusCode:   dbErrs[0].StatusCode,
+					ErrorCode:    dbErrs[0].ErrorCode,
+					ErrorMessage: dbErrs[0].ErrorMessage,
+					EventType:    dbErrs[0].EventType,
+					Count:        1,
 				},
 				{
-					StatusCode:     dbErrs[1].StatusCode,
-					ErrorCode:      dbErrs[1].ErrorCode,
-					ErrorMessage:   dbErrs[1].ErrorMessage,
-					EventType:      dbErrs[1].EventType,
-					EventName:      dbErrs[1].EventName,
-					Count:          20,
-					SampleResponse: dbErrs[1].SampleResponse,
-					SampleEvent:    dbErrs[1].SampleEvent,
+					StatusCode:   dbErrs[1].StatusCode,
+					ErrorCode:    dbErrs[1].ErrorCode,
+					ErrorMessage: dbErrs[1].ErrorMessage,
+					EventType:    dbErrs[1].EventType,
+					Count:        2,
 				},
 			},
 		},
@@ -682,14 +612,11 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:     dbErrs[3].StatusCode,
-					ErrorCode:      dbErrs[3].ErrorCode,
-					ErrorMessage:   dbErrs[3].ErrorMessage,
-					EventType:      dbErrs[3].EventType,
-					EventName:      dbErrs[3].EventName,
-					Count:          1,
-					SampleResponse: dbErrs[3].SampleResponse,
-					SampleEvent:    dbErrs[3].SampleEvent,
+					StatusCode:   dbErrs[3].StatusCode,
+					ErrorCode:    dbErrs[3].ErrorCode,
+					ErrorMessage: dbErrs[3].ErrorMessage,
+					EventType:    dbErrs[3].EventType,
+					Count:        1,
 				},
 			},
 		},
@@ -712,27 +639,15 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:     dbErrs[4].StatusCode,
-					ErrorCode:      dbErrs[4].ErrorCode,
-					ErrorMessage:   dbErrs[4].ErrorMessage,
-					EventType:      dbErrs[4].EventType,
-					EventName:      dbErrs[4].EventName,
-					Count:          16,
-					SampleResponse: dbErrs[5].SampleResponse,
-					SampleEvent:    dbErrs[5].SampleEvent,
-				},
-				{
-					StatusCode:     dbErrs[6].StatusCode,
-					ErrorCode:      dbErrs[6].ErrorCode,
-					ErrorMessage:   dbErrs[6].ErrorMessage,
-					EventType:      dbErrs[6].EventType,
-					EventName:      dbErrs[6].EventName,
-					Count:          10,
-					SampleResponse: dbErrs[6].SampleResponse,
-					SampleEvent:    dbErrs[6].SampleEvent,
+					StatusCode:   dbErrs[4].StatusCode,
+					ErrorCode:    dbErrs[4].ErrorCode,
+					ErrorMessage: dbErrs[4].ErrorMessage,
+					EventType:    dbErrs[4].EventType,
+					Count:        1,
 				},
 			},
 		},
 	}
+
 	require.Equal(t, reportResults, reportingMetrics)
 }
