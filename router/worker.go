@@ -884,7 +884,11 @@ func (w *worker) prepareResponsesForJobs(destinationJob *types.DestinationJobT, 
 }
 
 func (w *worker) canSendJobToDestination(failedJobOrderKeys map[eventorder.BarrierKey]struct{}, destinationJob *types.DestinationJobT) bool {
-	if !w.rt.guaranteeUserEventOrder {
+	destinationID := destinationJob.JobMetadataArray[0].DestinationID
+	workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
+	if !w.rt.guaranteeUserEventOrder ||
+		w.rt.eventOrderingDisabledForWorkspace(workspaceID) ||
+		w.rt.eventOrderingDisabledForDestination(destinationID) {
 		// if guaranteeUserEventOrder is false, letting the next jobs pass
 		return true
 	}
@@ -894,10 +898,10 @@ func (w *worker) canSendJobToDestination(failedJobOrderKeys map[eventorder.Barri
 	for i := range destinationJob.JobMetadataArray {
 		orderKey := eventorder.BarrierKey{
 			UserID:        destinationJob.JobMetadataArray[i].UserID,
-			DestinationID: destinationJob.JobMetadataArray[i].DestinationID,
-			WorkspaceID:   destinationJob.JobMetadataArray[i].WorkspaceID,
+			DestinationID: destinationID,
+			WorkspaceID:   workspaceID,
 		}
-		if _, ok := failedJobOrderKeys[orderKey]; ok {
+		if _, ok := failedJobOrderKeys[orderKey]; ok && !w.barrier.Disabled(orderKey) {
 			return false
 		}
 	}

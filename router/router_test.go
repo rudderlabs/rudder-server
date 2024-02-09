@@ -247,11 +247,13 @@ func TestBackoff(t *testing.T) {
 				maxFailedCountForJob: misc.SingleValueLoader(3),
 				retryTimeWindow:      misc.SingleValueLoader(180 * time.Minute),
 			},
-			drainer:                           &drainer{},
-			throttlerFactory:                  &mockThrottlerFactory{count: new(atomic.Int64)},
-			eventOrderingDisabledForWorkspace: func(workspaceID string) bool { return false },
+			drainer:          &drainer{},
+			throttlerFactory: &mockThrottlerFactory{count: new(atomic.Int64)},
+			eventOrderingDisabledForWorkspace: func(workspaceID string) bool {
+				return slices.Contains(conf.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+			},
 			eventOrderingDisabledForDestination: func(destinationID string) bool {
-				return slices.Contains(conf.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), "destination")
+				return slices.Contains(conf.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
 			},
 		}
 		workers := []*worker{{
@@ -412,7 +414,7 @@ func TestBackoff(t *testing.T) {
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
 
-		t.Run("job not blocked after event ordering is disabled", func(t *testing.T) {
+		t.Run("job not blocked after event ordering is disabled(destinationID level)", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 			job := &jobsdb.JobT{
@@ -423,14 +425,58 @@ func TestBackoff(t *testing.T) {
 					AttemptNum: 1,
 					RetryTime:  time.Now().Add(-1 * time.Hour),
 				},
+				WorkspaceId: "someWorkspace",
 			}
 			conf.Set("Router.orderingDisabledDestinationIDs", []string{"destination"})
-			slot, err := r.findWorkerSlot(context.Background(), workers, job, map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination"}: {}})
+			slot, err := r.findWorkerSlot(
+				context.Background(),
+				workers,
+				job,
+				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination", WorkspaceID: job.WorkspaceId}: {}},
+			)
 			require.NoError(t, err)
 			require.NotNil(t, slot)
 
 			conf.Set("Router.orderingDisabledDestinationIDs", nil)
-			slot, err = r.findWorkerSlot(context.Background(), workers, job, map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination"}: {}})
+			slot, err = r.findWorkerSlot(
+				context.Background(),
+				workers,
+				job,
+				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination", WorkspaceID: job.WorkspaceId}: {}})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
+		})
+
+		t.Run("job not blocked after event ordering is disabled(workspaceID level)", func(t *testing.T) {
+			r.guaranteeUserEventOrder = true
+			workers[0].inputReservations = 0
+			job := &jobsdb.JobT{
+				JobID:      1,
+				Parameters: []byte(`{"destination_id": "destination"}`),
+				LastJobStatus: jobsdb.JobStatusT{
+					JobState:   jobsdb.Failed.State,
+					AttemptNum: 1,
+					RetryTime:  time.Now().Add(-1 * time.Hour),
+				},
+				WorkspaceId: "someWorkspace",
+			}
+			conf.Set("Router.orderingDisabledWorkspaceIDs", []string{"someWorkspace"})
+			slot, err := r.findWorkerSlot(
+				context.Background(),
+				workers,
+				job,
+				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination", WorkspaceID: job.WorkspaceId}: {}},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, slot)
+
+			conf.Set("Router.orderingDisabledWorkspaceIDs", nil)
+			slot, err = r.findWorkerSlot(
+				context.Background(),
+				workers,
+				job,
+				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: "destination", WorkspaceID: job.WorkspaceId}: {}},
+			)
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
