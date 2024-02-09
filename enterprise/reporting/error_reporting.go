@@ -48,9 +48,6 @@ var ErrorDetailReportsColumns = []string{
 	"count",
 	"status_code",
 	"event_type",
-	"event_name",
-	"sample_event",
-	"sample_response",
 	"error_code",
 	"error_message",
 }
@@ -191,6 +188,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"sourceId":      metric.ConnectionDetails.SourceID,
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
+
 		_, err = stmt.Exec(
 			workspaceID,
 			edr.namespace,
@@ -205,9 +203,6 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.Count,
 			metric.StatusDetail.StatusCode,
 			metric.StatusDetail.EventType,
-			metric.StatusDetail.EventName,
-			string(metric.StatusDetail.SampleEvent),
-			metric.StatusDetail.SampleResponse,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
 		)
@@ -403,9 +398,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		"count",
 		"status_code",
 		"event_type",
-		"event_name",
-		"sample_event",
-		"sample_response",
 		"error_code",
 		"error_message",
 		"dest_type",
@@ -435,9 +427,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			"count",
 			"status_code",
 			"event_type",
-			"event_name"
-			"sample_event",
-			"sample_response",
 			"error_code",
 			"error_message",
 			"dest_type",
@@ -459,9 +448,6 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.Count,
 			&dbEdMetric.EDErrorDetails.StatusCode,
 			&dbEdMetric.EDErrorDetails.EventType,
-			&dbEdMetric.EDErrorDetails.EventName,
-			&dbEdMetric.EDErrorDetails.SampleEvent,
-			&dbEdMetric.EDErrorDetails.SampleResponse,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
@@ -528,7 +514,6 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				ErrorCode:    rep.ErrorCode,
 				ErrorMessage: rep.ErrorMessage,
 				EventType:    rep.EventType,
-				EventName:    rep.EventName,
 			}
 			reportsCountMap[errDet] += rep.Count
 		}
@@ -544,14 +529,11 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		})
 		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
 			return types.EDErrorDetails{
-				StatusCode:     rep.StatusCode,
-				ErrorCode:      rep.ErrorCode,
-				ErrorMessage:   rep.ErrorMessage,
-				EventType:      rep.EventType,
-				EventName:      rep.EventName,
-				SampleEvent:    reports[messageMap[rep.ErrorMessage]].SampleEvent,
-				SampleResponse: reports[messageMap[rep.ErrorMessage]].SampleResponse,
-				Count:          count,
+				StatusCode:   rep.StatusCode,
+				ErrorCode:    rep.ErrorCode,
+				ErrorMessage: rep.ErrorMessage,
+				EventType:    rep.EventType,
+				Count:        count,
 			}
 		})
 		edrSchema.Errors = errs
