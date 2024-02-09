@@ -70,6 +70,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/track:
     post:
       tags:
@@ -128,6 +130,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/page:
     post:
       tags:
@@ -186,6 +190,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/screen:
     post:
       tags:
@@ -245,6 +251,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/group:
     post:
       tags:
@@ -305,6 +313,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/alias:
     post:
       tags:
@@ -361,6 +371,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /v1/batch:
     post:
       tags:
@@ -419,6 +431,8 @@ paths:
               schema:
                 type: string
               example: "Too many requests"
+      security:
+        - writeKeyAuth: []
   /internal/v1/extract:
     post:
       tags:
@@ -476,7 +490,7 @@ paths:
       tags:
         - Internal API
       summary: Retl
-      description: Handles retl (real-time ETL) requests.
+      description: Handles retl (reverse ETL) requests.
       operationId: Retl
       responses:
         '200':
@@ -522,7 +536,7 @@ paths:
                 type: string
               example: "Too many requests"
       security:
-        - writeKeyAuth: []
+        - sourceIDAuth: []
   /internal/v1/audiencelist:
     post:
       tags:
@@ -626,16 +640,19 @@ paths:
                 type: string
               example: "Too many requests"
       security:
-        - writeKeyAuth: []
+        - sourceIDAuth: []
 servers:
   - url: /v1
 components:
   securitySchemes:
     writeKeyAuth:
-      type: apiKey
-      in: header
-      name: Authorization
-      description: Write Key Authentication
+      type: http
+      scheme: basic
+      description: Write Key Basic Authentication
+    sourceIDAuth:
+      type: http
+      scheme: basic
+      description: SourceID Basic Authentication
   schemas:
     IdentifyPayload:
       type: object

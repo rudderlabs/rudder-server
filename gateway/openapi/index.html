@@ -1237,6 +1237,7 @@ ul.nav-tabs {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-alias-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/alias" \
@@ -1267,6 +1268,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -1324,7 +1330,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-alias-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -1345,6 +1354,12 @@ AliasPayload *aliasPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-alias-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -1377,6 +1392,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -1398,6 +1416,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-alias-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -1416,6 +1437,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -1436,6 +1460,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -1933,6 +1960,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-batch-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/batch" \
@@ -1980,6 +2008,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -2037,7 +2070,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-batch-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -2058,6 +2094,12 @@ BatchPayload *batchPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-batch-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -2090,6 +2132,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -2111,6 +2156,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-batch-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -2129,6 +2177,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -2149,6 +2200,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -2646,6 +2700,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-group-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/group" \
@@ -2678,6 +2733,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -2735,7 +2795,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-group-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -2756,6 +2819,12 @@ GroupPayload *groupPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-group-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -2788,6 +2857,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -2809,6 +2881,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-group-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -2827,6 +2902,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -2847,6 +2925,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -3344,6 +3425,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-identify-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/identify" \
@@ -3374,6 +3456,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -3431,7 +3518,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-identify-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -3452,6 +3542,12 @@ IdentifyPayload *identifyPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-identify-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -3484,6 +3580,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -3505,6 +3604,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-identify-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -3523,6 +3625,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -3543,6 +3648,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -4040,6 +4148,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-page-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/page" \
@@ -4069,6 +4178,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -4126,7 +4240,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-page-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -4147,6 +4264,12 @@ PagePayload *pagePayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-page-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -4179,6 +4302,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -4200,6 +4326,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-page-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -4218,6 +4347,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -4238,6 +4370,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -4735,6 +4870,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-screen-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/screen" \
@@ -4764,6 +4900,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -4821,7 +4962,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-screen-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -4842,6 +4986,12 @@ ScreenPayload *screenPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-screen-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -4874,6 +5024,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -4895,6 +5048,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-screen-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -4913,6 +5069,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -4933,6 +5092,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -5430,6 +5592,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-HTTPAPI-track-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  -H "Content-Type: application/json" \
  "/v1/v1/track" \
@@ -5459,6 +5622,11 @@ import java.util.*;
 
 public class HTTPAPIApiExample {
     public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         HTTPAPIApi apiInstance = new HTTPAPIApi();
@@ -5516,7 +5684,10 @@ public class HTTPAPIApiExample {
   <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
   </div> -->
                             <div class="tab-pane" id="examples-HTTPAPI-track-0-objc">
-                              <pre class="prettyprint"><code class="language-cpp">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 HTTPAPIApi *apiInstance = [[HTTPAPIApi alloc] init];
@@ -5537,6 +5708,12 @@ TrackPayload *trackPayload = ; //
 
                             <div class="tab-pane" id="examples-HTTPAPI-track-0-javascript">
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: writeKeyAuth
+var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.HTTPAPIApi()
@@ -5569,6 +5746,9 @@ namespace Example
     {
         public void main()
         {
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new HTTPAPIApi();
@@ -5590,6 +5770,9 @@ namespace Example
                             <div class="tab-pane" id="examples-HTTPAPI-track-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\HTTPAPIApi();
@@ -5608,6 +5791,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::HTTPAPIApi;
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::HTTPAPIApi->new();
@@ -5628,6 +5814,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.HTTPAPIApi()
@@ -6128,7 +6317,7 @@ $(document).ready(function() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-InternalAPI-audienceList-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
--H "Authorization: [[apiKey]]" \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  "/v1/internal/v1/audiencelist"
 </code></pre>
@@ -6145,12 +6334,10 @@ import java.util.*;
 public class InternalAPIApiExample {
     public static void main(String[] args) {
         ApiClient defaultClient = Configuration.getDefaultApiClient();
-
-        // Configure API key authorization: writeKeyAuth
-        ApiKeyAuth writeKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("writeKeyAuth");
-        writeKeyAuth.setApiKey("YOUR API KEY");
-        // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-        //writeKeyAuth.setApiKeyPrefix("Token");
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         InternalAPIApi apiInstance = new InternalAPIApi();
@@ -6206,12 +6393,9 @@ public class InternalAPIApiExample {
   </div> -->
                             <div class="tab-pane" id="examples-InternalAPI-audienceList-0-objc">
                               <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
-
-// Configure API key authorization: (authentication scheme: writeKeyAuth)
-[apiConfig setApiKey:@"YOUR_API_KEY" forApiKeyIdentifier:@"Authorization"];
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-//[apiConfig setApiKeyPrefix:@"Bearer" forApiKeyIdentifier:@"Authorization"];
-
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
@@ -6233,11 +6417,10 @@ InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
 var defaultClient = RudderStackHttpApi.ApiClient.instance;
 
-// Configure API key authorization: writeKeyAuth
+// Configure HTTP basic authorization: writeKeyAuth
 var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
-writeKeyAuth.apiKey = "YOUR API KEY";
-// Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-//writeKeyAuth.apiKeyPrefix['Authorization'] = "Token";
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.InternalAPIApi()
@@ -6268,10 +6451,9 @@ namespace Example
     {
         public void main()
         {
-            // Configure API key authorization: writeKeyAuth
-            Configuration.Default.ApiKey.Add("Authorization", "YOUR_API_KEY");
-            // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-            // Configuration.Default.ApiKeyPrefix.Add("Authorization", "Bearer");
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new InternalAPIApi();
@@ -6292,11 +6474,9 @@ namespace Example
                             <div class="tab-pane" id="examples-InternalAPI-audienceList-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
-
-// Configure API key authorization: writeKeyAuth
-OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKey('Authorization', 'YOUR_API_KEY');
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-// OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKeyPrefix('Authorization', 'Bearer');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\InternalAPIApi();
@@ -6314,11 +6494,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::InternalAPIApi;
-
-# Configure API key authorization: writeKeyAuth
-$WWW::OPenAPIClient::Configuration::api_key->{'Authorization'} = 'YOUR_API_KEY';
-# uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-#$WWW::OPenAPIClient::Configuration::api_key_prefix->{'Authorization'} = "Bearer";
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::InternalAPIApi->new();
@@ -6338,11 +6516,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
-
-# Configure API key authorization: writeKeyAuth
-openapi_client.configuration.api_key['Authorization'] = 'YOUR_API_KEY'
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# openapi_client.configuration.api_key_prefix['Authorization'] = 'Bearer'
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.InternalAPIApi()
@@ -6792,7 +6968,7 @@ pub fn main() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-InternalAPI-extract-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
--H "Authorization: [[apiKey]]" \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  "/v1/internal/v1/extract"
 </code></pre>
@@ -6809,12 +6985,10 @@ import java.util.*;
 public class InternalAPIApiExample {
     public static void main(String[] args) {
         ApiClient defaultClient = Configuration.getDefaultApiClient();
-
-        // Configure API key authorization: writeKeyAuth
-        ApiKeyAuth writeKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("writeKeyAuth");
-        writeKeyAuth.setApiKey("YOUR API KEY");
-        // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-        //writeKeyAuth.setApiKeyPrefix("Token");
+        // Configure HTTP basic authorization: writeKeyAuth
+        HttpBasicAuth writeKeyAuth = (HttpBasicAuth) defaultClient.getAuthentication("writeKeyAuth");
+        writeKeyAuth.setUsername("YOUR USERNAME");
+        writeKeyAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         InternalAPIApi apiInstance = new InternalAPIApi();
@@ -6870,12 +7044,9 @@ public class InternalAPIApiExample {
   </div> -->
                             <div class="tab-pane" id="examples-InternalAPI-extract-0-objc">
                               <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
-
-// Configure API key authorization: (authentication scheme: writeKeyAuth)
-[apiConfig setApiKey:@"YOUR_API_KEY" forApiKeyIdentifier:@"Authorization"];
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-//[apiConfig setApiKeyPrefix:@"Bearer" forApiKeyIdentifier:@"Authorization"];
-
+// Configure HTTP basic authorization (authentication scheme: writeKeyAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
@@ -6897,11 +7068,10 @@ InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
 var defaultClient = RudderStackHttpApi.ApiClient.instance;
 
-// Configure API key authorization: writeKeyAuth
+// Configure HTTP basic authorization: writeKeyAuth
 var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
-writeKeyAuth.apiKey = "YOUR API KEY";
-// Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-//writeKeyAuth.apiKeyPrefix['Authorization'] = "Token";
+writeKeyAuth.username = 'YOUR USERNAME';
+writeKeyAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.InternalAPIApi()
@@ -6932,10 +7102,9 @@ namespace Example
     {
         public void main()
         {
-            // Configure API key authorization: writeKeyAuth
-            Configuration.Default.ApiKey.Add("Authorization", "YOUR_API_KEY");
-            // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-            // Configuration.Default.ApiKeyPrefix.Add("Authorization", "Bearer");
+            // Configure HTTP basic authorization: writeKeyAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new InternalAPIApi();
@@ -6956,11 +7125,9 @@ namespace Example
                             <div class="tab-pane" id="examples-InternalAPI-extract-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
-
-// Configure API key authorization: writeKeyAuth
-OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKey('Authorization', 'YOUR_API_KEY');
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-// OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKeyPrefix('Authorization', 'Bearer');
+// Configure HTTP basic authorization: writeKeyAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\InternalAPIApi();
@@ -6978,11 +7145,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::InternalAPIApi;
-
-# Configure API key authorization: writeKeyAuth
-$WWW::OPenAPIClient::Configuration::api_key->{'Authorization'} = 'YOUR_API_KEY';
-# uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-#$WWW::OPenAPIClient::Configuration::api_key_prefix->{'Authorization'} = "Bearer";
+# Configure HTTP basic authorization: writeKeyAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::InternalAPIApi->new();
@@ -7002,11 +7167,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
-
-# Configure API key authorization: writeKeyAuth
-openapi_client.configuration.api_key['Authorization'] = 'YOUR_API_KEY'
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# openapi_client.configuration.api_key_prefix['Authorization'] = 'Bearer'
+# Configure HTTP basic authorization: writeKeyAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.InternalAPIApi()
@@ -7456,7 +7619,7 @@ pub fn main() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-InternalAPI-replay-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
--H "Authorization: [[apiKey]]" \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  "/v1/internal/v1/replay"
 </code></pre>
@@ -7473,12 +7636,10 @@ import java.util.*;
 public class InternalAPIApiExample {
     public static void main(String[] args) {
         ApiClient defaultClient = Configuration.getDefaultApiClient();
-
-        // Configure API key authorization: writeKeyAuth
-        ApiKeyAuth writeKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("writeKeyAuth");
-        writeKeyAuth.setApiKey("YOUR API KEY");
-        // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-        //writeKeyAuth.setApiKeyPrefix("Token");
+        // Configure HTTP basic authorization: sourceIDAuth
+        HttpBasicAuth sourceIDAuth = (HttpBasicAuth) defaultClient.getAuthentication("sourceIDAuth");
+        sourceIDAuth.setUsername("YOUR USERNAME");
+        sourceIDAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         InternalAPIApi apiInstance = new InternalAPIApi();
@@ -7534,12 +7695,9 @@ public class InternalAPIApiExample {
   </div> -->
                             <div class="tab-pane" id="examples-InternalAPI-replay-0-objc">
                               <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
-
-// Configure API key authorization: (authentication scheme: writeKeyAuth)
-[apiConfig setApiKey:@"YOUR_API_KEY" forApiKeyIdentifier:@"Authorization"];
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-//[apiConfig setApiKeyPrefix:@"Bearer" forApiKeyIdentifier:@"Authorization"];
-
+// Configure HTTP basic authorization (authentication scheme: sourceIDAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
@@ -7561,11 +7719,10 @@ InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
 var defaultClient = RudderStackHttpApi.ApiClient.instance;
 
-// Configure API key authorization: writeKeyAuth
-var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
-writeKeyAuth.apiKey = "YOUR API KEY";
-// Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-//writeKeyAuth.apiKeyPrefix['Authorization'] = "Token";
+// Configure HTTP basic authorization: sourceIDAuth
+var sourceIDAuth = defaultClient.authentications['sourceIDAuth'];
+sourceIDAuth.username = 'YOUR USERNAME';
+sourceIDAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.InternalAPIApi()
@@ -7596,10 +7753,9 @@ namespace Example
     {
         public void main()
         {
-            // Configure API key authorization: writeKeyAuth
-            Configuration.Default.ApiKey.Add("Authorization", "YOUR_API_KEY");
-            // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-            // Configuration.Default.ApiKeyPrefix.Add("Authorization", "Bearer");
+            // Configure HTTP basic authorization: sourceIDAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new InternalAPIApi();
@@ -7620,11 +7776,9 @@ namespace Example
                             <div class="tab-pane" id="examples-InternalAPI-replay-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
-
-// Configure API key authorization: writeKeyAuth
-OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKey('Authorization', 'YOUR_API_KEY');
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-// OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKeyPrefix('Authorization', 'Bearer');
+// Configure HTTP basic authorization: sourceIDAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\InternalAPIApi();
@@ -7642,11 +7796,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::InternalAPIApi;
-
-# Configure API key authorization: writeKeyAuth
-$WWW::OPenAPIClient::Configuration::api_key->{'Authorization'} = 'YOUR_API_KEY';
-# uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-#$WWW::OPenAPIClient::Configuration::api_key_prefix->{'Authorization'} = "Bearer";
+# Configure HTTP basic authorization: sourceIDAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::InternalAPIApi->new();
@@ -7666,11 +7818,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
-
-# Configure API key authorization: writeKeyAuth
-openapi_client.configuration.api_key['Authorization'] = 'YOUR_API_KEY'
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# openapi_client.configuration.api_key_prefix['Authorization'] = 'Bearer'
+# Configure HTTP basic authorization: sourceIDAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.InternalAPIApi()
@@ -8094,7 +8244,7 @@ pub fn main() {
                         <div class="pull-right"></div>
                         <div class="clearfix"></div>
                         <p></p>
-                        <p class="marked">Handles retl (real-time ETL) requests.</p>
+                        <p class="marked">Handles retl (reverse ETL) requests.</p>
                         <p></p>
                         <br />
                         <pre class="prettyprint language-html prettyprinted" data-type="post"><code><span class="pln">/internal/v1/retl</span></code></pre>
@@ -8120,7 +8270,7 @@ pub fn main() {
                         <div class="tab-content">
                           <div class="tab-pane active" id="examples-InternalAPI-retl-0-curl">
                             <pre class="prettyprint"><code class="language-bsh">curl -X POST \
--H "Authorization: [[apiKey]]" \
+ -H "Authorization: Basic [[basicHash]]" \
  -H "Accept: text/plain; charset=utf-8" \
  "/v1/internal/v1/retl"
 </code></pre>
@@ -8137,12 +8287,10 @@ import java.util.*;
 public class InternalAPIApiExample {
     public static void main(String[] args) {
         ApiClient defaultClient = Configuration.getDefaultApiClient();
-
-        // Configure API key authorization: writeKeyAuth
-        ApiKeyAuth writeKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("writeKeyAuth");
-        writeKeyAuth.setApiKey("YOUR API KEY");
-        // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-        //writeKeyAuth.setApiKeyPrefix("Token");
+        // Configure HTTP basic authorization: sourceIDAuth
+        HttpBasicAuth sourceIDAuth = (HttpBasicAuth) defaultClient.getAuthentication("sourceIDAuth");
+        sourceIDAuth.setUsername("YOUR USERNAME");
+        sourceIDAuth.setPassword("YOUR PASSWORD");
 
         // Create an instance of the API class
         InternalAPIApi apiInstance = new InternalAPIApi();
@@ -8198,12 +8346,9 @@ public class InternalAPIApiExample {
   </div> -->
                             <div class="tab-pane" id="examples-InternalAPI-retl-0-objc">
                               <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
-
-// Configure API key authorization: (authentication scheme: writeKeyAuth)
-[apiConfig setApiKey:@"YOUR_API_KEY" forApiKeyIdentifier:@"Authorization"];
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-//[apiConfig setApiKeyPrefix:@"Bearer" forApiKeyIdentifier:@"Authorization"];
-
+// Configure HTTP basic authorization (authentication scheme: sourceIDAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
 
 // Create an instance of the API class
 InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
@@ -8225,11 +8370,10 @@ InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
                               <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
 var defaultClient = RudderStackHttpApi.ApiClient.instance;
 
-// Configure API key authorization: writeKeyAuth
-var writeKeyAuth = defaultClient.authentications['writeKeyAuth'];
-writeKeyAuth.apiKey = "YOUR API KEY";
-// Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
-//writeKeyAuth.apiKeyPrefix['Authorization'] = "Token";
+// Configure HTTP basic authorization: sourceIDAuth
+var sourceIDAuth = defaultClient.authentications['sourceIDAuth'];
+sourceIDAuth.username = 'YOUR USERNAME';
+sourceIDAuth.password = 'YOUR PASSWORD';
 
 // Create an instance of the API class
 var api = new RudderStackHttpApi.InternalAPIApi()
@@ -8260,10 +8404,9 @@ namespace Example
     {
         public void main()
         {
-            // Configure API key authorization: writeKeyAuth
-            Configuration.Default.ApiKey.Add("Authorization", "YOUR_API_KEY");
-            // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-            // Configuration.Default.ApiKeyPrefix.Add("Authorization", "Bearer");
+            // Configure HTTP basic authorization: sourceIDAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
 
             // Create an instance of the API class
             var apiInstance = new InternalAPIApi();
@@ -8284,11 +8427,9 @@ namespace Example
                             <div class="tab-pane" id="examples-InternalAPI-retl-0-php">
                               <pre class="prettyprint"><code class="language-php"><&#63;php
 require_once(__DIR__ . '/vendor/autoload.php');
-
-// Configure API key authorization: writeKeyAuth
-OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKey('Authorization', 'YOUR_API_KEY');
-// Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-// OpenAPITools\Client\Configuration::getDefaultConfiguration()->setApiKeyPrefix('Authorization', 'Bearer');
+// Configure HTTP basic authorization: sourceIDAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
 
 // Create an instance of the API class
 $api_instance = new OpenAPITools\Client\Api\InternalAPIApi();
@@ -8306,11 +8447,9 @@ try {
                               <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
 use WWW::OPenAPIClient::Configuration;
 use WWW::OPenAPIClient::InternalAPIApi;
-
-# Configure API key authorization: writeKeyAuth
-$WWW::OPenAPIClient::Configuration::api_key->{'Authorization'} = 'YOUR_API_KEY';
-# uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-#$WWW::OPenAPIClient::Configuration::api_key_prefix->{'Authorization'} = "Bearer";
+# Configure HTTP basic authorization: sourceIDAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
 
 # Create an instance of the API class
 my $api_instance = WWW::OPenAPIClient::InternalAPIApi->new();
@@ -8330,11 +8469,9 @@ import time
 import openapi_client
 from openapi_client.rest import ApiException
 from pprint import pprint
-
-# Configure API key authorization: writeKeyAuth
-openapi_client.configuration.api_key['Authorization'] = 'YOUR_API_KEY'
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# openapi_client.configuration.api_key_prefix['Authorization'] = 'Bearer'
+# Configure HTTP basic authorization: sourceIDAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
 
 # Create an instance of the API class
 api_instance = openapi_client.InternalAPIApi()

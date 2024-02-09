@@ -111,8 +111,8 @@ bench-kafka:
 .PHONY: generate-openapi-spec
 generate-openapi-spec: install-tools
 	docker run --rm \
-	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli generate \
+	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli:v7.3.0 generate \
 	  -i ${MOUNT_PATH}/gateway/openapi.yaml \
 	  -g html2 \
-	  -o ${MOUNT_PATH}/gateway
+	  -o ${MOUNT_PATH}/gateway/openapi
 

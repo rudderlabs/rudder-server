@@ -36,5 +36,5 @@ var (
 	errRequestSuppressed = errors.New("request suppressed")
 )
 
-//go:embed index.html
+//go:embed openapi/index.html
 var openApiSpec []byte
