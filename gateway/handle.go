@@ -779,7 +779,7 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 				}
 				singularEventBatch := SingularEventBatch{
 					Batch:      userEvent.events,
-					RequestIP:  ipAddr,
+					RequestIP:  ipAddr, // TODO: processor gets IPAddr from inside each event
 					WriteKey:   arctx.WriteKey,
 					ReceivedAt: receivedAt,
 				}
@@ -801,7 +801,7 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			})
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
+		ctx, cancel := context.WithTimeout(ctx, gw.conf.WriteTimeout)
 		err = gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 			err := gw.jobsDB.StoreInTx(ctx, tx, jobs)
 			if err != nil {
