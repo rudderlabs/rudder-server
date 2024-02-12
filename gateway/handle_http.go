@@ -26,6 +26,10 @@ func (gw *Handle) webBatchHandler() http.HandlerFunc {
 	return gw.callType("batch", gw.writeKeyAuth(gw.webHandler()))
 }
 
+func (gw *Handle) internalBatchHandler() http.HandlerFunc {
+	return gw.callType("internalBatch", gw.sourceIDAuth(gw.writeToJobsDB()))
+}
+
 // webIdentifyHandler - handler for identify requests
 func (gw *Handle) webIdentifyHandler() http.HandlerFunc {
 	return gw.callType("identify", gw.writeKeyAuth(gw.webHandler()))
