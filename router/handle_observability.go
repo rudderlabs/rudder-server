@@ -102,28 +102,6 @@ func (rt *Handle) updateRudderSourcesStats(
 	return err
 }
 
-func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	eventsPerStateAndCode := map[string]map[string]int{}
-	for i := range statusList {
-		state := statusList[i].JobState
-		code := statusList[i].ErrorCode
-		if _, ok := eventsPerStateAndCode[state]; !ok {
-			eventsPerStateAndCode[state] = map[string]int{}
-		}
-		eventsPerStateAndCode[state][code]++
-	}
-	for state, codes := range eventsPerStateAndCode {
-		for code, count := range codes {
-			stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-				"module":   "router",
-				"destType": rt.destType,
-				"state":    state,
-				"code":     code,
-			}).Count(count)
-		}
-	}
-}
-
 func (rt *Handle) sendRetryStoreStats(attempt int) {
 	rt.logger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)

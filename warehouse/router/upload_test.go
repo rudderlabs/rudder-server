@@ -8,15 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -238,7 +237,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					pool, err := dockertest.NewPool("")
 					require.NoError(t, err)
 
-					pgResource, err := resource.SetupPostgres(pool, t)
+					pgResource, err := postgres.Setup(pool, t)
 					require.NoError(t, err)
 
 					t.Log("db:", pgResource.DBDsn)
@@ -314,7 +313,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)

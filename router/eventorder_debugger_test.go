@@ -10,7 +10,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -19,17 +18,17 @@ import (
 func TestEventOrderDebugInfo(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgres, err := resource.SetupPostgres(pool, t, postgres.WithShmSize(256*bytesize.MB))
+	pgContainer, err := postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err)
 
 	m := &migrator.Migrator{
-		Handle:                     postgres.DB,
+		Handle:                     pgContainer.DB,
 		MigrationsTable:            "node_migrations",
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 	require.NoError(t, m.Migrate("node"))
 
-	jdb := jobsdb.NewForReadWrite("rt", jobsdb.WithDBHandle(postgres.DB))
+	jdb := jobsdb.NewForReadWrite("rt", jobsdb.WithDBHandle(pgContainer.DB))
 	require.NoError(t, jdb.Start())
 	defer jdb.Stop()
 
@@ -69,7 +68,7 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	}
 	refTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	_, err = postgres.DB.Exec("UPDATE rt_jobs_1 SET created_at = $1", refTime)
+	_, err = pgContainer.DB.Exec("UPDATE rt_jobs_1 SET created_at = $1", refTime)
 	require.NoError(t, err)
 
 	debugInfo := rt.eventOrderDebugInfo("user1:destination1")

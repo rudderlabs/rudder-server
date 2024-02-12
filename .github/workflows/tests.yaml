@@ -180,10 +180,11 @@ jobs:
         run: |
           go install github.com/wadey/gocovmerge@latest
           gocovmerge */coverage.txt > coverage.txt
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
           files: ./coverage.txt
+          token: ${{ secrets.CODECOV_TOKEN }}
   all-green:
     name: All
     if: always()

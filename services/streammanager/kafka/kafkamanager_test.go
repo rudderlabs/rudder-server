@@ -9,29 +9,29 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
-
-	"github.com/linkedin/goavro/v2"
-	"github.com/ory/dockertest/v3"
-	"github.com/segmentio/kafka-go"
 
 	kafkaConfluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/golang/mock/gomock"
+	"github.com/linkedin/goavro/v2"
+	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	client "github.com/rudderlabs/rudder-go-kit/kafkaclient"
+	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	dockerKafka "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
-	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -158,9 +158,7 @@ func TestNewProducer(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-			dockerKafka.WithLogger(t),
-			dockerKafka.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
@@ -203,16 +201,15 @@ func TestNewProducer(t *testing.T) {
 		// Start Kafka cluster with ZooKeeper and one broker
 		_, err = dockerKafka.Setup(pool, &testCleanup{t},
 			dockerKafka.WithBrokers(1),
-			dockerKafka.WithLogger(t),
 			dockerKafka.WithNetwork(network),
 			dockerKafka.WithoutDockerHostListeners(),
 		)
 		require.NoError(t, err)
 
 		// Read key pair
-		publicKeyPath, err := filepath.Abs("./client/testdata/ssh/test_key.pub")
+		publicKeyPath, err := filepath.Abs("./testdata/test_key.pub")
 		require.NoError(t, err)
-		privateKey, err := os.ReadFile("./client/testdata/ssh/test_key")
+		privateKey, err := os.ReadFile("./testdata/test_key")
 		require.NoError(t, err)
 		publicKey, err := os.ReadFile(publicKeyPath)
 		require.NoError(t, err)
@@ -222,7 +219,6 @@ func TestNewProducer(t *testing.T) {
 			sshserver.WithPublicKeyPath(publicKeyPath),
 			sshserver.WithCredentials("linuxserver.io", ""),
 			sshserver.WithDockerNetwork(network),
-			sshserver.WithLogger(t),
 		)
 		require.NoError(t, err)
 
@@ -257,7 +253,7 @@ func TestNewProducer(t *testing.T) {
 			"port":     "9092",
 			"useSSH":   true,
 			"sshHost":  "localhost",
-			"sshPort":  sshServer.Port,
+			"sshPort":  strconv.Itoa(sshServer.Port),
 			"sshUser":  "linuxserver.io",
 		}
 		dest := backendconfig.DestinationT{ID: "123", Config: destConfig}
@@ -294,9 +290,7 @@ func TestIntegration(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-			dockerKafka.WithLogger(t),
-			dockerKafka.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 
 		destConfig := map[string]interface{}{
@@ -351,6 +345,88 @@ func TestIntegration(t *testing.T) {
 		requireEqualMessage(t, "foo-bar", "1234", `"two"`, msgs[1])
 		requireEqualMessage(t, "foo-bar", "1234", `"three"`, msgs[2])
 	})
+}
+
+func TestAIOKafka(t *testing.T) {
+	kafkaBatchingEnabled = true
+	kafkaCompression = client.CompressionZstd
+	t.Cleanup(func() {
+		kafkaBatchingEnabled = false
+		kafkaCompression = client.CompressionNone
+	})
+	ctrl := gomock.NewController(t)
+	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+	kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	kafkaNetwork, err := pool.CreateNetwork("kafka_network_" + misc.FastUUID().String())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.RemoveNetwork(kafkaNetwork); err != nil {
+			t.Logf("Error while removing Docker network: %v", err)
+		}
+	})
+
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithBrokers(1),
+		dockerKafka.WithNetwork(kafkaNetwork.Network),
+	)
+	require.NoError(t, err)
+
+	kafkaTopic := "some-topic"
+
+	destConfig := map[string]interface{}{
+		"topic":    kafkaTopic,
+		"hostname": "localhost",
+		"port":     kafkaContainer.Ports[0],
+	}
+	dest := backendconfig.DestinationT{Config: destConfig}
+
+	p, err := NewProducer(&dest, common.Opts{})
+	require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+	require.NoError(t, err)
+
+	var statusCode int
+	var returnMessage, errMessage string
+	require.Eventually(t, func() bool {
+		statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`[
+			{"message":"one","topic":"foo-bar","userId":"1234"},
+			{"message":"two","topic":"foo-bar","userId":"1234"},
+			{"message":"three","topic":"foo-bar","userId":"1234"}
+		]`), destConfig)
+		return statusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond)
+	require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
+	require.Equal(t, "Kafka: Message delivered in batch", errMessage)
+
+	consumerContainer, err := pool.BuildAndRunWithOptions("./testdata/aiokafka/Dockerfile", &dockertest.RunOptions{
+		Name:      fmt.Sprintf("aiokafka-%s", misc.FastUUID().String()),
+		NetworkID: kafkaNetwork.Network.ID,
+		Cmd:       []string{"tail", "-f", "/dev/null"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.Purge(consumerContainer); err != nil {
+			t.Logf("Error while purging Docker container: %v", err)
+		}
+	})
+
+	buf := bytes.NewBuffer(nil)
+	code, err := consumerContainer.Exec([]string{"python", "consumer.py"}, dockertest.ExecOptions{
+		Env:    []string{"KAFKA_BROKER=kafka1:9090", "KAFKA_TOPIC=foo-bar", "EXPECTED_MESSAGE_COUNT=3"},
+		StdOut: buf,
+		StdErr: os.Stderr,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+	require.JSONEq(t, `[{"key": "1234", "value": "\"one\""}, {"key": "1234", "value": "\"two\""}, {"key": "1234", "value": "\"three\""}]`, buf.String())
 }
 
 func TestNewProducerForAzureEventHubs(t *testing.T) {
@@ -1117,7 +1193,6 @@ func TestAvroSchemaRegistry(t *testing.T) {
 
 	t.Log("Creating Kafka cluster")
 	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
-		dockerKafka.WithLogger(t),
 		dockerKafka.WithBrokers(1),
 		dockerKafka.WithSchemaRegistry())
 	require.NoError(t, err)
@@ -1139,7 +1214,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	require.NoError(t, err)
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-	path := func(file string) string { return filepath.Join(cwd, "client", "testdata", file) }
+	path := func(file string) string { return filepath.Join(cwd, "testdata", file) }
 	_, schemaID1 := registerSchema(t, "user1", path("user1.avsc"), schemaRegistryClient)
 	schema2, schemaID2 := registerSchema(t, "user2", path("user2.avsc"), schemaRegistryClient)
 	t.Logf("Schema IDs: %d, %d", schemaID1, schemaID2)

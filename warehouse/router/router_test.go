@@ -11,39 +11,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/samber/lo"
-
+	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestRouter(t *testing.T) {
@@ -77,7 +70,7 @@ func TestRouter(t *testing.T) {
 	}
 
 	t.Run("Graceful shutdown", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -140,7 +133,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("CreateJobs", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -301,7 +294,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("handlePriorityForWaitingUploads", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -433,7 +426,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Scheduler", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -544,7 +537,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("UploadsToProcess", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -677,7 +670,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Processor", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
@@ -831,7 +824,7 @@ func TestRouter(t *testing.T) {
 
 	t.Run("Preemptable", func(t *testing.T) {
 		t.Run("Processor with workers < 1", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -940,7 +933,7 @@ func TestRouter(t *testing.T) {
 		})
 
 		t.Run("Scheduler is not enabled", func(t *testing.T) {
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			t.Log("db:", pgResource.DBDsn)
@@ -1057,7 +1050,7 @@ func TestRouter(t *testing.T) {
 				pool, err := dockertest.NewPool("")
 				require.NoError(t, err)
 
-				pgResource, err := resource.SetupPostgres(pool, t)
+				pgResource, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
 				t.Log("db:", pgResource.DBDsn)
@@ -1097,7 +1090,7 @@ func TestRouter(t *testing.T) {
 	})
 
 	t.Run("Backend config subscriber", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)
