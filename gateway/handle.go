@@ -667,7 +667,7 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			eventsBatch          = gjson.GetBytes(body, "batch").Array()
 			isUserSuppressed     = gw.memoizedIsUserSuppressed()
 			containsAudienceList bool
-			out                  []jobObject
+			out                  = make([]jobObject, 0, len(eventsBatch))
 		)
 		// skipping filling messageID if empty - expected to be done before
 
@@ -760,35 +760,33 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 				`{"error": "rudder-server gateway failed to marshal params"}`,
 			)
 		}
-		jobs := make([]*jobsdb.JobT, 0)
+		jobs := make([]*jobsdb.JobT, 0, len(out))
 		for _, userEvent := range out {
 			var (
 				payload    json.RawMessage
 				eventCount int
 			)
-			{
-				type SingularEventBatch struct {
-					Batch      []map[string]interface{} `json:"batch"`
-					RequestIP  string                   `json:"requestIP"`
-					WriteKey   string                   `json:"writeKey"`
-					ReceivedAt string                   `json:"receivedAt"`
-				}
-				receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
-				if !ok || !arctx.ReplaySource {
-					receivedAt = time.Now().Format(misc.RFC3339Milli)
-				}
-				singularEventBatch := SingularEventBatch{
-					Batch:      userEvent.events,
-					RequestIP:  ipAddr, // TODO: processor gets IPAddr from inside each event
-					WriteKey:   arctx.WriteKey,
-					ReceivedAt: receivedAt,
-				}
-				payload, err = json.Marshal(singularEventBatch)
-				if err != nil {
-					panic(err)
-				}
-				eventCount = len(userEvent.events)
+			type singularEventBatch struct {
+				Batch      []map[string]interface{} `json:"batch"`
+				RequestIP  string                   `json:"requestIP"`
+				WriteKey   string                   `json:"writeKey"`
+				ReceivedAt string                   `json:"receivedAt"`
 			}
+			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
+			if !ok || !arctx.ReplaySource {
+				receivedAt = time.Now().Format(misc.RFC3339Milli)
+			}
+			eventBatch := singularEventBatch{
+				Batch:      userEvent.events,
+				RequestIP:  ipAddr, // TODO: processor gets IPAddr from inside each event
+				WriteKey:   arctx.WriteKey,
+				ReceivedAt: receivedAt,
+			}
+			payload, err = json.Marshal(eventBatch)
+			if err != nil {
+				panic(err)
+			}
+			eventCount = len(userEvent.events)
 
 			jobs = append(jobs, &jobsdb.JobT{
 				UUID:         uuid.New(),
