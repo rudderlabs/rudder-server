@@ -123,10 +123,7 @@ func TestDocsEndpoint(t *testing.T) {
 
 	url := fmt.Sprintf("http://localhost:%d", gwPort)
 	health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-	// send an event
-	req, err := http.NewRequest(http.MethodGet, url+"/docs", nil)
-	require.NoError(t, err)
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := http.Get(url + "/docs")
 	require.NoError(t, err, "it should be able to get the docs")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	func() { kithttputil.CloseResponse(resp) }()
