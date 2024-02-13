@@ -619,6 +619,7 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 		reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
 		arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 
+		// TODO: add tracing
 		gw.logger.LogRequest(r)
 		var errorMessage string
 		defer func() {
@@ -630,6 +631,11 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 					"path", r.URL.Path,
 					"status", status,
 					"body", responseBody)
+				gw.stats.NewTaggedStat(
+					"gateway.write_key_failed_requests",
+					stats.CountType,
+					gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
+				).Count(1)
 				http.Error(w, responseBody, status)
 				return
 			} // else success
@@ -639,17 +645,20 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 				"path", r.URL.Path,
 				"status", http.StatusOK,
 				"body", responseBody)
+			gw.stats.NewTaggedStat(
+				"gateway.write_key_successful_requests",
+				stats.CountType,
+				gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
+			).Count(1)
 			_, _ = w.Write([]byte(responseBody))
 		}()
 		body, err := gw.getPayload(arctx, r, reqType)
 		if err != nil {
 			errorMessage = err.Error()
-			gw.requestFailed(arctx, reqType, errorMessage)
 			return
 		}
 		if !gjson.ValidBytes(body) {
 			errorMessage = response.InvalidJSON
-			gw.requestFailed(arctx, reqType, errorMessage)
 			return
 		}
 		gw.requestSizeStat.Observe(float64(len(body)))
@@ -658,16 +667,15 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			events []map[string]interface{}
 		}
 		var (
-			sourcesJobRunID      = arctx.SourceJobRunID
-			sourcesTaskRunID     = arctx.SourceTaskRunID
-			sourceID             = arctx.SourceID
-			workspaceID          = arctx.WorkspaceID
-			userIDHeader         = r.Header.Get("AnonymousId")
-			ipAddr               = misc.GetIPFromReq(r)
-			eventsBatch          = gjson.GetBytes(body, "batch").Array()
-			isUserSuppressed     = gw.memoizedIsUserSuppressed()
-			containsAudienceList bool
-			out                  = make([]jobObject, 0, len(eventsBatch))
+			sourcesJobRunID  = arctx.SourceJobRunID
+			sourcesTaskRunID = arctx.SourceTaskRunID
+			sourceID         = arctx.SourceID
+			workspaceID      = arctx.WorkspaceID
+			userIDHeader     = r.Header.Get("AnonymousId")
+			ipAddr           = misc.GetIPFromReq(r)
+			eventsBatch      = gjson.GetBytes(body, "batch").Array()
+			isUserSuppressed = gw.memoizedIsUserSuppressed()
+			out              = make([]jobObject, 0, len(eventsBatch))
 		)
 		// skipping filling messageID if empty - expected to be done before
 
@@ -675,15 +683,15 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			toSet, ok := v.Value().(map[string]interface{})
 			if !ok {
 				errorMessage = response.NotRudderEvent
-				gw.eventFailed(arctx, reqType, errorMessage)
+				gw.stats.NewTaggedStat(
+					"gateway.write_key_failed_events",
+					stats.CountType,
+					gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
+				).Count(1)
 				return
 			}
 			anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
 			userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
-			eventTypeFromReq, _ := misc.MapLookup(
-				toSet,
-				"type",
-			).(string)
 			// skipping non-identifiable check - allowing all events
 			eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
 			if ok {
@@ -705,15 +713,16 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 					"sourceID", sourceID,
 					"workspaceID", workspaceID,
 				)
-				gw.eventFailed(arctx, reqType, errEventSuppressed.Error())
+				gw.stats.NewTaggedStat(
+					"gateway.write_key_suppressed_events",
+					stats.CountType,
+					gw.newSourceStatTagsWithReason(arctx, reqType, errEventSuppressed.Error()),
+				).Count(1)
 				continue
 			}
 
 			rudderID, _ := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 			toSet["rudderId"] = rudderID
-			if eventTypeFromReq == "audiencelist" {
-				containsAudienceList = true
-			}
 			userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
 			out = append(out, jobObject{
 				userID: userID, events: []map[string]interface{}{toSet},
@@ -736,12 +745,6 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			}
 		}
 		if len(out) == 0 { // events suppressed - but return success
-			return
-		}
-		// do we need this..?
-		if len(body) > gw.conf.maxReqSize.Load() && !containsAudienceList {
-			err = errors.New(response.RequestBodyTooLarge)
-			gw.requestFailed(arctx, reqType, err.Error())
 			return
 		}
 
@@ -809,7 +812,10 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			}
 
 			// rsources stats
-			rsourcesStats := rsources.NewStatsCollector(gw.rsourcesService, rsources.IgnoreDestinationID())
+			rsourcesStats := rsources.NewStatsCollector(
+				gw.rsourcesService,
+				rsources.IgnoreDestinationID(),
+			)
 			rsourcesStats.JobsStoredWithErrors(jobs, nil)
 			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})
@@ -817,26 +823,17 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 		gw.dbWritesStat.Count(1)
 		if err != nil {
 			errorMessage = err.Error()
-			for range jobs {
-				gw.eventFailed(arctx, reqType, "storeFailed")
-			}
+			gw.stats.NewTaggedStat(
+				"gateway.write_key_failed_events",
+				stats.CountType,
+				gw.newSourceStatTagsWithReason(arctx, reqType, "storeFailed"),
+			).Count(len(jobs))
 			return
 		}
-		sourceStat := gw.NewSourceStat(arctx, reqType)
-		sourceStat.RequestEventsSucceeded(len(jobs))
-		sourceStat.Report(gw.stats)
-		// TODO: rework stats
+		gw.stats.NewTaggedStat(
+			"gateway.write_key_successful_events",
+			stats.CountType,
+			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
+		).Count(len(jobs))
 	}
-}
-
-func (gw *Handle) eventFailed(arctx *gwtypes.AuthRequestContext, reqType, reason string) {
-	stat := gw.NewSourceStat(arctx, reqType)
-	stat.RequestEventsFailed(1, reason)
-	stat.Report(gw.stats)
-}
-
-func (gw *Handle) requestFailed(arctx *gwtypes.AuthRequestContext, reqType, reason string) {
-	stat := gw.NewSourceStat(arctx, reqType)
-	stat.RequestFailed(reason)
-	stat.Report(gw.stats)
 }
