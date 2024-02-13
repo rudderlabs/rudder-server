@@ -371,14 +371,14 @@ func TestProxyRequest(t *testing.T) {
 				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 				defer srv.Close()
 
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout)
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
 				}
-				r := tr.ProxyRequest(ctx, reqParams)
+				r := tr.ProxyRequest(ctx, reqParams, false)
 				stCd := r.ProxyRequestStatusCode
 				resp := r.ProxyRequestResponseBody
 				contentType := r.RespContentType
@@ -395,10 +395,10 @@ func TestProxyRequest(t *testing.T) {
 			var tr Transformer
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, nil, nil)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -416,7 +416,7 @@ func TestProxyRequest(t *testing.T) {
 				DestName:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
 			}
-			r := tr.ProxyRequest(ctx, reqParams)
+			r := tr.ProxyRequest(ctx, reqParams, false)
 			stCd := r.ProxyRequestStatusCode
 			resp := r.ProxyRequestResponseBody
 			contentType := r.RespContentType
@@ -486,7 +486,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -495,7 +495,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 			{JobMetadata: types.JobMetadataT{JobID: 3}},
 		},
 	}
-	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	transformerResponse := tr.Transform(BATCH, &transformMessage, false)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
 }
@@ -517,7 +517,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -526,7 +526,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 			{JobMetadata: types.JobMetadataT{JobID: 3}},
 		},
 	}
-	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	transformerResponse := tr.Transform(BATCH, &transformMessage, false)
 	normalizeErrors(transformerResponse, expectedErrorTxt)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
@@ -557,7 +557,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -566,7 +566,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 			{JobMetadata: types.JobMetadataT{JobID: 3}},
 		},
 	}
-	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	transformerResponse := tr.Transform(BATCH, &transformMessage, false)
 	normalizeErrors(transformerResponse, expectedErrorTxt)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
@@ -596,7 +596,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -605,7 +605,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 			{JobMetadata: types.JobMetadataT{JobID: 3}},
 		},
 	}
-	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	transformerResponse := tr.Transform(BATCH, &transformMessage, false)
 	normalizeErrors(transformerResponse, expectedErrorTxt)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
@@ -644,9 +644,9 @@ func TestDehydrateHydrate(t *testing.T) {
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
 
-	tr := NewTransformer(time.Minute, time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil)
 
-	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	transformerResponse := tr.Transform(BATCH, &transformMessage, false)
 
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, 3, len(transformerResponse))

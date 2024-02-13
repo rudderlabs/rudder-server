@@ -300,6 +300,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, "Router.pickupFlushInterval")
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, "Router.failingJobsPenaltySleep")
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, "Router.failingJobsPenaltyThreshold")
+	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, "Router."+rt.destType+".oauthV2Enabled", "Router.oauthV2Enabled")
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",

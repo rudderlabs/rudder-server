@@ -179,7 +179,8 @@ func (w *worker) workLoop() {
 				continue
 			}
 			destination := batchDestination.Destination
-			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth {
+			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
+			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -279,11 +280,12 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-
+	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
 		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
+		oauthV2Enabled,
 	)
 	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
 	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
@@ -333,6 +335,7 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			Data:     routerJobs,
 			DestType: strings.ToLower(w.rt.destType),
 		},
+		false,
 	)
 	w.rt.batchOutputCountStat.Count(len(destinationJobs))
 	w.recordStatsForFailedTransforms("batch", destinationJobs)
@@ -766,14 +769,17 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	}
 	rtlTime := time.Now()
 	ctx = context.WithValue(ctx, "destination", &destinationJob.Destination)
-	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
+	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
+	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams, oauthV2Enabled)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+	var respStatusCode int
+	var respBodyTemp, contentType string
+	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && !oauthV2Enabled {
 		w.logger.Debugf(`Sending for OAuth destination`)
 		// Token from header of the request
-		respStatusCode, respBodyTemp, contentType := w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
+		respStatusCode, respBodyTemp, contentType = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
 			ctx:            ctx,
 			destinationJob: destinationJob,
 			workerID:       w.id,
@@ -783,10 +789,13 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			contentType:    proxyRequestResponse.RespContentType,
 		}, proxyRequestResponse.OAuthErrorCategory)
 
-		proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
-		proxyRequestResponse.RespContentType = contentType
+	} else {
+		respStatusCode = proxyRequestResponse.ProxyRequestStatusCode
+		respBodyTemp = proxyRequestResponse.ProxyRequestResponseBody
+		contentType = proxyRequestResponse.RespContentType
 	}
-
+	proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
+	proxyRequestResponse.RespContentType = contentType
 	return proxyRequestResponse
 }
 

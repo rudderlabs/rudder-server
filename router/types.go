@@ -78,4 +78,5 @@ type reloadableConfig struct {
 	transformerProxy                  misc.ValueLoader[bool]
 	skipRtAbortAlertForTransformation misc.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery       misc.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	oauthV2Enabled                    misc.ValueLoader[bool]
 }

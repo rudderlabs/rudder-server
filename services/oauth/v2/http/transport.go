@@ -56,7 +56,7 @@ func NewOauthTransport(args *TransportArgs) *Oauth2Transport {
 	}
 }
 
-func (t *Oauth2Transport) preRoundTripHandling(req *http.Request) error {
+func (t *Oauth2Transport) preRoundTrip(req *http.Request) error {
 	if t.flow == oauth.RudderFlow_Delivery {
 		t.accountId = t.destination.GetAccountID(oauth.DeliveryAccountIdKey)
 	} else if t.flow == oauth.RudderFlow_Delete {
@@ -90,7 +90,7 @@ func (t *Oauth2Transport) preRoundTripHandling(req *http.Request) error {
 	return nil
 }
 
-func (t *Oauth2Transport) postRoundTripHandling(req *http.Request, res *http.Response) (*http.Response, error) {
+func (t *Oauth2Transport) postRoundTrip(req *http.Request, res *http.Response) (*http.Response, error) {
 	respData, _ := io.ReadAll(res.Body)
 	res.Body = io.NopCloser(bytes.NewReader(respData))
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
@@ -139,17 +139,13 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !t.destination.IsOAuthDestination() {
 		return t.Transport.RoundTrip(req)
 	}
-	err := t.preRoundTripHandling(req)
+	err := t.preRoundTrip(req)
 	if err != nil {
 		return nil, err
 	}
-
 	res, err := t.Transport.RoundTrip(req)
-
 	if err != nil {
 		return res, err
 	}
-
-	return t.postRoundTripHandling(req, res)
-
+	return t.postRoundTrip(req, res)
 }

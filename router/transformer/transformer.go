@@ -45,8 +45,12 @@ type handle struct {
 	tr *http.Transport
 	// http client for router transformation request
 	client *http.Client
+	// http client for router transformation request using oauthV2
+	clientOauthV2 *http.Client
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
+	// Mockable http.client for transformer proxy request using oauthV2
+	proxyClientOauthV2 sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
 	destinationTimeout time.Duration
 	// http client timeout for server-transformer request
@@ -91,8 +95,8 @@ type ProxyRequestResponse struct {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse
+	Transform(transformType string, transformMessage *types.TransformMessageT, usingOauthV2 bool) []types.DestinationJobT
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams, usingOauthV2 bool) ProxyRequestResponse
 }
 
 // NewTransformer creates a new transformer
@@ -105,7 +109,7 @@ func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oa
 var loggerOverride logger.Logger
 
 // Transform transforms router jobs to destination jobs
-func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT, usingOauthV2 bool) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy, jobs := transformMessage.Dehydrate()
 
@@ -145,8 +149,12 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
-		req = req.WithContext(context.WithValue(req.Context(), "destination", &transformMessage.Data[0].Destination))
-		resp, err = trans.client.Do(req)
+		if usingOauthV2 {
+			req = req.WithContext(context.WithValue(req.Context(), "destination", &transformMessage.Data[0].Destination))
+			resp, err = trans.clientOauthV2.Do(req)
+		} else {
+			resp, err = trans.client.Do(req)
+		}
 
 		if err == nil {
 			// If no err returned by client.Post, reading body.
@@ -260,7 +268,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
-func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse {
+func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams, usingOauthV2 bool) ProxyRequestResponse {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -312,7 +320,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 
 	rdlTime := time.Now()
-	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload)
+	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload, usingOauthV2)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
@@ -388,10 +396,13 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	// locker := sync.NewPartitionLocker()
-	trans.client = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse)
+	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	// This client is used for Router Transformation using oauthV2
+	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse)
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse)
+	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
+	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
+	trans.proxyClientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, cache, locker, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
@@ -402,7 +413,7 @@ type httpProxyResponse struct {
 	err        error
 }
 
-func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
+func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte, usingOauthV2 bool) httpProxyResponse {
 	var respData []byte
 	destName := proxyReqParams.DestName
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
@@ -422,10 +433,14 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 
 	httpReqStTime := time.Now()
-	temp := ctx.Value("destination")
-	req = req.WithContext(context.WithValue(req.Context(), "destination", temp))
-	req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata[0].Secret))
-	resp, err := trans.proxyClient.Do(req)
+	var resp *http.Response
+	if usingOauthV2 {
+		req = req.WithContext(context.WithValue(req.Context(), "destination", ctx.Value("destination")))
+		req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata[0].Secret))
+		resp, err = trans.proxyClientOauthV2.Do(req)
+	} else {
+		resp, err = trans.proxyClient.Do(req)
+	}
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer

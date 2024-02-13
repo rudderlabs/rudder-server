@@ -18,12 +18,16 @@ type Augmenter interface {
 }
 
 // BodyAugmenter is an Augmenter that adds the authorization information to the request body.
-var BodyAugmenter = &bodyAugmenter{}
+var BodyAugmenter = &bodyAugmenter{
+	augmenterPath: "input.0.metadata.secret",
+}
 
 // HeaderAugmenter is an Augmenter that adds the authorization information to the request header.
 var HeaderAugmenter = &headerAugmenter{}
 
-type bodyAugmenter struct{}
+type bodyAugmenter struct {
+	augmenterPath string
+}
 
 // Overload of Earlier Augment function
 func (t *bodyAugmenter) Augment(r *http.Request, body []byte, customFunc func() (json.RawMessage, error)) error {
@@ -31,7 +35,7 @@ func (t *bodyAugmenter) Augment(r *http.Request, body []byte, customFunc func() 
 	if err != nil {
 		return err
 	}
-	augmentedBody, err := sjson.SetRawBytes(body, "input.0.metadata.secret", secret)
+	augmentedBody, err := sjson.SetRawBytes(body, t.augmenterPath, secret)
 	if err != nil {
 		return fmt.Errorf("failed to augment request body: %w", err)
 	}

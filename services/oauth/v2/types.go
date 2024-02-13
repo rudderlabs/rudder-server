@@ -2,7 +2,6 @@ package v2
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -27,15 +26,11 @@ type OAuthHandler struct {
 	CpConn                    ControlPlaneConnectorI
 	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
 	Cache                     Cache
-	Lock                      *rudderSync.PartitionRWLocker
+	CacheMutex                *rudderSync.PartitionRWLocker
 }
 type CacheKey struct {
 	WorkspaceID string
 	AccountID   string
-}
-
-func (c CacheKey) String() string {
-	return fmt.Sprintf("%s:%s", c.WorkspaceID, c.AccountID)
 }
 
 type TokenProvider interface {
