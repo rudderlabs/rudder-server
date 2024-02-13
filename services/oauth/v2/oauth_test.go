@@ -211,4 +211,9 @@ var _ = Describe("Oauth", func() {
 			Expect(err).To(MatchError("invalid grant"))
 		})
 	})
+	Describe("Test RefreshToken function", func() {
+		It("refreshToken function call with success scenario", func() {
+
+		})
+	})
 })

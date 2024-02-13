@@ -7,8 +7,10 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
+	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -24,7 +26,9 @@ type tokenSource struct {
 	destinationName string
 	accountID       string
 	oauthClient     oauth.Authorizer
+	oauthClientV2   oauthV2.Authorizer
 	destination     *backendconfig.DestinationT
+	oauthV2Enabled  bool
 }
 
 // authentication related utils
@@ -82,9 +86,71 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 	}
 	return &secret, nil
 }
+func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
+	refreshTokenParams := oauthV2.RefreshTokenParams{
+		WorkspaceId: ts.workspaceID,
+		DestDefName: ts.destinationName,
+		AccountId:   ts.accountID,
+		// Destination: ts.destination // for new oauth(v2)
+	}
+	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
+	// TODO: check if the error is not nil working verify during unit test
+	if err != nil {
+		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
+	}
+
+	/*
+		How bing-ads works?
+		1. It fetches the token using the fetchToken method
+		2. It checks if the token is expired or not
+		3. If the token is expired, it refreshes the token using the refreshToken method
+		4. If the token is not expired, it returns the token
+
+
+		step 1: fetchToken
+
+		step 2: use the token to make the request and return the response in []byte along with the function to extract the oauthError category
+		        func myFunc(string token)(string)
+
+
+		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
+	*/
+
+	secret := secretStruct{}
+	err = json.Unmarshal(authResponse.Account.Secret, &secret)
+	if err != nil {
+		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
+	}
+	currentTime := time.Now()
+	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+	if err != nil {
+		return nil, fmt.Errorf("error in parsing expirationDate: %w", err)
+	}
+	if currentTime.After(expirationTime) {
+		refreshTokenParams.Secret = authResponse.Account.Secret
+		statusCode, authResponse, err = ts.oauthClientV2.RefreshToken(&refreshTokenParams)
+		// TODO: check if the error is not nil working verify during unit test
+		if err != nil {
+			return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
+		}
+		err = json.Unmarshal(authResponse.Account.Secret, &secret)
+		if err != nil {
+			return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
+		}
+		return &secret, nil
+	}
+	return &secret, nil
+}
 
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
-	secret, err := ts.generateToken()
+	oauthV2Enabled := config.GetReloadableBoolVar(false, "BatchRouter."+ts.destinationName+".oauthV2Enabled", "BatchRouter.oauthV2Enabled")
+	var secret *secretStruct
+	var err error
+	if oauthV2Enabled.Load() {
+		secret, err = ts.generateTokenV2()
+	} else {
+		secret, err = ts.generateToken()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("generating the accessToken: %w", err)
 	}

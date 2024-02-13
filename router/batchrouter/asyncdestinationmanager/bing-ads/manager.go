@@ -8,9 +8,10 @@ import (
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthV2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	if err != nil {
@@ -26,6 +27,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		destinationName: destination.Name,
 		accountID:       destConfig.RudderAccountID,
 		oauthClient:     oauthClient,
+		oauthClientV2:   oauthClientV2,
 		destination:     destination,
 	}
 	secret, err := token.generateToken()
@@ -48,5 +50,6 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*BingAdsBulkUploader, error) {
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
-	return newManagerInternal(destination, oauthClient)
+	oauthClientV2 := oauthV2.NewOAuthHandler(backendConfig)
+	return newManagerInternal(destination, oauthClient, oauthClientV2)
 }
