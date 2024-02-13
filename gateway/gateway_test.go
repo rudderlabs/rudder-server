@@ -477,7 +477,7 @@ var _ = Describe("Gateway", func() {
 				}
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
-				if ep == "/internal/v1/replay" || ep == "/internal/v1/retl" {
+				if ep == "/internal/v1/replay" || ep == "/internal/v1/retl" || ep == "/internal/v1/batch" {
 					req.Header.Set("X-Rudder-Source-Id", ReplaySourceID)
 				} else {
 					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
@@ -1708,6 +1708,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
 		"/v1/warehouse/jobs",
+		"/internal/v1/batch",
 	}
 
 	deleteEndpoints := []string{
