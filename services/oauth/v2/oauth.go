@@ -97,16 +97,6 @@ func (oauthHandler *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParam
 		flowType:        oauthHandler.RudderFlowType,
 		action:          "fetch_token",
 	}
-	statusCode, fetchSecret, fetchErr := oauthHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
-	if fetchErr != nil {
-		return statusCode, nil, fetchErr
-	}
-	if statusCode == http.StatusOK {
-		// Token is available
-		// form refTokenParams & call RefreshToken()
-		fetchTokenParams.Secret = fetchSecret.Account.Secret
-	}
-	oauthHandler.RefreshToken(fetchTokenParams)
 	return oauthHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
 

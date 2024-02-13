@@ -113,20 +113,21 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 
 	if errType, refErrMsg := authErrHandler.getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
 		// potential oauth secret alert as we are not setting anything in the cache as secret
-		authErrHandler.Cache.Set(refTokenParams.AccountId, &AuthResponse{
+		authResponse := &AuthResponse{
 			Err:          errType,
 			ErrorMessage: refErrMsg,
-		})
+		}
+		authErrHandler.Cache.Set(refTokenParams.AccountId, authResponse)
 
 		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
-		if refErrMsg == REF_TOKEN_INVALID_GRANT {
+		if authResponse.Err == REF_TOKEN_INVALID_GRANT {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
-			return http.StatusBadRequest, nil, errors.New("invalid grant")
+			return http.StatusBadRequest, authResponse, errors.New("invalid grant")
 		}
-		return http.StatusInternalServerError, nil, errors.New("error occurred while fetching/refreshing account info from CP: %v" + refErrMsg)
+		return http.StatusInternalServerError, authResponse, errors.New("error occurred while fetching/refreshing account info from CP: %v" + refErrMsg)
 	}
 	authStats.statName = getOAuthActionStatName("success")
 	authStats.errorMessage = ""
@@ -156,9 +157,6 @@ func (authErrHandler *OAuthHandler) getRefreshTokenErrResp(response string, acco
 			message = bodyMsg
 		}
 		errorType = REF_TOKEN_INVALID_GRANT
-	} else {
-		// Send the actual error back
-		message = response
 	}
 	return errorType, message
 }
@@ -204,5 +202,5 @@ func verifyExpirationDate(expirationDate string, stats *OAuthStats) bool {
 	if date.Before(time.Now().Add(config.GetDurationVar(5, time.Minute, "Router."+stats.destDefName+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff"))) {
 		return true
 	}
-	return true
+	return false
 }

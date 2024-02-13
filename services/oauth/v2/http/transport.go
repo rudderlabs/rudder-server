@@ -106,18 +106,15 @@ func (t *Oauth2Transport) postRoundTrip(req *http.Request, res *http.Response) (
 		t.refreshTokenParams.Secret = oldSecret
 		t.refreshTokenParams.Destination = t.destination
 		t.log.Info("refreshing token")
-		// Move 368 to 384 to a common function
-		statusCode, refSecret, refErr := t.oauthHandler.RefreshToken(t.refreshTokenParams)
-
+		statusCode, _, refErr := t.oauthHandler.RefreshToken(t.refreshTokenParams)
 		if statusCode == http.StatusOK {
 			// refresh token successful --> retry the event
 			res.StatusCode = http.StatusInternalServerError
 		} else {
-			// invalid_grant -> 4xx
-			// refresh token failed -> erreneous status-code
-			if refSecret.Err == oauth.REF_TOKEN_INVALID_GRANT {
-				t.oauthHandler.UpdateAuthStatusToInactive(t.destination, t.destination.WorkspaceID, t.accountId)
-			}
+			// refresh token failed --> abort the event
+			// It can be failed due to the following reasons
+			// 1. invalid grant
+			// 2. control plan api call failed
 			res.StatusCode = statusCode
 		}
 		if refErr != nil {
