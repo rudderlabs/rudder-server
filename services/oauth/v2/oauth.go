@@ -300,6 +300,7 @@ func (authErrHandler *OAuthHandler) authStatusToggle(params *AuthStatusTogglePar
 
 	return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 }
+
 func (authErrHandler *OAuthHandler) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
 	inactiveAuthStatusStatTags := stats.Tags{
 		"id":          destination.ID,

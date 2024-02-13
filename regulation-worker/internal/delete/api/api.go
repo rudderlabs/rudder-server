@@ -37,6 +37,7 @@ type APIManager struct {
 	OAuth                        oauth.Authorizer
 	MaxOAuthRefreshRetryAttempts int
 	TransformerFeaturesService   transformer.FeaturesService
+	IsOAuthV2Enabled             bool
 }
 
 type oauthDetail struct {
@@ -78,7 +79,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	// check if OAuth destination
 	isOAuthEnabled := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
 	var oAuthDetail oauthDetail
-	if isOAuthEnabled {
+	if isOAuthEnabled && !api.IsOAuthV2Enabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
@@ -90,6 +91,18 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 			pkgLogger.Error(err)
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
+	}
+
+	if isOAuthEnabled && api.IsOAuthV2Enabled {
+		dest := backendconfig.DestinationT{
+			ID:     destination.DestinationID,
+			Config: destination.Config,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Config: destination.DestDefConfig,
+			},
+			Name: destination.Name,
+		}
+		req = req.WithContext(context.WithValue(req.Context(), "destination", dest))
 	}
 
 	defer stats.Default.NewTaggedStat(
@@ -105,6 +118,10 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	if err != nil {
 		if os.IsTimeout(err) {
 			stats.Default.NewStat("regulation_worker_delete_api_timeout", stats.CountType).Count(1)
+		}
+		// TODO: re-check this
+		if api.IsOAuthV2Enabled && resp.StatusCode >= http.StatusInternalServerError {
+			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 		}
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
@@ -123,7 +140,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 
 	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
 
-	if oauthErrJobFound && isOAuthEnabled {
+	if oauthErrJobFound && isOAuthEnabled && !api.IsOAuthV2Enabled {
 		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
 			return api.inactivateAuthStatus(&destination, job, oAuthDetail)
 		}
@@ -137,6 +154,12 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
 			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 		}
+	}
+	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && api.IsOAuthV2Enabled && resp.StatusCode == http.StatusInternalServerError {
+		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
+		// retry the request
+		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
+		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 	}
 	return jobStatus
 }

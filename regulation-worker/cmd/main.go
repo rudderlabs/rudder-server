@@ -30,6 +30,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+
+	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
+	OAuthHttpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
@@ -79,9 +84,22 @@ func Run(ctx context.Context) error {
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
-
+	isOAuthV2RelVar := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
+	regTimeoutReloadVar := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
+
+	cli := &http.Client{Timeout: regTimeoutReloadVar.Load()}
+	if isOAuthV2RelVar.Load() {
+		cache := oauthV2.NewCache()
+		oauthLock := rudderSync.NewPartitionRWLocker()
+		cli = OAuthHttpClient.OAuthHttpClient(
+			cli, extensions.HeaderAugmenter,
+			oauthV2.RudderFlow(oauth.RudderFlow_Delete),
+			&cache, oauthLock, backendconfig.DefaultBackendConfig,
+			oauthV2.GetAuthErrorCategoryFromTransformResponse,
+		)
+	}
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -97,9 +115,10 @@ func Run(ctx context.Context) error {
 				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
-				Client:                       &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
+				Client:                       cli,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				OAuth:                        OAuth,
+				IsOAuthV2Enabled:             isOAuthV2RelVar.Load(),
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
 					PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),

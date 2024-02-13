@@ -2,11 +2,11 @@ package v2
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -72,11 +72,11 @@ func (t *Oauth2Transport) preRoundTrip(req *http.Request) error {
 	if err != nil {
 		return fmt.Errorf("failed to read request body: %w", err)
 	}
-	matched, _ := regexp.MatchString(req.URL.Path, "/routerTransform")
-	if matched {
+	if t.Augmenter != nil {
 		fetchErr := t.Augmenter.Augment(req, body, func() (json.RawMessage, error) {
 			statusCode, authResponse, err := t.oauthHandler.FetchToken(t.refreshTokenParams)
 			if statusCode == http.StatusOK {
+				req = req.WithContext(context.WithValue(req.Context(), "secret", authResponse.Account.Secret))
 				return authResponse.Account.Secret, nil
 			}
 			return nil, err

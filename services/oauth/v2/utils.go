@@ -10,11 +10,12 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -155,6 +156,9 @@ func (authErrHandler *OAuthHandler) getRefreshTokenErrResp(response string, acco
 			message = bodyMsg
 		}
 		errorType = REF_TOKEN_INVALID_GRANT
+	} else {
+		// Send the actual error back
+		message = response
 	}
 	return errorType, message
 }

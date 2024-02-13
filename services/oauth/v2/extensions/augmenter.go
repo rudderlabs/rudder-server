@@ -47,8 +47,12 @@ func (t *bodyAugmenter) Augment(r *http.Request, body []byte, customFunc func() 
 type headerAugmenter struct{}
 
 // Augment adds the Authorization header to the request and sets the request body.
-func (t *headerAugmenter) Augment(r *http.Request, body, token []byte) error {
-	r.Header.Set("X-Rudder-Dest-Info", string(token))
+func (t *headerAugmenter) Augment(r *http.Request, body []byte, customFunc func() (json.RawMessage, error)) error {
+	secret, err := customFunc()
+	if err != nil {
+		return err
+	}
+	r.Header.Set("X-Rudder-Dest-Info", string(secret))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }
