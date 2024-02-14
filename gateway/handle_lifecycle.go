@@ -428,8 +428,14 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	})
 
 	srvMux.Get("/health", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))
-
 	srvMux.Get("/", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))
+	srvMux.Get("/docs",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(openApiSpec)
+		},
+	)
+
 	srvMux.Route("/pixel/v1", func(r chi.Router) {
 		r.Get("/track", gw.pixelTrackHandler())
 		r.Get("/page", gw.pixelPageHandler())
