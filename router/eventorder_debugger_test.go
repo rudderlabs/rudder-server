@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
 
@@ -71,7 +72,7 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	_, err = pgContainer.DB.Exec("UPDATE rt_jobs_1 SET created_at = $1", refTime)
 	require.NoError(t, err)
 
-	debugInfo := rt.eventOrderDebugInfo("user1:destination1")
+	debugInfo := rt.eventOrderDebugInfo(eventorder.BarrierKey{UserID: "user1", DestinationID: "destination1"})
 	require.Equal(t,
 		` |    t_name| job_id|                    created_at| status_id| job_state| attempt|                     exec_time| error_code| parameters| error_response|
  |       ---|    ---|                           ---|       ---|       ---|     ---|                           ---|        ---|        ---|            ---|

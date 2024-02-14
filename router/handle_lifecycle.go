@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -139,6 +140,12 @@ func (rt *Handle) Setup(
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
+	rt.eventOrderingDisabledForWorkspace = func(workspaceID string) bool {
+		return slices.Contains(config.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+	}
+	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
+		return slices.Contains(config.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+	}
 	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 		"destType":         rt.destType,
 		"batching":         strconv.FormatBool(rt.enableBatching),
@@ -149,6 +156,9 @@ func (rt *Handle) Setup(
 		eventorder.WithHalfEnabledStateDuration(rt.eventOrderHalfEnabledStateDuration),
 		eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
 		eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
+		eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
+			return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
+		}),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

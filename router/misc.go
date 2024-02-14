@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -54,17 +54,8 @@ func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostP
 	return responseArray, err
 }
 
-func getWorkerPartition(key string, noOfWorkers int) int {
-	return misc.GetHash(key) % noOfWorkers
-}
-
-func jobOrderKey(userID, destinationID string) string {
-	return userID + ":" + destinationID
-}
-
-func parseJobOrderKey(key string) (string, string) {
-	colonIndex := strings.LastIndex(key, ":")
-	return key[:colonIndex], key[colonIndex+1:]
+func getWorkerPartition(key eventorder.BarrierKey, noOfWorkers int) int {
+	return misc.GetHash(key.String()) % noOfWorkers
 }
 
 func isolationMode(destType string, config *config.Config) isolation.Mode {

@@ -3,6 +3,7 @@
 GO=go
 LDFLAGS?=-s -w
 TESTFILE=_testok
+MOUNT_PATH=/local
 
 default: build
 
@@ -106,3 +107,12 @@ proto: install-tools ## Generate protobuf files
 .PHONY: bench-kafka
 bench-kafka:
 	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
+
+.PHONY: generate-openapi-spec
+generate-openapi-spec: install-tools
+	docker run --rm \
+	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli:v7.3.0 generate \
+	  -i ${MOUNT_PATH}/gateway/openapi.yaml \
+	  -g html2 \
+	  -o ${MOUNT_PATH}/gateway/openapi
+
