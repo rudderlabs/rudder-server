@@ -127,7 +127,7 @@ func TestDocsEndpoint(t *testing.T) {
 	resp, err := http.Get(url + "/docs")
 	require.NoError(t, err, "it should be able to get the docs")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	func() { kithttputil.CloseResponse(resp) }()
+	defer func() { kithttputil.CloseResponse(resp) }()
 	require.Equal(t, resp.Header.Get("Content-Type"), "text/html; charset=utf-8")
 	all, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
