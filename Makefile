@@ -3,7 +3,7 @@
 GO=go
 LDFLAGS?=-s -w
 TESTFILE=_testok
-MOUNT_PATH= /local
+MOUNT_PATH=/local
 
 default: build
 

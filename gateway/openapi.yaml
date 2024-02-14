@@ -1,4 +1,4 @@
-openapi: 3.0.1
+openapi: 3.0.3
 info:
   title: RudderStack HTTP API
   version: 1.0.0-oas3

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -92,7 +93,7 @@ func TestDocsEndpoint(t *testing.T) {
 						WithID("source-1").
 						WithWriteKey("writekey-1").
 						WithSourceCategory("webhook").
-						WithSourceType("SeGment").
+						WithSourceType("my_source_type").
 						Build()).
 				Build()).
 		Build()
@@ -128,6 +129,9 @@ func TestDocsEndpoint(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	func() { kithttputil.CloseResponse(resp) }()
 	require.Equal(t, resp.Header.Get("Content-Type"), "text/html; charset=utf-8")
+	all, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Greater(t, len(all), 0)
 }
 
 func runGateway(
