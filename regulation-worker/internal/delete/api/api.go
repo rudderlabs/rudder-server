@@ -126,42 +126,14 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	defer func() { httputil.CloseResponse(resp) }()
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-	}
-
-	var jobResp []JobRespSchema
-	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
-		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-	}
-	jobStatus := getJobStatus(resp.StatusCode, jobResp)
-	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
-
-	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
-
-	if oauthErrJobFound && isOAuthEnabled && !api.IsOAuthV2Enabled {
-		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-			return api.inactivateAuthStatus(&destination, job, oAuthDetail)
-		}
-		if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
-			err = api.refreshOAuthToken(&destination, job, oAuthDetail)
-			if err != nil {
-				pkgLogger.Error(err)
-				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-			}
-			// retry the request
-			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
-			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
-		}
-	}
-	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && api.IsOAuthV2Enabled && resp.StatusCode == http.StatusInternalServerError {
-		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
-		// retry the request
-		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
-		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
-	}
-	return jobStatus
+	return api.PostResponse(ctx, PostResponseParams{
+		destination:              destination,
+		job:                      job,
+		isOAuthEnabled:           isOAuthEnabled,
+		currentOAuthRetryAttempt: currentOauthRetryAttempt,
+		oAuthDetail:              oAuthDetail,
+		resp:                     resp,
+	})
 }
 
 // prepares payload based on (job,destDetail) & make an API call to transformer.
@@ -279,4 +251,56 @@ func (api *APIManager) refreshOAuthToken(destination *model.Destination, job mod
 		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destination.Name, job.WorkspaceID, oAuthDetail.id, refreshRespErr)
 	}
 	return nil
+}
+
+type PostResponseParams struct {
+	destination              model.Destination
+	isOAuthEnabled           bool
+	currentOAuthRetryAttempt int
+	job                      model.Job
+	oAuthDetail              oauthDetail
+	resp                     *http.Response
+}
+
+func (api *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
+	var err error
+
+	bodyBytes, err := io.ReadAll(params.resp.Body)
+	if err != nil {
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	}
+
+	var jobResp []JobRespSchema
+	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	}
+	jobStatus := getJobStatus(params.resp.StatusCode, jobResp)
+	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
+
+	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
+
+	// old oauth handling
+	if oauthErrJobFound && params.isOAuthEnabled && !api.IsOAuthV2Enabled {
+		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
+			return api.inactivateAuthStatus(&params.destination, params.job, params.oAuthDetail)
+		}
+		if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
+			err = api.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail)
+			if err != nil {
+				pkgLogger.Error(err)
+				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+			}
+			// retry the request
+			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
+			return api.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
+		}
+	}
+	// new oauth handling
+	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && api.IsOAuthV2Enabled {
+		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
+		// retry the request
+		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
+		return api.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
+	}
+	return jobStatus
 }

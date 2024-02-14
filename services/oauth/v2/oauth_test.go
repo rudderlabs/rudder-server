@@ -213,7 +213,6 @@ var _ = Describe("Oauth", func() {
 	})
 	Describe("Test RefreshToken function", func() {
 		It("refreshToken function call with success scenario", func() {
-
 		})
 	})
 })
