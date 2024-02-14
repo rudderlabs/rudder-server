@@ -83,7 +83,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		"webhookUrl":  webhook.Server.URL,
 	})
 	require.NoError(t, err)
-	var sourceID = "xxxyyyzzEaEurW247ad9WYZLUyk" // sourceID from the workspace config template
+	sourceID := "xxxyyyzzEaEurW247ad9WYZLUyk" // sourceID from the workspace config template
 
 	beConfigRouter := chi.NewMux()
 	if testing.Verbose() {
