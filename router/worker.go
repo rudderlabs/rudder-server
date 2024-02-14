@@ -122,7 +122,11 @@ func (w *worker) workLoop() {
 			}
 
 			if w.rt.guaranteeUserEventOrder {
-				orderKey := jobOrderKey(userID, parameters.DestinationID)
+				orderKey := eventorder.BarrierKey{
+					UserID:        userID,
+					DestinationID: parameters.DestinationID,
+					WorkspaceID:   job.WorkspaceId,
+				}
 				if wait, previousFailedJobID := w.barrier.Wait(orderKey, job.JobID); wait {
 					previousFailedJobIDStr := "<nil>"
 					if previousFailedJobID != nil {
@@ -420,7 +424,7 @@ func (w *worker) processDestinationJobs() {
 		u2e3 will send
 	*/
 
-	failedJobOrderKeys := make(map[string]struct{})
+	failedJobOrderKeys := make(map[eventorder.BarrierKey]struct{})
 	var routerJobResponses []*JobResponse
 
 	sort.Slice(w.destinationJobs, func(i, j int) bool {
@@ -621,7 +625,7 @@ func (w *worker) processDestinationJobs() {
 	})
 
 	// Struct to hold unique users in the batch (worker.destinationJobs)
-	jobOrderKeyToJobIDMap := make(map[string]int64)
+	jobOrderKeyToJobIDMap := make(map[eventorder.BarrierKey]int64)
 
 	for _, routerJobResponse := range routerJobResponses {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
@@ -641,7 +645,11 @@ func (w *worker) processDestinationJobs() {
 		routerJobResponse.status = &status
 
 		if !isJobTerminated(respStatusCode) {
-			orderKey := jobOrderKey(destinationJobMetadata.UserID, destinationJobMetadata.DestinationID)
+			orderKey := eventorder.BarrierKey{
+				UserID:        destinationJobMetadata.UserID,
+				DestinationID: destinationJobMetadata.DestinationID,
+				WorkspaceID:   destinationJobMetadata.WorkspaceID,
+			}
 			if prevFailedJobID, ok := jobOrderKeyToJobIDMap[orderKey]; ok {
 				// This means more than two jobs of the same user are in the batch & the batch job is failed
 				// Only one job is marked failed and the rest are marked waiting
@@ -798,12 +806,16 @@ func (w *worker) hydrateRespStatusCodes(destinationJob types.DestinationJobT, re
 	}
 }
 
-func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT, respStatusCodes map[int64]int) {
+func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[eventorder.BarrierKey]struct{}, destinationJob *types.DestinationJobT, respStatusCodes map[int64]int) {
 	for _, metadata := range destinationJob.JobMetadataArray {
 		if !isJobTerminated(respStatusCodes[metadata.JobID]) {
-			orderKey := jobOrderKey(metadata.UserID, metadata.DestinationID)
+			orderKey := eventorder.BarrierKey{
+				UserID:        metadata.UserID,
+				DestinationID: metadata.DestinationID,
+				WorkspaceID:   metadata.WorkspaceID,
+			}
 			if w.rt.guaranteeUserEventOrder && !w.barrier.Disabled(orderKey) { // if barrier is disabled, we shouldn't need to track the failed job
-				failedJobOrderKeys[jobOrderKey(metadata.UserID, metadata.DestinationID)] = struct{}{}
+				failedJobOrderKeys[orderKey] = struct{}{}
 			}
 		}
 	}
@@ -871,8 +883,12 @@ func (w *worker) prepareResponsesForJobs(destinationJob *types.DestinationJobT, 
 	return respStatusCodes, respBodys
 }
 
-func (w *worker) canSendJobToDestination(failedJobOrderKeys map[string]struct{}, destinationJob *types.DestinationJobT) bool {
-	if !w.rt.guaranteeUserEventOrder {
+func (w *worker) canSendJobToDestination(failedJobOrderKeys map[eventorder.BarrierKey]struct{}, destinationJob *types.DestinationJobT) bool {
+	destinationID := destinationJob.JobMetadataArray[0].DestinationID
+	workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
+	if !w.rt.guaranteeUserEventOrder ||
+		w.rt.eventOrderingDisabledForWorkspace(workspaceID) ||
+		w.rt.eventOrderingDisabledForDestination(destinationID) {
 		// if guaranteeUserEventOrder is false, letting the next jobs pass
 		return true
 	}
@@ -880,8 +896,12 @@ func (w *worker) canSendJobToDestination(failedJobOrderKeys map[string]struct{},
 	// If the destinationJob has come through router transform / batch transform,
 	// drop the request if it is of a failed user, else send
 	for i := range destinationJob.JobMetadataArray {
-		orderKey := jobOrderKey(destinationJob.JobMetadataArray[i].UserID, destinationJob.JobMetadataArray[i].DestinationID)
-		if _, ok := failedJobOrderKeys[orderKey]; ok {
+		orderKey := eventorder.BarrierKey{
+			UserID:        destinationJob.JobMetadataArray[i].UserID,
+			DestinationID: destinationID,
+			WorkspaceID:   workspaceID,
+		}
+		if _, ok := failedJobOrderKeys[orderKey]; ok && !w.barrier.Disabled(orderKey) {
 			return false
 		}
 	}
@@ -981,7 +1001,11 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		if w.rt.guaranteeUserEventOrder {
 			if status.JobState == jobsdb.Failed.State {
 
-				orderKey := jobOrderKey(destinationJobMetadata.UserID, destinationJobMetadata.DestinationID)
+				orderKey := eventorder.BarrierKey{
+					UserID:        destinationJobMetadata.UserID,
+					DestinationID: destinationJobMetadata.DestinationID,
+					WorkspaceID:   destinationJobMetadata.WorkspaceID,
+				}
 				w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
 				if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
 					panic(err)

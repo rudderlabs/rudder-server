@@ -110,8 +110,8 @@ func (g *generatorLoop) run() {
 					g.runtime.minJobID = job.id
 				}
 				// randomly drain 0.1% of non-previously failed jobs (previously failed jobs cannot be drained at this stage)
-				if previousFailedJobID := g.barrier.Peek(job.user); previousFailedJobID != nil && *previousFailedJobID != job.id && rand.Intn(1000) < 1 { // skipcq: GSC-G404
-					if err := g.barrier.StateChanged(job.user, job.id, jobsdb.Aborted.State); err != nil {
+				if previousFailedJobID := g.barrier.Peek(eventorder.BarrierKey{UserID: job.user}); previousFailedJobID != nil && *previousFailedJobID != job.id && rand.Intn(1000) < 1 { // skipcq: GSC-G404
+					if err := g.barrier.StateChanged(eventorder.BarrierKey{UserID: job.user}, job.id, jobsdb.Aborted.State); err != nil {
 						panic(fmt.Errorf("could not drain job:%d: %w", job.id, err))
 					}
 					g.drained = append(g.drained, job)
@@ -119,7 +119,7 @@ func (g *generatorLoop) run() {
 					continue
 				}
 
-				if accept, blockJobID := g.barrier.Enter(job.user, job.id); accept {
+				if accept, blockJobID := g.barrier.Enter(eventorder.BarrierKey{UserID: job.user}, job.id); accept {
 					if blockJobID != nil && *blockJobID > job.id {
 						panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.id, *blockJobID))
 					}
@@ -199,7 +199,7 @@ func (wp *workerProcess) processJobs() {
 	for _, job := range wp.jobs {
 		// introduce some random delay during processing so that buffers don't empty at a steady pace
 		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond) // skipcq: GSC-G404
-		wait, previousFailedJobID := wp.barrier.Wait(job.user, job.id)
+		wait, previousFailedJobID := wp.barrier.Wait(eventorder.BarrierKey{UserID: job.user}, job.id)
 
 		if wait {
 			job.states = append([]string{jobsdb.Waiting.State}, job.states...)
@@ -215,7 +215,7 @@ func (wp *workerProcess) processJobs() {
 			continue
 		}
 		if job.states[0] == jobsdb.Failed.State {
-			_ = wp.barrier.StateChanged(job.user, job.id, jobsdb.Failed.State)
+			_ = wp.barrier.StateChanged(eventorder.BarrierKey{UserID: job.user}, job.id, jobsdb.Failed.State)
 		}
 		wp.out <- job
 	}
@@ -268,7 +268,7 @@ func (cl *commitStatusLoop) commit() {
 		time.Sleep(time.Duration(rand.Intn(2)) * time.Millisecond) // skipcq: GSC-G404
 		switch job.states[0] {
 		case "aborted", "succeeded", "waiting":
-			_ = cl.barrier.StateChanged(job.user, job.id, job.states[0])
+			_ = cl.barrier.StateChanged(eventorder.BarrierKey{UserID: job.user}, job.id, job.states[0])
 		}
 		if len(job.states) == 1 {
 			if job.states[0] != "succeeded" && job.states[0] != "aborted" {
