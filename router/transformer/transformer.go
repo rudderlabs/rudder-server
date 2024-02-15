@@ -150,7 +150,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 		if usingOauthV2 {
-			req = req.WithContext(context.WithValue(req.Context(), "destination", &transformMessage.Data[0].Destination))
+			req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, &transformMessage.Data[0].Destination))
 			resp, err = trans.clientOauthV2.Do(req)
 		} else {
 			resp, err = trans.client.Do(req)
@@ -431,12 +431,11 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	// Make use of this header to set timeout in the transfomer's http client
 	// The header name may be worked out ?
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
-
 	httpReqStTime := time.Now()
 	var resp *http.Response
 	if usingOauthV2 {
-		req = req.WithContext(context.WithValue(req.Context(), "destination", ctx.Value("destination")))
-		req = req.WithContext(context.WithValue(req.Context(), "secret", proxyReqParams.ResponseData.Metadata[0].Secret))
+		req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, ctx.Value(oauth.DestKey)))
+		req = req.WithContext(context.WithValue(req.Context(), oauth.SecretKey, proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOauthV2.Do(req)
 	} else {
 		resp, err = trans.proxyClient.Do(req)

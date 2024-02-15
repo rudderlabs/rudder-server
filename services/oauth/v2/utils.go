@@ -118,7 +118,6 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 			ErrorMessage: refErrMsg,
 		}
 		authErrHandler.Cache.Set(refTokenParams.AccountId, authResponse)
-
 		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
@@ -144,6 +143,7 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 func (authErrHandler *OAuthHandler) getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
 	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
+		authErrHandler.Logger.Debugf("Failed with error response: %v\n", err)
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
 	} else if gjson.Get(response, "body.code").String() == REF_TOKEN_INVALID_GRANT {

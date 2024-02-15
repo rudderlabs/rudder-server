@@ -1,6 +1,7 @@
 package v2_test
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/golang/mock/gomock"
@@ -174,7 +175,8 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			var expectedResponse *v2.AuthResponse
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError("empty secret"))
+
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("empty secret"))))
 		})
 
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response", func() {
@@ -208,11 +210,142 @@ var _ = Describe("Oauth", func() {
 				ErrorMessage: "invalid_grant error, refresh token has expired or revoked",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError("invalid grant"))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
 		})
 	})
 	Describe("Test RefreshToken function", func() {
-		It("refreshToken function call with success scenario", func() {
+		It("refreshToken function call when stored cache is same as provided cache", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+
+			// Invoke code under test
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        mockCpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			storedAuthResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			statusCode, _, err := oauthHandler.RefreshToken(refreshTokenParams)
+			// Assertions
+			Expect(statusCode).To(Equal(http.StatusOK))
+			Expect(err).To(BeNil())
+			token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+			expectedResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
+		})
+
+		It("refreshToken function call when stored cache is different as provided cache", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)}
+
+			// Invoke code under test
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex: rudderSync.NewPartitionRWLocker(),
+				Cache:      v2.NewCache(),
+				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			storedAuthResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+			expectedResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			statusCode, _, err := oauthHandler.RefreshToken(refreshTokenParams)
+
+			Expect(statusCode).To(Equal(http.StatusOK))
+			Expect(err).To(BeNil())
+			Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
+		})
+
+		It("refreshToken function call when stored cache is same as provided cache but the cpApiCall failed with ref_token_invalid_grant error", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				Destination: &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "testDest",
+					},
+					ID: "Destination123",
+				},
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{
+				"body":{
+				  "code":"ref_token_invalid_grant",
+				  "message":"invalid_grant error, refresh token has expired or revoked"
+				}
+			  }`)
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+
+			// Invoke code under test
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        mockCpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			storedAuthResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+			expectedResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			statusCode, _, err := oauthHandler.RefreshToken(refreshTokenParams)
+
+			Expect(statusCode).To(Equal(http.StatusBadRequest))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
+			Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 		})
 	})
 })

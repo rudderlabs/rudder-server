@@ -12,6 +12,7 @@ import (
 type (
 	RudderFlow string
 	AuthType   string
+	ContextKey string
 )
 
 // AccountSecret is the access token returned by the oauth server
