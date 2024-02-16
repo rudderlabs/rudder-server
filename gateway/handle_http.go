@@ -27,7 +27,7 @@ func (gw *Handle) webBatchHandler() http.HandlerFunc {
 }
 
 func (gw *Handle) internalBatchHandler() http.HandlerFunc {
-	return gw.callType("internalBatch", gw.sourceIDAuth(gw.writeToJobsDB()))
+	return gw.callType("internalBatch", gw.sourceIDAuth(gw.internalBatchHandlerFunc()))
 }
 
 // webIdentifyHandler - handler for identify requests
