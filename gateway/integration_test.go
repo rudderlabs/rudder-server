@@ -41,7 +41,6 @@ func TestGatewayIntegration(t *testing.T) {
 }
 
 func testGatewayByAppType(t *testing.T, appType string) {
-	// t.SkipNow()
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -252,8 +251,8 @@ func testGatewayByAppType(t *testing.T, appType string) {
 			t.Cleanup(cleanupGwJobs)
 
 			require.Eventuallyf(t, func() bool {
-				return len(webhook.Requests()) == 2
-			}, 60*time.Second, 100*time.Millisecond, "Webhook should have received a request on %d", httpPort)
+				return webhook.RequestsCount() == 2
+			}, 60*time.Second, 100*time.Millisecond, "Webhook should have received %d requests on %d", webhook.RequestsCount(), httpPort)
 		})
 
 		// Trigger degraded mode, the Gateway should still work

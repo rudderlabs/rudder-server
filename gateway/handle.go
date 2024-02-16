@@ -626,16 +626,17 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 			if errorMessage != "" {
 				status := response.GetErrorStatusCode(errorMessage)
 				responseBody := response.GetStatus(errorMessage)
-				gw.logger.Infow("response",
-					"ip", misc.GetIPFromReq(r),
-					"path", r.URL.Path,
-					"status", status,
-					"body", responseBody)
+				gw.logger.Infon("response",
+					logger.NewStringField("ip", misc.GetIPFromReq(r)),
+					logger.NewStringField("path", r.URL.Path),
+					logger.NewIntField("status", int64(status)),
+					logger.NewStringField("body", responseBody),
+				)
 				gw.stats.NewTaggedStat(
 					"gateway.write_key_failed_requests",
 					stats.CountType,
 					gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
-				).Count(1)
+				).Increment()
 				http.Error(w, responseBody, status)
 				return
 			} // else success
@@ -649,7 +650,7 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 				"gateway.write_key_successful_requests",
 				stats.CountType,
 				gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
-			).Count(1)
+			).Increment()
 			_, _ = w.Write([]byte(responseBody))
 		}()
 		body, err := gw.getPayload(arctx, r, reqType)
@@ -663,16 +664,15 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 		}
 		gw.requestSizeStat.Observe(float64(len(body)))
 		type jobObject struct {
-			userID string
-			events []map[string]interface{}
+			userID     string
+			events     []map[string]interface{}
+			receivedAt string
 		}
 		var (
 			sourcesJobRunID  = arctx.SourceJobRunID
 			sourcesTaskRunID = arctx.SourceTaskRunID
 			sourceID         = arctx.SourceID
 			workspaceID      = arctx.WorkspaceID
-			userIDHeader     = r.Header.Get("AnonymousId")
-			ipAddr           = misc.GetIPFromReq(r)
 			eventsBatch      = gjson.GetBytes(body, "batch").Array()
 			isUserSuppressed = gw.memoizedIsUserSuppressed()
 			out              = make([]jobObject, 0, len(eventsBatch))
@@ -687,12 +687,11 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 					"gateway.write_key_failed_events",
 					stats.CountType,
 					gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
-				).Count(1)
+				).Increment()
 				return
 			}
-			anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
-			userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
-			// skipping non-identifiable check - allowing all events
+			anonIDFromReq, _ := toSet["anonymousId"].(string)
+			userIDFromReq, _ := toSet["userId"].(string)
 			eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
 			if ok {
 				if idx == 0 {
@@ -702,88 +701,73 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 					if v, _ := misc.MapLookup(eventContext, "sources", "task_run_id").(string); v != "" {
 						sourcesTaskRunID = v
 					}
-					// skip calculate sdkVersion - expected to be done already
 				}
-				// skip bot agent check\
 			}
 
 			if isUserSuppressed(workspaceID, userIDFromReq, sourceID) {
-				gw.logger.Infow("suppressed event",
-					"userIDFromReq", userIDFromReq,
-					"sourceID", sourceID,
-					"workspaceID", workspaceID,
+				gw.logger.Infon("suppressed event",
+					logger.NewStringField("sourceID", sourceID),
+					logger.NewStringField("workspaceID", workspaceID),
+					logger.NewStringField("userIDFromReq", userIDFromReq),
 				)
 				gw.stats.NewTaggedStat(
 					"gateway.write_key_suppressed_events",
 					stats.CountType,
 					gw.newSourceStatTagsWithReason(arctx, reqType, errEventSuppressed.Error()),
-				).Count(1)
+				).Increment()
 				continue
 			}
 
 			rudderID, _ := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 			toSet["rudderId"] = rudderID
-			userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
+			userID := buildUserID("", anonIDFromReq, userIDFromReq)
+			receivedAt, _ := toSet["receivedAt"].(string)
+			if receivedAt == "" {
+				receivedAt = time.Now().Format(misc.RFC3339Milli)
+			}
 			out = append(out, jobObject{
-				userID: userID, events: []map[string]interface{}{toSet},
+				userID: userID, events: []map[string]interface{}{toSet}, receivedAt: receivedAt,
 			})
-		}
-		// some checks here
-		if gw.conf.enableRateLimit.Load() {
-			ok, errCheck := gw.rateLimiter.CheckLimitReached(ctx, workspaceID, int64(len(eventsBatch)))
-			if errCheck != nil {
-				gw.stats.NewTaggedStat(
-					"gateway.rate_limiter_error",
-					stats.CountType,
-					stats.Tags{"workspaceId": workspaceID},
-				).Increment()
-				gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
-			}
-			if ok {
-				errorMessage = errRequestDropped.Error()
-				return
-			}
 		}
 		if len(out) == 0 { // events suppressed - but return success
 			return
 		}
 
-		params := map[string]any{
-			"source_id":          sourceID,
-			"source_job_run_id":  sourcesJobRunID,
-			"source_task_run_id": sourcesTaskRunID,
+		var params struct {
+			SourceID        string `json:"source_id"`
+			SourceJobRunID  string `json:"source_job_run_id"`
+			SourceTaskRunID string `json:"source_task_run_id"`
 		}
+		params.SourceID = sourceID
+		params.SourceJobRunID = sourcesJobRunID
+		params.SourceTaskRunID = sourcesTaskRunID
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
-			gw.logger.Errorf(
+			gw.logger.Errorn(
 				"[Gateway] Failed to marshal parameters map. Parameters: %+v",
-				params,
+				logger.NewField("params", params),
+				logger.NewErrorField(err),
 			)
 			marshalledParams = []byte(
 				`{"error": "rudder-server gateway failed to marshal params"}`,
 			)
 		}
 		jobs := make([]*jobsdb.JobT, 0, len(out))
+		type singularEventBatch struct {
+			Batch      []map[string]interface{} `json:"batch"`
+			RequestIP  string                   `json:"requestIP"`
+			WriteKey   string                   `json:"writeKey"`
+			ReceivedAt string                   `json:"receivedAt"`
+		}
 		for _, userEvent := range out {
 			var (
 				payload    json.RawMessage
 				eventCount int
 			)
-			type singularEventBatch struct {
-				Batch      []map[string]interface{} `json:"batch"`
-				RequestIP  string                   `json:"requestIP"`
-				WriteKey   string                   `json:"writeKey"`
-				ReceivedAt string                   `json:"receivedAt"`
-			}
-			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
-			if !ok || !arctx.ReplaySource {
-				receivedAt = time.Now().Format(misc.RFC3339Milli)
-			}
 			eventBatch := singularEventBatch{
 				Batch:      userEvent.events,
-				RequestIP:  ipAddr, // TODO: processor gets IPAddr from inside each event
 				WriteKey:   arctx.WriteKey,
-				ReceivedAt: receivedAt,
+				ReceivedAt: userEvent.receivedAt,
 			}
 			payload, err = json.Marshal(eventBatch)
 			if err != nil {
@@ -806,8 +790,11 @@ func (gw *Handle) writeToJobsDB() http.HandlerFunc {
 		err = gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 			err := gw.jobsDB.StoreInTx(ctx, tx, jobs)
 			if err != nil {
-				gw.logger.Errorf("Store into gateway db failed with error: %v", err)
-				gw.logger.Errorf("JobList: %+v", jobs)
+				gw.logger.Errorn(
+					"Store into gateway db failed with error",
+					logger.NewErrorField(err),
+					logger.NewField("jobs", jobs),
+				)
 				return err
 			}
 
