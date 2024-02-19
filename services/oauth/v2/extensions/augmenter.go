@@ -17,21 +17,26 @@ type Augmenter interface {
 	Augment(r *http.Request, body []byte, secret json.RawMessage) error
 }
 
+type bodyAugmenter struct {
+	AugmenterPath string
+}
+type headerAugmenter struct {
+	HeaderName string
+}
+
 // BodyAugmenter is an Augmenter that adds the authorization information to the request body.
 var BodyAugmenter = &bodyAugmenter{
-	augmenterPath: "input.0.metadata.secret",
+	AugmenterPath: "input.0.metadata.secret",
 }
 
 // HeaderAugmenter is an Augmenter that adds the authorization information to the request header.
-var HeaderAugmenter = &headerAugmenter{}
-
-type bodyAugmenter struct {
-	augmenterPath string
+var HeaderAugmenter = &headerAugmenter{
+	HeaderName: "X-Rudder-Dest-Info",
 }
 
 // Overload of Earlier Augment function
 func (t *bodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
-	augmentedBody, err := sjson.SetRawBytes(body, t.augmenterPath, secret)
+	augmentedBody, err := sjson.SetRawBytes(body, t.AugmenterPath, secret)
 	if err != nil {
 		return fmt.Errorf("failed to augment request body: %w", err)
 	}
@@ -40,18 +45,12 @@ func (t *bodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMes
 	return nil
 }
 
-type headerAugmenter struct{}
-
 // Augment adds the Authorization header to the request and sets the request body.
 func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
-	// secret, err := customFunc()
-	// if err != nil {
-	// 	return err
-	// }
 	if secret == nil {
 		return fmt.Errorf("secret is nil")
 	}
-	r.Header.Set("X-Rudder-Dest-Info", string(secret))
+	r.Header.Set(t.HeaderName, string(secret))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }

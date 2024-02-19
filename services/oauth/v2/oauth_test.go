@@ -219,7 +219,8 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)}
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+			}
 
 			ctrl := gomock.NewController(GinkgoT())
 			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
@@ -263,7 +264,8 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
-				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)}
+				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+			}
 
 			// Invoke code under test
 			oauthHandler := &v2.OAuthHandler{

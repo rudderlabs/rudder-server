@@ -88,7 +88,8 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 			}
 			return nil
 		} else if authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
-			return httpResponseCreator(t.oauthHandler.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId), []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
+			stCd := t.oauthHandler.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId)
+			return httpResponseCreator(stCd, []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
 		}
 		return &http.Response{
 			StatusCode: statusCode,
@@ -119,26 +120,28 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		rts.refreshTokenParams.Destination = rts.destination
 		t.log.Info("refreshing token")
 		statusCode, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
+		if refErr != nil {
+			err = refErr
+		}
+		if authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+			// Setting the response we obtained from trying to Refresh the token
+			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
+			rts.res.StatusCode = t.oauthHandler.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId)
+			rts.res.Body = errorInRefToken
+			return rts.res, nil
+		}
+		// refresh token failed --> abort the event
+		// It can be failed due to the following reasons
+		// 1. invalid grant
+		// 2. control plan api call failed
+		rts.res.StatusCode = statusCode
 		if statusCode == http.StatusOK {
 			// refresh token successful --> retry the event
 			rts.res.StatusCode = http.StatusInternalServerError
-			return rts.res, nil
-		} else if authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
-			rts.res.StatusCode = t.oauthHandler.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId)
-			return rts.res, nil
-		} else {
-			// refresh token failed --> abort the event
-			// It can be failed due to the following reasons
-			// 1. invalid grant
-			// 2. control plan api call failed
-			rts.res.StatusCode = statusCode
 		}
-		if refErr != nil {
-			err = fmt.Errorf("failed to refresh token: %w", refErr)
-		}
+
 	} else if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
 		rts.res.StatusCode = t.oauthHandler.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId)
-		return rts.res, nil
 	}
 	return rts.res, err
 }

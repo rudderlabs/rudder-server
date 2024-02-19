@@ -176,16 +176,10 @@ func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParam
 	}
 	statusCode, refSecret, refErr := oauthHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 	// handling of refresh token response
-	if statusCode == http.StatusOK && refErr == nil {
+	if statusCode == http.StatusOK {
 		// fetching/refreshing through control plane was successful
 		return statusCode, refSecret, nil
 	}
-	//  else if refSecret.Err == REF_TOKEN_INVALID_GRANT {
-	// 	// invalid_grant -> 4xx
-	// 	// refresh token failed -> erreneous status-code
-	// 	// Add some kind of debug logger (if needed)
-	// 	statusCode = oauthHandler.UpdateAuthStatusToInactive(refTokenParams.Destination, refTokenParams.WorkspaceId, refTokenParams.AccountId)
-	// }
 	if refErr != nil {
 		refErr = fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", refErr)
 	}
