@@ -52,9 +52,9 @@ func WithCpClientTimeout(timeout time.Duration) func(*ControlPlaneConnector) {
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
+	defer httputil.CloseResponse(resp)
 	if resp != nil && resp.Body != nil {
 		respData, ioUtilReadErr = io.ReadAll(resp.Body)
-		defer httputil.CloseResponse(resp)
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
 		}
@@ -114,7 +114,6 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 		}
 		return http.StatusBadRequest, doErr.Error()
 	}
-	defer httputil.CloseResponse(res)
 	statusCode, resp := processResponse(res)
 	return statusCode, resp
 }

@@ -28,7 +28,6 @@ type tokenSource struct {
 	oauthClient     oauth.Authorizer
 	oauthClientV2   oauthV2.Authorizer
 	destination     *backendconfig.DestinationT
-	oauthV2Enabled  bool
 }
 
 // authentication related utils

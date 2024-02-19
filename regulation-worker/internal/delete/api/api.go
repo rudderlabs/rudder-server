@@ -22,6 +22,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -102,7 +103,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 			},
 			Name: destination.Name,
 		}
-		req = req.WithContext(context.WithValue(req.Context(), "destination", dest))
+		req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, dest))
 	}
 
 	defer stats.Default.NewTaggedStat(
