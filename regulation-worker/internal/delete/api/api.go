@@ -296,7 +296,7 @@ func (api *APIManager) PostResponse(ctx context.Context, params PostResponsePara
 		}
 	}
 	// new oauth handling
-	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && api.IsOAuthV2Enabled {
+	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && params.isOAuthEnabled && api.IsOAuthV2Enabled {
 		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 		// retry the request
 		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
