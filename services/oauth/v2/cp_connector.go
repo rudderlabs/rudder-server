@@ -52,7 +52,6 @@ func WithCpClientTimeout(timeout time.Duration) func(*ControlPlaneConnector) {
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
-	defer httputil.CloseResponse(resp)
 	if resp != nil && resp.Body != nil {
 		respData, ioUtilReadErr = io.ReadAll(resp.Body)
 		if ioUtilReadErr != nil {
@@ -104,6 +103,7 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 
 	cpApiDoTimeStart := time.Now()
 	res, doErr := cpConn.client.Do(req)
+	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	cpConn.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
