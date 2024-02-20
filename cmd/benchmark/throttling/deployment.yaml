@@ -19,6 +19,22 @@ spec:
           name: rudder-server-benchmarks
           imagePullPolicy: Always
           command: ["./throttling"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 10001
+            runAsGroup: 10001
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            limits:
+              cpu: "4"
+              memory: "2Gi"
+            requests:
+              cpu: "4"
+              memory: "2Gi"
           env:
             - name: REDIS_ADDR
               value: "throttling-2-001.012ut9.0001.use1.cache.amazonaws.com:6379"
