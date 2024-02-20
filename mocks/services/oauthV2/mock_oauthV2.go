@@ -72,6 +72,21 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 	return m.recorder
 }
 
+// AuthStatusToggle mocks base method.
+func (m *MockAuthorizer) AuthStatusToggle(authStatusToggleParams *v2.AuthStatusToggleParams) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuthStatusToggle", authStatusToggleParams)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// AuthStatusToggle indicates an expected call of AuthStatusToggle.
+func (mr *MockAuthorizerMockRecorder) AuthStatusToggle(authStatusToggleParams interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthStatusToggle", reflect.TypeOf((*MockAuthorizer)(nil).AuthStatusToggle), authStatusToggleParams)
+}
+
 // FetchToken mocks base method.
 func (m *MockAuthorizer) FetchToken(fetchTokenParams *v2.RefreshTokenParams) (int, *v2.AuthResponse, error) {
 	m.ctrl.T.Helper()

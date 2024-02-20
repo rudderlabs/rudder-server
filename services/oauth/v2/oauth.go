@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -155,7 +154,7 @@ func (oauthHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParam
 func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
 	startTime := time.Now()
 	defer func() {
-		authStats.statName = getOAuthActionStatName("total_latency")
+		authStats.statName = GetOAuthActionStatName("total_latency")
 		authStats.isCallToCpApi = false
 		authStats.SendTimerStats(startTime)
 	}()
@@ -186,31 +185,7 @@ func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParam
 	return statusCode, refSecret, refErr
 }
 
-func (authErrHandler *OAuthHandler) UpdateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
-	inactiveAuthStatusStatTags := stats.Tags{
-		"id":          destination.ID,
-		"destType":    destination.DestinationDefinition.Name,
-		"workspaceId": workspaceID,
-		"success":     "true",
-		"flowType":    string(RudderFlow_Delivery),
-	}
-	errCatStatusCode, _ := authErrHandler.authStatusToggle(&AuthStatusToggleParams{
-		Destination:     destination,
-		WorkspaceId:     workspaceID,
-		RudderAccountId: rudderAccountId,
-		StatPrefix:      AuthStatusInactive,
-		AuthStatus:      AUTH_STATUS_INACTIVE,
-	})
-	if errCatStatusCode != http.StatusOK {
-		// Error while inactivating authStatus
-		inactiveAuthStatusStatTags["success"] = "false"
-	}
-	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
-	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest
-}
-
-func (authErrHandler *OAuthHandler) authStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
+func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := params.Destination.ID
 	action := fmt.Sprintf("auth_status_%v", params.StatPrefix)
@@ -228,7 +203,7 @@ func (authErrHandler *OAuthHandler) authStatusToggle(params *AuthStatusTogglePar
 		action:          action,
 	}
 	defer func() {
-		authStatusToggleStats.statName = getOAuthActionStatName("total_latency")
+		authStatusToggleStats.statName = GetOAuthActionStatName("total_latency")
 		authStatusToggleStats.isCallToCpApi = false
 		authStatusToggleStats.SendTimerStats(authErrHandlerTimeStart)
 	}()
@@ -265,13 +240,13 @@ func (authErrHandler *OAuthHandler) authStatusToggle(params *AuthStatusTogglePar
 		RequestType:   action,
 		basicAuthUser: authErrHandler.Identity(),
 	}
-	authStatusToggleStats.statName = getOAuthActionStatName("request_sent")
+	authStatusToggleStats.statName = GetOAuthActionStatName("request_sent")
 	authStatusToggleStats.isCallToCpApi = true
 	authStatusToggleStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.CpConn.CpApiCall(authStatusInactiveCpReq)
-	authStatusToggleStats.statName = getOAuthActionStatName("request_latency")
+	authStatusToggleStats.statName = GetOAuthActionStatName("request_latency")
 	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
 	authErrHandler.Logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
 
@@ -284,14 +259,14 @@ func (authErrHandler *OAuthHandler) authStatusToggle(params *AuthStatusTogglePar
 		} else {
 			msg = fmt.Sprintf("Could not update authStatus to inactive for destination: %v", authStatusToggleRes.Message)
 		}
-		authStatusToggleStats.statName = getOAuthActionStatName("failure")
+		authStatusToggleStats.statName = GetOAuthActionStatName("failure")
 		authStatusToggleStats.errorMessage = msg
 		authStatusToggleStats.SendCountStat()
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	authErrHandler.Logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
-	authStatusToggleStats.statName = getOAuthActionStatName("success")
+	authStatusToggleStats.statName = GetOAuthActionStatName("success")
 	authStatusToggleStats.errorMessage = ""
 	authStatusToggleStats.SendCountStat()
 

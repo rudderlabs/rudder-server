@@ -66,6 +66,7 @@ type RefreshTokenParams struct {
 type Authorizer interface {
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
+	AuthStatusToggle(authStatusToggleParams *AuthStatusToggleParams) (statusCode int, respBody string)
 }
 
 type RefreshTokenBodyParams struct {
