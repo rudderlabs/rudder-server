@@ -66,7 +66,6 @@ func (gw *Handle) Setup(
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
 
-	gw.conf.httpTimeout = config.GetDurationVar(30, time.Second, "Gateway.httpTimeout")
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
 	// Number of incoming requests that are batched before handing off to write workers
@@ -113,7 +112,6 @@ func (gw *Handle) Setup(
 
 	gw.now = time.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
-	gw.netHandle = &http.Client{Transport: &http.Transport{}, Timeout: gw.conf.httpTimeout}
 	gw.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, gw.conf.maxDBBatchSize)
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
 	gw.irh = &ImportRequestHandler{Handle: gw}
