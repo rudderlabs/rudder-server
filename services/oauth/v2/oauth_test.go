@@ -33,6 +33,15 @@ var _ = Describe("Oauth", func() {
 		2. CpApiCall returns empty response
 		3. CpApiCall returns a new token when the token is expired
 		4. CpApiCall returns an error when the token is not found
+		
+		TODOs:
+		FetchToken, RefreshToken, AuthStatusToggle
+		- Add a test where in config-be responds with "Connection Refused" kind of error (config-be down scenario)
+		- Add a test where in config-be responds may be after connection timeout
+		- Add a test where in config-be closes connection(Connection reset by peer)
+		- Add a test where config-be returns 502 & 503
+		- Add a test where config-be returns 429 from config-be
+
 		*/
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
@@ -214,6 +223,7 @@ var _ = Describe("Oauth", func() {
 			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
 		})
 	})
+
 	Describe("Test RefreshToken function", func() {
 		It("refreshToken function call when stored cache is same as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
@@ -349,6 +359,7 @@ var _ = Describe("Oauth", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 	})
+
 	Describe("Test AuthStatusToggle function", func() {
 		It("authStatusToggle function call when config backend api call failed", func() {
 			ctrl := gomock.NewController(GinkgoT())
@@ -409,6 +420,7 @@ var _ = Describe("Oauth", func() {
 			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
 		})
 	})
+
 	Describe("Test FetchToken with multiple go routines", func() {
 		It("fetch token function call when cache is not empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
@@ -423,10 +435,17 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Times(0)
+
+
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex: rudderSync.NewPartitionRWLocker(),
 				Cache:      v2.NewCache(),
 				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
+				CpConn: mockCpConnector,
 			}
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
@@ -469,7 +488,7 @@ var _ = Describe("Oauth", func() {
 			}
 			ctrl := gomock.NewController(GinkgoT())
 			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).AnyTimes()
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 			oauthHandler := &v2.OAuthHandler{
@@ -495,6 +514,7 @@ var _ = Describe("Oauth", func() {
 			}
 			wg.Wait()
 
+
 			// Invoke code under test
 		})
 	})
@@ -515,7 +535,7 @@ var _ = Describe("Oauth", func() {
 			}
 			ctrl := gomock.NewController(GinkgoT())
 			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).AnyTimes()
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 			oauthHandler := &v2.OAuthHandler{
