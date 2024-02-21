@@ -73,7 +73,8 @@ type Exporter struct {
 func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error {
 	defer e.Log.Info("Full Exporter Loop Stopped")
 	options := &Opt{
-		syncInProgress: &atomic.Bool{},
+		syncInProgress:    &atomic.Bool{},
+		stopTillRepoReady: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -91,6 +92,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context, opts ...OptFunc) error 
 		_ = repo.Stop()
 	}()
 	if options.repoSharing != nil {
+		close(options.stopTillRepoReady)
 		options.repoSharing.SetRepo(repo)
 	}
 	var tokenPublisher func([]byte)
@@ -228,9 +230,10 @@ type Token struct {
 }
 
 type Opt struct {
-	repoSharing    repoDependent
-	syncInProgress *atomic.Bool
-	currentToken   *atomic.Value
+	repoSharing       repoDependent
+	syncInProgress    *atomic.Bool
+	currentToken      *atomic.Value
+	stopTillRepoReady chan struct{}
 }
 
 type OptFunc func(*Opt)
@@ -238,6 +241,12 @@ type OptFunc func(*Opt)
 func WithRepoSharing(r repoDependent) OptFunc {
 	return func(o *Opt) {
 		o.repoSharing = r
+	}
+}
+
+func WithStopTillRepoReady(stopChan chan struct{}) OptFunc {
+	return func(o *Opt) {
+		o.stopTillRepoReady = stopChan
 	}
 }
 

@@ -72,6 +72,7 @@ func Run(ctx context.Context) error {
 	currentToken := &atomic.Value{}
 
 	g, gCtx := errgroup.WithContext(ctx)
+	waitChan := make(chan struct{})
 	g.Go(func() error {
 		fullExporter := exporter.Exporter{
 			Id:   id,
@@ -83,6 +84,7 @@ func Run(ctx context.Context) error {
 			exporter.WithSyncInProgress(syncInProgress),
 			exporter.WithRepoSharing(repoDep),
 			exporter.WithCurrentToken(currentToken),
+			exporter.WithStopTillRepoReady(waitChan),
 		)
 	})
 
@@ -95,6 +97,7 @@ func Run(ctx context.Context) error {
 		return latestExporter.LatestExporterLoop(gCtx)
 	})
 
+	<-waitChan
 	var httpServer *http.Server
 	g.Go(func() error {
 		httpServer = &http.Server{
