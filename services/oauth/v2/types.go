@@ -45,7 +45,7 @@ type ControlPlaneRequestT struct {
 	Method         string
 	destName       string
 	RequestType    string // This is to add more refined stat tags
-	basicAuthUser  identity.Identifier
+	BasicAuthUser  identity.Identifier
 	rudderFlowType RudderFlow
 }
 

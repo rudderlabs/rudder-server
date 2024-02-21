@@ -33,7 +33,7 @@ var _ = Describe("Oauth", func() {
 		2. CpApiCall returns empty response
 		3. CpApiCall returns a new token when the token is expired
 		4. CpApiCall returns an error when the token is not found
-		
+
 		TODOs:
 		FetchToken, RefreshToken, AuthStatusToggle
 		- Add a test where in config-be responds with "Connection Refused" kind of error (config-be down scenario)
@@ -221,6 +221,37 @@ var _ = Describe("Oauth", func() {
 			}
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
+		})
+		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available or connection timeout", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusServiceUnavailable, `{
+				"error": "network_error",
+				"message": 	"control plane service is not available or failed due to timeout."
+			}`)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        mockCpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "network_error",
+				ErrorMessage: "control plane service is not available or failed due to timeout.",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is not available or failed due to timeout."))))
 		})
 	})
 
@@ -440,12 +471,11 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Times(0)
 
-
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex: rudderSync.NewPartitionRWLocker(),
 				Cache:      v2.NewCache(),
 				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
-				CpConn: mockCpConnector,
+				CpConn:     mockCpConnector,
 			}
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
@@ -513,7 +543,6 @@ var _ = Describe("Oauth", func() {
 				}()
 			}
 			wg.Wait()
-
 
 			// Invoke code under test
 		})

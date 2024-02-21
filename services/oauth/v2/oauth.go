@@ -133,22 +133,6 @@ func (oauthHandler *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParam
 		action:          "refresh_token",
 	}
 	return oauthHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
-	// handling of refresh token response
-	// if statusCode == http.StatusOK {
-	// 	// refresh token successful --> retry the event
-	// 	statusCode = http.StatusInternalServerError
-	// } else {
-	// 	// invalid_grant -> 4xx
-	// 	// refresh token failed -> erreneous status-code
-	// 	if refSecret.Err == REF_TOKEN_INVALID_GRANT {
-	// 		// Add some kind of debug logger (if needed)
-	// 		statusCode = oauthHandler.updateAuthStatusToInactive(refTokenParams.Destination, refTokenParams.WorkspaceId, refTokenParams.AccountId)
-	// 	}
-	// }
-	// if refErr != nil {
-	// 	refErr = fmt.Errorf("failed to refresh token: %w", refErr)
-	// }
-	// return statusCode, refSecret, refErr
 }
 
 func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
@@ -238,7 +222,7 @@ func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusTogglePar
 		ContentType:   "application/json",
 		destName:      params.Destination.DestinationDefinition.Name,
 		RequestType:   action,
-		basicAuthUser: authErrHandler.Identity(),
+		BasicAuthUser: authErrHandler.Identity(),
 	}
 	authStatusToggleStats.statName = GetOAuthActionStatName("request_sent")
 	authStatusToggleStats.isCallToCpApi = true

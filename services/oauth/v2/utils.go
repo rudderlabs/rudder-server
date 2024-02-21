@@ -86,7 +86,7 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 		Body:          string(res),
 		destName:      refTokenParams.DestDefName,
 		RequestType:   authStats.action,
-		basicAuthUser: authErrHandler.TokenProvider.Identity(),
+		BasicAuthUser: authErrHandler.TokenProvider.Identity(),
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
@@ -118,16 +118,15 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 			Err:          errType,
 			ErrorMessage: refErrMsg,
 		}
-		authErrHandler.Cache.Set(refTokenParams.AccountId, authResponse)
 		authStats.statName = GetOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
 		if authResponse.Err == REF_TOKEN_INVALID_GRANT {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
-			return http.StatusBadRequest, authResponse, errors.New("invalid grant")
+			return http.StatusBadRequest, authResponse, fmt.Errorf("invalid grant")
 		}
-		return http.StatusInternalServerError, authResponse, errors.New("error occurred while fetching/refreshing account info from CP: %v" + refErrMsg)
+		return http.StatusInternalServerError, authResponse, fmt.Errorf("error occurred while fetching/refreshing account info from CP: %s", refErrMsg)
 	}
 	authStats.statName = GetOAuthActionStatName("success")
 	authStats.errorMessage = ""
@@ -158,6 +157,9 @@ func (authErrHandler *OAuthHandler) GetRefreshTokenErrResp(response string, acco
 			message = bodyMsg
 		}
 		errorType = REF_TOKEN_INVALID_GRANT
+	} else if gjson.Get(response, "error").String() == "network_error" {
+		errorType = gjson.Get(response, "error").String()
+		message = gjson.Get(response, "message").String()
 	}
 	return errorType, message
 }

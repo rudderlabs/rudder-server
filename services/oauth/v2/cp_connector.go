@@ -3,6 +3,7 @@ package v2
 import (
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -16,39 +17,52 @@ import (
 type ControlPlaneConnectorI interface {
 	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
 }
-
+type HttpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 type ControlPlaneConnector struct {
-	client *http.Client
-	logger logger.Logger
+	Client  HttpClient
+	Logger  logger.Logger
+	timeOut time.Duration
 }
 
 func NewControlPlaneConnector(options ...func(*ControlPlaneConnector)) ControlPlaneConnectorI {
-	cpConnector := &ControlPlaneConnector{
-		client: &http.Client{
-			Transport: http.DefaultTransport,
-		},
-	}
+	cpConnector := &ControlPlaneConnector{}
 	for _, opt := range options {
 		opt(cpConnector)
 	}
-	if cpConnector.logger == nil {
-		cpConnector.logger = logger.NewLogger().Child("ControlPlaneConnector")
+	httpClient := &http.Client{
+		Transport: http.DefaultTransport,
+		Timeout:   cpConnector.timeOut,
+	}
+	cpConnector.Client = httpClient
+	if cpConnector.Logger == nil {
+		cpConnector.Logger = logger.NewLogger().Child("ControlPlaneConnector")
 	}
 	return cpConnector
 }
 
+/*
+WithParentLogger is a functional option to set the parent logger for the ControlPlaneConnector
+*/
 func WithParentLogger(parentLogger logger.Logger) func(*ControlPlaneConnector) {
 	return func(cpConn *ControlPlaneConnector) {
-		cpConn.logger = parentLogger
+		cpConn.Logger = parentLogger
 	}
 }
 
+/*
+WithCpClientTimeout is a functional option to set the timeout for the ControlPlaneConnector
+*/
 func WithCpClientTimeout(timeout time.Duration) func(*ControlPlaneConnector) {
 	return func(h *ControlPlaneConnector) {
-		h.client.Timeout = timeout
+		h.timeOut = timeout
 	}
 }
 
+/*
+processResponse is a helper function to process the response from the control plane
+*/
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
@@ -70,6 +84,9 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	return resp.StatusCode, string(respData)
 }
 
+/*
+CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
+*/
 func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":         cpReq.Url,
@@ -89,12 +106,12 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
-		cpConn.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
+		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
 	// Authorisation setting
-	req.SetBasicAuth(cpReq.basicAuthUser.BasicAuth())
+	req.SetBasicAuth(cpReq.BasicAuthUser.BasicAuth())
 
 	// Set content-type in order to send the body in request correctly
 	if cpReq.ContentType != "" {
@@ -102,15 +119,22 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 	}
 
 	cpApiDoTimeStart := time.Now()
-	res, doErr := cpConn.client.Do(req)
+	res, doErr := cpConn.Client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
-	cpConn.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
+	cpConn.Logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error
-		cpConn.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
+		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
 		if os.IsTimeout(doErr) {
-			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags)
+			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags).Count(1)
+		}
+		if _, ok := doErr.(net.Error); ok {
+			resp := `{
+				"error": "network_error",
+				"message": 	"control plane service is not available or failed due to timeout."
+			}`
+			return http.StatusServiceUnavailable, resp
 		}
 		return http.StatusBadRequest, doErr.Error()
 	}
