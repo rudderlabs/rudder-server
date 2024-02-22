@@ -80,36 +80,18 @@ type Runner struct {
 	enableSuppressUserFeature bool
 	logger                    logger.Logger
 	appHandler                apphandlers.AppHandler
-	readTimeout               time.Duration
-	readHeaderTimeout         time.Duration
-	writeTimeout              time.Duration
-	idleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
-	maxHeaderBytes            int
 }
 
 // New creates and initializes a new Runner
 func New(releaseInfo ReleaseInfo) *Runner {
-	getConfigDuration := func(defaultValueInTimescaleUnits int64, timeScale time.Duration, keys ...string) time.Duration {
-		for i, key := range keys {
-			if config.IsSet(key) || i == len(keys)-1 {
-				return config.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
-			}
-		}
-		return 0
-	}
 	return &Runner{
 		appType:                   strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED)),
 		releaseInfo:               releaseInfo,
 		logger:                    logger.NewLogger().Child("runner"),
 		warehouseMode:             config.GetString("Warehouse.mode", "embedded"),
 		enableSuppressUserFeature: config.GetBool("Gateway.enableSuppressUserFeature", true),
-		readTimeout:               getConfigDuration(0, time.Second, "ReadTimeOut", "ReadTimeOutInSec"),
-		readHeaderTimeout:         getConfigDuration(0, time.Second, "ReadHeaderTimeout", "ReadHeaderTimeoutInSec"),
-		writeTimeout:              getConfigDuration(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"),
-		idleTimeout:               getConfigDuration(720, time.Second, "IdleTimeout", "IdleTimeoutInSec"),
 		gracefulShutdownTimeout:   config.GetDuration("GracefulShutdownTimeout", 15, time.Second),
-		maxHeaderBytes:            config.GetInt("MaxHeaderBytes", 524288),
 	}
 }
 
