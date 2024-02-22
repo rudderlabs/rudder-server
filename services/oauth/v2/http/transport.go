@@ -87,14 +87,11 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 				return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
 			}
 			return nil
-		} else if authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+		} else if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			stCd := oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
 			return httpResponseCreator(stCd, []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
 		}
-		return &http.Response{
-			StatusCode: statusCode,
-			Body:       io.NopCloser(bytes.NewReader([]byte(fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error()))),
-		}
+		return httpResponseCreator(statusCode, []byte(fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error()))
 	}
 	return nil
 }
@@ -123,7 +120,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		if refErr != nil {
 			err = refErr
 		}
-		if authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+		if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// Setting the response we obtained from trying to Refresh the token
 			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
 			rts.res.StatusCode = oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
@@ -176,9 +173,9 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return res, nil
 	}
 	res, err := t.Transport.RoundTrip(rts.req)
-	rts.res = res
 	if err != nil {
 		return res, err
 	}
+	rts.res = res
 	return t.postRoundTrip(rts)
 }

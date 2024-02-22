@@ -2,11 +2,13 @@ package v2
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -128,6 +130,9 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
 		if os.IsTimeout(doErr) {
 			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags).Count(1)
+		}
+		if ok := errors.Is(doErr, syscall.ECONNRESET); ok {
+			stats.Default.NewTaggedStat("cp_request_conn_reset", stats.CountType, cpStatTags).Count(1)
 		}
 		if _, ok := doErr.(net.Error); ok {
 			resp := `{
