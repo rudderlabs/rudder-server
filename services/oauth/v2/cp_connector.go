@@ -2,13 +2,10 @@ package v2
 
 import (
 	"bytes"
-	"errors"
+	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -90,6 +87,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
 */
 func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+	// TODO: Need to add stat here for oauth version
 	cpStatTags := stats.Tags{
 		"url":         cpReq.Url,
 		"requestType": cpReq.RequestType,
@@ -128,20 +126,19 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 	if doErr != nil {
 		// Abort on receiving an error
 		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
-		if os.IsTimeout(doErr) {
-			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags).Count(1)
+
+		errorType := GetErrorType(doErr)
+		cpStatTags["errorType"] = errorType
+		stats.Default.NewTaggedStat("oauth_v2_cp_request_error", stats.CountType, cpStatTags).Count(1)
+
+		resp := doErr.Error()
+		if errorType != "none" {
+			resp = fmt.Sprintf(`{
+				"error": %q,
+				"message": 	"control plane service is having a problem: %v"
+			}`, errorType, doErr.Error())
 		}
-		if ok := errors.Is(doErr, syscall.ECONNRESET); ok {
-			stats.Default.NewTaggedStat("cp_request_conn_reset", stats.CountType, cpStatTags).Count(1)
-		}
-		if _, ok := doErr.(net.Error); ok {
-			resp := `{
-				"error": "network_error",
-				"message": 	"control plane service is not available or failed due to timeout."
-			}`
-			return http.StatusServiceUnavailable, resp
-		}
-		return http.StatusBadRequest, doErr.Error()
+		return res.StatusCode, resp
 	}
 	statusCode, resp := processResponse(res)
 	return statusCode, resp

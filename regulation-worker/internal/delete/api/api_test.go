@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang/mock/gomock"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -971,4 +970,43 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
 	})
 
 	return srvMux
+}
+
+func TestAPIManager_Delete(t *testing.T) {
+	type fields struct {
+		Client                       *http.Client
+		DestTransformURL             string
+		OAuth                        oauth.Authorizer
+		MaxOAuthRefreshRetryAttempts int
+		TransformerFeaturesService   transformer.FeaturesService
+		IsOAuthV2Enabled             bool
+	}
+	type args struct {
+		ctx         context.Context
+		job         model.Job
+		destination model.Destination
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   model.JobStatus
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &APIManager{
+				Client:                       tt.fields.Client,
+				DestTransformURL:             tt.fields.DestTransformURL,
+				OAuth:                        tt.fields.OAuth,
+				MaxOAuthRefreshRetryAttempts: tt.fields.MaxOAuthRefreshRetryAttempts,
+				TransformerFeaturesService:   tt.fields.TransformerFeaturesService,
+				IsOAuthV2Enabled:             tt.fields.IsOAuthV2Enabled,
+			}
+			if got := api.Delete(tt.args.ctx, tt.args.job, tt.args.destination); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("APIManager.Delete() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

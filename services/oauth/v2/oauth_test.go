@@ -2,8 +2,11 @@ package v2_test
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"sync"
+	"syscall"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -222,7 +225,7 @@ var _ = Describe("Oauth", func() {
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
 		})
-		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available or connection timeout", func() {
+		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
 				AccountId:   "123",
 				WorkspaceId: "456",
@@ -230,28 +233,75 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusServiceUnavailable, `{
-				"error": "network_error",
-				"message": 	"control plane service is not available or failed due to timeout."
-			}`)
+			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
+			})
+			cpConnector := &v2.ControlPlaneConnector{
+				Client: mockHttpClient,
+				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
+			}
+
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil)
+			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    rudderSync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
+				CpConn:        cpConnector,
 				TokenProvider: mockTokenProvider,
 				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
 			}
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
-				Err:          "network_error",
-				ErrorMessage: "control plane service is not available or failed due to timeout.",
+				Err:          "econnrefused",
+				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is not available or failed due to timeout."))))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
+		})
+		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
+			})
+			cpConnector := &v2.ControlPlaneConnector{
+				Client: mockHttpClient,
+				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
+			}
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        cpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "timeout",
+				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
 		})
 	})
 
@@ -389,6 +439,99 @@ var _ = Describe("Oauth", func() {
 			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
 			Expect(response).To(Equal(expectedResponse))
 		})
+		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				Destination: &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "testDest",
+					},
+					ID: "Destination123",
+				},
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
+			})
+			cpConnector := &v2.ControlPlaneConnector{
+				Client: mockHttpClient,
+				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
+			}
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        cpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "econnrefused",
+				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
+		})
+
+		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountId:   "123",
+				WorkspaceId: "456",
+				DestDefName: "testDest",
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				Destination: &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "testDest",
+					},
+					ID: "Destination123",
+				},
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
+			})
+			cpConnector := &v2.ControlPlaneConnector{
+				Client: mockHttpClient,
+				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
+			}
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:    rudderSync.NewPartitionRWLocker(),
+				Cache:         v2.NewCache(),
+				CpConn:        cpConnector,
+				TokenProvider: mockTokenProvider,
+				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
+			}
+			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "timeout",
+				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
+		})
 	})
 
 	Describe("Test AuthStatusToggle function", func() {
@@ -437,6 +580,46 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{
 				  "message":"unable to update the auth status for the destination"
 			  }`)
+			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
+				Destination: &backendconfig.DestinationT{
+					ID:                    "destinationID",
+					DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "testDest"},
+				},
+				WorkspaceId:     "workspaceID",
+				RudderAccountId: "rudderAccountId",
+				StatPrefix:      "AuthStatusInactive",
+				AuthStatus:      v2.AUTH_STATUS_INACTIVE,
+			})
+			Expect(statusCode).To(Equal(http.StatusBadRequest))
+			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
+		})
+		It("authStatusToggle function call when config backend api call failed due to config backend service is failed due to timeout", func() {
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+				StatusCode: http.StatusRequestTimeout,
+			}, &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
+			})
+			cpConnector := &v2.ControlPlaneConnector{
+				Client: mockHttpClient,
+				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
+			}
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			oauthHandler := &v2.OAuthHandler{
+				CacheMutex:                rudderSync.NewPartitionRWLocker(),
+				Cache:                     v2.NewCache(),
+				CpConn:                    cpConnector,
+				TokenProvider:             mockTokenProvider,
+				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
+				AuthStatusUpdateActiveMap: make(map[string]bool),
+			}
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination: &backendconfig.DestinationT{
 					ID:                    "destinationID",

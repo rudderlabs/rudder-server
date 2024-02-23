@@ -122,6 +122,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 		// TODO: re-check this
 		if api.IsOAuthV2Enabled && resp.StatusCode >= http.StatusInternalServerError {
+			// TODO: Add log and stat here
 			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 		}
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}

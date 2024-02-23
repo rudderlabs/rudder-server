@@ -108,6 +108,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
 	}
 	if authErrorCategory == oauth.REFRESH_TOKEN {
+		// TODO: Need to refactor this part by moving this to another function
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		if rts.req.Context().Value(oauth.SecretKey) != nil {
@@ -123,7 +124,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// Setting the response we obtained from trying to Refresh the token
 			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
-			rts.res.StatusCode = oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
+			rts.res.StatusCode = http.StatusBadRequest
+			oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
 			rts.res.Body = errorInRefToken
 			return rts.res, nil
 		}
@@ -138,7 +140,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		}
 
 	} else if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-		rts.res.StatusCode = oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
+		oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
+		rts.res.StatusCode = http.StatusBadRequest
 	}
 	return rts.res, err
 }
@@ -168,6 +171,7 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		DestDefName: rts.destination.DestinationDefinition.Name,
 	}
 	rts.req = req
+	// TODO: return error from preRoundTrip and build response in here
 	res := t.preRoundTrip(rts)
 	if res != nil {
 		return res, nil

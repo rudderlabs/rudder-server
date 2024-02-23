@@ -100,19 +100,3 @@ func (b *BasicAuthMock) ID() string {
 func (b *BasicAuthMock) Type() deployment.Type {
 	return "test"
 }
-
-type MyError struct {
-	Err error
-}
-
-func (e MyError) Timeout() bool {
-	return true
-}
-
-func (e MyError) Temporary() bool {
-	return true
-}
-
-func (e MyError) Error() string {
-	return ""
-}

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"syscall"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -141,7 +144,12 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 }
 
 func (authErrHandler *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
-	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
+
+	if gjson.Get(response, "error").String() != "" {
+		fmt.Println(gjson.Get(response, "error"))
+		errorType = gjson.Get(response, "error").String()
+		message = gjson.Get(response, "message").String()
+	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		authErrHandler.Logger.Debugf("Failed with error response: %v\n", err)
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
@@ -157,9 +165,6 @@ func (authErrHandler *OAuthHandler) GetRefreshTokenErrResp(response string, acco
 			message = bodyMsg
 		}
 		errorType = REF_TOKEN_INVALID_GRANT
-	} else if gjson.Get(response, "error").String() == "network_error" {
-		errorType = gjson.Get(response, "error").String()
-		message = gjson.Get(response, "message").String()
 	}
 	return errorType, message
 }
@@ -183,7 +188,7 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats *OAuthStats) bool {
-	if secret.ExpirationDate != "" && verifyExpirationDate(secret.ExpirationDate, stats) {
+	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, stats) {
 		return true
 	}
 	if router_utils.IsNotEmptyString(string(oldSecret)) {
@@ -194,14 +199,17 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats 
 	return false
 }
 
-func verifyExpirationDate(expirationDate string, stats *OAuthStats) bool {
+func isTokenExpired(expirationDate string, stats *OAuthStats) bool {
+	// TODO: Need to fix this
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
+		// TODO: need to remove this long error message
 		stats.errorMessage = "error in parsing expiration date"
 		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
 		stats.SendCountStat()
 		return false
 	}
+	// TODO: Move expirationTimeDiff to a transport
 	if date.Before(time.Now().Add(config.GetDurationVar(5, time.Minute, "Router."+stats.destDefName+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff"))) {
 		return true
 	}
@@ -230,4 +238,27 @@ func UpdateAuthStatusToInactive(destination *backendconfig.DestinationT, workspa
 	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
 	// Abort the jobs as the destination is disabled
 	return http.StatusBadRequest
+}
+
+func GetErrorType(err error) string {
+	errTypMap := map[syscall.Errno]string{
+		syscall.ECONNRESET:   "econnreset",
+		syscall.ECONNREFUSED: "econnrefused",
+		syscall.ECONNABORTED: "econnaborted",
+		syscall.ECANCELED:    "ecanceled",
+	}
+	if os.IsTimeout(err) {
+		return "timeout"
+	}
+	// if _, ok := err.(syscall.Errno); ok {
+	for errno, errTyp := range errTypMap {
+		if ok := errors.Is(err, errno); ok {
+			return errTyp
+		}
+	}
+	// }
+	if _, ok := err.(net.Error); ok {
+		return "network_error"
+	}
+	return "none"
 }
