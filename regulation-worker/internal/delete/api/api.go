@@ -161,7 +161,11 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 	return api.deleteWithRetry(ctx, job, destination, 0)
 }
 
-func getJobStatus(statusCode int, jobResp string) model.JobStatus {
+func getJobStatus(statusCode int, bodyBytes []byte) model.JobStatus {
+	var jobResp []JobRespSchema
+	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	}
 	switch statusCode {
 	case http.StatusOK:
 		return model.JobStatus{Status: model.JobStatusComplete}
@@ -288,7 +292,7 @@ func (api *APIManager) PostResponse(ctx context.Context, params PostResponsePara
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
-	jobStatus := getJobStatus(params.responseStatusCode, string(params.responseBodyBytes))
+	jobStatus := getJobStatus(params.responseStatusCode, params.responseBodyBytes)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
 
 	// old oauth handling
