@@ -88,8 +88,14 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 			}
 			return nil
 		} else if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
-			stCd := oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
-			return httpResponseCreator(stCd, []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
+			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+				Destination:     rts.destination,
+				WorkspaceId:     rts.destination.WorkspaceID,
+				RudderAccountId: rts.accountId,
+				StatPrefix:      oauth.AuthStatusInactive,
+				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+			})
+			return httpResponseCreator(http.StatusBadRequest, []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
 		}
 		return httpResponseCreator(statusCode, []byte(fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error()))
 	}
@@ -125,7 +131,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			// Setting the response we obtained from trying to Refresh the token
 			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
 			rts.res.StatusCode = http.StatusBadRequest
-			oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
+			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+				Destination:     rts.destination,
+				WorkspaceId:     rts.destination.WorkspaceID,
+				RudderAccountId: rts.accountId,
+				StatPrefix:      oauth.AuthStatusInactive,
+				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+			})
 			rts.res.Body = errorInRefToken
 			return rts.res, nil
 		}
@@ -140,7 +152,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		}
 
 	} else if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-		oauth.UpdateAuthStatusToInactive(rts.destination, rts.destination.WorkspaceID, rts.accountId, t.oauthHandler.AuthStatusToggle)
+		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+			Destination:     rts.destination,
+			WorkspaceId:     rts.destination.WorkspaceID,
+			RudderAccountId: rts.accountId,
+			StatPrefix:      oauth.AuthStatusInactive,
+			AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+		})
 		rts.res.StatusCode = http.StatusBadRequest
 	}
 	return rts.res, err

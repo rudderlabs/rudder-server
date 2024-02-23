@@ -2,6 +2,7 @@ package v2_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -35,7 +36,7 @@ var _ = Describe("CpConnector", func() {
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(200))
+		Expect(statusCode).To(Equal(http.StatusOK))
 		Expect(respBody).To(Equal("test"))
 	})
 
@@ -51,9 +52,6 @@ var _ = Describe("CpConnector", func() {
 			Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 		})
-		// mock_oauthV2.MyError{
-		// 	Err: errors.New("context deadline exceeded (Client.Timeout exceeded while awaiting headers)"),
-		// }
 		cpConnector := v2.ControlPlaneConnector{
 			Client: mockHttpClient,
 			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
@@ -63,8 +61,9 @@ var _ = Describe("CpConnector", func() {
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(503))
-		Expect(respBody).To(Equal("{\n\t\t\t\t\"error\": \"timeout\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out\"\n\t\t\t}"))
+		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"timeout\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out\"\n\t\t\t}", v2.ErrorType)
+		Expect(statusCode).To(Equal(http.StatusServiceUnavailable))
+		Expect(respBody).To(Equal(expectedResp))
 	})
 
 	It("Test CpApiCall function to test connection reset by peer", func() {
@@ -88,7 +87,8 @@ var _ = Describe("CpConnector", func() {
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		Expect(statusCode).To(Equal(503))
-		Expect(respBody).To(Equal("{\n\t\t\t\t\"error\": \"econnreset\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}"))
+		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"econnreset\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}", v2.ErrorType)
+		Expect(statusCode).To(Equal(http.StatusServiceUnavailable))
+		Expect(respBody).To(Equal(expectedResp))
 	})
 })

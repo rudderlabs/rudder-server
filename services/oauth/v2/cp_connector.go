@@ -134,9 +134,9 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 		resp := doErr.Error()
 		if errorType != "none" {
 			resp = fmt.Sprintf(`{
-				"error": %q,
+				%q: %q,
 				"message": 	"control plane service is having a problem: %v"
-			}`, errorType, doErr.Error())
+			}`, ErrorType, errorType, doErr.Error())
 		}
 		return res.StatusCode, resp
 	}

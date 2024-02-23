@@ -11,4 +11,6 @@ const (
 	DeliveryAccountIdKey            = "rudderAccountId"
 
 	AuthStatusInactive = "inactive"
+
+	ErrorType = "errorType"
 )
