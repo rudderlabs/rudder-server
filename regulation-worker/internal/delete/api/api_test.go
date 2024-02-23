@@ -997,7 +997,7 @@ func TestAPIManager_Delete(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			api := &APIManager{
+			api := &api.APIManager{
 				Client:                       tt.fields.Client,
 				DestTransformURL:             tt.fields.DestTransformURL,
 				OAuth:                        tt.fields.OAuth,
