@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -615,64 +616,45 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		reqType := ctx.Value(gwtypes.CtxParamCallType).(string)
-		arctx := ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+		var (
+			ctx          = r.Context()
+			reqType      = ctx.Value(gwtypes.CtxParamCallType).(string)
+			arctx        = ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+			jobs         []*jobsdb.JobT
+			body         []byte
+			err          error
+			status       int
+			errorMessage string
+			responseBody string
+		)
 
 		// TODO: add tracing
 		gw.logger.LogRequest(r)
-		var errorMessage string
 		defer func() {
-			var (
-				status       int
-				responseBody string
-			)
 			defer gw.logger.Infon("response",
 				logger.NewStringField("ip", misc.GetIPFromReq(r)),
 				logger.NewStringField("path", r.URL.Path),
 				logger.NewIntField("status", int64(status)),
 				logger.NewStringField("body", responseBody),
 			)
-			if errorMessage != "" {
-				status = response.GetErrorStatusCode(errorMessage)
-				responseBody = response.GetStatus(errorMessage)
-				gw.stats.NewTaggedStat(
-					"gateway.write_key_failed_requests",
-					stats.CountType,
-					gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
-				).Increment()
-				http.Error(w, responseBody, status)
-				return
-			} // else success
-			status = http.StatusOK
-			responseBody = response.GetStatus(response.Ok)
-			gw.stats.NewTaggedStat(
-				"gateway.write_key_successful_requests",
-				stats.CountType,
-				gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
-			).Increment()
-			_, _ = w.Write([]byte(responseBody))
 		}()
-		body, err := gw.getPayload(arctx, r, reqType)
+		body, err = gw.getPayload(arctx, r, reqType)
 		if err != nil {
-			errorMessage = err.Error()
-			return
+			goto requestError
 		}
-		jobs, err := gw.extractJobsFromInternalBatchPayload(arctx, reqType, body)
+		jobs, err = gw.extractJobsFromInternalBatchPayload(arctx, reqType, body)
 		if err != nil {
-			errorMessage = err.Error()
-			return
+			goto requestError
 		}
 
 		if len(jobs) > 0 {
 			if err := gw.storeJobs(ctx, jobs); err != nil {
-				errorMessage = err.Error()
 				gw.stats.NewTaggedStat(
 					"gateway.write_key_failed_events",
 					stats.CountType,
 					gw.newSourceStatTagsWithReason(arctx, reqType, "storeFailed"),
 				).Count(len(jobs))
-				return
+				goto requestError
 			}
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_successful_events",
@@ -680,6 +662,27 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				gw.newSourceStatTagsWithReason(arctx, reqType, ""),
 			).Count(len(jobs))
 		}
+
+		status = http.StatusOK
+		responseBody = response.GetStatus(response.Ok)
+		gw.stats.NewTaggedStat(
+			"gateway.write_key_successful_requests",
+			stats.CountType,
+			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
+		).Increment()
+		_, _ = w.Write([]byte(responseBody))
+		return
+
+	requestError:
+		errorMessage = err.Error()
+		status = response.GetErrorStatusCode(errorMessage)
+		responseBody = response.GetStatus(errorMessage)
+		gw.stats.NewTaggedStat(
+			"gateway.write_key_failed_requests",
+			stats.CountType,
+			gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
+		).Increment()
+		http.Error(w, responseBody, status)
 	}
 }
 
@@ -773,7 +776,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 		gw.logger.Errorn(
 			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
 			logger.NewField("params", params),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		marshalledParams = []byte(
 			`{"error": "rudder-server gateway failed to marshal params"}`,
@@ -824,7 +827,7 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 		if err := gw.jobsDB.StoreInTx(ctx, tx, jobs); err != nil {
 			gw.logger.Errorn(
 				"Store into gateway db failed with error",
-				logger.NewErrorField(err),
+				obskit.Error(err),
 				logger.NewField("jobs", jobs),
 			)
 			return err
