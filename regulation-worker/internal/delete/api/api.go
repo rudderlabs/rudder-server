@@ -46,6 +46,18 @@ type oauthDetail struct {
 	id          string
 }
 
+func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
+	var jobResp []JobRespSchema
+	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
+		return "", err
+	}
+	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
+	if oauthErrJobFound {
+		return oauthErrJob.AuthErrorCategory, nil
+	}
+	return "", nil
+}
+
 func (m *APIManager) GetSupportedDestinations() []string {
 	// Wait for transformer features to be available
 	<-m.TransformerFeaturesService.Wait()
@@ -128,13 +140,18 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	defer func() { httputil.CloseResponse(resp) }()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	}
 	return api.PostResponse(ctx, PostResponseParams{
 		destination:              destination,
 		job:                      job,
 		isOAuthEnabled:           isOAuthEnabled,
 		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 		oAuthDetail:              oAuthDetail,
-		resp:                     resp,
+		responseBodyBytes:        bodyBytes,
+		responseStatusCode:       resp.StatusCode,
 	})
 }
 
@@ -144,7 +161,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 	return api.deleteWithRetry(ctx, job, destination, 0)
 }
 
-func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
+func getJobStatus(statusCode int, jobResp string) model.JobStatus {
 	switch statusCode {
 	case http.StatusOK:
 		return model.JobStatus{Status: model.JobStatusComplete}
@@ -261,32 +278,25 @@ type PostResponseParams struct {
 	currentOAuthRetryAttempt int
 	job                      model.Job
 	oAuthDetail              oauthDetail
-	resp                     *http.Response
+	responseBodyBytes        []byte
+	responseStatusCode       int
 }
 
 func (api *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
-	var err error
-
-	bodyBytes, err := io.ReadAll(params.resp.Body)
+	authErrCategory, err := GetAuthErrorCategoryFromResponse(params.responseBodyBytes)
 	if err != nil {
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
-	var jobResp []JobRespSchema
-	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
-		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-	}
-	jobStatus := getJobStatus(params.resp.StatusCode, jobResp)
+	jobStatus := getJobStatus(params.responseStatusCode, string(params.responseBodyBytes))
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
 
-	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
-
 	// old oauth handling
-	if oauthErrJobFound && params.isOAuthEnabled && !api.IsOAuthV2Enabled {
-		if oauthErrJob.AuthErrorCategory == oauth.AUTH_STATUS_INACTIVE {
+	if authErrCategory != "" && params.isOAuthEnabled && !api.IsOAuthV2Enabled {
+		if authErrCategory == oauth.AUTH_STATUS_INACTIVE {
 			return api.inactivateAuthStatus(&params.destination, params.job, params.oAuthDetail)
 		}
-		if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
+		if authErrCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 			err = api.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail)
 			if err != nil {
 				pkgLogger.Error(err)
@@ -298,7 +308,7 @@ func (api *APIManager) PostResponse(ctx context.Context, params PostResponsePara
 		}
 	}
 	// new oauth handling
-	if oauthErrJob.AuthErrorCategory == oauth.REFRESH_TOKEN && params.isOAuthEnabled && api.IsOAuthV2Enabled {
+	if authErrCategory == oauth.REFRESH_TOKEN && params.isOAuthEnabled && api.IsOAuthV2Enabled {
 		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 		// retry the request
 		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)

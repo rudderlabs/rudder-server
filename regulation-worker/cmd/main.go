@@ -97,7 +97,7 @@ func Run(ctx context.Context) error {
 			cli, extensions.HeaderAugmenter,
 			oauthV2.RudderFlow(oauth.RudderFlow_Delete),
 			&cache, oauthLock, backendconfig.DefaultBackendConfig,
-			oauthV2.GetAuthErrorCategoryFromTransformResponse,
+			api.GetAuthErrorCategoryFromResponse,
 		)
 	}
 

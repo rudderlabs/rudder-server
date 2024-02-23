@@ -144,7 +144,6 @@ func (authErrHandler *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *Refre
 }
 
 func (authErrHandler *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
-
 	if gjson.Get(response, "error").String() != "" {
 		fmt.Println(gjson.Get(response, "error"))
 		errorType = gjson.Get(response, "error").String()

@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-	"github.com/stretchr/testify/require"
 )
 
 func (d *deleteAPI) handler() http.Handler {

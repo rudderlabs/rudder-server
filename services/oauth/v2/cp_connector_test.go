@@ -91,5 +91,4 @@ var _ = Describe("CpConnector", func() {
 		Expect(statusCode).To(Equal(503))
 		Expect(respBody).To(Equal("{\n\t\t\t\t\"error\": \"econnreset\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}"))
 	})
-
 })
