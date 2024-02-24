@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	// oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/tidwall/sjson"
 )
 
@@ -26,7 +26,7 @@ type headerAugmenter struct {
 
 // BodyAugmenter is an Augmenter that adds the authorization information to the request body.
 var BodyAugmenter = &bodyAugmenter{
-	AugmenterPath: "input.0.metadata.secret",
+	AugmenterPath: fmt.Sprintf("input.0.metadata.%s", v2.SecretKey),
 }
 
 // HeaderAugmenter is an Augmenter that adds the authorization information to the request header.
@@ -50,7 +50,14 @@ func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawM
 	if secret == nil {
 		return fmt.Errorf("secret is nil")
 	}
-	r.Header.Set(t.HeaderName, string(secret))
+	actSecret := v2.AccountSecret{
+		Secret: secret,
+	}
+	secretJson, err := json.Marshal(actSecret)
+	if err != nil {
+		return err
+	}
+	r.Header.Set(t.HeaderName, string(secretJson))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }

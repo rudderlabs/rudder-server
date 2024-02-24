@@ -89,7 +89,15 @@ func Run(ctx context.Context) error {
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
-	cli := &http.Client{Timeout: regTimeoutReloadVar.Load()}
+	cli := &http.Client{
+		Timeout: regTimeoutReloadVar.Load(), 
+		Transport: &http.Transport{
+			DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
+			MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
+			MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+			IdleConnTimeout:     300 * time.Second,
+		},
+	}
 	if isOAuthV2RelVar.Load() {
 		cache := oauthV2.NewCache()
 		oauthLock := rudderSync.NewPartitionRWLocker()
