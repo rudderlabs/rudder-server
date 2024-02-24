@@ -7,8 +7,9 @@ import (
 	"io"
 	"net/http"
 
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/tidwall/sjson"
+
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 // Augmenter is an extension point for adding the appropriate authorization information to oauth requests.

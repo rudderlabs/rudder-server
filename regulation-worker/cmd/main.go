@@ -90,7 +90,7 @@ func Run(ctx context.Context) error {
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
 	cli := &http.Client{
-		Timeout: regTimeoutReloadVar.Load(), 
+		Timeout: regTimeoutReloadVar.Load(),
 		Transport: &http.Transport{
 			DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
 			MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
