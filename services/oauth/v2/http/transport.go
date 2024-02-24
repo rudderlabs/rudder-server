@@ -31,7 +31,7 @@ type TransportArgs struct {
 
 /*
 Oauth2Transport is an http.RoundTripper that adds the appropriate authorization information to oauth requests.
-Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by disabling the authStatus.
+Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
 */
 type Oauth2Transport struct {
 	oauthHandler oauth.OAuthHandler
