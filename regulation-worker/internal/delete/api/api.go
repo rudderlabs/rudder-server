@@ -49,7 +49,8 @@ type oauthDetail struct {
 func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
 	var jobResp []JobRespSchema
 	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
-		return "", err
+		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(bodyBytes))
+		return "", fmt.Errorf("failed to parse authErrorCategory from response: %s", string(bodyBytes))
 	}
 	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
 	if oauthErrJobFound {
@@ -70,6 +71,9 @@ func (m *APIManager) GetSupportedDestinations() []string {
 }
 
 func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
+	if currentOauthRetryAttempt > api.MaxOAuthRefreshRetryAttempts {
+		return job.Status
+	}
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
@@ -132,11 +136,6 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	if err != nil {
 		if os.IsTimeout(err) {
 			stats.Default.NewStat("regulation_worker_delete_api_timeout", stats.CountType).Count(1)
-		}
-		// TODO: re-check this
-		if api.IsOAuthV2Enabled && resp.StatusCode >= http.StatusInternalServerError {
-			// TODO: Add log and stat here
-			return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 		}
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
@@ -313,11 +312,17 @@ func (api *APIManager) PostResponse(ctx context.Context, params PostResponsePara
 		}
 	}
 	// new oauth handling
-	if authErrCategory == oauth.REFRESH_TOKEN && params.isOAuthEnabled && api.IsOAuthV2Enabled {
-		// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
-		// retry the request
-		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
-		return api.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
+	if params.isOAuthEnabled && api.IsOAuthV2Enabled {
+		if authErrCategory == oauth.REFRESH_TOKEN {
+			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
+			// retry the request
+			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
+			return api.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
+		}
+		if authErrCategory == oauthv2.AUTH_STATUS_INACTIVE {
+			// Abort the regulation request
+			return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(string(params.responseBodyBytes))}
+		}
 	}
 	return jobStatus
 }

@@ -61,7 +61,7 @@ var _ = Describe("CpConnector", func() {
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"timeout\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out\"\n\t\t\t}", v2.ErrorType)
+		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"timeout\",\n\t\t\t\t\"message\": \t\"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out\"\n\t\t\t}", v2.ErrorType)
 		Expect(statusCode).To(Equal(http.StatusServiceUnavailable))
 		Expect(respBody).To(Equal(expectedResp))
 	})
@@ -87,7 +87,7 @@ var _ = Describe("CpConnector", func() {
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"econnreset\",\n\t\t\t\t\"message\": \t\"control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}", v2.ErrorType)
+		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"econnreset\",\n\t\t\t\t\"message\": \t\"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}", v2.ErrorType)
 		Expect(statusCode).To(Equal(http.StatusServiceUnavailable))
 		Expect(respBody).To(Equal(expectedResp))
 	})

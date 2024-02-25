@@ -166,9 +166,9 @@ func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParam
 		// fetching/refreshing through control plane was successful
 		return statusCode, refSecret, nil
 	}
-	if refErr != nil {
-		refErr = fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", refErr)
-	}
+	// if refErr != nil {
+	// 	refErr = fmt.Errorf("%w", refErr)
+	// }
 	return statusCode, refSecret, refErr
 }
 

@@ -189,7 +189,7 @@ var _ = Describe("Oauth", func() {
 			var expectedResponse *v2.AuthResponse
 			Expect(response).To(Equal(expectedResponse))
 
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("empty secret"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("empty secret"))))
 		})
 
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response", func() {
@@ -223,7 +223,7 @@ var _ = Describe("Oauth", func() {
 				ErrorMessage: "invalid_grant error, refresh token has expired or revoked",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("invalid grant"))))
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
@@ -259,10 +259,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "econnrefused",
-				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
@@ -298,10 +298,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
 		})
 	})
 
@@ -436,7 +436,7 @@ var _ = Describe("Oauth", func() {
 			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
 
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("invalid grant"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("invalid grant"))))
 			Expect(response).To(Equal(expectedResponse))
 		})
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
@@ -480,10 +480,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "econnrefused",
-				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection refused"))))
 		})
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func() {
@@ -527,10 +527,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("failed to fetch/refresh token inside getTokenInfo: %w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: control plane service is having a problem: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
+			Expect(err).To(MatchError(fmt.Errorf("%w", fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"))))
 		})
 	})
 

@@ -95,9 +95,9 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 				StatPrefix:      oauth.AuthStatusInactive,
 				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
 			})
-			return httpResponseCreator(http.StatusBadRequest, []byte((fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error())))
+			return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
 		}
-		return httpResponseCreator(statusCode, []byte(fmt.Errorf("failed to fetch token pre roundTrip: %w", err).Error()))
+		return httpResponseCreator(statusCode, []byte(err.Error()))
 	}
 	return nil
 }
@@ -182,6 +182,9 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		rts.accountId = rts.destination.GetAccountID(oauth.DeliveryAccountIdKey)
 	} else if t.flow == oauth.RudderFlow_Delete {
 		rts.accountId = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
+	}
+	if rts.accountId == "" {
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.ID, t.flow))), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
 		AccountId:   rts.accountId,
