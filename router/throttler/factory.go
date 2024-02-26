@@ -51,7 +51,9 @@ func (f *factory) Get(destName, destID string) Throttler {
 				"adaptive":      fmt.Sprintf("%t", f.throttlers[destID].(*switchingThrottler).adaptiveEnabled.Load()),
 			}
 			throttler := f.throttlers[destID]
-			f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(throttler.getLimit() / getWindowInSecs(throttler.getTimeWindow()))
+			if window := getWindowInSecs(throttler.getTimeWindow()); window > 0 {
+				f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(throttler.getLimit() / window)
+			}
 		}
 	}()
 	if t, ok := f.throttlers[destID]; ok {
