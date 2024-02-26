@@ -11,6 +11,7 @@ type KVStoreManager interface {
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	HSet(key, field string, value interface{}) error
+	HDel(key string, fields ...string) error
 	StatusCode(err error) int
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
@@ -73,4 +74,12 @@ func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value st
 	value = gjson.GetBytes(jsonData, valuePath).String()
 
 	return hash, key, value
+}
+
+// IsRecordCompatibleEvent identifies if the event supports record operations
+// To support record operations, the event must have the following fields:
+// - message.action
+// - message.fields
+func IsRecordCompatibleEvent(jsonData json.RawMessage) bool {
+	return gjson.GetBytes(jsonData, "message.action").Exists() && gjson.GetBytes(jsonData, "message.fields").Exists()
 }
