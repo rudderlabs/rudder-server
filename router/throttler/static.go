@@ -51,6 +51,10 @@ func (t *staticThrottler) getLimit() int64 {
 	return t.config.limit.Load()
 }
 
+func (t *staticThrottler) getTimeWindow() time.Duration {
+	return t.config.window.Load()
+}
+
 func (t *staticThrottler) ResponseCodeReceived(code int) {
 	// no-op
 }
