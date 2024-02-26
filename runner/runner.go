@@ -181,7 +181,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		r.logger.Errorf("Unable to setup backend config: %s", err)
 		return 1
 	}
-	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	backendconfig.DefaultBackendConfig.StartWithIDs(
+		ctx,
+		"",
+		backendconfig.WithReadOnlyCache(r.appType == app.GATEWAY),
+	)
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {

@@ -39,7 +39,7 @@ func (*NOOP) Subscribe(ctx context.Context, _ Topic) pubsub.DataChannel {
 	return ch
 }
 
-func (*NOOP) StartWithIDs(_ context.Context, _ string) {}
+func (*NOOP) StartWithIDs(_ context.Context, _ string, _ ...OptFunc) {}
 
 func (*NOOP) Stop() {
 }

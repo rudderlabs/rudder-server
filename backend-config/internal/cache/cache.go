@@ -23,6 +23,13 @@ type Cache interface {
 	Get(ctx context.Context) ([]byte, error)
 }
 
+type CacheConfig struct {
+	Secret          [32]byte
+	Key             string
+	ChannelProvider func() pubsub.DataChannel
+	ReadOnly        bool
+}
+
 type cacheStore struct {
 	*sql.DB
 	secret [32]byte
@@ -36,7 +43,7 @@ type cacheStore struct {
 // key is the key to use to store and fetch the config from the cache store
 //
 // ch is the channel to listen on for config updates and store them
-func Start(ctx context.Context, secret [32]byte, key string, channelProvider func() pubsub.DataChannel) (Cache, error) {
+func Start(ctx context.Context, config CacheConfig) (Cache, error) {
 	var (
 		err    error
 		dbConn *sql.DB
@@ -49,8 +56,8 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 	}
 	dbStore := cacheStore{
 		dbConn,
-		secret,
-		key,
+		config.Secret,
+		config.Key,
 	}
 
 	// apply migrations
@@ -69,11 +76,13 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 
 	go func() {
 		// subscribe to config and write to db
-		for config := range channelProvider() {
+		for c := range config.ChannelProvider() {
 			// persist to database
-			err = dbStore.set(ctx, config.Data)
-			if err != nil {
-				pkgLogger.Errorf("failed writing config to database: %v", err)
+			if !config.ReadOnly {
+				err = dbStore.set(ctx, c.Data)
+				if err != nil {
+					pkgLogger.Errorf("failed writing config to database: %v", err)
+				}
 			}
 		}
 		dbStore.Close()

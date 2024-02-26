@@ -56,6 +56,18 @@ func disableCache() {
 	cacheOverride = new(noCache)
 }
 
+type options struct {
+	readOnlyCache bool
+}
+
+type OptFunc func(*options)
+
+func WithReadOnlyCache(readOnly bool) OptFunc {
+	return func(o *options) {
+		o.readOnlyCache = readOnly
+	}
+}
+
 type noCache struct{}
 
 func (*noCache) Get(context.Context) ([]byte, error) {
@@ -75,7 +87,7 @@ type BackendConfig interface {
 	WaitForConfig(ctx context.Context)
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
-	StartWithIDs(ctx context.Context, workspaces string)
+	StartWithIDs(ctx context.Context, workspaces string, opts ...OptFunc)
 }
 
 type backendConfigImpl struct {
@@ -318,7 +330,11 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
+func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string, opts ...OptFunc) {
+	opt := &options{}
+	for _, o := range opts {
+		o(opt)
+	}
 	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
@@ -336,9 +352,14 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
 		cacheKey := identifier.ID()
 		bc.cache, err = cache.Start(
 			ctx,
-			secret,
-			cacheKey,
-			func() pubsub.DataChannel { return bc.Subscribe(ctx, TopicBackendConfig) },
+			cache.CacheConfig{
+				Secret:   secret,
+				Key:      cacheKey,
+				ReadOnly: opt.readOnlyCache,
+				ChannelProvider: func() pubsub.DataChannel {
+					return bc.Subscribe(ctx, TopicBackendConfig)
+				},
+			},
 		)
 		if err != nil {
 			// the only reason why we should resume by using no cache,

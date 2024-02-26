@@ -548,6 +548,42 @@ func TestCache(t *testing.T) {
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, config)
 	})
 
+	t.Run("readOnly cache doesn't commit to database", func(t *testing.T) {
+		var (
+			ctrl           = gomock.NewController(t)
+			ctx            = context.Background()
+			workspaces     = "fooBaz"
+			workspaceToken = `token`
+		)
+
+		defer ctrl.Finish()
+
+		mockID := &mockIdentifier{key: workspaces, token: workspaceToken}
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Identity().Return(mockID).Times(1)
+		wc.EXPECT().Get(gomock.Any()).Return(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, nil).AnyTimes()
+		bc := &backendConfigImpl{
+			workspaceConfig: wc,
+			eb:              pubsub.New(),
+			curSourceJSON:   map[string]ConfigT{},
+		}
+		bc.StartWithIDs(ctx, workspaces, WithReadOnlyCache(true))
+		bc.WaitForConfig(ctx)
+		require.Eventually(t, func() bool {
+			var configBytes []byte
+			err = db.QueryRowContext(
+				ctx,
+				`SELECT config FROM config_cache WHERE key = $1`,
+				workspaces,
+			).Scan(&configBytes)
+			return errors.Is(err, sql.ErrNoRows)
+		},
+			10*time.Second,
+			100*time.Millisecond,
+		)
+	})
+
 	t.Run(`panics if database is configured but connection fails during cache setup`, func(t *testing.T) {
 		t.Setenv("JOBS_DB_DB_NAME", `nodb`)
 		t.Setenv("JOBS_DB_HOST", "nodb")
