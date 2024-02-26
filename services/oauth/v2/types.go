@@ -5,7 +5,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
@@ -37,6 +36,14 @@ type CacheKey struct {
 	AccountID   string
 }
 
+type DestinationInfo struct {
+	WorkspaceID   string
+	DestDefName   string
+	DestDefConfig map[string]interface{}
+	DestinationId string
+	DestConfig    map[string]interface{}
+}
+
 type TokenProvider interface {
 	Identity() identity.Identifier
 }
@@ -63,7 +70,7 @@ type RefreshTokenParams struct {
 	DestDefName string
 	WorkerId    int
 	Secret      json.RawMessage
-	Destination *backendconfig.DestinationT
+	Destination *DestinationInfo
 }
 
 type Authorizer interface {
@@ -91,7 +98,7 @@ type OAuthStats struct {
 	action          string // refresh_token, fetch_token, auth_status_toggle
 }
 type AuthStatusToggleParams struct {
-	Destination     *backendconfig.DestinationT
+	Destination     *DestinationInfo
 	WorkspaceId     string
 	RudderAccountId string
 	AuthStatus      string

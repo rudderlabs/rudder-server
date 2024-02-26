@@ -174,7 +174,7 @@ func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParam
 
 func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
-	destinationId := params.Destination.ID
+	destinationId := params.Destination.DestinationId
 	action := fmt.Sprintf("auth_status_%v", params.StatPrefix)
 
 	authStatusToggleStats := &OAuthStats{
@@ -185,7 +185,7 @@ func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusTogglePar
 		isCallToCpApi:   false,
 		authErrCategory: params.AuthStatus,
 		errorMessage:    "",
-		destDefName:     params.Destination.DestinationDefinition.Name,
+		destDefName:     params.Destination.DestDefName,
 		flowType:        authErrHandler.RudderFlowType,
 		action:          action,
 	}
@@ -223,7 +223,7 @@ func (authErrHandler *OAuthHandler) AuthStatusToggle(params *AuthStatusTogglePar
 		Method:        http.MethodPut,
 		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
 		ContentType:   "application/json",
-		destName:      params.Destination.DestinationDefinition.Name,
+		destName:      params.Destination.DestDefName,
 		RequestType:   action,
 		BasicAuthUser: authErrHandler.Identity(),
 	}

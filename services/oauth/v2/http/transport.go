@@ -46,7 +46,7 @@ type Oauth2Transport struct {
 This struct is used to transport common information across the pre and post round trip methods.
 */
 type roundTripState struct {
-	destination        *backendconfig.DestinationT
+	destination        *oauth.DestinationInfo
 	accountId          string
 	refreshTokenParams *oauth.RefreshTokenParams
 	res                *http.Response
@@ -169,7 +169,7 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Context().Value(oauth.DestKey) == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
-	destination := req.Context().Value(oauth.DestKey).(*backendconfig.DestinationT)
+	destination := req.Context().Value(oauth.DestKey).(*oauth.DestinationInfo)
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
@@ -184,12 +184,12 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		rts.accountId = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
 	}
 	if rts.accountId == "" {
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.ID, t.flow))), nil
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.DestinationId, t.flow))), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
 		AccountId:   rts.accountId,
 		WorkspaceId: rts.destination.WorkspaceID,
-		DestDefName: rts.destination.DestinationDefinition.Name,
+		DestDefName: rts.destination.DestDefName,
 	}
 	rts.req = req
 	// TODO: return error from preRoundTrip and build response in here

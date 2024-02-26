@@ -777,7 +777,15 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
-	ctx = context.WithValue(ctx, oauthv2.DestKey, &destinationJob.Destination)
+	destination := destinationJob.Destination
+	destinationInfo := &oauthv2.DestinationInfo{
+		DestConfig:    destination.Config,
+		DestDefConfig: destination.DestinationDefinition.Config,
+		WorkspaceID:   destination.WorkspaceID,
+		DestDefName:   destination.DestinationDefinition.Name,
+		DestinationId: destination.DestinationDefinition.ID,
+	}
+	ctx = context.WithValue(ctx, oauthv2.DestKey, destinationInfo)
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams, oauthV2Enabled)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
