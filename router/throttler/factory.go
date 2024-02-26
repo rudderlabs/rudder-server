@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 
@@ -49,7 +50,8 @@ func (f *factory) Get(destName, destID string) Throttler {
 				"destType":      destName,
 				"adaptive":      fmt.Sprintf("%t", f.throttlers[destID].(*switchingThrottler).adaptiveEnabled.Load()),
 			}
-			f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(f.throttlers[destID].getLimit())
+			throttler := f.throttlers[destID]
+			f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(throttler.getLimit() / getWindowInSecs(throttler.getTimeWindow()))
 		}
 	}()
 	if t, ok := f.throttlers[destID]; ok {
@@ -174,5 +176,9 @@ func (t *noOpThrottler) ResponseCodeReceived(code int) {}
 func (t *noOpThrottler) Shutdown() {}
 
 func (t *noOpThrottler) getLimit() int64 {
+	return 0
+}
+
+func (t *noOpThrottler) getTimeWindow() time.Duration {
 	return 0
 }
