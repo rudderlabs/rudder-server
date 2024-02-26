@@ -5,12 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 )
 
 func TestFactory(t *testing.T) {
@@ -76,24 +75,33 @@ func TestFactory(t *testing.T) {
 	})
 
 	t.Run("check stats when adaptive is enabled", func(t *testing.T) {
-		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
 		maxLimit := int64(300)
 		window := 2 * time.Second
-		config.Set("Router.throttler.adaptive.maxLimit", maxLimit)
-		config.Set("Router.throttler.adaptive.minLimit", int64(100))
-		config.Set("Router.throttler.adaptive.timeWindow", window)
-		ctrl := gomock.NewController(t)
-		mockStats := mock_stats.NewMockStats(ctrl)
-		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-		mockStats.EXPECT().NewTaggedStat("throttling_rate_limit", stats.GaugeType, gomock.Any()).Times(1).Return(mockMeasurement)
-		mockStats.EXPECT().NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, gomock.Any()).Times(1).Return(mockMeasurement)
-		mockMeasurement.EXPECT().Gauge(maxLimit / getWindowInSecs(window)).Times(1)
-		mockMeasurement.EXPECT().Gauge(float64(1)).AnyTimes()
-		f, err := NewFactory(config, mockStats)
+
+		c := config.New()
+		c.Set("Router.throttler.adaptive.enabled", true)
+		c.Set("Router.throttler.adaptive.maxLimit", maxLimit)
+		c.Set("Router.throttler.adaptive.minLimit", int64(100))
+		c.Set("Router.throttler.adaptive.timeWindow", window)
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		f, err := NewFactory(c, statsStore)
 		require.NoError(t, err)
 		defer f.Shutdown()
-		f.Get("destName", "destID")
+
+		_ = f.Get("destName", "destID")
+
+		require.EqualValues(t, maxLimit/getWindowInSecs(window), statsStore.Get("throttling_rate_limit", stats.Tags{
+			"destinationId": "destID",
+			"destType":      "destName",
+			"adaptive":      "true",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("adaptive_throttler_limit_factor", stats.Tags{
+			"destinationId": "destID",
+			"destType":      "destName",
+		}).LastValue())
 	})
 }
 
