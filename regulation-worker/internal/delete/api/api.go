@@ -111,14 +111,12 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	}
 
 	if isOAuthEnabled && api.IsOAuthV2Enabled {
-		dest := &backendconfig.DestinationT{
-			ID:          destination.DestinationID,
-			Config:      destination.Config,
-			WorkspaceID: job.WorkspaceID,
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Config: destination.DestDefConfig,
-				Name:   destination.Name,
-			},
+		dest := &oauthv2.DestinationInfo{
+			WorkspaceID:   job.WorkspaceID,
+			DestDefName:   destination.Name,
+			DestinationId: destination.DestinationID,
+			DestConfig:    destination.Config,
+			DestDefConfig: destination.DestDefConfig,
 		}
 		req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, dest))
 	}

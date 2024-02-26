@@ -37,7 +37,6 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 		WorkspaceId: ts.workspaceID,
 		DestDefName: ts.destinationName,
 		AccountId:   ts.accountID,
-		// Destination: ts.destination // for new oauth(v2)
 	}
 	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
 	if statusCode != 200 {
@@ -87,11 +86,16 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 }
 
 func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
+	destination := oauthV2.DestinationInfo{
+		WorkspaceID:   ts.workspaceID,
+		DestDefName:   ts.destinationName,
+		DestinationId: ts.destination.ID,
+	}
 	refreshTokenParams := oauthV2.RefreshTokenParams{
 		WorkspaceId: ts.workspaceID,
 		DestDefName: ts.destinationName,
 		AccountId:   ts.accountID,
-		// Destination: ts.destination // for new oauth(v2)
+		Destination: &destination,
 	}
 	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
 	// TODO: check if the error is not nil working verify during unit test
