@@ -101,11 +101,15 @@ func Run(ctx context.Context) error {
 	if isOAuthV2RelVar.Load() {
 		cache := oauthV2.NewCache()
 		oauthLock := rudderSync.NewPartitionRWLocker()
+		optionalArgs := OAuthHttpClient.HttpClientOptionalArgs{
+			Augmenter: extensions.HeaderAugmenter,
+			Locker:    oauthLock,
+		}
 		cli = OAuthHttpClient.OAuthHttpClient(
-			cli, extensions.HeaderAugmenter,
+			cli,
 			oauthV2.RudderFlow(oauth.RudderFlow_Delete),
-			&cache, oauthLock, backendconfig.DefaultBackendConfig,
-			api.GetAuthErrorCategoryFromResponse, nil, nil,
+			&cache, backendconfig.DefaultBackendConfig,
+			api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 		)
 	}
 

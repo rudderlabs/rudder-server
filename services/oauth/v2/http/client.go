@@ -9,20 +9,27 @@ import (
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
+type HttpClientOptionalArgs struct {
+	Transport    http.RoundTripper
+	Augmenter    oauth_exts.Augmenter
+	Locker       *sync.PartitionRWLocker
+	OAuthHandler *oauth.OAuthHandler
+}
+
 // OAuthHttpClient returns an http client that will add the appropriate authorization information to oauth requests.
-func OAuthHttpClient(client *http.Client, augmenter oauth_exts.Augmenter, flowType oauth.RudderFlow, tokenCache *oauth.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), transport http.RoundTripper, oauthHandler *oauth.OAuthHandler) *http.Client {
+func OAuthHttpClient(client *http.Client, flowType oauth.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
 	transportArgs := &TransportArgs{
 		BackendConfig:        backendConfig,
 		FlowType:             flowType,
 		TokenCache:           tokenCache,
-		Locker:               locker,
+		Locker:               opArgs.Locker,
 		GetAuthErrorCategory: getAuthErrorCategory,
-		Augmenter:            augmenter,
-		OAuthHandler:         oauthHandler,
-		OriginalTransport:    transport,
+		Augmenter:            opArgs.Augmenter,
+		OAuthHandler:         opArgs.OAuthHandler,
+		OriginalTransport:    opArgs.Transport,
 	}
 	if transportArgs.OAuthHandler == nil {
-		transportArgs.OAuthHandler = oauth.NewOAuthHandler(backendConfig, oauth.WithCache(*tokenCache), oauth.WithLocker(locker))
+		transportArgs.OAuthHandler = oauth.NewOAuthHandler(backendConfig, oauth.WithCache(*tokenCache), oauth.WithLocker(opArgs.Locker))
 	}
 	if transportArgs.OriginalTransport == nil {
 		transportArgs.OriginalTransport = client.Transport

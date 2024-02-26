@@ -25,7 +25,10 @@ var _ = Describe("Http/Client", func() {
 	Describe("OAuthHttpClient", func() {
 		It("should return an http client", func() {
 			cache := oauth.NewCache()
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, &cache, nil, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, nil, nil)
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Augmenter: extensions.BodyAugmenter,
+			}
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			Expect(httpClient).ToNot(BeNil())
 		})
 	})
@@ -39,7 +42,11 @@ var _ = Describe("Http/Client", func() {
 				StatusCode: 200,
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":"1","type":"REST","method":"POST","endpoint":"https://api.clevertap.com/1/upload","headers":{"X-CleverTap-Account-Id":"476550467","X-CleverTap-Passcode":"sample_passcode","Content-Type":"application/json"},"params":{},"body":{"JSON":{"d":[{"type":"profile","profileData":{"Email":"jamesDoe@gmail.com","Name":"James Doe","Phone":"92374162212","Gender":"M","address":"{\"city\":\"kolkata\",\"country\":\"India\",\"postalCode\":789223,\"state\":\"WB\",\"street\":\"\"}"},"identity":"anon_id"}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}`))),
 			}, nil)
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, &cache, nil, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, mockRoundTrip, nil)
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Transport: mockRoundTrip,
+				Augmenter: extensions.BodyAugmenter,
+			}
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
 			destination := &oauth.DestinationInfo{
 				DestDefName:   "CLEVERTAP",
@@ -78,7 +85,12 @@ var _ = Describe("Http/Client", func() {
 				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
 			}
 
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, &cache, nil, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, mockRoundTrip, oauthHandler)
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Transport:    mockRoundTrip,
+				Augmenter:    extensions.BodyAugmenter,
+				OAuthHandler: oauthHandler,
+			}
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
@@ -126,8 +138,12 @@ var _ = Describe("Http/Client", func() {
 				TokenProvider: mockTokenProvider,
 				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
 			}
-
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, &cache, nil, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, mockRoundTrip, oauthHandler)
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Transport:    mockRoundTrip,
+				Augmenter:    extensions.BodyAugmenter,
+				OAuthHandler: oauthHandler,
+			}
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
@@ -176,8 +192,12 @@ var _ = Describe("Http/Client", func() {
 				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
 				AuthStatusUpdateActiveMap: map[string]bool{},
 			}
-
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, extensions.BodyAugmenter, oauth.RudderFlow_Delivery, &cache, nil, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, mockRoundTrip, oauthHandler)
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Transport:    mockRoundTrip,
+				Augmenter:    extensions.BodyAugmenter,
+				OAuthHandler: oauthHandler,
+			}
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
