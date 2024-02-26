@@ -870,7 +870,7 @@ func TestOAuth(t *testing.T) {
 					oauthV2.RudderFlow(oauth.RudderFlow_Delete),
 					&cache, oauthLock,
 					mockBackendConfig, // mock backend config
-					api.GetAuthErrorCategoryFromResponse,
+					api.GetAuthErrorCategoryFromResponse, nil, nil,
 				)
 			}
 

@@ -86,7 +86,15 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats *OAuthStats) bool {
-	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, stats) {
+
+	expirationDate := expirationDate{}
+	if err := json.Unmarshal(secret.Secret, &expirationDate); err != nil {
+		stats.errorMessage = "unmarshal failed"
+		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
+		stats.SendCountStat()
+		return false
+	}
+	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, stats) {
 		return true
 	}
 	if router_utils.IsNotEmptyString(string(oldSecret)) {
@@ -98,16 +106,14 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats 
 }
 
 func isTokenExpired(expirationDate string, stats *OAuthStats) bool {
-	// TODO: Need to fix this
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
-		// TODO: need to remove this long error message
-		stats.errorMessage = "error in parsing expiration date"
+		stats.errorMessage = "parsing failed"
 		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
 		stats.SendCountStat()
 		return false
 	}
-	// TODO: Move expirationTimeDiff to a transport
+	// TODO: Move expirationTimeDiff to at transport
 	if date.Before(time.Now().Add(config.GetDurationVar(5, time.Minute, "Router."+stats.destDefName+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff"))) {
 		return true
 	}
@@ -124,13 +130,11 @@ func GetErrorType(err error) string {
 	if os.IsTimeout(err) {
 		return "timeout"
 	}
-	// if _, ok := err.(syscall.Errno); ok {
 	for errno, errTyp := range errTypMap {
 		if ok := errors.Is(err, errno); ok {
 			return errTyp
 		}
 	}
-	// }
 	if _, ok := err.(net.Error); ok {
 		return "network_error"
 	}

@@ -149,8 +149,8 @@ var _ = Describe("Oauth", func() {
 			}
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
-					Secret:         []byte(`{"access_token":"StoredDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
-					ExpirationDate: "2022-06-29T15:34:47.758Z",
+					Secret:         []byte(`{"access_token":"StoredDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T15:34:47.758Z"}`),
+					ExpirationDate: "",
 				},
 				Err:          "",
 				ErrorMessage: "",

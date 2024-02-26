@@ -14,6 +14,9 @@ type (
 	AuthType   string
 	ContextKey string
 )
+type expirationDate struct {
+	ExpirationDate string `json:"expirationDate"`
+}
 
 // AccountSecret is the access token returned by the oauth server
 type AccountSecret struct {
