@@ -1,6 +1,7 @@
 package eventorder
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,45 +14,45 @@ import (
 func Test_Job_Failed_Scenario(t *testing.T) {
 	barrier := NewBarrier(WithMetadata(map[string]string{"key1": "value1"}))
 
-	require.Nil(t, barrier.Peek("user1"), "peek should return nil since no barrier exists")
+	require.Nil(t, barrier.Peek(BarrierKey{UserID: "user1"}), "peek should return nil since no barrier exists")
 
-	enter, previousFailedJobID := barrier.Enter("user1", 1)
+	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since no barrier exists")
-	require.False(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 shouldn't wait since no barrier exists")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait since no barrier exists")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 2)), "job 2 for user1 shouldn't wait since no barrier exists")
 
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Failed.State))
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State))
 
-	require.True(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 should wait after job 1 has failed")
+	require.True(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 2)), "job 2 for user1 should wait after job 1 has failed")
 	require.Equal(t, 1, barrier.Size(), "barrier should have size of 1")
-	require.Equal(t, `Barrier{map[key1:value1][{key: user1, failedJobID: 1, concurrentJobs: map[]}]}`, barrier.String(), "the barrier's string representation should be human readable")
-	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Waiting.State))
+	require.Equal(t, fmt.Sprintf(`Barrier{map[key1:value1][{key: %s, failedJobID: 1, concurrentJobs: map[]}]}`, BarrierKey{UserID: "user1"}), barrier.String(), "the barrier's string representation should be human readable")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Waiting.State))
 
 	barrier.Sync()
 
-	require.EqualValues(t, 1, *barrier.Peek("user1"), "peek should return failed job id 1")
-	enter, previousFailedJobID = barrier.Enter("user1", 1)
+	require.EqualValues(t, 1, *barrier.Peek(BarrierKey{UserID: "user1"}), "peek should return failed job id 1")
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
 
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Succeeded.State))
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Succeeded.State))
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted even after job 1 has succeeded until barrier is synced")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	barrier.Sync()
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted after barrier is synced")
 	require.Nil(t, previousFailedJobID)
 }
@@ -60,65 +61,65 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
 
 	// Fail job 1 then enter again
-	enter, previousFailedJobID := barrier.Enter("user1", 1)
+	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.Nil(t, previousFailedJobID)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since no barrier exists")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait since no barrier exists")
 	require.Equal(t, 0, barrier.Sync())
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Failed.State))
-	enter, previousFailedJobID = barrier.Enter("user1", 1)
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State))
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
 
 	// Abort job 1
-	enter, previousFailedJobID = barrier.Enter("user1", 1)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Aborted.State))
 
 	// Try to enter job 2
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted before the barrier is synced")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	// Try to enter job 2 after sync
 	require.Equal(t, 1, barrier.Sync())
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted after job 1 has aborted")
 	require.Nil(t, previousFailedJobID)
 
 	// Try to enter job 3
-	enter, previousFailedJobID = barrier.Enter("user1", 3)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 3)
 	require.False(t, enter, "job 3 for user1 shouldn't be accepted since it is above the concurrency limit")
 	require.Nil(t, previousFailedJobID)
 
 	// Job 2 aborted
-	require.False(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 shouldn't wait")
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 2)), "job 2 for user1 shouldn't wait")
 
-	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Aborted.State))
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Aborted.State))
 
-	enter, previousFailedJobID = barrier.Enter("user1", 3)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 3)
 	require.False(t, enter, "job 3 for user1 shouldn't be accepted after job 2 aborted before the barrier is synced")
 	require.Nil(t, previousFailedJobID)
 	require.Equal(t, 1, barrier.Sync(), "barrier should sync 1 command")
 	require.Equal(t, 0, barrier.Sync(), "barrier should empty the sync queue after syncing")
 
-	enter, previousFailedJobID = barrier.Enter("user1", 3)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 3)
 	require.True(t, enter, "job 3 for user1 should be accepted after job 2 aborted and barrier is synced: %v", barrier)
 	require.Nil(t, previousFailedJobID)
 
-	enter, previousFailedJobID = barrier.Enter("user1", 4)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 4)
 	require.True(t, enter, "job 4 for user1 should be accepted after job 2 aborted and barrier is synced (no concurrency limit)")
 	require.Nil(t, previousFailedJobID)
-	enter, previousFailedJobID = barrier.Enter("user1", 5)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 5)
 	require.True(t, enter, "job 5 for user1 should be accepted after job 2 aborted and barrier is synced (no concurrency limit)")
 	require.Nil(t, previousFailedJobID)
-	enter, previousFailedJobID = barrier.Enter("user1", 6)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 6)
 	require.True(t, enter, "job 6 for user1 should be accepted after job 2 aborted and barrier is synced (no concurrency limit)")
 	require.Nil(t, previousFailedJobID)
 }
@@ -126,36 +127,36 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 func Test_Job_Abort_then_Fail(t *testing.T) {
 	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
 
-	enter, previousFailedJobID := barrier.Enter("user1", 1)
+	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait")
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Aborted.State))
 
 	require.Equal(t, 0, barrier.Sync())
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted after job 1 has aborted (no barrier)")
 	require.Nil(t, previousFailedJobID)
-	enter, previousFailedJobID = barrier.Enter("user1", 3)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 3)
 	require.True(t, enter, "job 3 for user1 should be accepted after job 1 has aborted (no barrier)")
 	require.Nil(t, previousFailedJobID)
-	enter, previousFailedJobID = barrier.Enter("user1", 4)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 4)
 	require.True(t, enter, "job 4 for user1 should be accepted after job 1 has aborted (no barrier)")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 shouldn't wait")
-	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Failed.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 2)), "job 2 for user1 shouldn't wait")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Failed.State))
 
-	require.True(t, firstBool(barrier.Wait("user1", 3)), "job 3 for user1 should wait since job 2 has failed")
-	require.NoError(t, barrier.StateChanged("user1", 3, jobsdb.Waiting.State))
+	require.True(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 3)), "job 3 for user1 should wait since job 2 has failed")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 3, jobsdb.Waiting.State))
 
-	require.True(t, firstBool(barrier.Wait("user1", 4)), "job 4 for user1 should wait since job 2 has failed")
-	require.NoError(t, barrier.StateChanged("user1", 4, jobsdb.Waiting.State))
+	require.True(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 4)), "job 4 for user1 should wait since job 2 has failed")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 4, jobsdb.Waiting.State))
 
 	require.Equal(t, 2, barrier.Sync())
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 2, *previousFailedJobID, "previously failed job id should be 2")
@@ -164,60 +165,60 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 func Test_Job_Fail_then_Abort(t *testing.T) {
 	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
 
-	enter, previousFailedJobID := barrier.Enter("user1", 1)
+	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait")
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Failed.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State))
 
 	require.Equal(t, 0, barrier.Sync())
 
-	enter, previousFailedJobID = barrier.Enter("user1", 1)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted after job 1 has failed")
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted after job 1 has failed")
 	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait")
-	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 1)), "job 1 for user1 shouldn't wait")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Aborted.State))
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted after job 1 has aborted until it is synced")
 	require.NotNil(t, previousFailedJobID)
 	require.EqualValues(t, 1, *previousFailedJobID)
 
 	require.Equal(t, 1, barrier.Sync(), "barrier should sync 1 command")
 
-	enter, previousFailedJobID = barrier.Enter("user1", 2)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted after job 1 has aborted and it is synced")
 	require.Nil(t, previousFailedJobID)
 
-	enter, previousFailedJobID = barrier.Enter("user1", 3)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 3)
 	require.True(t, enter, "job 3 for user1 should be accepted after job 1 has aborted and it is synced")
 	require.Nil(t, previousFailedJobID)
 
-	enter, previousFailedJobID = barrier.Enter("user1", 4)
+	enter, previousFailedJobID = barrier.Enter(BarrierKey{UserID: "user1"}, 4)
 	require.False(t, enter, "job 4 for user1 shouldn't be accepted since it violates the concurrency limit")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 shouldn't wait")
-	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Failed.State))
+	require.False(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 2)), "job 2 for user1 shouldn't wait")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Failed.State))
 
-	require.True(t, firstBool(barrier.Wait("user1", 3)), "job 3 for user1 should wait after job 2 has failed")
-	require.NoError(t, barrier.StateChanged("user1", 3, jobsdb.Waiting.State))
+	require.True(t, firstBool(barrier.Wait(BarrierKey{UserID: "user1"}, 3)), "job 3 for user1 should wait after job 2 has failed")
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 3, jobsdb.Waiting.State))
 	require.Equal(t, 1, barrier.Sync(), "barrier should sync 1 command")
 }
 
 func Test_Panic_Scenarios(t *testing.T) {
 	barrier := NewBarrier()
 
-	enter, _ := barrier.Enter("user1", 2)
+	enter, _ := barrier.Enter(BarrierKey{UserID: "user1"}, 2)
 	require.True(t, enter, "job 2 for user1 should be accepted since no barrier exists")
-	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Failed.State))
-	require.Error(t, barrier.StateChanged("user1", 2, "other state"))
+	require.NoError(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, jobsdb.Failed.State))
+	require.Error(t, barrier.StateChanged(BarrierKey{UserID: "user1"}, 2, "other state"))
 
 	// panicking during wait
 	func() {
@@ -225,7 +226,7 @@ func Test_Panic_Scenarios(t *testing.T) {
 			err := recover()
 			require.NotNil(t, err, "barrier should panic when asking it if you should wait for a job with a previous job id than the currently failed one")
 		}()
-		_, _ = barrier.Wait("user1", 1)
+		_, _ = barrier.Wait(BarrierKey{UserID: "user1"}, 1)
 	}()
 
 	// panicking during state changed
@@ -234,12 +235,12 @@ func Test_Panic_Scenarios(t *testing.T) {
 			err := recover()
 			require.NotNil(t, err, "barrier should panic when posting a state for a job with a previous job id than the currently failed one")
 		}()
-		_ = barrier.StateChanged("user1", 1, jobsdb.Failed.State)
+		_ = barrier.StateChanged(BarrierKey{UserID: "user1"}, 1, jobsdb.Failed.State)
 	}()
 }
 
 func TestBarrier_Leave(t *testing.T) {
-	orderKey := "user1"
+	orderKey := BarrierKey{UserID: "user1"}
 	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
 
 	enter, _ := barrier.Enter(orderKey, 1)
@@ -264,7 +265,7 @@ func TestBarrier_Leave(t *testing.T) {
 }
 
 func TestEventOrderKeyThreshold(t *testing.T) {
-	orderKey := "user1"
+	orderKey := BarrierKey{UserID: "user1"}
 	disabledStateDuration := 100 * time.Millisecond
 	halfEnabledStateDuration := 100 * time.Millisecond
 	barrier := NewBarrier(
@@ -317,6 +318,43 @@ func TestEventOrderKeyThreshold(t *testing.T) {
 	require.Panics(t, func() {
 		_ = barrier.StateChanged(orderKey, 1, jobsdb.Failed.State)
 	}, "barrier should panic when posting a state for a job with a previous job id than the currently failed one")
+}
+
+func TestOrderingDisable(t *testing.T) {
+	orderKey1 := BarrierKey{UserID: "user1"}
+	orderKey2 := BarrierKey{UserID: "user2"}
+	barrier := NewBarrier(
+		WithOrderingDisabledCheckForBarrierKey(func(orderKey BarrierKey) bool {
+			return orderKey.UserID == "user1" // disable ordering for a particular userID only
+		}),
+		WithEventOrderKeyThreshold(misc.SingleValueLoader(200)),
+	)
+
+	enter, previous := barrier.Enter(orderKey1, 1)
+	require.True(t, enter, "job 1 for %s should be accepted since no barrier exists", orderKey1)
+	require.Nil(t, previous)
+	require.True(t, barrier.Disabled(orderKey1), "barrier should be disabled for %s", orderKey1)
+
+	enter, previous = barrier.Enter(orderKey1, 2)
+	require.True(t, enter, "job 2 for %s should be accepted since no barrier exists", orderKey1)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey1, 1, jobsdb.Failed.State))
+	require.False(t, firstBool(barrier.Wait(orderKey1, 2)), "job 2 for %s shouldn't wait since ordering is disabled", orderKey1)
+	require.Equal(t, 1, barrier.Size(), "barrier should have size of 1")
+
+	enter, previous = barrier.Enter(orderKey2, 3)
+	require.True(t, enter, "job 3 for %s should be accepted since no barrier exists", orderKey2)
+	require.Nil(t, previous)
+	require.False(t, barrier.Disabled(orderKey2), "barrier should not be disabled for %s", orderKey2)
+
+	enter, previous = barrier.Enter(orderKey2, 4)
+	require.True(t, enter, "job 4 for %s should be accepted since no barrier exists", orderKey2)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey2, 3, jobsdb.Failed.State))
+	require.True(t, firstBool(barrier.Wait(orderKey2, 4)), "job 4 for %s should wait since ordering is disabled only for user1", orderKey2)
+	require.Equal(t, 2, barrier.Size(), "barrier should have size of 2")
 }
 
 func firstBool(v bool, _ ...interface{}) bool {

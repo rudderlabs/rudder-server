@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/sql/migrations"
 )
@@ -29,7 +29,7 @@ func TestMigrate(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgre, err := resource.SetupPostgres(pool, t)
+	postgre, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	for _, dir := range migrationDir {

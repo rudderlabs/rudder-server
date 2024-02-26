@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 )
@@ -46,7 +46,7 @@ func TestRunner(t *testing.T) {
 func startJobsDBPostgresql(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	r, err := resource.SetupPostgres(pool, t)
+	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	config.Set("DB.port", r.Port)
 	config.Set("DB.user", r.User)
@@ -63,7 +63,7 @@ func startJobsDBPostgresql(t *testing.T) {
 func startWarehousePostgresql(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	r, err := resource.SetupPostgres(pool, t)
+	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 	config.Set("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	config.Set("WAREHOUSE_JOBS_DB_PORT", r.Port)

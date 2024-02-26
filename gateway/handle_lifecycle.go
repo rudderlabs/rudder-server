@@ -66,7 +66,6 @@ func (gw *Handle) Setup(
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
 
-	gw.conf.httpTimeout = config.GetDurationVar(30, time.Second, "Gateway.httpTimeout")
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
 	// Number of incoming requests that are batched before handing off to write workers
@@ -113,7 +112,6 @@ func (gw *Handle) Setup(
 
 	gw.now = time.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
-	gw.netHandle = &http.Client{Transport: &http.Transport{}, Timeout: gw.conf.httpTimeout}
 	gw.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, gw.conf.maxDBBatchSize)
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
 	gw.irh = &ImportRequestHandler{Handle: gw}
@@ -428,8 +426,14 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	})
 
 	srvMux.Get("/health", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))
-
 	srvMux.Get("/", withContentType("application/json; charset=utf-8", app.LivenessHandler(gw.jobsDB)))
+	srvMux.Get("/docs",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(openApiSpec)
+		},
+	)
+
 	srvMux.Route("/pixel/v1", func(r chi.Router) {
 		r.Get("/track", gw.pixelTrackHandler())
 		r.Get("/page", gw.pixelPageHandler())

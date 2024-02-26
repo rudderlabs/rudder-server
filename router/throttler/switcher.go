@@ -2,6 +2,7 @@ package throttler
 
 import (
 	"context"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -28,6 +29,10 @@ func (t *switchingThrottler) Shutdown() {
 
 func (t *switchingThrottler) getLimit() int64 {
 	return t.throttler().getLimit()
+}
+
+func (t *switchingThrottler) getTimeWindow() time.Duration {
+	return t.throttler().getTimeWindow()
 }
 
 func (t *switchingThrottler) throttler() Throttler {

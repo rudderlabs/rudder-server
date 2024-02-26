@@ -16,6 +16,7 @@ type Throttler interface {
 	ResponseCodeReceived(code int)
 	Shutdown()
 	getLimit() int64
+	getTimeWindow() time.Duration
 }
 
 type limiter interface {

@@ -455,6 +455,7 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
+			Count: 10,
 		},
 		{
 			PU: "dest_transformer",
@@ -479,6 +480,7 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
+			Count: 5,
 		},
 		{
 			PU: "dest_transformer",
@@ -503,6 +505,7 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
 			},
+			Count: 15,
 		},
 		{
 			PU: "dest_transformer",
@@ -527,6 +530,7 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
 			},
+			Count: 20,
 		},
 		// error occurred at router level(assume this is batching enabled)
 		{
@@ -552,6 +556,7 @@ func TestAggregationLogic(t *testing.T) {
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
 			},
+			Count: 15,
 		},
 	}
 	configSubscriber := newConfigSubscriber(logger.NOP)
@@ -582,14 +587,14 @@ func TestAggregationLogic(t *testing.T) {
 					ErrorCode:    dbErrs[0].ErrorCode,
 					ErrorMessage: dbErrs[0].ErrorMessage,
 					EventType:    dbErrs[0].EventType,
-					Count:        1,
+					Count:        10,
 				},
 				{
 					StatusCode:   dbErrs[1].StatusCode,
 					ErrorCode:    dbErrs[1].ErrorCode,
 					ErrorMessage: dbErrs[1].ErrorMessage,
 					EventType:    dbErrs[1].EventType,
-					Count:        2,
+					Count:        20,
 				},
 			},
 		},
@@ -616,7 +621,7 @@ func TestAggregationLogic(t *testing.T) {
 					ErrorCode:    dbErrs[3].ErrorCode,
 					ErrorMessage: dbErrs[3].ErrorMessage,
 					EventType:    dbErrs[3].EventType,
-					Count:        1,
+					Count:        20,
 				},
 			},
 		},
@@ -643,7 +648,7 @@ func TestAggregationLogic(t *testing.T) {
 					ErrorCode:    dbErrs[4].ErrorCode,
 					ErrorMessage: dbErrs[4].ErrorMessage,
 					EventType:    dbErrs[4].EventType,
-					Count:        1,
+					Count:        15,
 				},
 			},
 		},

@@ -66,7 +66,6 @@ type Handle struct {
 	// state initialised during Setup
 
 	diagnosisTicker              *time.Ticker
-	netHandle                    *http.Client
 	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	irh                          RequestHandler
@@ -94,7 +93,6 @@ type Handle struct {
 	sourceIDSourceMap    map[string]backendconfig.SourceT
 
 	conf struct { // configuration parameters
-		httpTimeout                                                                       time.Duration
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
 		maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
 		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   misc.ValueLoader[time.Duration]

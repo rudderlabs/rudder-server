@@ -12,10 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -32,14 +28,17 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -66,9 +65,9 @@ func TestGRPC(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("endpoints", func(t *testing.T) {
-		pgResource, err := resource.SetupPostgres(pool, t)
+		pgResource, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		t.Log("db:", pgResource.DBDsn)

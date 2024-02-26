@@ -32,7 +32,7 @@ jobs:
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
 
       - name: install protoc compiler
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           version: '25.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -48,6 +48,22 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
+      - name: Validate OpenAPI definition
+        uses: char0n/swagger-editor-validate@v1
+        with:
+          definition-file: gateway/openapi.yaml
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: rudderlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - run: make generate-openapi-spec
+      - run: git diff --exit-code
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo 'Not correctly generated openapi spec. Ensure you have run `make generate-openapi-spec` and committed the files locally.'
   linting:
     name: lint
     runs-on: ubuntu-latest
@@ -58,7 +74,7 @@ jobs:
           go-version: '~1.21'
           check-latest: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v4
         with:
-          version: v1.55.0
+          version: v1.55.2
           args: -v
