@@ -111,7 +111,6 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 		stats.SendCountStat()
 		return false
 	}
-	// TODO: Move expirationTimeDiff to at transport
 	if date.Before(time.Now().Add(expirationTimeDiff)) {
 		return true
 	}
