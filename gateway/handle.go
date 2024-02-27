@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -611,4 +612,237 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 		userIDHeader:   userIDHeader,
 	}
 	userWebRequestWorker.webRequestQ <- &webReq
+}
+
+func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var (
+			ctx          = r.Context()
+			reqType      = ctx.Value(gwtypes.CtxParamCallType).(string)
+			arctx        = ctx.Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+			jobs         []*jobsdb.JobT
+			body         []byte
+			err          error
+			status       int
+			errorMessage string
+			responseBody string
+		)
+
+		// TODO: add tracing
+		gw.logger.LogRequest(r)
+		body, err = gw.getPayload(arctx, r, reqType)
+		if err != nil {
+			goto requestError
+		}
+		jobs, err = gw.extractJobsFromInternalBatchPayload(arctx, reqType, body)
+		if err != nil {
+			goto requestError
+		}
+
+		if len(jobs) > 0 {
+			if err := gw.storeJobs(ctx, jobs); err != nil {
+				gw.stats.NewTaggedStat(
+					"gateway.write_key_failed_events",
+					stats.CountType,
+					gw.newSourceStatTagsWithReason(arctx, reqType, "storeFailed"),
+				).Count(len(jobs))
+				goto requestError
+			}
+			gw.stats.NewTaggedStat(
+				"gateway.write_key_successful_events",
+				stats.CountType,
+				gw.newSourceStatTagsWithReason(arctx, reqType, ""),
+			).Count(len(jobs))
+		}
+
+		status = http.StatusOK
+		responseBody = response.GetStatus(response.Ok)
+		gw.stats.NewTaggedStat(
+			"gateway.write_key_successful_requests",
+			stats.CountType,
+			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
+		).Increment()
+		gw.logger.Debugn("response",
+			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody),
+		)
+		_, _ = w.Write([]byte(responseBody))
+		return
+
+	requestError:
+		errorMessage = err.Error()
+		status = response.GetErrorStatusCode(errorMessage)
+		responseBody = response.GetStatus(errorMessage)
+		gw.stats.NewTaggedStat(
+			"gateway.write_key_failed_requests",
+			stats.CountType,
+			gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
+		).Increment()
+		gw.logger.Infon("response",
+			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody),
+		)
+		http.Error(w, responseBody, status)
+	}
+}
+
+func (gw *Handle) extractJobsFromInternalBatchPayload(
+	arctx *gwtypes.AuthRequestContext,
+	reqType string,
+	body []byte,
+) ([]*jobsdb.JobT, error) {
+	if !gjson.ValidBytes(body) {
+		return nil, fmt.Errorf("%s", response.InvalidJSON)
+	}
+	gw.requestSizeStat.Observe(float64(len(body)))
+
+	type jobObject struct {
+		userID     string
+		events     []map[string]interface{}
+		receivedAt string
+	}
+	var (
+		sourcesJobRunID  = arctx.SourceJobRunID
+		sourcesTaskRunID = arctx.SourceTaskRunID
+		sourceID         = arctx.SourceID
+		workspaceID      = arctx.WorkspaceID
+		eventsBatch      = gjson.GetBytes(body, "batch").Array()
+		isUserSuppressed = gw.memoizedIsUserSuppressed()
+		out              = make([]jobObject, 0, len(eventsBatch))
+	)
+
+	for idx, v := range eventsBatch {
+		toSet, ok := v.Value().(map[string]interface{})
+		if !ok {
+			gw.stats.NewTaggedStat(
+				"gateway.write_key_failed_events",
+				stats.CountType,
+				gw.newSourceStatTagsWithReason(arctx, reqType, response.NotRudderEvent),
+			).Increment()
+			return nil, fmt.Errorf("%s", response.NotRudderEvent)
+		}
+		anonIDFromReq, _ := toSet["anonymousId"].(string)
+		userIDFromReq, _ := toSet["userId"].(string)
+		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
+		if ok {
+			if idx == 0 {
+				if v, _ := misc.MapLookup(eventContext, "sources", "job_run_id").(string); v != "" {
+					sourcesJobRunID = v
+				}
+				if v, _ := misc.MapLookup(eventContext, "sources", "task_run_id").(string); v != "" {
+					sourcesTaskRunID = v
+				}
+			}
+		}
+
+		if isUserSuppressed(workspaceID, userIDFromReq, sourceID) {
+			gw.logger.Infon("suppressed event",
+				logger.NewStringField("sourceID", sourceID),
+				logger.NewStringField("workspaceID", workspaceID),
+				logger.NewStringField("userIDFromReq", userIDFromReq),
+			)
+			gw.stats.NewTaggedStat(
+				"gateway.write_key_suppressed_events",
+				stats.CountType,
+				gw.newSourceStatTagsWithReason(arctx, reqType, errEventSuppressed.Error()),
+			).Increment()
+			continue
+		}
+
+		rudderID, _ := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		toSet["rudderId"] = rudderID
+		userID := buildUserID("", anonIDFromReq, userIDFromReq)
+		receivedAt, _ := toSet["receivedAt"].(string)
+		if receivedAt == "" {
+			receivedAt = time.Now().Format(misc.RFC3339Milli)
+		}
+		out = append(out, jobObject{
+			userID: userID, events: []map[string]interface{}{toSet}, receivedAt: receivedAt,
+		})
+	}
+	if len(out) == 0 { // events suppressed - but return success
+		return nil, nil
+	}
+	var params struct {
+		SourceID        string `json:"source_id"`
+		SourceJobRunID  string `json:"source_job_run_id"`
+		SourceTaskRunID string `json:"source_task_run_id"`
+	}
+	params.SourceID = sourceID
+	params.SourceJobRunID = sourcesJobRunID
+	params.SourceTaskRunID = sourcesTaskRunID
+	marshalledParams, err := json.Marshal(params)
+	if err != nil {
+		gw.logger.Errorn(
+			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
+			logger.NewField("params", params),
+			obskit.Error(err),
+		)
+		marshalledParams = []byte(
+			`{"error": "rudder-server gateway failed to marshal params"}`,
+		)
+	}
+
+	jobs := make([]*jobsdb.JobT, 0, len(out))
+	type singularEventBatch struct {
+		Batch      []map[string]interface{} `json:"batch"`
+		RequestIP  string                   `json:"requestIP"` // update processor accordingly
+		WriteKey   string                   `json:"writeKey"`
+		ReceivedAt string                   `json:"receivedAt"`
+	}
+	for _, userEvent := range out {
+		var (
+			payload    json.RawMessage
+			eventCount int
+		)
+		eventBatch := singularEventBatch{
+			Batch:      userEvent.events,
+			WriteKey:   arctx.WriteKey,
+			ReceivedAt: userEvent.receivedAt,
+		}
+		payload, err = json.Marshal(eventBatch)
+		if err != nil {
+			panic(err)
+		}
+		eventCount = len(userEvent.events)
+
+		jobs = append(jobs, &jobsdb.JobT{
+			UUID:         uuid.New(),
+			UserID:       userEvent.userID,
+			Parameters:   marshalledParams,
+			CustomVal:    customVal,
+			EventPayload: payload,
+			EventCount:   eventCount,
+			WorkspaceId:  workspaceID,
+		})
+	}
+	return jobs, nil
+}
+
+func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
+	ctx, cancel := context.WithTimeout(ctx, gw.conf.WriteTimeout)
+	defer cancel()
+	defer gw.dbWritesStat.Count(1)
+	return gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+		if err := gw.jobsDB.StoreInTx(ctx, tx, jobs); err != nil {
+			gw.logger.Errorn(
+				"Store into gateway db failed with error",
+				obskit.Error(err),
+				logger.NewField("jobs", jobs),
+			)
+			return err
+		}
+
+		// rsources stats
+		rsourcesStats := rsources.NewStatsCollector(
+			gw.rsourcesService,
+			rsources.IgnoreDestinationID(),
+		)
+		rsourcesStats.JobsStoredWithErrors(jobs, nil)
+		return rsourcesStats.Publish(ctx, tx.SqlTx())
+	})
 }
