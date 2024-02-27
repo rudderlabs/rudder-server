@@ -336,7 +336,13 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 
 // converting the string clientID to ClientID struct
 
-func newClientIDFromString(clientID string) (*ClientID, error) {
+func newClientIDFromString(clientID string, id string) (*ClientID, error) {
+	if clientID == "" && id != "" {
+		return &ClientID{
+			JobID:       0,
+			HashedEmail: "",
+		}, nil
+	}
 	fmt.Println("######## clientID ###########", clientID)
 	clientIDParts := strings.Split(clientID, clientIDSeparator)
 	if len(clientIDParts) != 2 {
@@ -382,9 +388,13 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := 0
+	idIndex := -1
 	if len(records) > 0 {
 		header := records[0]
 		for i, column := range header {
+			if column == "Id" {
+				idIndex = i
+			}
 			if column == "Client Id" {
 				clientIDIndex = i
 			} else if column == "Error" {
@@ -401,11 +411,23 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
 		rowname := record[typeIndex]
-		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
+		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Error") {
+			if idIndex >= 0 && idIndex < len(record) {
+				jobID := int64(0)
+				errorSet, ok := clientIDErrors[jobID]
+				if !ok {
+					errorSet = make(map[string]struct{})
+					// making the structure as jobId: [error1, error2]
+					clientIDErrors[jobID] = errorSet
+				}
+				errorSet[record[errorIndex]] = struct{}{}
+			}
+			break
+		}
+		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Item Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				fmt.Println("######## record[clientIDIndex] ###########", record[clientIDIndex])
 				// expecting the client ID is present as jobId<<>>clientId
-				clientId, err := newClientIDFromString(record[clientIDIndex])
+				clientId, err := newClientIDFromString(record[clientIDIndex], record[idIndex])
 				if err != nil {
 					return nil, err
 				}

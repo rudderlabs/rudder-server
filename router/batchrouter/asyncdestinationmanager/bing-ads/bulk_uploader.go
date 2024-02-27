@@ -233,6 +233,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 	// making an array of those jobIds
 	importList := uploadStatsInput.ImportingList
 	var initialEventList []int64
+	var finalFailedEventList []int64
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
@@ -262,10 +263,26 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 		eventStatsResponse.StatusCode = response.StatusCode
 	}
 
+	// If the failedJobIds array has only one element and that is 0, that means that all the jobs have failed
+	if len(failedJobIds) == 1 && failedJobIds[0] == 0 {
+		finalFailedEventList = initialEventList
+		// Check if the old key exists
+		if oldValue, exists := cumulativeFailedReasons[0]; exists {
+			// Delete the old key-value pair
+			delete(cumulativeFailedReasons, 0)
+			// Iterate over initialEventList and assign the old value to new keys
+			for _, jobImporting := range initialEventList {
+				cumulativeFailedReasons[jobImporting] = oldValue
+			}
+		}
+	} else {
+		finalFailedEventList = failedJobIds
+	}
+
 	eventStatsResponse.Metadata = common.EventStatMeta{
-		FailedKeys:    failedJobIds,
+		FailedKeys:    finalFailedEventList,
 		FailedReasons: cumulativeFailedReasons,
-		SucceededKeys: getSuccessJobIDs(failedJobIds, initialEventList),
+		SucceededKeys: getSuccessJobIDs(finalFailedEventList, initialEventList),
 	}
 
 	return eventStatsResponse
