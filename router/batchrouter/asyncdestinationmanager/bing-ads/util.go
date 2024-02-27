@@ -111,6 +111,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 		actionFile.EventCount += 1
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
+			fmt.Println("######## clientIdI ###########", clientIdI)
 			clientIdStr := clientIdI.ToString()
 			err := actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			if err != nil {
@@ -312,14 +313,14 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 			}
 		}
 		// remove the file after the response has been written
-		removeErr := os.Remove(filePath)
-		if removeErr != nil {
-			b.logger.Errorf("Error removing the CSV file: %w", removeErr)
-			if err == nil {
-				err = removeErr
-			}
+		// removeErr := os.Remove(filePath)
+		// if removeErr != nil {
+		// 	b.logger.Errorf("Error removing the CSV file: %w", removeErr)
+		// 	if err == nil {
+		// 		err = removeErr
+		// 	}
 
-		}
+		// }
 	}()
 	// Create a new CSV reader
 	reader := csv.NewReader(file)
@@ -336,6 +337,7 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 // converting the string clientID to ClientID struct
 
 func newClientIDFromString(clientID string) (*ClientID, error) {
+	fmt.Println("######## clientID ###########", clientID)
 	clientIDParts := strings.Split(clientID, clientIDSeparator)
 	if len(clientIDParts) != 2 {
 		return nil, fmt.Errorf("invalid client id: %s", clientID)
@@ -401,6 +403,7 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 		rowname := record[typeIndex]
 		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
+				fmt.Println("######## record[clientIDIndex] ###########", record[clientIDIndex])
 				// expecting the client ID is present as jobId<<>>clientId
 				clientId, err := newClientIDFromString(record[clientIDIndex])
 				if err != nil {
