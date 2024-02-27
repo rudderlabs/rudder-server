@@ -14,7 +14,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -85,7 +84,7 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 	return transformedJobs.AuthErrorCategory, nil
 }
 
-func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats *OAuthStats) bool {
+func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {
 	expirationDate := expirationDate{}
 	if err := json.Unmarshal(secret.Secret, &expirationDate); err != nil {
 		stats.errorMessage = "unmarshal failed"
@@ -93,7 +92,7 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats 
 		stats.SendCountStat()
 		return false
 	}
-	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, stats) {
+	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, expiryTimeDiff, stats) {
 		return true
 	}
 	if router_utils.IsNotEmptyString(string(oldSecret)) {
@@ -104,7 +103,7 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats 
 	return false
 }
 
-func isTokenExpired(expirationDate string, stats *OAuthStats) bool {
+func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, stats *OAuthStats) bool {
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
 		stats.errorMessage = "parsing failed"
@@ -113,7 +112,7 @@ func isTokenExpired(expirationDate string, stats *OAuthStats) bool {
 		return false
 	}
 	// TODO: Move expirationTimeDiff to at transport
-	if date.Before(time.Now().Add(config.GetDurationVar(5, time.Minute, "Router."+stats.destDefName+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff"))) {
+	if date.Before(time.Now().Add(expirationTimeDiff)) {
 		return true
 	}
 	return false

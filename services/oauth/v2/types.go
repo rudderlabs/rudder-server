@@ -2,6 +2,7 @@ package v2
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -31,6 +32,7 @@ type OAuthHandler struct {
 	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
 	Cache                     Cache
 	CacheMutex                *rudderSync.PartitionRWLocker
+	ExpirationTimeDiff        time.Duration
 }
 type CacheKey struct {
 	WorkspaceID string

@@ -35,6 +35,12 @@ func WithLocker(lock *rudderSync.PartitionRWLocker) func(*OAuthHandler) {
 	}
 }
 
+func WithExpirationTimeDiff(expirationTimeDiff time.Duration) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.ExpirationTimeDiff = expirationTimeDiff
+	}
+}
+
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthHandler")
@@ -61,6 +67,9 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	}
 	if oAuthHandler.CacheMutex == nil {
 		oAuthHandler.CacheMutex = rudderSync.NewPartitionRWLocker()
+	}
+	if oAuthHandler.ExpirationTimeDiff.Seconds() == 0 {
+		oAuthHandler.ExpirationTimeDiff = 1 * time.Minute
 	}
 	return oAuthHandler
 }
@@ -151,7 +160,7 @@ func (oauthHandler *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParam
 	storedCache, ok := oauthHandler.Cache.Get(refTokenParams.AccountId)
 	if ok {
 		cachedSecret := storedCache.(*AuthResponse)
-		if !checkIfTokenExpired(cachedSecret.Account, refTokenParams.Secret, authStats) {
+		if !checkIfTokenExpired(cachedSecret.Account, refTokenParams.Secret, oauthHandler.ExpirationTimeDiff, authStats) {
 			return http.StatusOK, cachedSecret, nil
 		}
 		// Refresh token preparation

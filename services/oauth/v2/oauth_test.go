@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -28,6 +29,8 @@ var _ = Describe("Oauth", func() {
 			Expect(testOauthHandler.Cache).To(Not(BeNil()))
 			Expect(testOauthHandler.CacheMutex).To(Not(BeNil()))
 			Expect(testOauthHandler.AuthStatusUpdateActiveMap).To(Not(BeNil()))
+			Expect(testOauthHandler.ExpirationTimeDiff).To(Not(BeNil()))
+			Expect(testOauthHandler.ExpirationTimeDiff).To(Equal(1 * time.Minute))
 		})
 	})
 	Describe("Test FetchToken function", func() {

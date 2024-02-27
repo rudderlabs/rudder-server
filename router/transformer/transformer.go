@@ -60,6 +60,7 @@ type handle struct {
 	logger                    logger.Logger
 
 	oauthV2EnabledLoader *misc.ValueLoader[bool]
+	expirationTimeDiff   misc.ValueLoader[time.Duration]
 }
 
 type ProxyRequestMetadata struct {
@@ -102,10 +103,21 @@ type Transformer interface {
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse
 }
 
+type OptFn func(b *handle)
+
+func WithExpirationTimeDiff(expirationTimeDiff misc.ValueLoader[time.Duration]) OptFn {
+	return func(b *handle) {
+		b.expirationTimeDiff = expirationTimeDiff
+	}
+}
+
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool]) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], fns ...OptFn) Transformer {
 	handle := &handle{
 		oauthV2EnabledLoader: oauthV2Enabled,
+	}
+	for _, fn := range fns {
+		fn(handle)
 	}
 	handle.setup(destinationTimeout, transformTimeout, &cache, lock, backendConfig)
 	return handle
@@ -410,15 +422,17 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Router Transformation
 	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
 	optionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
-		Locker:    locker,
-		Augmenter: extensions.BodyAugmenter,
+		Locker:             locker,
+		Augmenter:          extensions.BodyAugmenter,
+		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
 	}
 	// This client is used for Router Transformation using oauthV2
 	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauth.RudderFlow_Delivery, cache, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
 
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
-		Locker:    locker,
-		Augmenter: extensions.BodyAugmenter,
+		Locker:             locker,
+		Augmenter:          extensions.BodyAugmenter,
+		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
