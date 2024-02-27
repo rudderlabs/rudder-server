@@ -151,12 +151,12 @@ func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *redisManagerT) HDel(hash, key string, value interface{}) (err error) {
+func (m *redisManagerT) HDel(hash string, value ...string) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
-		_, err = m.clusterClient.HDel(ctx, hash, key, value).Result()
+		_, err = m.clusterClient.HDel(ctx, hash, value...).Result()
 	} else {
-		_, err = m.client.HDel(ctx, hash, key, value).Result()
+		_, err = m.client.HDel(ctx, hash, value...).Result()
 	}
 	return err
 }

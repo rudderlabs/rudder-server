@@ -27,6 +27,7 @@ const (
 	hashPath  = "message.hash"
 	keyPath   = "message.key"
 	valuePath = "message.value"
+	actionPath = "message.action"
 )
 
 func New(provider string, config map[string]interface{}) (m KVStoreManager) {
@@ -68,12 +69,13 @@ func IsHSETCompatibleEvent(jsonData json.RawMessage) bool {
 	return gjson.GetBytes(jsonData, hashPath).Exists() && gjson.GetBytes(jsonData, keyPath).Exists() && gjson.GetBytes(jsonData, valuePath).Exists()
 }
 
-func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string) {
+func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string, action string) {
 	hash = gjson.GetBytes(jsonData, hashPath).String()
 	key = gjson.GetBytes(jsonData, keyPath).String()
 	value = gjson.GetBytes(jsonData, valuePath).String()
+	action = gjson.GetBytes(jsonData, actionPath).String()
 
-	return hash, key, value
+	return hash, key, value, action
 }
 
 // IsRecordCompatibleEvent identifies if the event supports record operations
