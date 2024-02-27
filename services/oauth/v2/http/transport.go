@@ -110,6 +110,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	}
 	rts.res.Body = io.NopCloser(bytes.NewReader(respData))
 	interceptorResp := oauth.OAuthTransportResponse{}
+	// internal function
+	applyInterceptorRespToHttpResp := func() {
+		var interceptorRespBytes, newRespData []byte
+		interceptorRespBytes, _ =json.Marshal(interceptorResp)
+		newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
+		rts.res.Body = io.NopCloser(bytes.NewReader(newRespData))
+	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
 		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
@@ -142,6 +149,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			})
 			// rts.res.Body = errorInRefToken
 			interceptorResp.Response = authResponse.ErrorMessage
+			applyInterceptorRespToHttpResp()
 			return rts.res, nil
 		}
 		// refresh token failed --> abort the event
@@ -166,10 +174,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		// rts.res.StatusCode = http.StatusBadRequest
 		interceptorResp.StatusCode = http.StatusBadRequest
 	}
-	var interceptorRespBytes, newRespData []byte
-	interceptorRespBytes, _ =json.Marshal(interceptorResp)
-	newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
-	rts.res.Body = io.NopCloser(bytes.NewReader(newRespData))
+	applyInterceptorRespToHttpResp()
 	return rts.res, err
 }
 
