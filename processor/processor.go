@@ -75,7 +75,6 @@ type Handle struct {
 	tracer        stats.Tracer
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
-	lastJobID     int64
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -176,8 +175,8 @@ type processorStats struct {
 	statDBReadRequests            func(partition string) stats.Measurement
 	statDBReadEvents              func(partition string) stats.Measurement
 	statDBReadPayloadBytes        func(partition string) stats.Measurement
-	statDBReadOutOfOrder          func(partition string) stats.Measurement
-	statDBReadOutOfSequence       func(partition string) stats.Measurement
+	StatDBReadOutOfOrder          func(partition string) stats.Measurement
+	StatDBReadOutOfSequence       func(partition string) stats.Measurement
 	statMarkExecuting             func(partition string) stats.Measurement
 	statDBWriteStatusTime         func(partition string) stats.Measurement
 	statDBWriteJobsTime           func(partition string) stats.Measurement
@@ -507,12 +506,12 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBReadOutOfOrder = func(partition string) stats.Measurement {
+	proc.stats.StatDBReadOutOfOrder = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_order", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBReadOutOfSequence = func(partition string) stats.Measurement {
+	proc.stats.StatDBReadOutOfSequence = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_sequence", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
@@ -2922,15 +2921,6 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)
-
-		if job.JobID <= proc.lastJobID {
-			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfOrder(partition).Count(1)
-		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
-			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfSequence(partition).Count(1)
-		}
-		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
