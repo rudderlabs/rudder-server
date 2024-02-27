@@ -222,11 +222,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
+		interceptorInfo := oauth.OAuthTransportResponse{} // initing to prevent panic
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonfast.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
+			// TODO: should we do some kind of error check here ?
+			json.Unmarshal([]byte(gjson.GetBytes(respData, "interceptorResponse").Raw), &interceptorInfo)
 			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 
@@ -235,6 +238,13 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
+			if interceptorInfo.StatusCode > 0 {
+				destinationJobs[i].StatusCode = interceptorInfo.StatusCode
+			}
+			if strings.TrimSpace(interceptorInfo.Response) != "" {
+				// Should this be set to `error` alone ?
+				destinationJobs[i].Error = interceptorInfo.Response
+			}
 			for k, v := range destinationJobs[i].JobIDs() {
 				out = append(out, k)
 				if _, ok := in[k]; !ok {

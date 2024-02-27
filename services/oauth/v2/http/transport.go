@@ -13,6 +13,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
+	"github.com/tidwall/sjson"
 )
 
 /*
@@ -108,6 +109,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		return rts.res, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
 	rts.res.Body = io.NopCloser(bytes.NewReader(respData))
+	interceptorResp := oauth.OAuthTransportResponse{}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
 		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
@@ -124,11 +126,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		statusCode, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
 			err = refErr
+			interceptorResp.Response = refErr.Error()
 		}
 		if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// Setting the response we obtained from trying to Refresh the token
-			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
-			rts.res.StatusCode = http.StatusBadRequest
+			// errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
+			// rts.res.StatusCode = http.StatusBadRequest
+			interceptorResp.StatusCode = http.StatusBadRequest
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
 				WorkspaceId:     rts.destination.WorkspaceID,
@@ -136,7 +140,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 				StatPrefix:      oauth.AuthStatusInactive,
 				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
 			})
-			rts.res.Body = errorInRefToken
+			// rts.res.Body = errorInRefToken
+			interceptorResp.Response = authResponse.ErrorMessage
 			return rts.res, nil
 		}
 		// refresh token failed --> abort the event
@@ -147,6 +152,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		if statusCode == http.StatusOK {
 			// refresh token successful --> retry the event
 			rts.res.StatusCode = http.StatusInternalServerError
+			interceptorResp.StatusCode = http.StatusInternalServerError
 		}
 
 	} else if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
@@ -157,8 +163,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			StatPrefix:      oauth.AuthStatusInactive,
 			AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
 		})
-		rts.res.StatusCode = http.StatusBadRequest
+		// rts.res.StatusCode = http.StatusBadRequest
+		interceptorResp.StatusCode = http.StatusBadRequest
 	}
+	var interceptorRespBytes, newRespData []byte
+	interceptorRespBytes, _ =json.Marshal(interceptorResp)
+	newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
+	rts.res.Body = io.NopCloser(bytes.NewReader(newRespData))
 	return rts.res, err
 }
 

@@ -106,3 +106,8 @@ type AuthStatusToggleResponse struct {
 type TransformerResponse struct {
 	AuthErrorCategory string `json:"authErrorCategory"`
 }
+
+type OAuthTransportResponse struct {
+	StatusCode int `json:"statusCode"`
+	Response string `json:"response,omitempty"`
+}
