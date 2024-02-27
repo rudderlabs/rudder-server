@@ -37,29 +37,29 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // ProxyRequest mocks base method.
-func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams, arg2 bool) transformer.ProxyRequestResponse {
+func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1)
 	ret0, _ := ret[0].(transformer.ProxyRequestResponse)
 	return ret0
 }
 
 // ProxyRequest indicates an expected call of ProxyRequest.
-func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1)
 }
 
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 string, arg1 *types.TransformMessageT, arg2 bool) []types.DestinationJobT {
+func (m *MockTransformer) Transform(arg0 string, arg1 *types.TransformMessageT) []types.DestinationJobT {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Transform", arg0, arg1)
 	ret0, _ := ret[0].([]types.DestinationJobT)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1)
 }

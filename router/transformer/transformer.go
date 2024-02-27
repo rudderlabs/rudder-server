@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	OAuthHttpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -57,6 +58,8 @@ type handle struct {
 	transformTimeout          time.Duration
 	transformRequestTimerStat stats.Measurement
 	logger                    logger.Logger
+
+	oauthV2EnabledLoader *misc.ValueLoader[bool]
 }
 
 type ProxyRequestMetadata struct {
@@ -95,13 +98,15 @@ type ProxyRequestResponse struct {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(transformType string, transformMessage *types.TransformMessageT, usingOauthV2 bool) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams, usingOauthV2 bool) ProxyRequestResponse
+	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) Transformer {
-	handle := &handle{}
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool]) Transformer {
+	handle := &handle{
+		oauthV2EnabledLoader: oauthV2Enabled,
+	}
 	handle.setup(destinationTimeout, transformTimeout, &cache, lock, backendConfig)
 	return handle
 }
@@ -109,7 +114,7 @@ func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oa
 var loggerOverride logger.Logger
 
 // Transform transforms router jobs to destination jobs
-func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT, usingOauthV2 bool) []types.DestinationJobT {
+func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy, jobs := transformMessage.Dehydrate()
 
@@ -149,7 +154,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
-		if usingOauthV2 {
+		if (*trans.oauthV2EnabledLoader).Load() {
 			destinationInfo := &oauth.DestinationInfo{
 				DestConfig:    transformMessageCopy.Data[0].Destination.Config,
 				DestDefConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
@@ -275,7 +280,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
-func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams, usingOauthV2 bool) ProxyRequestResponse {
+func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse {
 	routerJobResponseCodes := make(map[int64]int)
 	routerJobResponseBodys := make(map[int64]string)
 	routerJobDontBatchDirectives := make(map[int64]bool)
@@ -327,7 +332,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 
 	rdlTime := time.Now()
-	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload, usingOauthV2)
+	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
@@ -429,7 +434,7 @@ type httpProxyResponse struct {
 	err        error
 }
 
-func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte, usingOauthV2 bool) httpProxyResponse {
+func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
 	var respData []byte
 	destName := proxyReqParams.DestName
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
@@ -449,7 +454,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 	httpReqStTime := time.Now()
 	var resp *http.Response
-	if usingOauthV2 {
+	if (*trans.oauthV2EnabledLoader).Load() {
 		req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, ctx.Value(oauth.DestKey)))
 		req = req.WithContext(context.WithValue(req.Context(), oauth.SecretKey, proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOauthV2.Do(req)

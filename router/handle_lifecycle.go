@@ -122,7 +122,7 @@ func (rt *Handle) Setup(
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
 	cache := v2.NewCache()
 	oauthLock := rudderSync.NewPartitionRWLocker()
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout, cache, oauthLock, backendConfig)
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout, cache, oauthLock, backendConfig, &rt.reloadableConfig.oauthV2Enabled)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 

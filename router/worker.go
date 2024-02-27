@@ -285,12 +285,10 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
 		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-		oauthV2Enabled,
 	)
 	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
 	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
@@ -340,7 +338,6 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			Data:     routerJobs,
 			DestType: strings.ToLower(w.rt.destType),
 		},
-		false,
 	)
 	w.rt.batchOutputCountStat.Count(len(destinationJobs))
 	w.recordStatsForFailedTransforms("batch", destinationJobs)
@@ -787,7 +784,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	}
 	ctx = context.WithValue(ctx, oauthv2.DestKey, destinationInfo)
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
-	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams, oauthV2Enabled)
+	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)

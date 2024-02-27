@@ -114,7 +114,6 @@ func (d *DestinationInfo) GetAccountID(idKey string) string {
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, stats *OAuthStats) bool {
-
 	expirationDate := expirationDate{}
 	if err := json.Unmarshal(secret.Secret, &expirationDate); err != nil {
 		stats.errorMessage = "unmarshal failed"

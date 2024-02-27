@@ -221,5 +221,4 @@ var _ = Describe("Http/Client", func() {
 			Expect(respData).To(Equal([]byte(`{"output":[{"authErrorCategory":"AUTH_STATUS_INACTIVE"}]}`)))
 		})
 	})
-
 })

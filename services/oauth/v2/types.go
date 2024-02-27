@@ -13,6 +13,7 @@ type (
 	AuthType   string
 	ContextKey string
 )
+
 type expirationDate struct {
 	ExpirationDate string `json:"expirationDate"`
 }

@@ -180,7 +180,7 @@ var _ = Describe("Proxy Request", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any(), nil).
+			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
 				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
@@ -271,7 +271,7 @@ var _ = Describe("Proxy Request", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any(), nil).
+			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
 				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
@@ -369,7 +369,7 @@ var _ = Describe("Proxy Request", func() {
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any(), nil).
+			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
 				Times(1).
 				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
