@@ -111,7 +111,6 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 		actionFile.EventCount += 1
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
-			fmt.Println("######## clientIdI ###########", clientIdI)
 			clientIdStr := clientIdI.ToString()
 			err := actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			if err != nil {
@@ -343,7 +342,6 @@ func newClientIDFromString(clientID string, id string) (*ClientID, error) {
 			HashedEmail: "",
 		}, nil
 	}
-	fmt.Println("######## clientID ###########", clientID)
 	clientIDParts := strings.Split(clientID, clientIDSeparator)
 	if len(clientIDParts) != 2 {
 		return nil, fmt.Errorf("invalid client id: %s", clientID)
