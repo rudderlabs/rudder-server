@@ -34,21 +34,6 @@ var _ = Describe("Oauth", func() {
 		})
 	})
 	Describe("Test FetchToken function", func() {
-		/**
-		1. CpApiCall returns a plain string(non-empty)
-		2. CpApiCall returns empty response
-		3. CpApiCall returns a new token when the token is expired
-		4. CpApiCall returns an error when the token is not found
-
-		TODOs:
-		FetchToken, RefreshToken, AuthStatusToggle
-		- Add a test where in config-be responds with "Connection Refused" kind of error (config-be down scenario)
-		- Add a test where in config-be responds may be after connection timeout
-		- Add a test where in config-be closes connection(Connection reset by peer)
-		- Add a test where config-be returns 502 & 503
-		- Add a test where config-be returns 429 from config-be
-
-		*/
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
 				AccountId:   "123",

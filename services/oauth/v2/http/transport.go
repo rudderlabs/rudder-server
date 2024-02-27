@@ -83,7 +83,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 			rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), oauth.SecretKey, authResponse.Account.Secret))
 			err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 			if err != nil {
-				// TODO: Need to add stat here
+				t.log.Debugf("failed to augment the secret: %v", err)
 				return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
 			}
 			return nil
@@ -110,11 +110,9 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	rts.res.Body = io.NopCloser(bytes.NewReader(respData))
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		// TODO: Need to add P0 stat here
 		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
 	}
 	if authErrorCategory == oauth.REFRESH_TOKEN {
-		// TODO: Need to refactor this part by moving this to another function
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		if rts.req.Context().Value(oauth.SecretKey) != nil {
@@ -164,7 +162,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	return rts.res, err
 }
 
-// TODO: in v1 we are not seeing the entire response
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Context().Value(oauth.DestKey) == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
@@ -192,7 +189,6 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		DestDefName: rts.destination.DestDefName,
 	}
 	rts.req = req
-	// TODO: return error from preRoundTrip and build response in here
 	res := t.preRoundTrip(rts)
 	if res != nil {
 		return res, nil

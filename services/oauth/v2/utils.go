@@ -45,6 +45,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"destType":        authStats.destDefName,
 		"flowType":        string(authStats.flowType),
 		"action":          authStats.action,
+		"oauthVersion":    "v2",
 	}
 	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
 }
@@ -52,6 +53,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 // Send count type stats related to OAuth(Destination)
 func (refStats *OAuthStats) SendCountStat() {
 	statsTags := stats.Tags{
+		"oauthVersion":    "v2",
 		"id":              refStats.id,
 		"workspaceId":     refStats.workspaceId,
 		"rudderCategory":  refStats.rudderCategory,

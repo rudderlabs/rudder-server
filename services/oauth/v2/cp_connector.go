@@ -87,13 +87,13 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
 */
 func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
-	// TODO: Need to add stat here for oauth version
 	cpStatTags := stats.Tags{
-		"url":         cpReq.Url,
-		"requestType": cpReq.RequestType,
-		"destType":    cpReq.destName,
-		"method":      cpReq.Method,
-		"flowType":    string(cpReq.rudderFlowType),
+		"url":          cpReq.Url,
+		"requestType":  cpReq.RequestType,
+		"destType":     cpReq.destName,
+		"method":       cpReq.Method,
+		"flowType":     string(cpReq.rudderFlowType),
+		"oauthVersion": "v2",
 	}
 
 	var reqBody *bytes.Buffer
