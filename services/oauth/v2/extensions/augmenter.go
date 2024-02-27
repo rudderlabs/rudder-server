@@ -42,7 +42,7 @@ func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.
 	augmentedBody := body
 	var err error
 	for i := 0; i < int(totalInputs); i++ {
-		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.%s", t.AugmenterPath, i, v2.SecretKey), secret)
+		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.metadata.%s", t.AugmenterPath, i, v2.SecretKey), secret)
 		if err != nil {
 			return fmt.Errorf("failed to augment request body: %w", err)
 		}
