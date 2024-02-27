@@ -433,7 +433,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
 	optionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
-		Augmenter:          extensions.BodyAugmenter,
+		Augmenter:          extensions.RouterBodyAugmenter,
 		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
 	}
 	// This client is used for Router Transformation using oauthV2
@@ -441,7 +441,6 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
-		Augmenter:          extensions.BodyAugmenter,
 		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)

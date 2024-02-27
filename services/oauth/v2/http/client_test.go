@@ -26,7 +26,7 @@ var _ = Describe("Http/Client", func() {
 		It("should return an http client", func() {
 			cache := oauth.NewCache()
 			optionalArgs := httpClient.HttpClientOptionalArgs{
-				Augmenter: extensions.BodyAugmenter,
+				Augmenter: extensions.RouterBodyAugmenter,
 			}
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			Expect(httpClient).ToNot(BeNil())
@@ -44,7 +44,7 @@ var _ = Describe("Http/Client", func() {
 			}, nil)
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport: mockRoundTrip,
-				Augmenter: extensions.BodyAugmenter,
+				Augmenter: extensions.RouterBodyAugmenter,
 			}
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
@@ -87,7 +87,7 @@ var _ = Describe("Http/Client", func() {
 
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
-				Augmenter:    extensions.BodyAugmenter,
+				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
@@ -140,7 +140,7 @@ var _ = Describe("Http/Client", func() {
 			}
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
-				Augmenter:    extensions.BodyAugmenter,
+				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
@@ -194,7 +194,7 @@ var _ = Describe("Http/Client", func() {
 			}
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
-				Augmenter:    extensions.BodyAugmenter,
+				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)

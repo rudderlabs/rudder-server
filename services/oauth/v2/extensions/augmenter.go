@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -18,16 +19,16 @@ type Augmenter interface {
 	Augment(r *http.Request, body []byte, secret json.RawMessage) error
 }
 
-type bodyAugmenter struct {
+type routerBodyAugmenter struct {
 	AugmenterPath string
 }
 type headerAugmenter struct {
 	HeaderName string
 }
 
-// BodyAugmenter is an Augmenter that adds the authorization information to the request body.
-var BodyAugmenter = &bodyAugmenter{
-	AugmenterPath: fmt.Sprintf("input.0.metadata.%s", v2.SecretKey),
+// RouterBodyAugmenter is an Augmenter that adds the authorization information to the request body.
+var RouterBodyAugmenter = &routerBodyAugmenter{
+	AugmenterPath: "input",
 }
 
 // HeaderAugmenter is an Augmenter that adds the authorization information to the request header.
@@ -36,10 +37,15 @@ var HeaderAugmenter = &headerAugmenter{
 }
 
 // Overload of Earlier Augment function
-func (t *bodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
-	augmentedBody, err := sjson.SetRawBytes(body, t.AugmenterPath, secret)
-	if err != nil {
-		return fmt.Errorf("failed to augment request body: %w", err)
+func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
+	totalInputs := gjson.Get(string(body), fmt.Sprintf("%s.#", t.AugmenterPath)).Int()
+	augmentedBody := body
+	var err error
+	for i := 0; i < int(totalInputs); i++ {
+		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.%s", t.AugmenterPath, i, v2.SecretKey), secret)
+		if err != nil {
+			return fmt.Errorf("failed to augment request body: %w", err)
+		}
 	}
 	r.ContentLength = int64(len(augmentedBody))
 	r.Body = io.NopCloser(bytes.NewReader(augmentedBody))
