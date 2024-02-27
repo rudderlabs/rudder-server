@@ -37,14 +37,6 @@ type CacheKey struct {
 	AccountID   string
 }
 
-type DestinationInfo struct {
-	WorkspaceID   string
-	DestDefName   string
-	DestDefConfig map[string]interface{}
-	DestinationId string
-	DestConfig    map[string]interface{}
-}
-
 type TokenProvider interface {
 	Identity() identity.Identifier
 }
