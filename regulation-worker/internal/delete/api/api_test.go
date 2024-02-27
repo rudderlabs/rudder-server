@@ -865,7 +865,7 @@ func TestOAuth(t *testing.T) {
 					config.Set("HttpClient.oauth.timeout", tt.oauthHttpClientTimeout.Seconds())
 				}
 				optionalArgs := oauthv2_http.HttpClientOptionalArgs{
-					Augmenter: extensions.BodyAugmenter,
+					Augmenter: extensions.HeaderAugmenter,
 					Locker:    oauthLock,
 				}
 				cli = oauthv2_http.OAuthHttpClient(
