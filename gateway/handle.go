@@ -630,14 +630,6 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 
 		// TODO: add tracing
 		gw.logger.LogRequest(r)
-		defer func() {
-			defer gw.logger.Infon("response",
-				logger.NewStringField("ip", misc.GetIPFromReq(r)),
-				logger.NewStringField("path", r.URL.Path),
-				logger.NewIntField("status", int64(status)),
-				logger.NewStringField("body", responseBody),
-			)
-		}()
 		body, err = gw.getPayload(arctx, r, reqType)
 		if err != nil {
 			goto requestError
@@ -670,6 +662,12 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			stats.CountType,
 			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
 		).Increment()
+		gw.logger.Debugn("response",
+			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody),
+		)
 		_, _ = w.Write([]byte(responseBody))
 		return
 
@@ -682,6 +680,12 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			stats.CountType,
 			gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
 		).Increment()
+		gw.logger.Infon("response",
+			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody),
+		)
 		http.Error(w, responseBody, status)
 	}
 }
