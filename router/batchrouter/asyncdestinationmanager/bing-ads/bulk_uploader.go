@@ -197,12 +197,12 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	return cumulativeResp
 }
 
-func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
+func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string, initialEventList []int64) (common.GetUploadStatsResponse, error) {
 	records, err := b.readPollResults(filePath)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
-	clientIDErrors, err := processPollStatusData(records)
+	clientIDErrors, err := processPollStatusData(records, initialEventList)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
@@ -233,7 +233,6 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 	// making an array of those jobIds
 	importList := uploadStatsInput.ImportingList
 	var initialEventList []int64
-	var finalFailedEventList []int64
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
@@ -251,7 +250,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 				StatusCode: 500,
 			}
 		}
-		response, err := b.getUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
+		response, err := b.getUploadStatsOfSingleImport(filePaths[0], initialEventList) // only one file should be there
 		if err != nil {
 			b.logger.Error("Error in getting upload stats of single import: %v", err)
 			return common.GetUploadStatsResponse{
@@ -263,26 +262,10 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 		eventStatsResponse.StatusCode = response.StatusCode
 	}
 
-	// If the failedJobIds array has only one element and that is 0, that means that all the jobs have failed
-	if len(failedJobIds) == 1 && failedJobIds[0] == 0 {
-		finalFailedEventList = initialEventList
-		// Check if the old key exists
-		if oldValue, exists := cumulativeFailedReasons[0]; exists {
-			// Delete the old key-value pair
-			delete(cumulativeFailedReasons, 0)
-			// Iterate over initialEventList and assign the old value to new keys
-			for _, jobImporting := range initialEventList {
-				cumulativeFailedReasons[jobImporting] = oldValue
-			}
-		}
-	} else {
-		finalFailedEventList = failedJobIds
-	}
-
 	eventStatsResponse.Metadata = common.EventStatMeta{
-		FailedKeys:    finalFailedEventList,
+		FailedKeys:    failedJobIds,
 		FailedReasons: cumulativeFailedReasons,
-		SucceededKeys: getSuccessJobIDs(finalFailedEventList, initialEventList),
+		SucceededKeys: getSuccessJobIDs(failedJobIds, initialEventList),
 	}
 
 	return eventStatsResponse

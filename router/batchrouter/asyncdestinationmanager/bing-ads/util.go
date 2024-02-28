@@ -382,7 +382,7 @@ In the below format:
 ** we are using map[int64]map[string]struct{} for storing the error messages
 ** because we want to avoid duplicate error messages
 */
-func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, error) {
+func processPollStatusData(records [][]string, initialEventList []int64) (map[int64]map[string]struct{}, error) {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := 0
@@ -410,15 +410,18 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	for _, record := range records[1:] {
 		rowname := record[typeIndex]
 		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Error") {
-			if idIndex >= 0 && idIndex < len(record) {
-				jobID := int64(0)
-				errorSet, ok := clientIDErrors[jobID]
-				if !ok {
-					errorSet = make(map[string]struct{})
-					// making the structure as jobId: [error1, error2]
-					clientIDErrors[jobID] = errorSet
+			// Check if errorIndex is valid for the current record
+			if errorIndex >= 0 && errorIndex < len(record) {
+				// Assign the same error message to all elements of initialEventList
+				errorMessage := record[errorIndex] // The error message
+				for _, jobID := range initialEventList {
+					errorSet, ok := clientIDErrors[jobID]
+					if !ok {
+						errorSet = make(map[string]struct{})
+						clientIDErrors[jobID] = errorSet
+					}
+					errorSet[errorMessage] = struct{}{}
 				}
-				errorSet[record[errorIndex]] = struct{}{}
 			}
 			break
 		}
