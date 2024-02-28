@@ -24,7 +24,7 @@ import (
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
 	mocks_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/services/oauth"
+	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
