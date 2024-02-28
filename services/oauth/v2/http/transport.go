@@ -21,13 +21,19 @@ import (
 TransportArgs is a struct that contains the required parameters to create a new Oauth2Transport.
 */
 type TransportArgs struct {
-	BackendConfig        backendconfig.BackendConfig
-	FlowType             oauth.RudderFlow
-	TokenCache           *oauth.Cache
-	Locker               *rudderSync.PartitionRWLocker
+	BackendConfig backendconfig.BackendConfig
+	FlowType      oauth.RudderFlow
+	// TokenCache is a cache for storing OAuth tokens.
+	TokenCache *oauth.Cache
+	// Locker provides synchronization mechanisms.
+	Locker *rudderSync.PartitionRWLocker
+	// GetAuthErrorCategory is a function to get the auth error category from the response body. It can be REFRESH_TOKEN or AUTH_STATUS_INACTIVE.
 	GetAuthErrorCategory func([]byte) (string, error)
+	// Augmenter is an interface for augmenting requests with OAuth tokens.
 	oauth_exts.Augmenter
-	OAuthHandler      *oauth.OAuthHandler
+	// OAuthHandler handles refreshToken and fetchToken requests.
+	OAuthHandler *oauth.OAuthHandler
+	// OriginalTransport is the underlying HTTP transport.
 	OriginalTransport http.RoundTripper
 }
 
@@ -181,10 +187,17 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 }
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Context().Value(oauth.DestKey) == nil {
+	contextData := req.Context().Value(oauth.DestKey)
+	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
-	destination := req.Context().Value(oauth.DestKey).(*oauth.DestinationInfo)
+	var destination *oauth.DestinationInfo
+	switch contextData.(type) {
+	case *oauth.DestinationInfo:
+		destination = req.Context().Value(oauth.DestKey).(*oauth.DestinationInfo)
+	default:
+		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
+	}
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
