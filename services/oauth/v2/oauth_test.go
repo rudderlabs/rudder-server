@@ -541,7 +541,7 @@ var _ = Describe("Oauth", func() {
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
-				AuthStatus:      v2.AUTH_STATUS_INACTIVE,
+				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
 			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
@@ -570,7 +570,7 @@ var _ = Describe("Oauth", func() {
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
-				AuthStatus:      v2.AUTH_STATUS_INACTIVE,
+				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
 			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
@@ -610,7 +610,7 @@ var _ = Describe("Oauth", func() {
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
-				AuthStatus:      v2.AUTH_STATUS_INACTIVE,
+				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
 			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))

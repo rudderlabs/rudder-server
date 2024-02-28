@@ -31,10 +31,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
-	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
-	OAuthHttpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	oauthv2http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
@@ -84,38 +84,16 @@ func Run(ctx context.Context) error {
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
-	isOAuthV2RelVar := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
-	regTimeoutReloadVar := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
+	oauthV2Enabled := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
+	httpTimeout := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
-	cli := &http.Client{
-		Timeout: regTimeoutReloadVar.Load(),
-		Transport: &http.Transport{
-			DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
-			MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
-			MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
-			IdleConnTimeout:     300 * time.Second,
-		},
-	}
-	if isOAuthV2RelVar.Load() {
-		cache := oauthV2.NewCache()
-		oauthLock := rudderSync.NewPartitionRWLocker()
-		optionalArgs := OAuthHttpClient.HttpClientOptionalArgs{
-			Augmenter: extensions.HeaderAugmenter,
-			Locker:    oauthLock,
-		}
-		cli = OAuthHttpClient.OAuthHttpClient(
-			cli,
-			oauthV2.RudderFlow(oauth.RudderFlow_Delete),
-			&cache, backendconfig.DefaultBackendConfig,
-			api.GetAuthErrorCategoryFromResponse, &optionalArgs,
-		)
-	}
+	cli := createHTTPClient(config.Default, httpTimeout, oauthV2Enabled)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:    &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
+			Client:    &http.Client{Timeout: httpTimeout.Load()},
 			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
 			Identity:  identity,
 		},
@@ -130,7 +108,7 @@ func Run(ctx context.Context) error {
 				Client:                       cli,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				OAuth:                        OAuth,
-				IsOAuthV2Enabled:             isOAuthV2RelVar.Load(),
+				IsOAuthV2Enabled:             oauthV2Enabled.Load(),
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
 					PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
@@ -156,4 +134,31 @@ func withLoop(svc service.JobSvc) *service.Looper {
 	return &service.Looper{
 		Svc: svc,
 	}
+}
+
+func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.Duration], oauthV2Enabled *config.Reloadable[bool]) *http.Client {
+	cli := &http.Client{
+		Timeout: httpTimeout.Load(),
+		Transport: &http.Transport{
+			DisableKeepAlives:   conf.GetBool("HttpClient.regulationWorker.regulationManager.disableKeepAlives", true),
+			MaxConnsPerHost:     conf.GetInt("HttpClient.regulationWorker.regulationManager.maxHTTPConnections", 100),
+			MaxIdleConnsPerHost: conf.GetInt("HttpClient.regulationWorker.regulationManager.maxHTTPIdleConnections", 10),
+			IdleConnTimeout:     300 * time.Second,
+		},
+	}
+	if !oauthV2Enabled.Load() {
+		return cli
+	}
+	cache := oauthv2.NewCache()
+	oauthLock := kitsync.NewPartitionRWLocker()
+	optionalArgs := oauthv2http.HttpClientOptionalArgs{
+		Augmenter: extensions.HeaderAugmenter,
+		Locker:    oauthLock,
+	}
+	return oauthv2http.OAuthHttpClient(
+		cli,
+		oauthv2.RudderFlow(oauth.RudderFlow_Delete),
+		&cache, backendconfig.DefaultBackendConfig,
+		api.GetAuthErrorCategoryFromResponse, &optionalArgs,
+	)
 }

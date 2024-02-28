@@ -741,7 +741,7 @@ var oauthTests = []oauthTestCases{
 			},
 		},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauthV2.AUTH_STATUS_INACTIVE))},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauthV2.CategoryAuthStatusInactive))},
 		expectedPayload:              `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
 	},
 

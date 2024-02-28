@@ -88,13 +88,13 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 				return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
 			}
 			return nil
-		} else if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+		} else if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
 				WorkspaceId:     rts.destination.WorkspaceID,
 				RudderAccountId: rts.accountId,
 				StatPrefix:      oauth.AuthStatusInactive,
-				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
 		}
@@ -121,7 +121,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	if err != nil {
 		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
 	}
-	if authErrorCategory == oauth.REFRESH_TOKEN {
+	if authErrorCategory == oauth.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		if rts.req.Context().Value(oauth.SecretKey) != nil {
@@ -135,7 +135,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			err = refErr
 			interceptorResp.Response = refErr.Error()
 		}
-		if authResponse != nil && authResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
+		if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			// Setting the response we obtained from trying to Refresh the token
 			// errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
 			// rts.res.StatusCode = http.StatusBadRequest
@@ -145,7 +145,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 				WorkspaceId:     rts.destination.WorkspaceID,
 				RudderAccountId: rts.accountId,
 				StatPrefix:      oauth.AuthStatusInactive,
-				AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			// rts.res.Body = errorInRefToken
 			interceptorResp.Response = authResponse.ErrorMessage
@@ -163,13 +163,13 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			interceptorResp.StatusCode = http.StatusInternalServerError
 		}
 
-	} else if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
+	} else if authErrorCategory == oauth.CategoryAuthStatusInactive {
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
 			WorkspaceId:     rts.destination.WorkspaceID,
 			RudderAccountId: rts.accountId,
 			StatPrefix:      oauth.AuthStatusInactive,
-			AuthStatus:      oauth.AUTH_STATUS_INACTIVE,
+			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
 		// rts.res.StatusCode = http.StatusBadRequest
 		interceptorResp.StatusCode = http.StatusBadRequest

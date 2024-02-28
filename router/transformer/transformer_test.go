@@ -372,7 +372,7 @@ func TestProxyRequest(t *testing.T) {
 				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 				defer srv.Close()
 
-				var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+				isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 
 				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil, &isOAuthV2EnabledLoader)
 				ctx := context.TODO()
@@ -396,7 +396,7 @@ func TestProxyRequest(t *testing.T) {
 			srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 			defer srv.Close()
 			var tr Transformer
-			var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+			isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
 				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil, &isOAuthV2EnabledLoader)
@@ -488,7 +488,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 		_, err = w.Write(b)
 		require.NoError(t, err)
 	}))
-	var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader)
@@ -522,7 +522,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader)
 
 	transformMessage := types.TransformMessageT{
@@ -563,7 +563,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader)
 
 	transformMessage := types.TransformMessageT{
@@ -603,7 +603,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader)
 
 	transformMessage := types.TransformMessageT{
@@ -651,7 +651,7 @@ func TestDehydrateHydrate(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
-	var isOAuthV2EnabledLoader misc.ValueLoader[bool] = misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)

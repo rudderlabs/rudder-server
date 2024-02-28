@@ -317,7 +317,7 @@ func (api *APIManager) PostResponse(ctx context.Context, params PostResponsePara
 			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
 			return api.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
 		}
-		if authErrCategory == oauthv2.AUTH_STATUS_INACTIVE {
+		if authErrCategory == oauthv2.CategoryAuthStatusInactive {
 			// Abort the regulation request
 			return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(string(params.responseBodyBytes))}
 		}

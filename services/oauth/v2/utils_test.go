@@ -1,8 +1,6 @@
 package v2_test
 
 import (
-	"encoding/json"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -45,10 +43,10 @@ var _ = Describe("Utils", func() {
 				Secret:         nil,
 			}
 			errType, message := oauthHandler.GetRefreshTokenErrResp(`{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`, accountSecret)
-			Expect(errType).To(Equal(""))
-			Expect(message).To(Equal(""))
-			Expect(accountSecret.ExpirationDate).To(Equal(""))
-			Expect(accountSecret.Secret).To(Equal(json.RawMessage([]byte(`{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`))))
+			Expect(errType).To(BeEmpty())
+			Expect(message).To(BeEmpty())
+			Expect(accountSecret.ExpirationDate).To(BeEmpty())
+			Expect(`{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`).To(MatchJSON(accountSecret.Secret))
 		})
 
 		It("Call GetRefreshTokenErrResp with invalid_grant response from control-plane", func() {
