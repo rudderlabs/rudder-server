@@ -276,8 +276,6 @@ func (a *Archiver) Do(ctx context.Context) error {
 			continue
 		}
 
-		hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
-
 		// archive staging files
 		stagingFileIDs, err := a.getStagingFilesData(ctx, txn, u)
 		if err != nil {
@@ -288,20 +286,18 @@ func (a *Archiver) Do(ctx context.Context) error {
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
-			if !hasUsedRudderStorage {
-				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-				storedStagingFilesLocation, err = a.backupRecords(ctx, backupRecordsArgs{
-					tableName:      warehouseutils.WarehouseStagingFilesTable,
-					sourceID:       u.sourceID,
-					destID:         u.destID,
-					tableFilterSQL: filterSQL,
-					uploadID:       u.uploadID,
-				})
-				if err != nil {
-					a.log.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
-					_ = txn.Rollback()
-					continue
-				}
+			filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+			storedStagingFilesLocation, err = a.backupRecords(ctx, backupRecordsArgs{
+				tableName:      warehouseutils.WarehouseStagingFilesTable,
+				sourceID:       u.sourceID,
+				destID:         u.destID,
+				tableFilterSQL: filterSQL,
+				uploadID:       u.uploadID,
+			})
+			if err != nil {
+				a.log.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
+				_ = txn.Rollback()
+				continue
 			}
 
 			// delete staging file records
@@ -316,6 +312,8 @@ func (a *Archiver) Do(ctx context.Context) error {
 				_ = txn.Rollback()
 				continue
 			}
+
+			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
 
 			// delete load file records
 			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, hasUsedRudderStorage); err != nil {
