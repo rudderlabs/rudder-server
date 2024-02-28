@@ -44,4 +44,18 @@ var _ = Describe("Cache", func() {
 		Expect(ok).To(BeFalse())
 		Expect(value).To(BeNil())
 	})
+	It("Test for any type of data", func() {
+		cache := v2.NewCache()
+		authResponse := map[string]interface{}{
+			"test":  "test",
+			"test2": "test2",
+		}
+		cache.Set("test", authResponse)
+		value, ok := cache.Get("test")
+		Expect(ok).To(BeTrue())
+		Expect(value).To(Equal(authResponse))
+		value, ok = cache.Get("test")
+		Expect(ok).To(BeTrue())
+		Expect(value).To(Equal(authResponse))
+	})
 })

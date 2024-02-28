@@ -14,12 +14,12 @@ type Cache interface {
 
 func NewCache() Cache {
 	return &cache{
-		tokenCache: make(map[string]*AuthResponse),
+		tokenCache: make(map[string]interface{}),
 	}
 }
 
 type cache struct {
-	tokenCache map[string]*AuthResponse
+	tokenCache map[string]interface{}
 }
 
 func (c *cache) Get(key string) (interface{}, bool) {
@@ -31,7 +31,7 @@ func (c *cache) Get(key string) (interface{}, bool) {
 }
 
 func (c *cache) Set(key string, value interface{}) {
-	c.tokenCache[key] = value.(*AuthResponse)
+	c.tokenCache[key] = value
 }
 
 func (c *cache) Delete(key string) {
