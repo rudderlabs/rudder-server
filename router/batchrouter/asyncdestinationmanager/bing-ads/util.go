@@ -335,8 +335,8 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 
 // converting the string clientID to ClientID struct
 
-func newClientIDFromString(clientID string, id string) (*ClientID, error) {
-	if clientID == "" && id != "" {
+func newClientIDFromString(clientID string, errorValue string) (*ClientID, error) {
+	if clientID == "" && errorValue != "" {
 		return &ClientID{
 			JobID:       0,
 			HashedEmail: "",
@@ -354,6 +354,46 @@ func newClientIDFromString(clientID string, id string) (*ClientID, error) {
 		JobID:       jobID,
 		HashedEmail: clientIDParts[1],
 	}, nil
+}
+
+// Utility function to extract column indexes
+func getColumnIndexes(header []string) (clientIDIndex, errorIndex int) {
+	clientIDIndex, errorIndex = -1, -1
+	for i, column := range header {
+		switch column {
+		case "Client Id":
+			clientIDIndex = i
+		case "Error":
+			errorIndex = i
+		}
+	}
+	return
+}
+
+// Utility function to add an error to clientIDErrors
+func addErrorToClientIDErrors(clientIDErrors map[int64]map[string]struct{}, jobID int64, errorMessage string) {
+	if _, ok := clientIDErrors[jobID]; !ok {
+		clientIDErrors[jobID] = make(map[string]struct{})
+	}
+	clientIDErrors[jobID][errorMessage] = struct{}{}
+}
+
+// Utility function to process "Customer List Error"
+func processCustomerListError(clientIDErrors map[int64]map[string]struct{}, initialEventList []int64, errorMessage string) {
+	for _, jobID := range initialEventList {
+		addErrorToClientIDErrors(clientIDErrors, jobID, errorMessage)
+	}
+}
+
+// Utility function to process "Customer List Item Error"
+func processCustomerListItemError(clientIDErrors map[int64]map[string]struct{}, clientIDIndex, errorIndex int, record []string) error {
+	// Assuming newClientIDFromString returns a struct with JobID and an error
+	clientId, err := newClientIDFromString(record[clientIDIndex], record[errorIndex])
+	if err != nil {
+		return err
+	}
+	addErrorToClientIDErrors(clientIDErrors, clientId.JobID, record[errorIndex])
+	return nil
 }
 
 /*
@@ -383,63 +423,24 @@ In the below format:
 ** because we want to avoid duplicate error messages
 */
 func processPollStatusData(records [][]string, initialEventList []int64) (map[int64]map[string]struct{}, error) {
-	clientIDIndex := -1
-	errorIndex := -1
-	typeIndex := 0
-	idIndex := -1
-	if len(records) > 0 {
-		header := records[0]
-		for i, column := range header {
-			if column == "Id" {
-				idIndex = i
-			}
-			if column == "Client Id" {
-				clientIDIndex = i
-			} else if column == "Error" {
-				errorIndex = i
-			}
-		}
-	}
-
-	// Declare variables for storing data
-
+	var clientIDIndex, errorIndex, typeIndex int
 	clientIDErrors := make(map[int64]map[string]struct{})
 
-	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
-	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
-	for _, record := range records[1:] {
-		rowname := record[typeIndex]
-		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Error") {
-			// Check if errorIndex is valid for the current record
-			if errorIndex >= 0 && errorIndex < len(record) {
-				// Assign the same error message to all elements of initialEventList
-				errorMessage := record[errorIndex] // The error message
-				for _, jobID := range initialEventList {
-					errorSet, ok := clientIDErrors[jobID]
-					if !ok {
-						errorSet = make(map[string]struct{})
-						clientIDErrors[jobID] = errorSet
-					}
-					errorSet[errorMessage] = struct{}{}
-				}
-			}
-			break
-		}
-		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Item Error") {
-			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				// expecting the client ID is present as jobId<<>>clientId
-				clientId, err := newClientIDFromString(record[clientIDIndex], record[idIndex])
-				if err != nil {
-					return nil, err
-				}
-				errorSet, ok := clientIDErrors[clientId.JobID]
-				if !ok {
-					errorSet = make(map[string]struct{})
-					// making the structure as jobId: [error1, error2]
-					clientIDErrors[clientId.JobID] = errorSet
-				}
-				errorSet[record[errorIndex]] = struct{}{}
+	if len(records) > 0 {
+		clientIDIndex, errorIndex = getColumnIndexes(records[0])
+	}
 
+	for _, record := range records[1:] {
+		if len(record) <= typeIndex {
+			continue
+		}
+		rowName := record[typeIndex]
+		if strings.Contains(rowName, "Customer List Error") && errorIndex < len(record) {
+			processCustomerListError(clientIDErrors, initialEventList, record[errorIndex])
+			// Assuming we continue processing other records
+		} else if strings.Contains(rowName, "Customer List Item Error") && clientIDIndex < len(record) && errorIndex < len(record) {
+			if err := processCustomerListItemError(clientIDErrors, clientIDIndex, errorIndex, record); err != nil {
+				return nil, err
 			}
 		}
 	}
