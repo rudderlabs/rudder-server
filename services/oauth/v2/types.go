@@ -28,7 +28,7 @@ type OAuthHandler struct {
 	TokenProvider
 	Logger                    logger.Logger
 	RudderFlowType            RudderFlow
-	CpConn                    ControlPlaneConnectorI
+	CpConn                    ControlPlaneConnector
 	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
 	Cache                     Cache
 	CacheMutex                *rudderSync.PartitionRWLocker

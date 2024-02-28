@@ -13,48 +13,60 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
-type ControlPlaneConnectorI interface {
+type ControlPlaneConnector interface {
 	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
 }
 type HttpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
-type ControlPlaneConnector struct {
-	Client  HttpClient
-	Logger  logger.Logger
+type controlPlaneConnector struct {
+	client  HttpClient
+	logger  logger.Logger
 	timeOut time.Duration
 }
 
-func NewControlPlaneConnector(options ...func(*ControlPlaneConnector)) ControlPlaneConnectorI {
-	cpConnector := &ControlPlaneConnector{}
+func NewControlPlaneConnector(options ...func(*controlPlaneConnector)) ControlPlaneConnector {
+	cpConnector := &controlPlaneConnector{}
+
 	for _, opt := range options {
 		opt(cpConnector)
 	}
-	httpClient := &http.Client{
-		Transport: http.DefaultTransport,
-		Timeout:   cpConnector.timeOut,
+
+	if cpConnector.client == nil {
+		cpConnector.client = &http.Client{
+			Transport: http.DefaultTransport,
+			Timeout:   cpConnector.timeOut,
+		}
 	}
-	cpConnector.Client = httpClient
-	if cpConnector.Logger == nil {
-		cpConnector.Logger = logger.NewLogger().Child("ControlPlaneConnector")
+	if cpConnector.logger == nil {
+		cpConnector.logger = logger.NewLogger().Child("ControlPlaneConnector")
 	}
 	return cpConnector
 }
 
 /*
+WithClient is a functional option to set the client for the ControlPlaneConnector
+*/
+func WithClient(client HttpClient) func(*controlPlaneConnector) {
+	return func(cpConn *controlPlaneConnector) {
+		cpConn.client = client
+	}
+}
+
+/*
 WithParentLogger is a functional option to set the parent logger for the ControlPlaneConnector
 */
-func WithParentLogger(parentLogger logger.Logger) func(*ControlPlaneConnector) {
-	return func(cpConn *ControlPlaneConnector) {
-		cpConn.Logger = parentLogger
+func WithParentLogger(parentLogger logger.Logger) func(*controlPlaneConnector) {
+	return func(cpConn *controlPlaneConnector) {
+		cpConn.logger = parentLogger
 	}
 }
 
 /*
 WithCpClientTimeout is a functional option to set the timeout for the ControlPlaneConnector
 */
-func WithCpClientTimeout(timeout time.Duration) func(*ControlPlaneConnector) {
-	return func(h *ControlPlaneConnector) {
+func WithCpClientTimeout(timeout time.Duration) func(*controlPlaneConnector) {
+	return func(h *controlPlaneConnector) {
 		h.timeOut = timeout
 	}
 }
@@ -86,7 +98,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 /*
 CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
 */
-func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":          cpReq.Url,
 		"requestType":  cpReq.RequestType,
@@ -106,7 +118,7 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
-		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
+		c.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -119,13 +131,13 @@ func (cpConn *ControlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int
 	}
 
 	cpApiDoTimeStart := time.Now()
-	res, doErr := cpConn.Client.Do(req)
+	res, doErr := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
-	cpConn.Logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
+	c.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error
-		cpConn.Logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
+		c.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
 
 		errorType := GetErrorType(doErr)
 		cpStatTags["errorType"] = errorType

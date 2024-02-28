@@ -26,10 +26,10 @@ var _ = Describe("CpConnector", func() {
 			Body:       io.NopCloser(bytes.NewReader([]byte("test"))),
 		}, nil)
 
-		cpConnector := v2.ControlPlaneConnector{
-			Client: mockHttpClient,
-			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-		}
+		cpConnector := v2.NewControlPlaneConnector(
+			v2.WithClient(mockHttpClient),
+			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+		)
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
@@ -51,10 +51,10 @@ var _ = Describe("CpConnector", func() {
 			Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 		})
-		cpConnector := v2.ControlPlaneConnector{
-			Client: mockHttpClient,
-			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-		}
+		cpConnector := v2.NewControlPlaneConnector(
+			v2.WithClient(mockHttpClient),
+			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+		)
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
@@ -76,10 +76,10 @@ var _ = Describe("CpConnector", func() {
 			Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
 		})
-		cpConnector := v2.ControlPlaneConnector{
-			Client: mockHttpClient,
-			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-		}
+		cpConnector := v2.NewControlPlaneConnector(
+			v2.WithClient(mockHttpClient),
+			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+		)
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",

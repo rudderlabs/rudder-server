@@ -229,10 +229,10 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := &v2.ControlPlaneConnector{
-				Client: mockHttpClient,
-				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-			}
+			cpConnector := v2.NewControlPlaneConnector(
+				v2.WithClient(mockHttpClient),
+				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
@@ -268,10 +268,10 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := &v2.ControlPlaneConnector{
-				Client: mockHttpClient,
-				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-			}
+			cpConnector := v2.NewControlPlaneConnector(
+				v2.WithClient(mockHttpClient),
+				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
@@ -446,10 +446,10 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := &v2.ControlPlaneConnector{
-				Client: mockHttpClient,
-				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-			}
+			cpConnector := v2.NewControlPlaneConnector(
+				v2.WithClient(mockHttpClient),
+				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
@@ -491,10 +491,10 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := &v2.ControlPlaneConnector{
-				Client: mockHttpClient,
-				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-			}
+			cpConnector := v2.NewControlPlaneConnector(
+				v2.WithClient(mockHttpClient),
+				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
@@ -587,10 +587,10 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := &v2.ControlPlaneConnector{
-				Client: mockHttpClient,
-				Logger: logger.NewLogger().Child("ControlPlaneConnector"),
-			}
+			cpConnector := v2.NewControlPlaneConnector(
+				v2.WithClient(mockHttpClient),
+				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
