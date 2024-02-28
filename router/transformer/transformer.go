@@ -164,7 +164,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				DestDefConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
 				WorkspaceID:   transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
 				DestDefName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-				DestinationId: transformMessageCopy.Data[0].Destination.DestinationDefinition.ID,
+				DestinationId: transformMessageCopy.Data[0].Destination.ID,
 			}
 			req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, destinationInfo))
 			resp, err = trans.clientOauthV2.Do(req)
@@ -230,10 +230,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
-			if interceptorInfo.StatusCode > 0 {
+			isValidOAuthCategory := oauth.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory)
+			if isValidOAuthCategory && interceptorInfo.StatusCode > 0 {
 				destinationJobs[i].StatusCode = interceptorInfo.StatusCode
 			}
-			if strings.TrimSpace(interceptorInfo.Response) != "" {
+			if isValidOAuthCategory && strings.TrimSpace(interceptorInfo.Response) != "" {
 				// Should this be set to `error` alone ?
 				destinationJobs[i].Error = interceptorInfo.Response
 			}

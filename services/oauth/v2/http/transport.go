@@ -160,7 +160,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		rts.res.StatusCode = statusCode
 		if statusCode == http.StatusOK {
 			// refresh token successful --> retry the event
-			rts.res.StatusCode = http.StatusInternalServerError
+			// rts.res.StatusCode = http.StatusInternalServerError
 			interceptorResp.StatusCode = http.StatusInternalServerError
 		}
 

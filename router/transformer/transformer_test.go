@@ -16,15 +16,23 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 type mockAdapter struct {
@@ -471,6 +479,169 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *chi.Mux
 		}
 	})
 	return srvMux
+}
+
+type oauthV2TestCase struct {
+	description              string
+	cpResponses              []testutils.CpResponseParams
+	routerTransformResponses []types.DestinationJobT
+	inputEvents              []types.RouterJobT
+	expected                 []types.DestinationJobT
+}
+
+var oauthDests = []backendconfig.DestinationT{
+	{
+		ID:          "d1",
+		WorkspaceID: "wsp",
+		Config: map[string]interface{}{
+			"rudderAccountId": "actId",
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "SALESFORCE_OAUTH",
+			Config: map[string]interface{}{
+				"auth": map[string]interface{}{
+					"type": "OAuth",
+				},
+			},
+		},
+	},
+}
+
+var oauthV2Tcs = []oauthV2TestCase{
+	{
+		description: "should only set the jobs with '500' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_token","refresh_token":"refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+	{
+		description: "should only set the jobs with '400' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+			},
+			// authStatus inactive http request
+			{
+				Code: 200,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: v2.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+}
+
+type mockIdentifier struct {
+	key   string
+	token string
+}
+
+func (m *mockIdentifier) ID() string                  { return m.key }
+func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
+func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
+
+func TestRouterTransformationWithOAuthV2(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+	loggerOverride = logger.NOP
+
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
+
+	for _, tc := range oauthV2Tcs {
+		t.Run(tc.description, func(t *testing.T) {
+			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+				b, err := json.Marshal(tc.routerTransformResponses)
+				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
+				require.NoError(t, err)
+				_, err = w.Write(outputJson)
+				require.NoError(t, err)
+			}))
+
+			cpRespProducer := &testutils.CpResponseProducer{
+				Responses: tc.cpResponses,
+			}
+
+			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
+
+			isOAuthV2EnabledLoader := misc.SingleValueLoader(true)
+			defer svr.Close()
+			defer cfgBeSvr.Close()
+			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+			config.Set("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+
+			backendconfig.Init()
+			v2.Init()
+			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+
+			cache := v2.NewCache()
+			oauthLock := kitsync.NewPartitionRWLocker()
+
+			tr := NewTransformer(time.Minute, time.Minute, cache, oauthLock, mockBackendConfig, &isOAuthV2EnabledLoader, &expTimeDiff)
+
+			transformMsg := types.TransformMessageT{
+				Data: tc.inputEvents,
+			}
+
+			transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMsg)
+			require.NotNil(t, transformerResponse)
+			require.Equal(t, tc.expected, transformerResponse)
+		})
+	}
 }
 
 func TestTransformNoValidationErrors(t *testing.T) {
