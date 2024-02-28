@@ -506,6 +506,46 @@ var _ = Describe("Bing ads", func() {
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
+		It("TestBingAdsGetUploadStats for wrong audience Id", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/status-wrong-audience.zip") // Path of the source file
+			// Create a test server with a custom handler function
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Set the appropriate headers for a zip file response
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Disposition", "attachment; filename='status-wrong-audience.zip'")
+				http.ServeFile(w, r, errorsTemplateFilePath)
+			}))
+			defer ts.Close()
+			client := ts.Client()
+			modifiedURL := ts.URL // Use the test server URL
+			clientI := Client{client: client, URL: modifiedURL}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			UploadStatsInput := common.GetUploadStatsInput{
+				FailedJobURLs: modifiedURL,
+				ImportingList: []*jobsdb.JobT{
+					{
+						JobID: 1,
+					},
+				},
+			}
+			expectedResp := common.GetUploadStatsResponse{
+				StatusCode: 200,
+				Metadata: common.EventStatMeta{
+					FailedKeys: []int64{1},
+					FailedReasons: map[int64]string{
+						1: "InvalidCustomerListId",
+					},
+					SucceededKeys: []int64{},
+				},
+			}
+			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
 		It("TestNewManagerInternal", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
