@@ -124,7 +124,7 @@ func (rt *Handle) Setup(
 	oauthLock := rudderSync.NewPartitionRWLocker()
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout, cache, oauthLock,
 		backendConfig, &rt.reloadableConfig.oauthV2Enabled,
-		transformer.WithExpirationTimeDiff(rt.reloadableConfig.oauthV2ExpirationTimeDiff),
+		&rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 	)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
