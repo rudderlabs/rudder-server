@@ -512,7 +512,8 @@ var _ = Describe("Bing ads", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			csvPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.csv"
 			zipPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip"
-			ZipCSVFile(csvPath, zipPath)
+			err := ZipCSVFile(csvPath, zipPath)
+			Expect(err).To(BeNil())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip") // Path of the source file
 			// Create a test server with a custom handler function
