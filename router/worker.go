@@ -809,7 +809,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			StatusCode: proxyRequestResponse.ProxyRequestStatusCode,
 		}
 		if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && oauthV2Enabled {
-			json.Unmarshal([]byte(gjson.GetBytes([]byte(proxyRequestResponse.ProxyRequestResponseBody), "interceptorResponse").Raw), &interceptorInfo)
+			_ = json.Unmarshal([]byte(gjson.GetBytes([]byte(proxyRequestResponse.ProxyRequestResponseBody), "interceptorResponse").Raw), &interceptorInfo)
 		}
 
 		respStatusCode = interceptorInfo.StatusCode

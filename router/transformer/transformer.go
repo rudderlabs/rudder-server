@@ -224,7 +224,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		} else if transformType == ROUTER_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
 			// TODO: should we do some kind of error check here ?
-			json.Unmarshal([]byte(gjson.GetBytes(respData, "interceptorResponse").Raw), &interceptorInfo)
+			_ = json.Unmarshal([]byte(gjson.GetBytes(respData, "interceptorResponse").Raw), &interceptorInfo)
 			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 
