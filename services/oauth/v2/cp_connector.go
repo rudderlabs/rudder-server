@@ -118,7 +118,9 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
-		c.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
+		c.logger.Errorn("[request] :: destination request failed",
+			logger.NewStringField("Module Name", loggerNm),
+			logger.NewErrorField(err))
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -134,11 +136,13 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 	res, doErr := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
-	c.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
+	c.logger.Debugn("[request] :: destination request sent",
+		logger.NewStringField("Module Name", loggerNm))
 	if doErr != nil {
 		// Abort on receiving an error
-		c.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
-
+		c.logger.Errorn("[request] :: destination request failed",
+			logger.NewStringField("Module Name", loggerNm),
+			logger.NewErrorField(doErr))
 		errorType := GetErrorType(doErr)
 		cpStatTags["errorType"] = errorType
 		stats.Default.NewTaggedStat("oauth_v2_cp_request_error", stats.CountType, cpStatTags).Count(1)

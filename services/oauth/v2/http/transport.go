@@ -83,7 +83,8 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 			rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), oauth.SecretKey, authResponse.Account.Secret))
 			err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 			if err != nil {
-				t.log.Debugf("failed to augment the secret: %v", err)
+				t.log.Debugn("failed to augment the secret",
+					logger.NewErrorField(err))
 				return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
 			}
 			return nil
@@ -120,7 +121,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
-		t.log.Info("refreshing token")
+		t.log.Infon("refreshing token")
 		statusCode, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
 			err = refErr
