@@ -385,6 +385,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
+		r.Post("/v1/batch", gw.internalBatchHandler())
 
 		// TODO: delete this handler once we are ready to remove support for the v1 api
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
