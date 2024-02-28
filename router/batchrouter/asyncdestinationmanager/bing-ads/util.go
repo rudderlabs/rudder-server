@@ -312,14 +312,14 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 			}
 		}
 		// remove the file after the response has been written
-		// removeErr := os.Remove(filePath)
-		// if removeErr != nil {
-		// 	b.logger.Errorf("Error removing the CSV file: %w", removeErr)
-		// 	if err == nil {
-		// 		err = removeErr
-		// 	}
+		removeErr := os.Remove(filePath)
+		if removeErr != nil {
+			b.logger.Errorf("Error removing the CSV file: %w", removeErr)
+			if err == nil {
+				err = removeErr
+			}
 
-		// }
+		}
 	}()
 	// Create a new CSV reader
 	reader := csv.NewReader(file)
