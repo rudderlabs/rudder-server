@@ -641,6 +641,37 @@ paths:
               example: "Too many requests"
       security:
         - sourceIDAuth: []
+  /internal/v1/batch:
+    post:
+      tags:
+        - Internal API
+      summary: Batch
+      description: Handles internal batch requests.
+      operationId: InternalBatch
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+      security:
+        - sourceIDAuth: []
 servers:
   - url: /v1
 components:

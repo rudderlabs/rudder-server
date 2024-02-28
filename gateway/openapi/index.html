@@ -1173,6 +1173,9 @@ ul.nav-tabs {
                     <li data-group="InternalAPI" data-name="extract" class="">
                       <a href="#api-InternalAPI-extract">extract</a>
                     </li>
+                    <li data-group="InternalAPI" data-name="internalBatch" class="">
+                      <a href="#api-InternalAPI-internalBatch">internalBatch</a>
+                    </li>
                     <li data-group="InternalAPI" data-name="replay" class="">
                       <a href="#api-InternalAPI-replay">replay</a>
                     </li>
@@ -7579,6 +7582,471 @@ pub fn main() {
                                     </script>
                                   </div>
                                   <input id='responses-InternalAPI-extract-429-schema-data' type='hidden' value=''></input>
+                                </div>
+                            </div>
+                        </article>
+                      </div>
+                      <hr>
+                    <div id="api-InternalAPI-internalBatch">
+                      <article id="api-InternalAPI-internalBatch-0" data-group="User" data-name="internalBatch" data-version="0">
+                        <div class="pull-left">
+                          <h1>internalBatch</h1>
+                          <p>Batch</p>
+                        </div>
+                        <div class="pull-right"></div>
+                        <div class="clearfix"></div>
+                        <p></p>
+                        <p class="marked">Handles internal batch requests.</p>
+                        <p></p>
+                        <br />
+                        <pre class="prettyprint language-html prettyprinted" data-type="post"><code><span class="pln">/internal/v1/batch</span></code></pre>
+                        <p>
+                          <h3>Usage and SDK Samples</h3>
+                        </p>
+                        <ul class="nav nav-tabs nav-tabs-examples">
+                          <li class="active"><a href="#examples-InternalAPI-internalBatch-0-curl">Curl</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-java">Java</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-dart">Dart</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-android">Android</a></li>
+                          <!--<li class=""><a href="#examples-InternalAPI-internalBatch-0-groovy">Groovy</a></li>-->
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-objc">Obj-C</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-javascript">JavaScript</a></li>
+                          <!--<li class=""><a href="#examples-InternalAPI-internalBatch-0-angular">Angular</a></li>-->
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-csharp">C#</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-php">PHP</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-perl">Perl</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-python">Python</a></li>
+                          <li class=""><a href="#examples-InternalAPI-internalBatch-0-rust">Rust</a></li>
+                        </ul>
+
+                        <div class="tab-content">
+                          <div class="tab-pane active" id="examples-InternalAPI-internalBatch-0-curl">
+                            <pre class="prettyprint"><code class="language-bsh">curl -X POST \
+ -H "Authorization: Basic [[basicHash]]" \
+ -H "Accept: text/plain; charset=utf-8" \
+ "/v1/internal/v1/batch"
+</code></pre>
+                          </div>
+                          <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-java">
+                            <pre class="prettyprint"><code class="language-java">import org.openapitools.client.*;
+import org.openapitools.client.auth.*;
+import org.openapitools.client.model.*;
+import org.openapitools.client.api.InternalAPIApi;
+
+import java.io.File;
+import java.util.*;
+
+public class InternalAPIApiExample {
+    public static void main(String[] args) {
+        ApiClient defaultClient = Configuration.getDefaultApiClient();
+        // Configure HTTP basic authorization: sourceIDAuth
+        HttpBasicAuth sourceIDAuth = (HttpBasicAuth) defaultClient.getAuthentication("sourceIDAuth");
+        sourceIDAuth.setUsername("YOUR USERNAME");
+        sourceIDAuth.setPassword("YOUR PASSWORD");
+
+        // Create an instance of the API class
+        InternalAPIApi apiInstance = new InternalAPIApi();
+
+        try {
+            'String' result = apiInstance.internalBatch();
+            System.out.println(result);
+        } catch (ApiException e) {
+            System.err.println("Exception when calling InternalAPIApi#internalBatch");
+            e.printStackTrace();
+        }
+    }
+}
+</code></pre>
+                          </div>
+
+                          <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-dart">
+                            <pre class="prettyprint"><code class="language-dart">import 'package:openapi/api.dart';
+
+final api_instance = DefaultApi();
+
+
+try {
+    final result = await api_instance.internalBatch();
+    print(result);
+} catch (e) {
+    print('Exception when calling DefaultApi->internalBatch: $e\n');
+}
+
+</code></pre>
+                          </div>
+
+                          <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-android">
+                            <pre class="prettyprint"><code class="language-java">import org.openapitools.client.api.InternalAPIApi;
+
+public class InternalAPIApiExample {
+    public static void main(String[] args) {
+        InternalAPIApi apiInstance = new InternalAPIApi();
+
+        try {
+            'String' result = apiInstance.internalBatch();
+            System.out.println(result);
+        } catch (ApiException e) {
+            System.err.println("Exception when calling InternalAPIApi#internalBatch");
+            e.printStackTrace();
+        }
+    }
+}</code></pre>
+                          </div>
+  <!--
+  <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-groovy">
+  <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
+  </div> -->
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-objc">
+                              <pre class="prettyprint"><code class="language-cpp">Configuration *apiConfig = [Configuration sharedConfig];
+// Configure HTTP basic authorization (authentication scheme: sourceIDAuth)
+[apiConfig setUsername:@"YOUR_USERNAME"];
+[apiConfig setPassword:@"YOUR_PASSWORD"];
+
+// Create an instance of the API class
+InternalAPIApi *apiInstance = [[InternalAPIApi alloc] init];
+
+// Batch
+[apiInstance internalBatchWithCompletionHandler: 
+              ^('String' output, NSError* error) {
+    if (output) {
+        NSLog(@"%@", output);
+    }
+    if (error) {
+        NSLog(@"Error: %@", error);
+    }
+}];
+</code></pre>
+                            </div>
+
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-javascript">
+                              <pre class="prettyprint"><code class="language-js">var RudderStackHttpApi = require('rudder_stack_http_api');
+var defaultClient = RudderStackHttpApi.ApiClient.instance;
+
+// Configure HTTP basic authorization: sourceIDAuth
+var sourceIDAuth = defaultClient.authentications['sourceIDAuth'];
+sourceIDAuth.username = 'YOUR USERNAME';
+sourceIDAuth.password = 'YOUR PASSWORD';
+
+// Create an instance of the API class
+var api = new RudderStackHttpApi.InternalAPIApi()
+var callback = function(error, data, response) {
+  if (error) {
+    console.error(error);
+  } else {
+    console.log('API called successfully. Returned data: ' + data);
+  }
+};
+api.internalBatch(callback);
+</code></pre>
+                            </div>
+
+                            <!--<div class="tab-pane" id="examples-InternalAPI-internalBatch-0-angular">
+              <pre class="prettyprint language-json prettyprinted" data-type="json"><code>Coming Soon!</code></pre>
+            </div>-->
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-csharp">
+                              <pre class="prettyprint"><code class="language-cs">using System;
+using System.Diagnostics;
+using Org.OpenAPITools.Api;
+using Org.OpenAPITools.Client;
+using Org.OpenAPITools.Model;
+
+namespace Example
+{
+    public class internalBatchExample
+    {
+        public void main()
+        {
+            // Configure HTTP basic authorization: sourceIDAuth
+            Configuration.Default.Username = "YOUR_USERNAME";
+            Configuration.Default.Password = "YOUR_PASSWORD";
+
+            // Create an instance of the API class
+            var apiInstance = new InternalAPIApi();
+
+            try {
+                // Batch
+                'String' result = apiInstance.internalBatch();
+                Debug.WriteLine(result);
+            } catch (Exception e) {
+                Debug.Print("Exception when calling InternalAPIApi.internalBatch: " + e.Message );
+            }
+        }
+    }
+}
+</code></pre>
+                            </div>
+
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-php">
+                              <pre class="prettyprint"><code class="language-php"><&#63;php
+require_once(__DIR__ . '/vendor/autoload.php');
+// Configure HTTP basic authorization: sourceIDAuth
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setUsername('YOUR_USERNAME');
+OpenAPITools\Client\Configuration::getDefaultConfiguration()->setPassword('YOUR_PASSWORD');
+
+// Create an instance of the API class
+$api_instance = new OpenAPITools\Client\Api\InternalAPIApi();
+
+try {
+    $result = $api_instance->internalBatch();
+    print_r($result);
+} catch (Exception $e) {
+    echo 'Exception when calling InternalAPIApi->internalBatch: ', $e->getMessage(), PHP_EOL;
+}
+?></code></pre>
+                            </div>
+
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-perl">
+                              <pre class="prettyprint"><code class="language-perl">use Data::Dumper;
+use WWW::OPenAPIClient::Configuration;
+use WWW::OPenAPIClient::InternalAPIApi;
+# Configure HTTP basic authorization: sourceIDAuth
+$WWW::OPenAPIClient::Configuration::username = 'YOUR_USERNAME';
+$WWW::OPenAPIClient::Configuration::password = 'YOUR_PASSWORD';
+
+# Create an instance of the API class
+my $api_instance = WWW::OPenAPIClient::InternalAPIApi->new();
+
+eval {
+    my $result = $api_instance->internalBatch();
+    print Dumper($result);
+};
+if ($@) {
+    warn "Exception when calling InternalAPIApi->internalBatch: $@\n";
+}</code></pre>
+                            </div>
+
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-python">
+                              <pre class="prettyprint"><code class="language-python">from __future__ import print_statement
+import time
+import openapi_client
+from openapi_client.rest import ApiException
+from pprint import pprint
+# Configure HTTP basic authorization: sourceIDAuth
+openapi_client.configuration.username = 'YOUR_USERNAME'
+openapi_client.configuration.password = 'YOUR_PASSWORD'
+
+# Create an instance of the API class
+api_instance = openapi_client.InternalAPIApi()
+
+try:
+    # Batch
+    api_response = api_instance.internal_batch()
+    pprint(api_response)
+except ApiException as e:
+    print("Exception when calling InternalAPIApi->internalBatch: %s\n" % e)</code></pre>
+                            </div>
+
+                            <div class="tab-pane" id="examples-InternalAPI-internalBatch-0-rust">
+                              <pre class="prettyprint"><code class="language-rust">extern crate InternalAPIApi;
+
+pub fn main() {
+
+    let mut context = InternalAPIApi::Context::default();
+    let result = client.internalBatch(&context).wait();
+
+    println!("{:?}", result);
+}
+</code></pre>
+                            </div>
+                          </div>
+
+                          <h2>Scopes</h2>
+                          <table>
+                            
+                          </table>
+
+                          <h2>Parameters</h2>
+
+
+
+
+
+
+                          <h2>Responses</h2>
+                            <h3 id="examples-InternalAPI-internalBatch-title-200"></h3>
+                            <p id="examples-InternalAPI-internalBatch-description-200" class="marked"></p>
+                            <script>
+                              var responseInternalAPI200_description = `StatusOK`;
+                              var responseInternalAPI200_description_break = responseInternalAPI200_description.indexOf('\n');
+                              if (responseInternalAPI200_description_break == -1) {
+                                $("#examples-InternalAPI-internalBatch-title-200").text("Status: 200 - " + responseInternalAPI200_description);
+                              } else {
+                                $("#examples-InternalAPI-internalBatch-title-200").text("Status: 200 - " + responseInternalAPI200_description.substring(0, responseInternalAPI200_description_break));
+                                $("#examples-InternalAPI-internalBatch-description-200").html(responseInternalAPI200_description.substring(responseInternalAPI200_description_break));
+                              }
+                            </script>
+
+
+                            <ul id="responses-detail-InternalAPI-internalBatch-200" class="nav nav-tabs nav-tabs-examples" >
+                                <li class="active">
+                                  <a data-toggle="tab" href="#responses-InternalAPI-internalBatch-200-schema">Schema</a>
+                                </li>
+
+
+
+
+                            </ul>
+
+
+                            <div class="tab-content" id="responses-InternalAPI-internalBatch-200-wrapper" style='margin-bottom: 10px;'>
+                                <div class="tab-pane active" id="responses-InternalAPI-internalBatch-200-schema">
+                                  <div id="responses-InternalAPI-internalBatch-schema-200" class="exampleStyle">
+                                    <script>
+                                      $(document).ready(function() {
+                                        var schemaWrapper = ;
+                                        var schema = findNode('schema',schemaWrapper).schema;
+                                        if (!schema) {
+                                          schema = schemaWrapper.schema;
+                                        }
+                                        if (schema.$ref != null) {
+                                          schema = defsParser.$refs.get(schema.$ref);
+                                          Object.keys(schema.properties).forEach( (item) => {
+                                            if (schema.properties[item].$ref != null) {
+                                              schema.properties[item] = defsParser.$refs.get(schema.properties[item].$ref);
+                                            }
+                                          });
+                                        } else if (schema.items != null && schema.items.$ref != null) {
+                                            schema.items = defsParser.$refs.get(schema.items.$ref);
+                                        } else {
+                                          schemaWrapper.definitions = Object.assign({}, defs);
+                                          $RefParser.dereference(schemaWrapper).catch(function(err) {
+                                            console.log(err);
+                                          });
+                                        }
+
+                                        var view = new JSONSchemaView(schema, 3);
+                                        $('#responses-InternalAPI-internalBatch-200-schema-data').val(JSON.stringify(schema));
+                                        var result = $('#responses-InternalAPI-internalBatch-schema-200');
+                                        result.empty();
+                                        result.append(view.render());
+                                      });
+                                    </script>
+                                  </div>
+                                  <input id='responses-InternalAPI-internalBatch-200-schema-data' type='hidden' value=''></input>
+                                </div>
+                            </div>
+                            <h3 id="examples-InternalAPI-internalBatch-title-400"></h3>
+                            <p id="examples-InternalAPI-internalBatch-description-400" class="marked"></p>
+                            <script>
+                              var responseInternalAPI400_description = `StatusBadRequest`;
+                              var responseInternalAPI400_description_break = responseInternalAPI400_description.indexOf('\n');
+                              if (responseInternalAPI400_description_break == -1) {
+                                $("#examples-InternalAPI-internalBatch-title-400").text("Status: 400 - " + responseInternalAPI400_description);
+                              } else {
+                                $("#examples-InternalAPI-internalBatch-title-400").text("Status: 400 - " + responseInternalAPI400_description.substring(0, responseInternalAPI400_description_break));
+                                $("#examples-InternalAPI-internalBatch-description-400").html(responseInternalAPI400_description.substring(responseInternalAPI400_description_break));
+                              }
+                            </script>
+
+
+                            <ul id="responses-detail-InternalAPI-internalBatch-400" class="nav nav-tabs nav-tabs-examples" >
+                                <li class="active">
+                                  <a data-toggle="tab" href="#responses-InternalAPI-internalBatch-400-schema">Schema</a>
+                                </li>
+
+
+
+
+                            </ul>
+
+
+                            <div class="tab-content" id="responses-InternalAPI-internalBatch-400-wrapper" style='margin-bottom: 10px;'>
+                                <div class="tab-pane active" id="responses-InternalAPI-internalBatch-400-schema">
+                                  <div id="responses-InternalAPI-internalBatch-schema-400" class="exampleStyle">
+                                    <script>
+                                      $(document).ready(function() {
+                                        var schemaWrapper = ;
+                                        var schema = findNode('schema',schemaWrapper).schema;
+                                        if (!schema) {
+                                          schema = schemaWrapper.schema;
+                                        }
+                                        if (schema.$ref != null) {
+                                          schema = defsParser.$refs.get(schema.$ref);
+                                          Object.keys(schema.properties).forEach( (item) => {
+                                            if (schema.properties[item].$ref != null) {
+                                              schema.properties[item] = defsParser.$refs.get(schema.properties[item].$ref);
+                                            }
+                                          });
+                                        } else if (schema.items != null && schema.items.$ref != null) {
+                                            schema.items = defsParser.$refs.get(schema.items.$ref);
+                                        } else {
+                                          schemaWrapper.definitions = Object.assign({}, defs);
+                                          $RefParser.dereference(schemaWrapper).catch(function(err) {
+                                            console.log(err);
+                                          });
+                                        }
+
+                                        var view = new JSONSchemaView(schema, 3);
+                                        $('#responses-InternalAPI-internalBatch-400-schema-data').val(JSON.stringify(schema));
+                                        var result = $('#responses-InternalAPI-internalBatch-schema-400');
+                                        result.empty();
+                                        result.append(view.render());
+                                      });
+                                    </script>
+                                  </div>
+                                  <input id='responses-InternalAPI-internalBatch-400-schema-data' type='hidden' value=''></input>
+                                </div>
+                            </div>
+                            <h3 id="examples-InternalAPI-internalBatch-title-401"></h3>
+                            <p id="examples-InternalAPI-internalBatch-description-401" class="marked"></p>
+                            <script>
+                              var responseInternalAPI401_description = `StatusUnauthorized`;
+                              var responseInternalAPI401_description_break = responseInternalAPI401_description.indexOf('\n');
+                              if (responseInternalAPI401_description_break == -1) {
+                                $("#examples-InternalAPI-internalBatch-title-401").text("Status: 401 - " + responseInternalAPI401_description);
+                              } else {
+                                $("#examples-InternalAPI-internalBatch-title-401").text("Status: 401 - " + responseInternalAPI401_description.substring(0, responseInternalAPI401_description_break));
+                                $("#examples-InternalAPI-internalBatch-description-401").html(responseInternalAPI401_description.substring(responseInternalAPI401_description_break));
+                              }
+                            </script>
+
+
+                            <ul id="responses-detail-InternalAPI-internalBatch-401" class="nav nav-tabs nav-tabs-examples" >
+                                <li class="active">
+                                  <a data-toggle="tab" href="#responses-InternalAPI-internalBatch-401-schema">Schema</a>
+                                </li>
+
+
+
+
+                            </ul>
+
+
+                            <div class="tab-content" id="responses-InternalAPI-internalBatch-401-wrapper" style='margin-bottom: 10px;'>
+                                <div class="tab-pane active" id="responses-InternalAPI-internalBatch-401-schema">
+                                  <div id="responses-InternalAPI-internalBatch-schema-401" class="exampleStyle">
+                                    <script>
+                                      $(document).ready(function() {
+                                        var schemaWrapper = ;
+                                        var schema = findNode('schema',schemaWrapper).schema;
+                                        if (!schema) {
+                                          schema = schemaWrapper.schema;
+                                        }
+                                        if (schema.$ref != null) {
+                                          schema = defsParser.$refs.get(schema.$ref);
+                                          Object.keys(schema.properties).forEach( (item) => {
+                                            if (schema.properties[item].$ref != null) {
+                                              schema.properties[item] = defsParser.$refs.get(schema.properties[item].$ref);
+                                            }
+                                          });
+                                        } else if (schema.items != null && schema.items.$ref != null) {
+                                            schema.items = defsParser.$refs.get(schema.items.$ref);
+                                        } else {
+                                          schemaWrapper.definitions = Object.assign({}, defs);
+                                          $RefParser.dereference(schemaWrapper).catch(function(err) {
+                                            console.log(err);
+                                          });
+                                        }
+
+                                        var view = new JSONSchemaView(schema, 3);
+                                        $('#responses-InternalAPI-internalBatch-401-schema-data').val(JSON.stringify(schema));
+                                        var result = $('#responses-InternalAPI-internalBatch-schema-401');
+                                        result.empty();
+                                        result.append(view.render());
+                                      });
+                                    </script>
+                                  </div>
+                                  <input id='responses-InternalAPI-internalBatch-401-schema-data' type='hidden' value=''></input>
                                 </div>
                             </div>
                         </article>
