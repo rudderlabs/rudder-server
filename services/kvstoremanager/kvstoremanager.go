@@ -78,10 +78,3 @@ func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value st
 	return hash, key, value, action
 }
 
-// IsRecordCompatibleEvent identifies if the event supports record operations
-// To support record operations, the event must have the following fields:
-// - message.action
-// - message.fields
-func IsRecordCompatibleEvent(jsonData json.RawMessage) bool {
-	return gjson.GetBytes(jsonData, "message.action").Exists() && gjson.GetBytes(jsonData, "message.fields").Exists()
-}

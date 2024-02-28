@@ -133,25 +133,21 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 	case KV:
 		var err error
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-		// if the event type is record
-		if kvstoremanager.IsRecordCompatibleEvent(jsonData) {
-			hash, key, value, action := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
-			switch action {
-			case "insert":
-			case "update":
-				err = kvManager.HSet(hash, key, value)
-			case "delete":
-				err = kvManager.HDel(hash, value)
-			}
-		} else {
-			// if the event supports HSET operation then use HSET
-			if kvstoremanager.IsHSETCompatibleEvent(jsonData) {
-				hash, key, value, _ := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
-				err = kvManager.HSet(hash, key, value)
-			} else {
-				key, fields := kvstoremanager.EventToKeyValue(jsonData)
-				err = kvManager.HMSet(key, fields)
-			}
+		hash, key, value, action := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
+		// If action is not present, then it is a HSET compatible event, to maintain backward
+		// compatibility for older transformer versions
+		if action == "" && kvstoreManager.IsHSETCompatibleEvent(jsonData){
+			action = "insert"
+		}
+		switch action {
+		case "insert":
+		case "update":
+			err = kvManager.HSet(hash, key, value)
+		case "delete":
+			err = kvManager.HDel(hash, value)
+		default:
+			key, fields := kvstoremanager.EventToKeyValue(jsonData)
+			err = kvManager.HMSet(key, fields)
 		}
 
 		statusCode = kvManager.StatusCode(err)
