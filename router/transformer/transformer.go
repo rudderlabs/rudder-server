@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
+	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -106,12 +107,14 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], expirationTimeDiff *misc.ValueLoader[time.Duration]) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], expirationTimeDiff *misc.ValueLoader[time.Duration]) Transformer {
+	cache := oauth.NewCache()
+	oauthLock := rudderSync.NewPartitionRWLocker()
 	handle := &handle{
 		oauthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
 	}
-	handle.setup(destinationTimeout, transformTimeout, &cache, lock, backendConfig)
+	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
 	return handle
 }
 
