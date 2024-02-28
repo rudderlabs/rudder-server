@@ -2,7 +2,6 @@ package v2_test
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -32,7 +31,7 @@ var _ = Describe("CpConnector", func() {
 			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
 		}
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
-			Method:        "GET",
+			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
@@ -57,13 +56,12 @@ var _ = Describe("CpConnector", func() {
 			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
 		}
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
-			Method:        "GET",
+			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"timeout\",\n\t\t\t\t\"message\": \t\"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out\"\n\t\t\t}", v2.ErrorType)
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(respBody).To(Equal(expectedResp))
+		Expect(`{"errorType":"econnreset","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer"}`).To(MatchJSON(respBody))
 	})
 
 	It("Test CpApiCall function to test connection reset by peer", func() {
@@ -83,12 +81,11 @@ var _ = Describe("CpConnector", func() {
 			Logger: logger.NewLogger().Child("ControlPlaneConnector"),
 		}
 		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
-			Method:        "GET",
+			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
-		expectedResp := fmt.Sprintf("{\n\t\t\t\t\"%v\": \"econnreset\",\n\t\t\t\t\"message\": \t\"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer\"\n\t\t\t}", v2.ErrorType)
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(respBody).To(Equal(expectedResp))
+		Expect(`{"errorType":"econnreset","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer"}`).To(MatchJSON(respBody))
 	})
 })
