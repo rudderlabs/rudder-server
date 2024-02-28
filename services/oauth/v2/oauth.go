@@ -138,7 +138,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
-		authErrCategory: REFRESH_TOKEN,
+		authErrCategory: CategoryRefreshToken,
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
 		flowType:        h.RudderFlowType,
@@ -278,7 +278,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		h.Logger.Debugf("Failed with error response: %v\n", err)
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
-	} else if gjson.Get(response, "body.code").String() == REF_TOKEN_INVALID_GRANT {
+	} else if gjson.Get(response, "body.code").String() == RefTokenInvalidGrant {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		bodyMsg := gjson.Get(response, "body.message").String()
 		if bodyMsg == "" {
@@ -288,7 +288,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		} else {
 			message = bodyMsg
 		}
-		errorType = REF_TOKEN_INVALID_GRANT
+		errorType = RefTokenInvalidGrant
 	}
 	return errorType, message
 }
@@ -348,7 +348,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.statName = GetOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
-		if authResponse.Err == REF_TOKEN_INVALID_GRANT {
+		if authResponse.Err == RefTokenInvalidGrant {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
 			return http.StatusBadRequest, authResponse, fmt.Errorf("invalid grant")

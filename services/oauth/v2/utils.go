@@ -22,11 +22,11 @@ import (
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
-	REFRESH_TOKEN = "REFRESH_TOKEN"
+	CategoryRefreshToken = "REFRESH_TOKEN"
 	// Identifier to be sent from destination(during transformation/delivery)
-	AUTH_STATUS_INACTIVE = "AUTH_STATUS_INACTIVE"
+	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
 	// Identifier for invalid_grant or access_denied errors(during refreshing the token)
-	REF_TOKEN_INVALID_GRANT = "ref_token_invalid_grant"
+	RefTokenInvalidGrant = "ref_token_invalid_grant"
 )
 
 var ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
