@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -15,12 +14,6 @@ import (
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
-)
-
-var (
-	configBEURL string
-	pkgLogger   logger.Logger
-	loggerNm    string
 )
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -41,22 +34,19 @@ func WithExpirationTimeDiff(expirationTimeDiff time.Duration) func(*OAuthHandler
 	}
 }
 
-func Init() {
-	configBEURL = backendconfig.GetConfigBackendURL()
-	pkgLogger = logger.NewLogger().Child("router").Child("OAuthHandler")
-	loggerNm = "OAuthHandler"
-}
-
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
+	pkgLogger := logger.NewLogger().Child("router").Child("OAuthHandler")
 	cpTimeoutDuration := config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		Logger:        pkgLogger,
-		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger)),
+		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger), WithLoggerName("OAuthHandler")),
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 		RudderFlowType:            RudderFlow_Delivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
+		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
+		LoggerName:                "OAuthHandler",
 	}
 	for _, opt := range options {
 		opt(h)
@@ -148,6 +138,10 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 }
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
+	h.Logger.Debugn("[request] :: Get Token Info request received",
+		logger.NewStringField("Module name:", h.LoggerName),
+		logger.NewStringField("Call Type", logTypeName),
+		logger.NewStringField("AccountId", refTokenParams.AccountId))
 	startTime := time.Now()
 	defer func() {
 		authStats.statName = GetOAuthActionStatName("total_latency")
@@ -205,10 +199,10 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	}()
 	h.CacheMutex.Lock(params.RudderAccountId)
 	isAuthStatusUpdateActive, isAuthStatusUpdateReqPresent := h.AuthStatusUpdateActiveMap[destinationId]
-	authStatusUpdateActiveReq := strconv.FormatBool(isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive)
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
 		h.CacheMutex.Unlock(params.RudderAccountId)
-		h.Logger.Debugf("[%s request] :: AuthStatusInactive request Active : %s\n", loggerNm, authStatusUpdateActiveReq)
+		h.Logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!",
+			logger.NewStringField("Module name", h.LoggerName))
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
@@ -218,14 +212,14 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	defer func() {
 		h.CacheMutex.Lock(params.RudderAccountId)
 		h.AuthStatusUpdateActiveMap[destinationId] = false
-		h.Logger.Debugf("[%s request] :: AuthStatusInactive request is inactive!", loggerNm)
+		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!", logger.NewStringField("Module name", h.LoggerName))
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
 		h.Cache.Delete(params.RudderAccountId)
 		h.CacheMutex.Unlock(params.RudderAccountId)
 	}()
 
-	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, params.WorkspaceId, destinationId)
+	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceId, destinationId)
 
 	authStatusInactiveCpReq := &ControlPlaneRequest{
 		Url:           authStatusToggleUrl,
@@ -244,7 +238,10 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	statusCode, respBody = h.CpConn.CpApiCall(authStatusInactiveCpReq)
 	authStatusToggleStats.statName = GetOAuthActionStatName("request_latency")
 	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
-	h.Logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
+	h.Logger.Debugn("[request] :: Response from CP for auth status inactive req",
+		logger.NewStringField("Module name", h.LoggerName),
+		logger.NewIntField("StatusCode", int64(statusCode)),
+		logger.NewStringField("Response", respBody))
 
 	var authStatusToggleRes *AuthStatusToggleResponse
 	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusToggleRes)
@@ -260,8 +257,10 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		authStatusToggleStats.SendCountStat()
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
-
-	h.Logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
+	h.Logger.Debugn("[request] :: (Write) auth status inactive Response received",
+		logger.NewStringField("Module name", h.LoggerName),
+		logger.NewIntField("StatusCode", int64(statusCode)),
+		logger.NewStringField("Response", respBody))
 	authStatusToggleStats.statName = GetOAuthActionStatName("success")
 	authStatusToggleStats.errorMessage = ""
 	authStatusToggleStats.SendCountStat()
@@ -275,7 +274,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		message = gjson.Get(response, "message").String()
 	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
-		h.Logger.Debugf("Failed with error response: %v\n", err)
+		h.Logger.Debugn("Failed with error response", logger.NewErrorField(err))
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
 	} else if gjson.Get(response, "body.code").String() == RefTokenInvalidGrant {
@@ -283,7 +282,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		bodyMsg := gjson.Get(response, "body.message").String()
 		if bodyMsg == "" {
 			// Default message
-			h.Logger.Debugf("Failed with error response: %v\n", response)
+			h.Logger.Debugn("Unable to get body.message", logger.NewStringField("Response", response))
 			message = ErrPermissionOrTokenRevoked.Error()
 		} else {
 			message = bodyMsg
@@ -298,7 +297,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
 	authStats *OAuthStats, logTypeName string,
 ) (int, *AuthResponse, error) {
-	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
+	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		authStats.statName = GetOAuthActionStatName("failure")
@@ -327,7 +326,11 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.statName = GetOAuthActionStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	h.Logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
+	h.Logger.Debugn("[request] :: Response from Control-Plane",
+		logger.NewStringField("Module name", h.LoggerName),
+		logger.NewIntField("StatusCode", int64(statusCode)),
+		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
+		logger.NewStringField("Call Type", logTypeName))
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -335,7 +338,12 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
-		h.Logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+		h.Logger.Debugn("Empty response from Control-Plane",
+			logger.NewStringField("Modue Name", h.LoggerName),
+			logger.NewStringField("Response", response),
+			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
+			logger.NewStringField("Call Type", logTypeName))
+
 		return http.StatusInternalServerError, nil, errors.New("empty secret")
 	}
 
@@ -358,7 +366,11 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.statName = GetOAuthActionStatName("success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
-	h.Logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+	h.Logger.Debugn("[request] :: (Write) Account Secret received",
+		logger.NewStringField("Modue Name", h.LoggerName),
+		logger.NewStringField("Response", response),
+		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
+		logger.NewStringField("Call Type", logTypeName))
 	h.Cache.Set(refTokenParams.AccountId, &AuthResponse{
 		Account: accountSecret,
 	})

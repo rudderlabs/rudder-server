@@ -33,6 +33,8 @@ type OAuthHandler struct {
 	Cache                     Cache
 	CacheMutex                *rudderSync.PartitionRWLocker
 	ExpirationTimeDiff        time.Duration
+	ConfigBEURL               string
+	LoggerName                string
 }
 type CacheKey struct {
 	WorkspaceID string

@@ -31,7 +31,6 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
@@ -382,7 +381,7 @@ func TestProxyRequest(t *testing.T) {
 
 				isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 				expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
@@ -408,10 +407,10 @@ func TestProxyRequest(t *testing.T) {
 			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -622,16 +621,11 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
-			config.Set("CONFIG_BACKEND_URL", cfgBeSvr.URL)
 
 			backendconfig.Init()
-			v2.Init()
 			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
 
-			cache := v2.NewCache()
-			oauthLock := kitsync.NewPartitionRWLocker()
-
-			tr := NewTransformer(time.Minute, time.Minute, cache, oauthLock, mockBackendConfig, &isOAuthV2EnabledLoader, &expTimeDiff)
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 			transformMsg := types.TransformMessageT{
 				Data: tc.inputEvents,
@@ -664,7 +658,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -697,7 +691,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -739,7 +733,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -780,7 +774,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -829,7 +823,7 @@ func TestDehydrateHydrate(t *testing.T) {
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
 	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, nil, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)
 

@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -31,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -120,9 +118,7 @@ func (rt *Handle) Setup(
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
-	cache := v2.NewCache()
-	oauthLock := rudderSync.NewPartitionRWLocker()
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout, cache, oauthLock,
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
 		backendConfig, &rt.reloadableConfig.oauthV2Enabled,
 		&rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 	)
