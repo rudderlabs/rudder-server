@@ -46,12 +46,8 @@ type handle struct {
 	tr *http.Transport
 	// http client for router transformation request
 	client *http.Client
-	// http client for router transformation request using oauthV2
-	clientOauthV2 *http.Client
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
-	// Mockable http.client for transformer proxy request using oauthV2
-	proxyClientOauthV2 sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
 	destinationTimeout time.Duration
 	// http client timeout for server-transformer request
@@ -59,8 +55,14 @@ type handle struct {
 	transformRequestTimerStat stats.Measurement
 	logger                    logger.Logger
 
+	// clientOauthV2 is the HTTP client for router transformation requests using OAuth V2.
+	clientOauthV2 *http.Client
+	// proxyClientOauthV2 is the mockable HTTP client for transformer proxy requests using OAuth V2.
+	proxyClientOauthV2 sysUtils.HTTPClientI
+	// oauthV2EnabledLoader dynamically loads the OAuth V2 enabled status.
 	oauthV2EnabledLoader *misc.ValueLoader[bool]
-	expirationTimeDiff   misc.ValueLoader[time.Duration]
+	// expirationTimeDiff holds the configured time difference for token expiration.
+	expirationTimeDiff *misc.ValueLoader[time.Duration]
 }
 
 type ProxyRequestMetadata struct {
@@ -103,21 +105,11 @@ type Transformer interface {
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse
 }
 
-type OptFn func(b *handle)
-
-func WithExpirationTimeDiff(expirationTimeDiff misc.ValueLoader[time.Duration]) OptFn {
-	return func(b *handle) {
-		b.expirationTimeDiff = expirationTimeDiff
-	}
-}
-
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], fns ...OptFn) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, cache oauth.Cache, lock *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], expirationTimeDiff *misc.ValueLoader[time.Duration]) Transformer {
 	handle := &handle{
 		oauthV2EnabledLoader: oauthV2Enabled,
-	}
-	for _, fn := range fns {
-		fn(handle)
+		expirationTimeDiff:   expirationTimeDiff,
 	}
 	handle.setup(destinationTimeout, transformTimeout, &cache, lock, backendConfig)
 	return handle
@@ -424,7 +416,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	optionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.BodyAugmenter,
-		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
+		ExpirationTimeDiff: (*trans.expirationTimeDiff).Load(),
 	}
 	// This client is used for Router Transformation using oauthV2
 	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauth.RudderFlow_Delivery, cache, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
@@ -432,7 +424,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.BodyAugmenter,
-		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
+		ExpirationTimeDiff: (*trans.expirationTimeDiff).Load(),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
