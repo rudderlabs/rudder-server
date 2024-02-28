@@ -16,12 +16,6 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
-var (
-	configBEURL string
-	pkgLogger   logger.Logger
-	loggerNm    string
-)
-
 func WithCache(cache Cache) func(*OAuthHandler) {
 	return func(h *OAuthHandler) {
 		h.Cache = cache
@@ -40,22 +34,19 @@ func WithExpirationTimeDiff(expirationTimeDiff time.Duration) func(*OAuthHandler
 	}
 }
 
-func Init() {
-	configBEURL = backendconfig.GetConfigBackendURL()
-	pkgLogger = logger.NewLogger().Child("router").Child("OAuthHandler")
-	loggerNm = "OAuthHandler"
-}
-
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
+	pkgLogger := logger.NewLogger().Child("router").Child("OAuthHandler")
 	cpTimeoutDuration := config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		Logger:        pkgLogger,
-		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger)),
+		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger), WithLoggerName("OAuthHandler")),
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 		RudderFlowType:            RudderFlow_Delivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
+		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
+		LoggerName:                "OAuthHandler",
 	}
 	for _, opt := range options {
 		opt(h)
@@ -148,7 +139,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
 	h.Logger.Debugn("[request] :: Get Token Info request received",
-		logger.NewStringField("Module name:", loggerNm),
+		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountId))
 	startTime := time.Now()
@@ -211,7 +202,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
 		h.CacheMutex.Unlock(params.RudderAccountId)
 		h.Logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!",
-			logger.NewStringField("Module name", loggerNm))
+			logger.NewStringField("Module name", h.LoggerName))
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
@@ -221,14 +212,14 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	defer func() {
 		h.CacheMutex.Lock(params.RudderAccountId)
 		h.AuthStatusUpdateActiveMap[destinationId] = false
-		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!", logger.NewStringField("Module name", loggerNm))
+		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!", logger.NewStringField("Module name", h.LoggerName))
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
 		h.Cache.Delete(params.RudderAccountId)
 		h.CacheMutex.Unlock(params.RudderAccountId)
 	}()
 
-	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, params.WorkspaceId, destinationId)
+	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceId, destinationId)
 
 	authStatusInactiveCpReq := &ControlPlaneRequest{
 		Url:           authStatusToggleUrl,
@@ -248,7 +239,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	authStatusToggleStats.statName = GetOAuthActionStatName("request_latency")
 	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
 	h.Logger.Debugn("[request] :: Response from CP for auth status inactive req",
-		logger.NewStringField("Module name", loggerNm),
+		logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
 
@@ -267,7 +258,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 	h.Logger.Debugn("[request] :: (Write) auth status inactive Response received",
-		logger.NewStringField("Module name", loggerNm),
+		logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
 	authStatusToggleStats.statName = GetOAuthActionStatName("success")
@@ -306,7 +297,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
 	authStats *OAuthStats, logTypeName string,
 ) (int, *AuthResponse, error) {
-	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
+	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		authStats.statName = GetOAuthActionStatName("failure")
@@ -336,7 +327,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.SendTimerStats(cpiCallStartTime)
 
 	h.Logger.Debugn("[request] :: Response from Control-Plane",
-		logger.NewStringField("Module name", loggerNm),
+		logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
 		logger.NewStringField("Call Type", logTypeName))
@@ -348,7 +339,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		h.Logger.Debugn("Empty response from Control-Plane",
-			logger.NewStringField("Modue Name", loggerNm),
+			logger.NewStringField("Modue Name", h.LoggerName),
 			logger.NewStringField("Response", response),
 			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
 			logger.NewStringField("Call Type", logTypeName))
@@ -376,7 +367,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	h.Logger.Debugn("[request] :: (Write) Account Secret received",
-		logger.NewStringField("Modue Name", loggerNm),
+		logger.NewStringField("Modue Name", h.LoggerName),
 		logger.NewStringField("Response", response),
 		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
 		logger.NewStringField("Call Type", logTypeName))

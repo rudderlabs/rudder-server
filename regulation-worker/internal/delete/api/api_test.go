@@ -857,7 +857,6 @@ func TestOAuth(t *testing.T) {
 			oauth.Init()
 			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
 			if tt.isOAuthV2Enabled {
-				oauthV2.Init()
 				cache := oauthV2.NewCache()
 				oauthLock := rudderSync.NewPartitionRWLocker()
 

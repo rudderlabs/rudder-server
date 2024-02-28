@@ -20,9 +20,10 @@ type HttpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 type controlPlaneConnector struct {
-	client  HttpClient
-	logger  logger.Logger
-	timeOut time.Duration
+	client     HttpClient
+	logger     logger.Logger
+	timeOut    time.Duration
+	loggerName string
 }
 
 func NewControlPlaneConnector(options ...func(*controlPlaneConnector)) ControlPlaneConnector {
@@ -68,6 +69,12 @@ WithCpClientTimeout is a functional option to set the timeout for the ControlPla
 func WithCpClientTimeout(timeout time.Duration) func(*controlPlaneConnector) {
 	return func(h *controlPlaneConnector) {
 		h.timeOut = timeout
+	}
+}
+
+func WithLoggerName(loggerName string) func(*controlPlaneConnector) {
+	return func(h *controlPlaneConnector) {
+		h.loggerName = loggerName
 	}
 }
 
@@ -119,7 +126,7 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 	}
 	if err != nil {
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewStringField("Module Name", loggerNm),
+			logger.NewStringField("Module Name", c.loggerName),
 			logger.NewErrorField(err))
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
@@ -137,11 +144,11 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	c.logger.Debugn("[request] :: destination request sent",
-		logger.NewStringField("Module Name", loggerNm))
+		logger.NewStringField("Module Name", c.loggerName))
 	if doErr != nil {
 		// Abort on receiving an error
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewStringField("Module Name", loggerNm),
+			logger.NewStringField("Module Name", c.loggerName),
 			logger.NewErrorField(doErr))
 		errorType := GetErrorType(doErr)
 		cpStatTags["errorType"] = errorType
