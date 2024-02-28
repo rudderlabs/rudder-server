@@ -227,7 +227,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", configBEURL, params.WorkspaceId, destinationId)
 
-	authStatusInactiveCpReq := &ControlPlaneRequestT{
+	authStatusInactiveCpReq := &ControlPlaneRequest{
 		Url:           authStatusToggleUrl,
 		Method:        http.MethodPut,
 		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
@@ -306,7 +306,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		return http.StatusInternalServerError, nil, err
 	}
-	refreshCpReq := &ControlPlaneRequestT{
+	refreshCpReq := &ControlPlaneRequest{
 		Method:        http.MethodPost,
 		Url:           refreshUrl,
 		ContentType:   "application/json; charset=utf-8",

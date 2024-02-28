@@ -14,7 +14,7 @@ import (
 )
 
 type ControlPlaneConnector interface {
-	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
+	CpApiCall(cpReq *ControlPlaneRequest) (int, string)
 }
 type HttpClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -98,7 +98,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 /*
 CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
 */
-func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":          cpReq.Url,
 		"requestType":  cpReq.RequestType,
