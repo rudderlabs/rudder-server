@@ -1,6 +1,7 @@
 package bingads
 
 import (
+	"archive/zip"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ import (
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
 	mocks_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -509,8 +510,11 @@ var _ = Describe("Bing ads", func() {
 		It("TestBingAdsGetUploadStats for wrong audience Id", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
+			csvPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.csv"
+			zipPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip"
+			ZipCSVFile(csvPath, zipPath)
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/status-wrong-audience.zip") // Path of the source file
+			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Set the appropriate headers for a zip file response
@@ -543,6 +547,7 @@ var _ = Describe("Bing ads", func() {
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
+			os.Remove(zipPath)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
@@ -666,4 +671,41 @@ func DuplicateFile(sourcePath, destinationPath string) error {
 	}
 
 	return nil
+}
+
+func ZipCSVFile(csvFilePath, zipFilePath string) error {
+	// Create a new ZIP file
+	zipFile, err := os.Create(zipFilePath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	// Create a new zip writer
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	// Extract the base name (file name) of the CSV file for the zip entry
+	csvFileName := filepath.Base(csvFilePath)
+
+	// Create a new zip entry for the CSV file
+	zipEntryWriter, err := zipWriter.Create(csvFileName)
+	if err != nil {
+		return err
+	}
+
+	// Open the CSV file to read its contents
+	csvFile, err := os.Open(csvFilePath)
+	if err != nil {
+		return err
+	}
+	defer csvFile.Close()
+
+	// Copy the contents of the CSV file into the zip entry
+	if _, err := io.Copy(zipEntryWriter, csvFile); err != nil {
+		return err
+	}
+
+	// Closing the zip writer ensures all data is flushed to zipFile
+	return zipWriter.Close()
 }
