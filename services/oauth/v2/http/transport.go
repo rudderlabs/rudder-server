@@ -8,12 +8,13 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
-	"github.com/tidwall/sjson"
 )
 
 /*
@@ -113,7 +114,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	// internal function
 	applyInterceptorRespToHttpResp := func() {
 		var interceptorRespBytes, newRespData []byte
-		interceptorRespBytes, _ =json.Marshal(interceptorResp)
+		interceptorRespBytes, _ = json.Marshal(interceptorResp)
 		newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
 		rts.res.Body = io.NopCloser(bytes.NewReader(newRespData))
 	}

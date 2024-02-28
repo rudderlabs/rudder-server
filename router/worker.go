@@ -805,10 +805,10 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 
 	} else {
 		interceptorInfo := oauthv2.OAuthTransportResponse{
-			Response: proxyRequestResponse.ProxyRequestResponseBody,
+			Response:   proxyRequestResponse.ProxyRequestResponseBody,
 			StatusCode: proxyRequestResponse.ProxyRequestStatusCode,
 		}
-		if (routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && oauthV2Enabled) {
+		if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && oauthV2Enabled {
 			json.Unmarshal([]byte(gjson.GetBytes([]byte(proxyRequestResponse.ProxyRequestResponseBody), "interceptorResponse").Raw), &interceptorInfo)
 		}
 
