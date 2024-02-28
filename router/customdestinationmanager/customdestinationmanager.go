@@ -136,7 +136,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 		hash, key, value, action := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
 		// If action is not present, then it is a HSET compatible event, to maintain backward
 		// compatibility for older transformer versions
-		if action == "" && kvstoreManager.IsHSETCompatibleEvent(jsonData){
+		if action == "" && kvstoremanager.IsHSETCompatibleEvent(jsonData){
 			action = "insert"
 		}
 		switch action {
