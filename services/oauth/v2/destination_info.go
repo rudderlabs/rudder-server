@@ -11,10 +11,12 @@ type DestinationInfo struct {
 }
 
 func (d *DestinationInfo) IsOAuthDestination() bool {
-	if authValue, err := misc.NestedMapLookup(d.DestDefConfig, "auth", "type"); err == nil {
-		if authType, ok := authValue.(string); ok {
-			return authType == "OAuth"
-		}
+	authValue, err := misc.NestedMapLookup(d.DestDefConfig, "auth", "type")
+	if err != nil {
+		return false
+	}
+	if authType, ok := authValue.(string); ok {
+		return authType == "OAuth"
 	}
 	return false
 }
@@ -31,9 +33,6 @@ func (d *DestinationInfo) GetAccountID(idKey string) string {
 	if !d.IsOAuthDestination() || !found || idKey == "" {
 		return ""
 	}
-	rudderAccountId, ok := rudderAccountIdInterface.(string)
-	if ok {
-		return rudderAccountId
-	}
-	return ""
+	rudderAccountId, _ := rudderAccountIdInterface.(string)
+	return rudderAccountId
 }

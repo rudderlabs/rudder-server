@@ -136,7 +136,7 @@ func withLoop(svc service.JobSvc) *service.Looper {
 	}
 }
 
-func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.Duration],oauthV2Enabled *config.Reloadable[bool]) *http.Client {
+func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.Duration], oauthV2Enabled *config.Reloadable[bool]) *http.Client {
 	cli := &http.Client{
 		Timeout: httpTimeout.Load(),
 		Transport: &http.Transport{
