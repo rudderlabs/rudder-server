@@ -559,9 +559,7 @@ var _ = Describe("Oauth", func() {
 				TokenProvider:             mockTokenProvider,
 				CpConn:                    mockCpConnector,
 			}
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{
-				  "message":"unable to update the auth status for the destination"
-			  }`)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, ``)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination: &v2.DestinationInfo{
 					DestDefName:   "testDest",
