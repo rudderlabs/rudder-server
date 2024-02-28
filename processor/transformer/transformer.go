@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/valyala/fasthttp"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/cenkalti/backoff"
@@ -174,11 +176,13 @@ type handle struct {
 	logger logger.Logger
 	stat   stats.Stats
 
-	client *http.Client
+	client         *http.Client
+	fasthttpClient *fasthttp.Client
 
 	guardConcurrency chan struct{}
 
 	config struct {
+		useFasthttpClient      bool
 		maxConcurrency         int
 		maxHTTPConnections     int
 		maxHTTPIdleConnections int
@@ -207,6 +211,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.receivedStat = stat.NewStat("processor.transformer_received", stats.CountType)
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
+	trans.config.useFasthttpClient = conf.GetBool("Transformer.Client.useFasthttpClient", true)
 	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
@@ -230,6 +235,13 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 				IdleConnTimeout:     30 * time.Second,
 			},
 			Timeout: trans.config.timeoutDuration,
+		}
+	}
+	if trans.fasthttpClient == nil {
+		trans.fasthttpClient = &fasthttp.Client{
+			MaxConnsPerHost:     trans.config.maxHTTPConnections,
+			MaxIdleConnDuration: 30 * time.Second,
+			MaxConnWaitTimeout:  trans.config.timeoutDuration,
 		}
 	}
 
@@ -383,10 +395,17 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	endlessBackoff := backoff.NewExponentialBackOff()
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
 
+	var postFunc func(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int)
+	if trans.config.useFasthttpClient {
+		postFunc = trans.doFasthttpPost
+	} else {
+		postFunc = trans.doPost
+	}
+
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
-			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, statsTags(&data[0]))
+			respData, statusCode = postFunc(ctx, rawJSON, url, stage, statsTags(&data[0]))
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
 				return fmt.Errorf("control plane not reachable")
@@ -560,4 +579,84 @@ func trackLongRunningTransformation(ctx context.Context, stage string, timeout t
 				"duration", time.Since(start).String())
 		}
 	}
+}
+
+func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int) {
+	var (
+		retryCount int
+		respData   []byte
+		statusCode int
+		apiVersion []byte
+	)
+
+	err := backoff.RetryNotify(
+		func() error {
+			var reqErr error
+			resp := fasthttp.AcquireResponse()
+			defer fasthttp.ReleaseResponse(resp)
+			requestStartTime := time.Now()
+
+			trace.WithRegion(ctx, "request/post", func() {
+				req := fasthttp.AcquireRequest()
+				defer fasthttp.ReleaseRequest(req)
+				req.SetRequestURI(url)
+				if trans.config.disableKeepAlives {
+					req.Header.SetConnectionClose()
+				}
+				req.Header.SetMethod("POST")
+				req.Header.SetContentType("application/json; charset=utf-8")
+				req.Header.Set("X-Feature-Gzip-Support", "?1")
+				req.Header.Set("X-Feature-Filter-Code", "?1")
+				req.SetBody(rawJSON)
+
+				reqErr = trans.fasthttpClient.Do(req, resp)
+			})
+			trans.requestTime(tags, time.Since(requestStartTime))
+			if reqErr != nil {
+				return reqErr
+			}
+
+			statusCode = resp.StatusCode()
+			if !isJobTerminated(statusCode) && statusCode != StatusCPDown {
+				return fmt.Errorf("transformer returned status code: %v", statusCode)
+			}
+
+			respData = make([]byte, len(resp.Body()))
+			_ = copy(respData, resp.Body())
+
+			apiVersion = make([]byte, len(resp.Header.Peek("apiVersion")))
+			_ = copy(apiVersion, resp.Header.Peek("apiVersion"))
+
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
+		func(err error, t time.Duration) {
+			retryCount++
+			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
+		},
+	)
+	if err != nil {
+		if trans.config.failOnUserTransformTimeout.Load() && stage == userTransformerStage && os.IsTimeout(err) {
+			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
+		} else if trans.config.failOnError.Load() {
+			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
+		} else {
+			panic(err)
+		}
+	}
+
+	// perform version compatibility check only on success
+	if statusCode == http.StatusOK {
+		transformerAPIVersion, convErr := strconv.Atoi(string(apiVersion))
+		if convErr != nil {
+			transformerAPIVersion = 0
+		}
+		if types.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			trans.logger.Error(unexpectedVersionError)
+			panic(unexpectedVersionError)
+		}
+	}
+
+	return respData, statusCode
 }
