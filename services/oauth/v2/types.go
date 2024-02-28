@@ -43,7 +43,7 @@ type TokenProvider interface {
 	Identity() identity.Identifier
 }
 
-type ControlPlaneRequestT struct {
+type ControlPlaneRequest struct {
 	Body           string
 	ContentType    string
 	Url            string

@@ -37,7 +37,7 @@ func (m *MockControlPlaneConnectorI) EXPECT() *MockControlPlaneConnectorIMockRec
 }
 
 // CpApiCall mocks base method.
-func (m *MockControlPlaneConnectorI) CpApiCall(cpReq *v2.ControlPlaneRequestT) (int, string) {
+func (m *MockControlPlaneConnectorI) CpApiCall(cpReq *v2.ControlPlaneRequest) (int, string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CpApiCall", cpReq)
 	ret0, _ := ret[0].(int)

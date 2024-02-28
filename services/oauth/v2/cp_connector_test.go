@@ -30,7 +30,7 @@ var _ = Describe("CpConnector", func() {
 			v2.WithClient(mockHttpClient),
 			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
+		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequest{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
@@ -55,7 +55,7 @@ var _ = Describe("CpConnector", func() {
 			v2.WithClient(mockHttpClient),
 			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
+		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequest{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
@@ -80,7 +80,7 @@ var _ = Describe("CpConnector", func() {
 			v2.WithClient(mockHttpClient),
 			v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequestT{
+		statusCode, respBody := cpConnector.CpApiCall(&v2.ControlPlaneRequest{
 			Method:        http.MethodGet,
 			Url:           "https://www.google.com",
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
