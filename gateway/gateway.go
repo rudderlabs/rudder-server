@@ -34,6 +34,7 @@ var (
 var (
 	errRequestDropped    = errors.New("request dropped")
 	errRequestSuppressed = errors.New("request suppressed")
+	errEventSuppressed   = errors.New("event suppressed")
 )
 
 //go:embed openapi/index.html
