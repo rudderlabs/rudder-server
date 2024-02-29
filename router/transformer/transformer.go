@@ -25,7 +25,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	OAuthHttpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -108,7 +108,7 @@ type Transformer interface {
 
 // NewTransformer creates a new transformer
 func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled *misc.ValueLoader[bool], expirationTimeDiff *misc.ValueLoader[time.Duration]) Transformer {
-	cache := oauth.NewCache()
+	cache := oauthv2.NewCache()
 	oauthLock := rudderSync.NewPartitionRWLocker()
 	handle := &handle{
 		oauthV2EnabledLoader: oauthV2Enabled,
@@ -162,14 +162,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 		if (*trans.oauthV2EnabledLoader).Load() {
-			destinationInfo := &oauth.DestinationInfo{
+			destinationInfo := &oauthv2.DestinationInfo{
 				DestConfig:    transformMessageCopy.Data[0].Destination.Config,
 				DestDefConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
 				WorkspaceID:   transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
 				DestDefName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
 				DestinationId: transformMessageCopy.Data[0].Destination.ID,
 			}
-			req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, destinationInfo))
+			req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, destinationInfo))
 			resp, err = trans.clientOauthV2.Do(req)
 		} else {
 			resp, err = trans.client.Do(req)
@@ -205,7 +205,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
-	transResp := oauth.TransportResponse{}
+	transResp := oauthv2.TransportResponse{}
 	if (*trans.oauthV2EnabledLoader).Load() {
 		// Enabled only for OAuth destinations that are using V2
 		err = json.Unmarshal(respData, &transResp)
@@ -239,7 +239,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
-			isValidOAuthCategory := oauth.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory)
+			isValidOAuthCategory := oauthv2.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory)
 			if isValidOAuthCategory && transResp.InterceptorResponse.StatusCode > 0 {
 				destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
 			}
@@ -377,7 +377,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	/*
 		respData will be in ProxyResponseV0 or ProxyResponseV1
 	*/
-	transportResponse := oauth.TransportResponse{} // response that we get from oauth-interceptor in postRoundTrip
+	transportResponse := oauthv2.TransportResponse{} // response that we get from oauth-interceptor in postRoundTrip
 	if (*trans.oauthV2EnabledLoader).Load() {
 		_ = json.Unmarshal(respData, &transportResponse)
 		// unmarshal unsuccessful scenarios
@@ -434,7 +434,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 }
 
-func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauth.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
+func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -461,7 +461,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		ExpirationTimeDiff: (*trans.expirationTimeDiff).Load(),
 	}
 	// This client is used for Router Transformation using oauthV2
-	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauth.RudderFlow_Delivery, cache, backendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
+	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauthv2.RudderFlow_Delivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
 
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
@@ -470,7 +470,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
-	trans.proxyClientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, oauth.RudderFlow_Delivery, cache, backendConfig, oauth.GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
+	trans.proxyClientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, oauthv2.RudderFlow_Delivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
@@ -502,8 +502,8 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	httpReqStTime := time.Now()
 	var resp *http.Response
 	if (*trans.oauthV2EnabledLoader).Load() {
-		req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, ctx.Value(oauth.DestKey)))
-		req = req.WithContext(context.WithValue(req.Context(), oauth.SecretKey, proxyReqParams.ResponseData.Metadata[0].Secret))
+		req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, ctx.Value(oauthv2.DestKey)))
+		req = req.WithContext(context.WithValue(req.Context(), oauthv2.SecretKey, proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOauthV2.Do(req)
 	} else {
 		resp, err = trans.proxyClient.Do(req)
