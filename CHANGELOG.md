@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/rudderlabs/rudder-server/compare/v1.20.0...v1.20.1) (2024-02-29)
+
+
+### Bug Fixes
+
+* always look for list item error for bingads audience ([#4430](https://github.com/rudderlabs/rudder-server/issues/4430)) ([8462215](https://github.com/rudderlabs/rudder-server/commit/84622153a9c811f94817c24ac1b6a6371d5d8b5a))
+
 ## [1.20.0](https://github.com/rudderlabs/rudder-server/compare/v1.19.2...v1.20.0) (2024-02-12)
 
 
