@@ -157,6 +157,7 @@ type Redshift struct {
 	stats          stats.Stats
 
 	config struct {
+		appendOnlyTables              []string
 		allowMerge                    bool
 		slowQueryThreshold            time.Duration
 		dedupWindow                   bool
@@ -204,6 +205,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.skipComputingUserLatestTraits = conf.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
+
+	// appendOnlyTables is a workaround with limited support.
+	rs.config.appendOnlyTables = conf.GetStringSlice("Warehouse.redshift.appendOnlyTables", nil)
 
 	return rs
 }
@@ -464,7 +468,7 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.shouldMerge(tableName),
+		logfield.ShouldMerge, rs.ShouldMerge(tableName),
 	)
 	log.Infow("started loading")
 
@@ -519,7 +523,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	var rowsDeleted int64
-	if rs.shouldMerge(tableName) {
+	if rs.ShouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -728,7 +732,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
-		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.shouldMerge(warehouseutils.UsersTable),
+		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.ShouldMerge(warehouseutils.UsersTable),
 		logfield.TableName, warehouseutils.UsersTable,
 	}
 	rs.logger.Infow("started loading for identifies and users tables", logFields...)
@@ -1340,10 +1344,11 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.connectTimeout = timeout
 }
 
-func (rs *Redshift) shouldMerge(tableName string) bool {
+func (rs *Redshift) ShouldMerge(tableName string) bool {
 	if !rs.config.allowMerge {
 		return false
 	}
+
 	if tableName == warehouseutils.UsersTable {
 		// If we are here it's because skipComputingUserLatestTraits is true.
 		// preferAppend doesn't apply to the users table, so we are just checking skipDedupDestinationIDs for
@@ -1356,6 +1361,11 @@ func (rs *Redshift) shouldMerge(tableName string) bool {
 	if !rs.Uploader.CanAppend() {
 		return true
 	}
+
+	if slices.Contains(rs.config.appendOnlyTables, tableName) {
+		return false
+	}
+
 	return !rs.Warehouse.GetPreferAppendSetting() &&
 		!slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
 }
