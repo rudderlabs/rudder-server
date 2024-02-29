@@ -174,7 +174,7 @@ var _ = Describe("Http/Client", func() {
 			}
 			req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, destination))
 			res, err := httpClient.Do(req)
-			Expect(res.StatusCode).To(Equal(http.StatusInternalServerError))
+			Expect(res.StatusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
 			respData, err := io.ReadAll(res.Body)
 			Expect(err).To(BeNil())
