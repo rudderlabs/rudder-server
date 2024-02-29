@@ -389,10 +389,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		if transportResponse.InterceptorResponse.StatusCode > 0 {
 			respCode = transportResponse.InterceptorResponse.StatusCode
 		}
-		if strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
-			// Should this be set to `error` alone ?
-			respData = []byte(transportResponse.InterceptorResponse.Response)
-		}
 	}
 	/**
 
@@ -406,6 +402,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
+	trans.logger.Debugf("ProxyResponseData: %s\n", string(respData))
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 
@@ -419,6 +416,11 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			RespBodys:                routerJobResponseBodys,
 			DontBatchDirectives:      routerJobDontBatchDirectives,
 		}
+	}
+
+	if (*trans.oauthV2EnabledLoader).Load() && strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
+		// Should this be set to `error` alone ?
+		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
 
 	return ProxyRequestResponse{
