@@ -1103,7 +1103,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
 				if tc.ioReadError {
 					w.Header().Add("Content-Length", strconv.Itoa(len(string(outputJson))+10))
-					// return less bytes, wich will result in an "unexpected EOF" from ioutil.ReadAll()
+					// return less bytes, which will result in an "unexpected EOF" from ioutil.ReadAll()
 					_, err = w.Write([]byte("a"))
 				} else {
 					_, err = w.Write(outputJson)
