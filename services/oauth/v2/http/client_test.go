@@ -119,7 +119,7 @@ var _ = Describe("Http/Client", func() {
 				ProtoMajor:       0,
 				ProtoMinor:       0,
 				Header:           nil,
-				Body:             io.NopCloser(bytes.NewReader([]byte("{\"output\":[{\"version\":\"1\",\"type\":\"REST\",\"method\":\"POST\",\"endpoint\":\"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs\",\"headers\":{\"Authorization\":\"Bearer dummy-access\",\"Content-Type\":\"application/json\",\"developer-token\":\"dummy-dev-token\"},\"params\":{\"listId\":\"list111\",\"customerId\":\"7693729833\",\"consent\":{}},\"body\":{\"JSON\":{\"enablePartialFailure\":true,\"operations\":[{\"create\":{\"userIdentifiers\":[{\"hashedEmail\":\"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419\"},{\"hashedPhoneNumber\":\"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45\"},{\"addressInfo\":{\"hashedFirstName\":\"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\",\"hashedLastName\":\"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251\",\"countryCode\":\"US\",\"postalCode\":\"1245\"}}]}}]},\"JSON_ARRAY\":{},\"XML\":{},\"FORM\":{}},\"files\":{},\"userId\":\"\"}]}"))),
+				Body:             io.NopCloser(bytes.NewReader([]byte(`{"originalResponse":{"output":[{"version":"1","type":"REST","method":"POST","endpoint":"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs","headers":{"Authorization":"Bearer dummy-access","Content-Type":"application/json","developer-token":"dummy-dev-token"},"params":{"listId":"list111","customerId":"7693729833","consent":{}},"body":{"JSON":{"enablePartialFailure":true,"operations":[{"create":{"userIdentifiers":[{"hashedEmail":"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419"},{"hashedPhoneNumber":"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45"},{"addressInfo":{"hashedFirstName":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","hashedLastName":"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251","countryCode":"US","postalCode":"1245"}}]}}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}]}}`))),
 				ContentLength:    0,
 				TransferEncoding: nil,
 				Close:            false,
@@ -178,7 +178,7 @@ var _ = Describe("Http/Client", func() {
 			Expect(err).To(BeNil())
 			respData, err := io.ReadAll(res.Body)
 			Expect(err).To(BeNil())
-			Expect(respData).To(Equal([]byte(`{"output":[{"authErrorCategory":"REFRESH_TOKEN"}],"interceptorResponse":{"statusCode":500}}`)))
+			Expect(respData).To(Equal([]byte(`{"originalResponse":{"output":[{"authErrorCategory":"REFRESH_TOKEN"}]},"interceptorResponse":{"statusCode":500}}`)))
 		})
 
 		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as AUTH_STATUS_INACTIVE", func() {
@@ -232,7 +232,7 @@ var _ = Describe("Http/Client", func() {
 			Expect(err).To(BeNil())
 			respData, err := io.ReadAll(res.Body)
 			Expect(err).To(BeNil())
-			Expect(respData).To(Equal([]byte(`{"output":[{"authErrorCategory":"AUTH_STATUS_INACTIVE"}],"interceptorResponse":{"statusCode":400}}`)))
+			Expect(respData).To(Equal([]byte(`{"originalResponse":{"output":[{"authErrorCategory":"AUTH_STATUS_INACTIVE"}]},"interceptorResponse":{"statusCode":400}}`)))
 		})
 	})
 })
