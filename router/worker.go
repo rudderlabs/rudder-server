@@ -806,7 +806,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			proxyRequestResponse.RespContentType = contentType
 		} else if oauthV2Enabled {
 			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, proxyRequestResponse.ProxyRequestStatusCode, proxyRequestResponse.ProxyRequestResponseBody)
-			proxyRequestResponse.RespContentType = contentType
+			proxyRequestResponse.RespContentType  = http.DetectContentType([]byte(proxyRequestResponse.ProxyRequestResponseBody))
 		}
 	}
 	return proxyRequestResponse
