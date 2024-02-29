@@ -205,6 +205,15 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
+	transResp := oauth.TransportResponse{}
+	if (*trans.oauthV2EnabledLoader).Load() {
+		// Enabled only for OAuth destinations that are using V2
+		err = json.Unmarshal(respData, &transResp)
+		if err == nil && strings.TrimSpace(transResp.OriginalResponse) != "" {
+			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
+		}
+	}
+
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
 		if convErr != nil {
@@ -217,14 +226,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
-		interceptorInfo := oauth.OAuthTransportResponse{} // initing to prevent panic
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonfast.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
-			// TODO: should we do some kind of error check here ?
-			_ = json.Unmarshal([]byte(gjson.GetBytes(respData, "interceptorResponse").Raw), &interceptorInfo)
 			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 
@@ -234,12 +240,12 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
 			isValidOAuthCategory := oauth.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory)
-			if isValidOAuthCategory && interceptorInfo.StatusCode > 0 {
-				destinationJobs[i].StatusCode = interceptorInfo.StatusCode
+			if isValidOAuthCategory && transResp.InterceptorResponse.StatusCode > 0 {
+				destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
 			}
-			if isValidOAuthCategory && strings.TrimSpace(interceptorInfo.Response) != "" {
+			if isValidOAuthCategory && strings.TrimSpace(transResp.InterceptorResponse.Response) != "" {
 				// Should this be set to `error` alone ?
-				destinationJobs[i].Error = interceptorInfo.Response
+				destinationJobs[i].Error = transResp.InterceptorResponse.Response
 			}
 			for k, v := range destinationJobs[i].JobIDs() {
 				out = append(out, k)
@@ -368,6 +374,26 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
+	/*
+		respData will be in ProxyResponseV0 or ProxyResponseV1
+	*/
+	transportResponse := oauth.TransportResponse{} // response that we get from oauth-interceptor in postRoundTrip
+	if (*trans.oauthV2EnabledLoader).Load() {
+		_ = json.Unmarshal(respData, &transportResponse)
+		// unmarshal unsuccessful scenarios
+		// if respData is not a valid json
+		if strings.TrimSpace(transportResponse.OriginalResponse) != "" {
+			respData = []byte(transportResponse.OriginalResponse)
+		}
+
+		if transportResponse.InterceptorResponse.StatusCode > 0 {
+			respCode = transportResponse.InterceptorResponse.StatusCode
+		}
+		if strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
+			// Should this be set to `error` alone ?
+			respData = []byte(transportResponse.InterceptorResponse.Response)
+		}
+	}
 	/**
 
 		Structure of TransformerProxy Response:

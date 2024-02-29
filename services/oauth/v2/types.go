@@ -113,3 +113,8 @@ type OAuthTransportResponse struct {
 	StatusCode int    `json:"statusCode"`
 	Response   string `json:"response,omitempty"`
 }
+
+type TransportResponse struct {
+	OriginalResponse    string                 `json:"originalResponse"`
+	InterceptorResponse OAuthTransportResponse `json:"interceptorResponse"`
+}

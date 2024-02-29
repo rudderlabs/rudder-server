@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/tidwall/sjson"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -114,20 +112,23 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
-		return rts.res, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
+		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
-	rts.res.Body = io.NopCloser(bytes.NewReader(respData))
 	interceptorResp := oauth.OAuthTransportResponse{}
 	// internal function
 	applyInterceptorRespToHttpResp := func() {
-		var interceptorRespBytes, newRespData []byte
-		interceptorRespBytes, _ = json.Marshal(interceptorResp)
-		newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
-		rts.res.Body = io.NopCloser(bytes.NewReader(newRespData))
+		var interceptorRespBytes []byte
+		transResp := oauth.TransportResponse{
+			OriginalResponse:    string(respData),
+			InterceptorResponse: interceptorResp,
+		}
+		interceptorRespBytes, _ = json.Marshal(transResp)
+		// newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
+		rts.res.Body = io.NopCloser(bytes.NewReader(interceptorRespBytes))
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
+		return nil, fmt.Errorf("failed to get auth error category: %w", err)
 	}
 	if authErrorCategory == oauth.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
@@ -183,6 +184,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		interceptorResp.StatusCode = http.StatusBadRequest
 	}
 	applyInterceptorRespToHttpResp()
+	// when error is not nil, the response sent will be ignored(downstream)
 	return rts.res, err
 }
 
@@ -220,9 +222,9 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		DestDefName: rts.destination.DestDefName,
 	}
 	rts.req = req
-	res := t.preRoundTrip(rts)
-	if res != nil {
-		return res, nil
+	errorHttpResponse := t.preRoundTrip(rts)
+	if errorHttpResponse != nil {
+		return errorHttpResponse, nil
 	}
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {

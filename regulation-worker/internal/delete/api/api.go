@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -94,9 +95,9 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	isOAuthEnabled := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
+	isOAuth := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
 	var oAuthDetail oauthDetail
-	if isOAuthEnabled && !api.IsOAuthV2Enabled {
+	if isOAuth && !api.IsOAuthV2Enabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
@@ -110,7 +111,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 	}
 
-	if isOAuthEnabled && api.IsOAuthV2Enabled {
+	if isOAuth && api.IsOAuthV2Enabled {
 		dest := &oauthv2.DestinationInfo{
 			WorkspaceID:   job.WorkspaceID,
 			DestDefName:   destination.Name,
@@ -142,14 +143,36 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	if err != nil {
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
+	stCd := resp.StatusCode
+	respBodyBytes := bodyBytes
+	// Post response work to be done for OAuthV2
+	if isOAuth && api.IsOAuthV2Enabled {
+		transportResponse := oauthv2.TransportResponse{} // initing to prevent panic
+		err = json.Unmarshal(bodyBytes, &transportResponse)
+		if err == nil && strings.TrimSpace(transportResponse.OriginalResponse) != "" {
+			// most probably it was thrown before postRoundTrip through interceptor itself
+			respBodyBytes = []byte(transportResponse.OriginalResponse) // setting original response
+		}
+		if transportResponse.InterceptorResponse.StatusCode > 0 {
+			stCd = transportResponse.InterceptorResponse.StatusCode
+		}
+		if strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
+			pkgLogger.Debugf("Actual response received: %v", respBodyBytes)
+			// Update the same error response to all as the response received would be []JobRespSchema
+			respBodyBytes, err = sjson.SetRawBytes(respBodyBytes, "#.error", []byte(transportResponse.InterceptorResponse.Response))
+			if err != nil {
+				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+			}
+		}
+	}
 	return api.PostResponse(ctx, PostResponseParams{
 		destination:              destination,
 		job:                      job,
-		isOAuthEnabled:           isOAuthEnabled,
+		isOAuthEnabled:           isOAuth,
 		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 		oAuthDetail:              oAuthDetail,
-		responseBodyBytes:        bodyBytes,
-		responseStatusCode:       resp.StatusCode,
+		responseBodyBytes:        respBodyBytes,
+		responseStatusCode:       stCd,
 	})
 }
 
