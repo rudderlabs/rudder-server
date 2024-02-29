@@ -1362,17 +1362,18 @@ func (rs *Redshift) ShouldMerge(tableName string) bool {
 		// backwards compatibility.
 		return !slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
 	}
-	// It's important to check the ability to append after skipDedup to make sure that if both
-	// skipDedupDestinationIDs and skipComputingUserLatestTraits are set, we still merge.
-	// see hyperverge user table use case for more details.
-	if !rs.Uploader.CanAppend() {
-		return true
-	}
 
 	const redshiftProd = "2PrzkaidKjWD7xOqEHDEtCJVxh2"
 	// TODO fix hardcoded destination
 	if rs.Warehouse.Destination.ID == redshiftProd && slices.Contains(rs.config.appendOnlyTables, tableName) {
 		return false
+	}
+
+	// It's important to check the ability to append after skipDedup to make sure that if both
+	// skipDedupDestinationIDs and skipComputingUserLatestTraits are set, we still merge.
+	// see hyperverge user table use case for more details.
+	if !rs.Uploader.CanAppend() {
+		return true
 	}
 
 	return !rs.Warehouse.GetPreferAppendSetting() &&

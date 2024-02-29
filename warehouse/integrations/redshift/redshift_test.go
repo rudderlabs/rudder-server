@@ -1090,7 +1090,7 @@ func TestRedshift_ShouldMerge(t *testing.T) {
 
 			rs.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					ID: "2PrzkaidKjWD7xOqEHDEtCJVxh2", //TODO fixme
+					ID: "2PrzkaidKjWD7xOqEHDEtCJVxh2", // TODO fixme
 					Config: map[string]any{
 						model.PreferAppendSetting.String(): tc.preferAppend,
 					},
