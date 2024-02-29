@@ -16,7 +16,7 @@ type adaptiveThrottleConfig struct {
 	maxLimit func() int64
 }
 
-const DefaultMaxLimit = 1000 // 1000 requests per second
+const adaptiveDefaultMaxLimit = 1000 // 1000 requests per second
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
 	c.window = config.GetReloadableDurationVar(1, time.Second,
@@ -38,7 +38,7 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 	limit := config.GetReloadableInt64Var(0, 1,
 		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
+	defaultMaxLimit := config.GetReloadableInt64Var(adaptiveDefaultMaxLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
 	c.maxLimit = func() int64 {
 		maxLimit := maxLimit.Load()
 		staticLimit := limit.Load()
