@@ -208,7 +208,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 
 	// appendOnlyTables is a workaround with limited support.
 	rs.config.appendOnlyTables = conf.GetStringSlice("Warehouse.redshift.appendOnlyTables", nil)
-
+	rs.logger.Infof("RS: appendOnlyTables: %v", rs.config.appendOnlyTables)
 	return rs
 }
 
