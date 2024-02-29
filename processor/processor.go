@@ -126,7 +126,6 @@ type Handle struct {
 		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
 		sourceIdSourceMap               map[string]backendconfig.SourceT
 		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap          map[string]string
 		oneTrustConsentCategoriesMap    map[string][]string
 		ketchConsentCategoriesMap       map[string][]string
 		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
@@ -794,7 +793,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap          = make(map[string]string)
 			eventAuditEnabled               = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
@@ -805,7 +803,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					sourceIdDestinationMap[source.ID] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
-						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
@@ -827,7 +824,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
-		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
@@ -2392,6 +2388,7 @@ func (proc *Handle) transformSrcDest(
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
+	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
 		SourceType:           eventList[0].Metadata.SourceType,
@@ -2400,7 +2397,7 @@ func (proc *Handle) transformSrcDest(
 		Namespace:            config.GetKubeNamespace(),
 		InstanceID:           misc.GetInstanceID(),
 		DestinationID:        destID,
-		DestinationType:      destination.DestinationDefinition.Name,
+		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
 	}
 
@@ -2412,7 +2409,6 @@ func (proc *Handle) transformSrcDest(
 	droppedJobs := make([]*jobsdb.JobT, 0)
 
 	proc.config.configSubscriberLock.RLock()
-	destType := proc.config.destinationIDtoTypeMap[destID]
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
 
