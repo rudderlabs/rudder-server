@@ -788,13 +788,11 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	var respStatusCode int
-	var respBodyTemp, contentType string
 	if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
 		if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
 			w.logger.Debugf(`Sending for OAuth destination`)
 			// Token from header of the request
-			respStatusCode, respBodyTemp, contentType = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
+			respStatusCode, respBodyTemp, contentType := w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
 				ctx:            ctx,
 				destinationJob: destinationJob,
 				workerID:       w.id,
@@ -807,7 +805,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
 			proxyRequestResponse.RespContentType = contentType
 		} else if oauthV2Enabled {
-			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
+			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, proxyRequestResponse.ProxyRequestStatusCode, proxyRequestResponse.ProxyRequestResponseBody)
 			proxyRequestResponse.RespContentType = contentType
 		}
 	}
