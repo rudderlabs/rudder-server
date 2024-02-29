@@ -790,26 +790,27 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
 	var respStatusCode int
 	var respBodyTemp, contentType string
-	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && !oauthV2Enabled {
-		w.logger.Debugf(`Sending for OAuth destination`)
-		// Token from header of the request
-		respStatusCode, respBodyTemp, contentType = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
-			ctx:            ctx,
-			destinationJob: destinationJob,
-			workerID:       w.id,
-			trRespStCd:     proxyRequestResponse.ProxyRequestStatusCode,
-			trRespBody:     proxyRequestResponse.ProxyRequestResponseBody,
-			secret:         m[0].Secret,
-			contentType:    proxyRequestResponse.RespContentType,
-		}, proxyRequestResponse.OAuthErrorCategory)
+	if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+		if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
+			w.logger.Debugf(`Sending for OAuth destination`)
+			// Token from header of the request
+			respStatusCode, respBodyTemp, contentType = w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
+				ctx:            ctx,
+				destinationJob: destinationJob,
+				workerID:       w.id,
+				trRespStCd:     proxyRequestResponse.ProxyRequestStatusCode,
+				trRespBody:     proxyRequestResponse.ProxyRequestResponseBody,
+				secret:         m[0].Secret,
+				contentType:    proxyRequestResponse.RespContentType,
+			}, proxyRequestResponse.OAuthErrorCategory)
 
-	} else {
-		respStatusCode = proxyRequestResponse.ProxyRequestStatusCode
-		respBodyTemp = proxyRequestResponse.ProxyRequestResponseBody
-		contentType = proxyRequestResponse.RespContentType
+			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
+			proxyRequestResponse.RespContentType = contentType
+		} else if oauthV2Enabled {
+			proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
+			proxyRequestResponse.RespContentType = contentType
+		}
 	}
-	proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
-	proxyRequestResponse.RespContentType = contentType
 	return proxyRequestResponse
 }
 
