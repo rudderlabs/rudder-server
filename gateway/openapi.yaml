@@ -1,0 +1,939 @@
+openapi: 3.0.3
+info:
+  title: RudderStack HTTP API
+  version: 1.0.0-oas3
+  description: >-
+    The RudderStack HTTP API lets you track your customer event data and route
+    it to your desired destinations.
+  termsOfService: https://www.rudderstack.com/master-service-agreement/
+  contact:
+    email: support@rudderstack.com
+  license:
+    name: Elastic License 2.0
+    url: https://www.elastic.co/licensing/elastic-license
+paths:
+  /v1/identify:
+    post:
+      tags:
+        - HTTP API
+      summary: Identify
+      description: >-
+        The identify call lets you associate a visiting user to their actions
+        and record any associated traits.
+      operationId: Identify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentifyPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/track:
+    post:
+      tags:
+        - HTTP API
+      summary: Track
+      description: >-
+        The track call lets you track user actions along with any properties
+        associated with them.
+      operationId: Track
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/page:
+    post:
+      tags:
+        - HTTP API
+      summary: Page
+      description: >-
+        The page call lets you record your website’s page views with any
+        additional relevant information about the viewed page.
+      operationId: Page
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagePayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/screen:
+    post:
+      tags:
+        - HTTP API
+      summary: Screen
+      description: >-
+        The screen call is the mobile equivalent of the page call. It lets you
+        record whenever your user views their mobile screen with any additional
+        relevant information about the screen.
+      operationId: Screen
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScreenPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/group:
+    post:
+      tags:
+        - HTTP API
+      summary: Group
+      description: >-
+        The group call lets you link an identified user with a group such as a
+        company, organization, or an account. It also lets you record any custom
+        traits associated with that group, like the name of the company, the
+        number of employees, etc.
+      operationId: Group
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/alias:
+    post:
+      tags:
+        - HTTP API
+      summary: Alias
+      description: The alias call lets you merge different identities of a known user.
+      operationId: Alias
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AliasPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /v1/batch:
+    post:
+      tags:
+        - HTTP API
+      summary: Batch
+      description: >-
+        The batch call enables you to send a batch of events (identify, track,
+        page, group, screen, alias) in a single request.
+      operationId: Batch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPayload'
+        required: true
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /internal/v1/extract:
+    post:
+      tags:
+        - Internal API
+      summary: Extract
+      description: Handles extract requests.
+      operationId: Extract
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /internal/v1/retl:
+    post:
+      tags:
+        - Internal API
+      summary: Retl
+      description: Handles retl (reverse ETL) requests.
+      operationId: Retl
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - sourceIDAuth: []
+  /internal/v1/audiencelist:
+    post:
+      tags:
+        - Internal API
+      summary: Audience List
+      description: Handles audience list requests.
+      operationId: AudienceList
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - writeKeyAuth: []
+  /internal/v1/replay:
+    post:
+      tags:
+        - Internal API
+      summary: Replay
+      description: Handles replay requests.
+      operationId: Replay
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+        '404':
+          description: StatusNotFound
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Source does not accept webhook events"
+        '413':
+          description: StatusRequestEntityTooLarge
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Request size too large"
+        '429':
+          description: StatusTooManyRequests
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Too many requests"
+      security:
+        - sourceIDAuth: []
+  /internal/v1/batch:
+    post:
+      tags:
+        - Internal API
+      summary: Batch
+      description: Handles internal batch requests.
+      operationId: InternalBatch
+      responses:
+        '200':
+          description: StatusOK
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "OK"
+        '400':
+          description: StatusBadRequest
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid request"
+        '401':
+          description: StatusUnauthorized
+          content:
+            text/plain; charset=utf-8:
+              schema:
+                type: string
+              example: "Invalid Authorization Header"
+      security:
+        - sourceIDAuth: []
+servers:
+  - url: /v1
+components:
+  securitySchemes:
+    writeKeyAuth:
+      type: http
+      scheme: basic
+      description: Write Key Basic Authentication
+    sourceIDAuth:
+      type: http
+      scheme: basic
+      description: SourceID Basic Authentication
+  schemas:
+    IdentifyPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            traits:
+              type: object
+              properties:
+                trait1:
+                  type: string
+                  description: New value for trait1.
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    TrackPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        event:
+          type: string
+          description: Name of the event being performed by the user.
+        properties:
+          type: object
+          description: Dictionary of the properties associated with a particular event.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    PagePayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        name:
+          type: string
+          description: Name of the page being viewed.
+        properties:
+          type: object
+          description: Dictionary of the properties associated with a particular event.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    ScreenPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        name:
+          type: string
+          description: Name of the screen being viewed.
+        properties:
+          type: object
+          description: >-
+            Dictionary of the properties associated with the page being viewed,
+            such as url and referrer.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    GroupPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        anonymousId:
+          type: string
+          description: >-
+            Sets the user ID for cases where there is no unique identifier for
+            the user.
+        groupId:
+          type: string
+          description: Unique identifier of the group, as present in your database.
+        traits:
+          type: object
+          description: >-
+            Dictionary of the traits associated with the group, such as name or
+            email.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            traits:
+              type: object
+              properties:
+                trait1:
+                  type: string
+                  description: New value for trait1.
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    AliasPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unique identifier for a particular user in your database.
+        previousId:
+          type: string
+          description: The previous unique identifier of the user.
+        context:
+          type: object
+          description: Dictionary of information that provides context about a message.
+          properties:
+            traits:
+              type: object
+              properties:
+                trait1:
+                  type: string
+                  description: New value for trait1.
+            ip:
+              type: string
+              description: IP address.
+            library:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the library.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of the message’s arrival.
+    BatchPayload:
+      type: object
+      properties:
+        batch:
+          type: array
+          items:
+            type: object
+            allOf:
+              - $ref: '#/components/schemas/IdentifyPayload'
+              - $ref: '#/components/schemas/TrackPayload'
+              - $ref: '#/components/schemas/PagePayload'
+              - $ref: '#/components/schemas/ScreenPayload'
+              - $ref: '#/components/schemas/GroupPayload'
+              - $ref: '#/components/schemas/AliasPayload'
+            properties:
+              userId:
+                type: string
+              anonymousId:
+                type: string
+              type:
+                type: string
+              context:
+                type: object
+                properties:
+                  traits:
+                    type: object
+                    properties:
+                      trait1:
+                        type: string
+                  ip:
+                    type: string
+                  library:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+              timestamp:
+                type: string
+      required:
+        - batch

@@ -229,28 +229,6 @@ func (brt *Handle) updateRudderSourcesStats(
 	return nil
 }
 
-func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	eventsPerStateAndCode := map[string]map[string]int{}
-	for i := range statusList {
-		state := statusList[i].JobState
-		code := statusList[i].ErrorCode
-		if _, ok := eventsPerStateAndCode[state]; !ok {
-			eventsPerStateAndCode[state] = map[string]int{}
-		}
-		eventsPerStateAndCode[state][code]++
-	}
-	for state, codes := range eventsPerStateAndCode {
-		for code, count := range codes {
-			stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-				"module":   "batch_router",
-				"destType": brt.destType,
-				"state":    state,
-				"code":     code,
-			}).Count(count)
-		}
-	}
-}
-
 // pipelineDelayStats reports the delay of the pipeline as a range:
 //
 // - max - time elapsed since the first job was created

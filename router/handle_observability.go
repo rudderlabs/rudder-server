@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -102,28 +103,6 @@ func (rt *Handle) updateRudderSourcesStats(
 	return err
 }
 
-func (rt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	eventsPerStateAndCode := map[string]map[string]int{}
-	for i := range statusList {
-		state := statusList[i].JobState
-		code := statusList[i].ErrorCode
-		if _, ok := eventsPerStateAndCode[state]; !ok {
-			eventsPerStateAndCode[state] = map[string]int{}
-		}
-		eventsPerStateAndCode[state][code]++
-	}
-	for state, codes := range eventsPerStateAndCode {
-		for code, count := range codes {
-			stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-				"module":   "router",
-				"destType": rt.destType,
-				"state":    state,
-				"code":     code,
-			}).Count(count)
-		}
-	}
-}
-
 func (rt *Handle) sendRetryStoreStats(attempt int) {
 	rt.logger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
@@ -159,13 +138,13 @@ func (rt *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT)
 
 // eventOrderDebugInfo provides some debug information for the given orderKey in case of a panic.
 // Top 100 job statuses for the given orderKey are returned.
-func (rt *Handle) eventOrderDebugInfo(orderKey string) (res string) {
+func (rt *Handle) eventOrderDebugInfo(orderKey eventorder.BarrierKey) (res string) {
 	defer func() {
 		if r := recover(); r != nil {
 			res = fmt.Sprintf("panic in EventOrderDebugInfo: %v", r)
 		}
 	}()
-	userID, destinationID := parseJobOrderKey(orderKey)
+	userID, destinationID := orderKey.UserID, orderKey.DestinationID
 	if err := rt.jobsDB.WithTx(func(tx *Tx) error {
 		rows, err := tx.Query(`SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
 		if err != nil {

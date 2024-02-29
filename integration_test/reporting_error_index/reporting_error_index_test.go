@@ -15,27 +15,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/jobsdb"
-
-	"github.com/rudderlabs/rudder-server/processor/transformer"
-
+	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
-
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 func TestReportingErrorIndex(t *testing.T) {
@@ -74,9 +71,9 @@ func TestReportingErrorIndex(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -148,9 +145,9 @@ func TestReportingErrorIndex(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -220,9 +217,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -293,9 +290,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -365,9 +362,9 @@ func TestReportingErrorIndex(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		postgresContainer, err := resource.SetupPostgres(pool, t)
+		postgresContainer, err := postgres.Setup(pool, t)
 		require.NoError(t, err)
-		minioResource, err := resource.SetupMinio(pool, t)
+		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -443,9 +440,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -518,9 +515,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -593,9 +590,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -645,9 +642,9 @@ func TestReportingErrorIndex(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			postgresContainer, err := resource.SetupPostgres(pool, t)
+			postgresContainer, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
-			minioResource, err := resource.SetupMinio(pool, t)
+			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)
 
 			bcServer := backendconfigtest.NewBuilder().
@@ -725,8 +722,8 @@ func TestReportingErrorIndex(t *testing.T) {
 func runRudderServer(
 	ctx context.Context,
 	port int,
-	postgresContainer *resource.PostgresResource,
-	minioResource *resource.MinioResource,
+	postgresContainer *postgres.Resource,
+	minioResource *minio.Resource,
 	cbURL, transformerURL, tmpDir string,
 ) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
@@ -804,7 +801,7 @@ func requireJobsCount(
 func requireMessagesCount(
 	t *testing.T,
 	ctx context.Context,
-	mr *resource.MinioResource,
+	mr *minio.Resource,
 	expectedCount int,
 	filters ...lo.Tuple2[string, string],
 ) {

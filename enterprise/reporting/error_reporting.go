@@ -505,16 +505,18 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				ReportedAt: firstReport.ReportedAt * 60 * 1000,
 			},
 		}
-		var errs []types.EDErrorDetails
-
-		reportsCountMap := lo.CountValuesBy(reports, func(rep *types.EDReportsDB) types.EDErrorDetails {
-			return types.EDErrorDetails{
+		messageMap := make(map[string]int)
+		reportsCountMap := make(map[types.EDErrorDetails]int64)
+		for index, rep := range reports {
+			messageMap[rep.EDErrorDetails.ErrorMessage] = index
+			errDet := types.EDErrorDetails{
 				StatusCode:   rep.StatusCode,
 				ErrorCode:    rep.ErrorCode,
 				ErrorMessage: rep.ErrorMessage,
 				EventType:    rep.EventType,
 			}
-		})
+			reportsCountMap[errDet] += rep.Count
+		}
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
 		sort.SliceStable(reportGrpKeys, func(i, j int) bool {
@@ -525,15 +527,15 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		for _, rep := range reportGrpKeys {
-			errs = append(errs, types.EDErrorDetails{
+		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
+			return types.EDErrorDetails{
 				StatusCode:   rep.StatusCode,
 				ErrorCode:    rep.ErrorCode,
 				ErrorMessage: rep.ErrorMessage,
 				EventType:    rep.EventType,
-				Count:        reportsCountMap[rep],
-			})
-		}
+				Count:        count,
+			}
+		})
 		edrSchema.Errors = errs
 		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}

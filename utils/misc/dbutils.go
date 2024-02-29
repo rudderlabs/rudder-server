@@ -72,7 +72,6 @@ func ReplaceDB(dbName, targetName string, c *config.Config) {
 		dbName, targetName)
 	pkgLogger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
-
 	// If execution of ALTER returns error, pacicking
 	if err != nil {
 		panic(err)

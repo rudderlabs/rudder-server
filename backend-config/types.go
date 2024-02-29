@@ -78,21 +78,6 @@ func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
 }
 
-type WorkspaceRegulationT struct {
-	ID             string
-	RegulationType string
-	WorkspaceID    string
-	UserID         string
-}
-
-type SourceRegulationT struct {
-	ID             string
-	RegulationType string
-	WorkspaceID    string
-	SourceID       string
-	UserID         string
-}
-
 type ConfigT struct {
 	EnableMetrics   bool                         `json:"enableMetrics"`
 	WorkspaceID     string                       `json:"workspaceId"`
@@ -169,24 +154,6 @@ func (sp StoragePreferences) Backup(tableprefix string) bool {
 type ConnectionFlags struct {
 	URL      string          `json:"url"`
 	Services map[string]bool `json:"services"`
-}
-
-type WRegulationsT struct {
-	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
-	Start                int                    `json:"start"`
-	Limit                int                    `json:"limit"`
-	Size                 int                    `json:"size"`
-	End                  bool                   `json:"end"`
-	Next                 int                    `json:"next"`
-}
-
-type SRegulationsT struct {
-	SourceRegulations []SourceRegulationT `json:"sourceRegulations"`
-	Start             int                 `json:"start"`
-	Limit             int                 `json:"limit"`
-	Size              int                 `json:"size"`
-	End               bool                `json:"end"`
-	Next              int                 `json:"next"`
 }
 
 type TransformationT struct {

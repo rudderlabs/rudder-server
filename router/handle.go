@@ -45,6 +45,8 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const module = "router"
+
 // Handle is the handle to this module.
 type Handle struct {
 	// external dependencies
@@ -107,6 +109,9 @@ type Handle struct {
 	backgroundWait                 func() error
 	startEnded                     chan struct{}
 	barrier                        *eventorder.Barrier
+
+	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
+	eventOrderingDisabledForDestination func(destinationID string) bool
 
 	limiter struct {
 		pickup    kitsync.Limiter
@@ -184,13 +189,14 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	type reservedJob struct {
-		slot *workerSlot
-		job  *jobsdb.JobT
+		slot        *workerSlot
+		job         *jobsdb.JobT
+		drainReason string
 	}
 
 	var statusList []*jobsdb.JobStatusT
 	var reservedJobs []reservedJob
-	blockedOrderKeys := make(map[string]struct{})
+	blockedOrderKeys := make(map[eventorder.BarrierKey]struct{})
 
 	flushTime := time.Now()
 	shouldFlush := func() bool {
@@ -210,7 +216,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
-			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason})
 		}
 		pickupCount += len(reservedJobs)
 		reservedJobs = nil
@@ -236,7 +242,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			firstJob = job
 		}
 		lastJob = job
-		slot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
+		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
 		if err == nil {
 			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
 			if traceParent != "" {
@@ -267,7 +273,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
-			reservedJobs = append(reservedJobs, reservedJob{slot: slot, job: job})
+			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason})
 			if shouldFlush() {
 				flush()
 			}
@@ -324,6 +330,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
+	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, workerJobStatus := range *workerJobStatuses {
 		var parameters routerutils.JobParameters
 		err := json.Unmarshal(workerJobStatus.job.Parameters, &parameters)
@@ -337,6 +344,10 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		workspaceID := workerJobStatus.status.WorkspaceId
 		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
+			SourceID:      parameters.SourceID,
+			DestinationID: parameters.DestinationID,
+		}
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
@@ -454,7 +465,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		if err != nil {
 			panic(err)
 		}
-		rt.updateProcessedEventsMetrics(statusList)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
 			rmetrics.DecreasePendingEvents(
 				"rt",
@@ -472,8 +483,18 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			userID := resp.userID
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
-				orderKey := jobOrderKey(userID, gjson.GetBytes(resp.job.Parameters, "destination_id").String())
-				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.id, resp.status.JobID, orderKey, status)
+				orderKey := eventorder.BarrierKey{
+					UserID:        userID,
+					DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
+					WorkspaceID:   resp.job.WorkspaceId,
+				}
+				rt.logger.Debugw(
+					"EventOrder",
+					"worker#", worker.id,
+					"jobID", resp.status.JobID,
+					"key", orderKey.String(),
+					"jobState", status,
+				)
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
 				}
@@ -509,7 +530,12 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 	return params
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
+type workerJobSlot struct {
+	slot        *workerSlot
+	drainReason string
+}
+
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
@@ -520,33 +546,46 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrParamsUnmarshal
 	}
 
-	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+	orderKey := eventorder.BarrierKey{
+		UserID:        job.UserID,
+		DestinationID: parameters.DestinationID,
+		WorkspaceID:   job.WorkspaceId,
+	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
-	if !eventOrderingDisabled && rt.barrier.Disabled(orderKey) {
+	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
+		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
+			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
 		eventOrderingDisabled = true
 		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
 			"destType":      rt.destType,
 			"destinationId": parameters.DestinationID,
+			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
+	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
 			return nil, types.ErrWorkerNoSlot
 		}
+		slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot()
+		if slot == nil {
+			return nil, types.ErrWorkerNoSlot
+		}
+		if abortedJob {
+			return &workerJobSlot{slot: slot, drainReason: abortReason}, nil
+		}
 		if rt.shouldBackoff(job) {
+			slot.Release()
 			return nil, types.ErrJobBackoff
 		}
 		if rt.shouldThrottle(ctx, job, parameters) {
+			slot.Release()
 			return nil, types.ErrDestinationThrottled
 		}
 
-		if slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot(); slot != nil { // skipcq: GSC-G404
-			return slot, nil
-		}
-		return nil, types.ErrWorkerNoSlot
-
+		return &workerJobSlot{slot: slot}, nil
 	}
 
 	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
@@ -557,7 +596,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	}
 
 	//#JobOrder (see other #JobOrder comment)
-	if rt.shouldBackoff(job) { // backoff
+	if !abortedJob && rt.shouldBackoff(job) { // backoff
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrJobBackoff
 	}
@@ -579,14 +618,57 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if rt.shouldThrottle(ctx, job, parameters) {
+	if !abortedJob && rt.shouldThrottle(ctx, job, parameters) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
 		return nil, types.ErrDestinationThrottled
 	}
-	return slot, nil
+	return &workerJobSlot{slot: slot, drainReason: abortReason}, nil
 	//#EndJobOrder
+}
+
+// checks if job is configured to drain or if it's retry limit is reached
+func (rt *Handle) drainOrRetryLimitReached(job *jobsdb.JobT) (bool, string) {
+	drain, reason := rt.drainer.Drain(job)
+	if drain {
+		return true, reason
+	}
+	retryLimitReached := rt.retryLimitReached(&job.LastJobStatus)
+	if retryLimitReached {
+		return true, "retry limit reached"
+	}
+	return false, ""
+}
+
+func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
+	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
+	switch respStatusCode {
+	case types.RouterTimedOutStatusCode,
+		types.RouterUnMarshalErrorCode: // 5xx errors
+		return false
+	}
+
+	if respStatusCode < http.StatusInternalServerError {
+		return false
+	}
+
+	firstAttemptedAtTime := time.Now()
+	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
+		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
+			firstAttemptedAtTime = t
+		}
+	}
+
+	maxFailedCountForJob := rt.reloadableConfig.maxFailedCountForJob.Load()
+	retryTimeWindow := rt.reloadableConfig.retryTimeWindow.Load()
+	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+		maxFailedCountForJob = rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
+		retryTimeWindow = rt.reloadableConfig.sourcesRetryTimeWindow.Load()
+	}
+
+	return time.Since(firstAttemptedAtTime) > retryTimeWindow &&
+		status.AttemptNum >= maxFailedCountForJob // retry time window exceeded
 }
 
 func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {

@@ -10,18 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestRouter_CanCreateUpload(t *testing.T) {
@@ -362,7 +360,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := resource.SetupPostgres(pool, t)
+			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
 			db := sqlmiddleware.New(pgResource.DB)

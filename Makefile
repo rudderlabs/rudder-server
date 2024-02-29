@@ -3,6 +3,7 @@
 GO=go
 LDFLAGS?=-s -w
 TESTFILE=_testok
+MOUNT_PATH=/local
 
 default: build
 
@@ -86,7 +87,7 @@ install-tools:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 	go install gotest.tools/gotestsum@v1.10.0
 	go install golang.org/x/tools/cmd/goimports@latest
-	bash ./scripts/install-golangci-lint.sh v1.55.0
+	bash ./scripts/install-golangci-lint.sh v1.55.2
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
@@ -106,3 +107,12 @@ proto: install-tools ## Generate protobuf files
 .PHONY: bench-kafka
 bench-kafka:
 	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
+
+.PHONY: generate-openapi-spec
+generate-openapi-spec: install-tools
+	docker run --rm \
+	  -v ${PWD}:${MOUNT_PATH} openapitools/openapi-generator-cli:v7.3.0 generate \
+	  -i ${MOUNT_PATH}/gateway/openapi.yaml \
+	  -g html2 \
+	  -o ${MOUNT_PATH}/gateway/openapi
+

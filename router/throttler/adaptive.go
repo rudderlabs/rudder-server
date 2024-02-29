@@ -92,3 +92,7 @@ func (t *adaptiveThrottler) getLimit() int64 {
 	limit := int64(float64(t.config.maxLimit()) * limitFactor)
 	return max(t.config.minLimit.Load(), limit)
 }
+
+func (t *adaptiveThrottler) getTimeWindow() time.Duration {
+	return t.config.window.Load()
+}
