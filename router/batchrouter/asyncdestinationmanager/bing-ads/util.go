@@ -399,7 +399,7 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
 		rowname := record[typeIndex]
-		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
+		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Item Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
 				// expecting the client ID is present as jobId<<>>clientId
 				clientId, err := newClientIDFromString(record[clientIDIndex])
