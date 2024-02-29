@@ -804,16 +804,8 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		}, proxyRequestResponse.OAuthErrorCategory)
 
 	} else {
-		interceptorInfo := oauthv2.OAuthTransportResponse{
-			Response:   proxyRequestResponse.ProxyRequestResponseBody,
-			StatusCode: proxyRequestResponse.ProxyRequestStatusCode,
-		}
-		if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth && oauthV2Enabled {
-			_ = json.Unmarshal([]byte(gjson.GetBytes([]byte(proxyRequestResponse.ProxyRequestResponseBody), "interceptorResponse").Raw), &interceptorInfo)
-		}
-
-		respStatusCode = interceptorInfo.StatusCode
-		respBodyTemp = interceptorInfo.Response
+		respStatusCode = proxyRequestResponse.ProxyRequestStatusCode
+		respBodyTemp = proxyRequestResponse.ProxyRequestResponseBody
 		contentType = proxyRequestResponse.RespContentType
 	}
 	proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
