@@ -1247,7 +1247,14 @@ func (rs *Redshift) Cleanup(ctx context.Context) {
 }
 
 func (rs *Redshift) CrashRecover(ctx context.Context) error {
-	return rs.dropDanglingStagingTables(ctx)
+	err := rs.dropDanglingStagingTables(ctx)
+	if err != nil {
+		rs.logger.Errorw("Error dropping dangling staging tables",
+			logfield.Error, err.Error(),
+		)
+	}
+
+	return nil
 }
 
 func (*Redshift) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
