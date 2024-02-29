@@ -207,7 +207,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 
 	// appendOnlyTables is a workaround with limited support.
-	rs.config.appendOnlyTables = conf.GetStringSlice("Warehouse.redshift.appendOnlyTables", nil)
+	rs.config.appendOnlyTables = conf.GetStringSlice("Warehouse.redshift.appendOnlyTablesForDestination", nil)
 
 	return rs
 }
@@ -1362,7 +1362,9 @@ func (rs *Redshift) ShouldMerge(tableName string) bool {
 		return true
 	}
 
-	if slices.Contains(rs.config.appendOnlyTables, tableName) {
+	const redshiftProd = "2PrzkaidKjWD7xOqEHDEtCJVxh2"
+	//TODO fix hardcoded destination
+	if rs.Warehouse.Destination.ID == redshiftProd && slices.Contains(rs.config.appendOnlyTables, tableName) {
 		return false
 	}
 
