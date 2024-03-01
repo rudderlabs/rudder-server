@@ -214,6 +214,12 @@ func (*mockWorkerHandle) stats() *processorStats {
 		DBReadThroughput: func(partition string) stats.Measurement {
 			return stats.Default.NewStat("db_read_throughput", stats.CountType)
 		},
+		statDBReadOutOfOrder: func(partition string) stats.Measurement {
+			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
+		},
+		statDBReadOutOfSequence: func(partition string) stats.Measurement {
+			return stats.NOP.NewStat("db_read_out_of_sequence", stats.CountType)
+		},
 	}
 }
 
