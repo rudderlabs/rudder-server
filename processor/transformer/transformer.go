@@ -183,7 +183,7 @@ type handle struct {
 	guardConcurrency chan struct{}
 
 	config struct {
-		useFasthttpClient      bool
+		useFasthttpClient      func() bool
 		maxConcurrency         int
 		maxHTTPConnections     int
 		maxHTTPIdleConnections int
@@ -213,7 +213,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.receivedStat = stat.NewStat("processor.transformer_received", stats.CountType)
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
-	trans.config.useFasthttpClient = conf.GetBool("Transformer.Client.useFasthttpClient", true)
+	trans.config.useFasthttpClient = func() bool { return conf.GetBool("Transformer.Client.useFasthttp", true) }
 	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
@@ -399,7 +399,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
 
 	var postFunc func(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int)
-	if trans.config.useFasthttpClient {
+	if trans.config.useFasthttpClient() {
 		postFunc = trans.doFasthttpPost
 	} else {
 		postFunc = trans.doPost
