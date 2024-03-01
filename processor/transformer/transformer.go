@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -186,6 +187,7 @@ type handle struct {
 		maxConcurrency         int
 		maxHTTPConnections     int
 		maxHTTPIdleConnections int
+		maxIdleConnDuration    time.Duration
 		disableKeepAlives      bool
 
 		timeoutDuration time.Duration
@@ -215,6 +217,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
+	trans.config.maxIdleConnDuration = conf.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second)
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -232,7 +235,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 				DisableKeepAlives:   trans.config.disableKeepAlives,
 				MaxConnsPerHost:     trans.config.maxHTTPConnections,
 				MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-				IdleConnTimeout:     30 * time.Second,
+				IdleConnTimeout:     trans.config.maxIdleConnDuration,
 			},
 			Timeout: trans.config.timeoutDuration,
 		}
@@ -240,7 +243,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	if trans.fasthttpClient == nil {
 		trans.fasthttpClient = &fasthttp.Client{
 			MaxConnsPerHost:     trans.config.maxHTTPConnections,
-			MaxIdleConnDuration: 30 * time.Second,
+			MaxIdleConnDuration: trans.config.maxIdleConnDuration,
 			MaxConnWaitTimeout:  trans.config.timeoutDuration,
 		}
 	}
@@ -603,7 +606,7 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 				if trans.config.disableKeepAlives {
 					req.Header.SetConnectionClose()
 				}
-				req.Header.SetMethod("POST")
+				req.Header.SetMethod(fasthttp.MethodPost)
 				req.Header.SetContentType("application/json; charset=utf-8")
 				req.Header.Set("X-Feature-Gzip-Support", "?1")
 				req.Header.Set("X-Feature-Filter-Code", "?1")
@@ -632,7 +635,12 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
-			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
+			trans.logger.Warnn(
+				"JS HTTP connection error",
+				logger.NewField("URL", url),
+				logger.NewField("RetryCount", retryCount),
+				obskit.Error(err),
+			)
 		},
 	)
 	if err != nil {
@@ -646,7 +654,7 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 	}
 
 	// perform version compatibility check only on success
-	if statusCode == http.StatusOK {
+	if statusCode == fasthttp.StatusOK {
 		transformerAPIVersion, convErr := strconv.Atoi(string(apiVersion))
 		if convErr != nil {
 			transformerAPIVersion = 0
