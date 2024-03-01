@@ -485,7 +485,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 			trace.WithRegion(ctx, "request/post", func() {
 				var req *http.Request
-				req, reqErr = http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
+				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
 				if reqErr != nil {
 					return
 				}
@@ -514,7 +514,12 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
-			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
+			trans.logger.Warnn(
+				"JS HTTP connection error",
+				logger.NewStringField("URL", url),
+				logger.NewErrorField(err),
+				logger.NewIntField("attempts", int64(retryCount)),
+			)
 		},
 	)
 	if err != nil {
