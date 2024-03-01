@@ -33,6 +33,9 @@ func (d *DestinationInfo) GetAccountID(idKey string) string {
 	if !d.IsOAuthDestination() || !found || idKey == "" {
 		return ""
 	}
-	rudderAccountId, _ := rudderAccountIdInterface.(string)
+	rudderAccountId, err := rudderAccountIdInterface.(string)
+	if !err {
+		return ""
+	}
 	return rudderAccountId
 }

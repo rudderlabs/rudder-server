@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
@@ -82,6 +83,12 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 	if t.Augmenter != nil {
 		body, err := io.ReadAll(rts.req.Body)
 		if err != nil {
+			//TODO: log the error
+			t.log.Errorn("failed to read request body",
+				obskit.DestinationID(rts.destination.DestinationId),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DestDefName),
+				logger.NewStringField("flow", string(t.flow)))
 			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
 		}
 		statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
@@ -111,6 +118,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
+	t.log.Infon("response data", logger.NewStringField("response", string(respData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
@@ -214,12 +222,18 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		rts.accountId = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
 	}
 	if rts.accountId == "" {
+		t.log.Errorn("accountId not found for destination",
+			obskit.DestinationID(rts.destination.DestinationId),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DestDefName),
+			logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.DestinationId, t.flow))), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
 		AccountId:   rts.accountId,
 		WorkspaceId: rts.destination.WorkspaceID,
 		DestDefName: rts.destination.DestDefName,
+		Destination: rts.destination,
 	}
 	rts.req = req
 	errorHttpResponse := t.preRoundTrip(rts)
