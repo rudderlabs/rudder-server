@@ -613,6 +613,13 @@ var oauthV2RtTcs = []oauthV2TestCase{
 	{
 		// panic test-case
 		description: "when transformer response is not unmarshallable for quite sometime, after exhaustion of maxRetries(1) panic should happen",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
