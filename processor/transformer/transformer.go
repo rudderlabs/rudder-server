@@ -244,7 +244,6 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		trans.fasthttpClient = &fasthttp.Client{
 			MaxConnsPerHost:     trans.config.maxHTTPConnections,
 			MaxIdleConnDuration: trans.config.maxIdleConnDuration,
-			MaxConnWaitTimeout:  trans.config.timeoutDuration,
 		}
 	}
 
@@ -617,7 +616,11 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 				req.SetBody(rawJSON)
 
-				reqErr = trans.fasthttpClient.Do(req, resp)
+				reqErr = trans.fasthttpClient.DoTimeout(
+					req,
+					resp,
+					trans.config.timeoutDuration,
+				)
 			})
 			trans.requestTime(tags, time.Since(requestStartTime))
 			if reqErr != nil {
