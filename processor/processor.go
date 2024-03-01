@@ -175,8 +175,8 @@ type processorStats struct {
 	statDBReadRequests            func(partition string) stats.Measurement
 	statDBReadEvents              func(partition string) stats.Measurement
 	statDBReadPayloadBytes        func(partition string) stats.Measurement
-	StatDBReadOutOfOrder          func(partition string) stats.Measurement
-	StatDBReadOutOfSequence       func(partition string) stats.Measurement
+	statDBReadOutOfOrder          func(partition string) stats.Measurement
+	statDBReadOutOfSequence       func(partition string) stats.Measurement
 	statMarkExecuting             func(partition string) stats.Measurement
 	statDBWriteStatusTime         func(partition string) stats.Measurement
 	statDBWriteJobsTime           func(partition string) stats.Measurement
@@ -506,12 +506,12 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.StatDBReadOutOfOrder = func(partition string) stats.Measurement {
+	proc.stats.statDBReadOutOfOrder = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_order", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
 	}
-	proc.stats.StatDBReadOutOfSequence = func(partition string) stats.Measurement {
+	proc.stats.statDBReadOutOfSequence = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_sequence", stats.CountType, stats.Tags{
 			"partition": partition,
 		})

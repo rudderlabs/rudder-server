@@ -136,11 +136,19 @@ func (w *worker) Work() (worked bool) {
 	worked = true
 	for _, job := range jobs.Jobs {
 		if job.JobID <= w.lastJobID {
-			w.logger.Debugf("Out of order job_id: prev: %d cur: %d", w.lastJobID, job.JobID)
-			w.handle.stats().StatDBReadOutOfOrder(w.partition).Count(1)
+			w.logger.Debugn(
+				"Out of order job_id",
+				logger.NewIntField("prev", w.lastJobID),
+				logger.NewIntField("cur", job.JobID),
+			)
+			w.handle.stats().statDBReadOutOfOrder(w.partition).Count(1)
 		} else if w.lastJobID != 0 && job.JobID != w.lastJobID+1 {
-			w.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", w.lastJobID, job.JobID)
-			w.handle.stats().StatDBReadOutOfSequence(w.partition).Count(1)
+			w.logger.Debugn(
+				"Out of sequence job_id",
+				logger.NewIntField("prev", w.lastJobID),
+				logger.NewIntField("cur", job.JobID),
+			)
+			w.handle.stats().statDBReadOutOfSequence(w.partition).Count(1)
 		}
 		w.lastJobID = job.JobID
 	}
