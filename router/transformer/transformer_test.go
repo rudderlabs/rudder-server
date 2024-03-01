@@ -610,6 +610,14 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 		},
 	},
+	{
+		// panic test-case
+		description: "when transformer response is not unmarshallable for quite sometime, after exhaustion of maxRetries(1) panic should happen",
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
 }
 
 type mockIdentifier struct {
@@ -636,9 +644,17 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 		t.Run(tc.description, func(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-				b, err := json.Marshal(tc.routerTransformResponses)
-				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
+				var err error
+				outputJson := []byte("Reset Content")
+				statusCode := http.StatusResetContent
+				if tc.routerTransformResponses != nil {
+					var b []byte
+					b, err = json.Marshal(tc.routerTransformResponses)
+					outputJson, _ = sjson.SetRawBytes([]byte(`{}`), "output", b)
+					statusCode = http.StatusOK
+				}
 				require.NoError(t, err)
+				w.WriteHeader(statusCode)
 				_, err = w.Write(outputJson)
 				require.NoError(t, err)
 			}))
@@ -654,6 +670,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+			config.Set("Processor.maxRetry", 1) // no retries
 
 			backendconfig.Init()
 			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
@@ -664,17 +681,21 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				Data: tc.inputEvents,
 			}
 
-			transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMsg)
-			require.NotNil(t, transformerResponse)
+			if tc.expected != nil {
+				transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMsg)
+				require.NotNil(t, transformerResponse)
 
-			for i, ex := range tc.expected {
-				require.Equal(t, ex.Batched, transformerResponse[i].Batched, "Batched assertion failed")
-				require.Equal(t, ex.Message, transformerResponse[i].Message, "Message assertion failed")
-				require.Equal(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "AuthErrorCategory assertion failed")
-				require.Equal(t, ex.JobMetadataArray, transformerResponse[i].JobMetadataArray, "JobMetadataArray assertion failed")
-				require.Equal(t, ex.Error, transformerResponse[i].Error, "Error field assertion failed")
-				require.Equal(t, ex.StatusCode, transformerResponse[i].StatusCode, "StatusCode assertion failed")
+				for i, ex := range tc.expected {
+					require.Equalf(t, ex.Batched, transformerResponse[i].Batched, "[%i] Batched assertion failed", i)
+					require.Equalf(t, ex.Message, transformerResponse[i].Message, "[%i] Message assertion failed", i)
+					require.Equalf(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "[%i] AuthErrorCategory assertion failed", i)
+					require.Equalf(t, ex.JobMetadataArray, transformerResponse[i].JobMetadataArray, "[%i] JobMetadataArray assertion failed", i)
+					require.Equalf(t, ex.Error, transformerResponse[i].Error, "[%i] Error field assertion failed", i)
+					require.Equalf(t, ex.StatusCode, transformerResponse[i].StatusCode, "[%i] StatusCode assertion failed", i)
+				}
+				return
 			}
+			assert.Panics(t, func() { tr.Transform(ROUTER_TRANSFORM, &transformMsg) })
 		})
 	}
 }
@@ -696,6 +717,8 @@ type oauthv2ProxyTcs struct {
 	destination backendconfig.DestinationT
 
 	ioReadError bool
+	// load-balancer erroring out
+	lbError bool
 }
 
 var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
@@ -1123,6 +1146,114 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		destination: oauthDests[0],
 	},
+	{
+		description:  "[v1proxy] when transformer does not respond properly",
+		proxyVersion: "v1",
+		lbError:      true,
+		destType:     "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys:       map[int64]string{},
+			RespContentType: "text/plain; charset=utf-8",
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": failed to get auth error category: LB cannot send to transformer"
+			ProxyRequestResponseBody: `failed to get auth error category: LB cannot send to transformer`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v0proxy] when transformer does not respond properly",
+		proxyVersion: "v0",
+		lbError:      true,
+		destType:     "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				2: false,
+			},
+			RespBodys:       map[int64]string{},
+			RespContentType: "text/plain; charset=utf-8",
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": failed to get auth error category: LB cannot send to transformer"
+			ProxyRequestResponseBody: `failed to get auth error category: LB cannot send to transformer`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
 }
 
 func TestProxyRequestWithOAuthV2(t *testing.T) {
@@ -1140,8 +1271,14 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 		t.Run(tc.description, func(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-				var b []byte
+				b := []byte("LB cannot send to transformer")
+				statusCode := http.StatusBadGateway
 				var err error
+				if tc.lbError {
+					w.WriteHeader(statusCode)
+					_, _ = w.Write(b)
+					return
+				}
 				if tc.proxyVersion == "v1" {
 					b, _ = json.Marshal(tc.transformerProxyResponseV1)
 				} else if tc.proxyVersion == "v0" {

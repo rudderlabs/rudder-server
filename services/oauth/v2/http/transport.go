@@ -135,7 +135,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get auth error category: %w", err)
+		return nil, fmt.Errorf("failed to get auth error category: %s", string(respData))
 	}
 	if authErrorCategory == oauth.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
