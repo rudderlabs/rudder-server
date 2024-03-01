@@ -117,7 +117,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
-	t.log.Infon("response data", logger.NewStringField("response", string(respData)))
+	// t.log.Infon("response data", logger.NewStringField("response", string(respData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
@@ -146,11 +146,17 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
 		t.log.Infon("refreshing token")
-		statusCode, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
+		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
-			err = refErr
+			// err = refErr
 			interceptorResp.Response = refErr.Error()
 		}
+		// refresh token success(retry)
+		// refresh token failed
+		// It can be failed due to the following reasons
+		// 1. invalid grant(abort)
+		// 2. control plan api call failed(retry)
+		// 3. some error happened while returning from RefreshToken function(retry)
 		if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			// Setting the response we obtained from trying to Refresh the token
 			// errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
@@ -168,17 +174,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			applyInterceptorRespToHttpResp()
 			return rts.res, nil
 		}
-		// refresh token failed --> abort the event
-		// It can be failed due to the following reasons
-		// 1. invalid grant
-		// 2. control plan api call failed
-		rts.res.StatusCode = statusCode
-		if statusCode == http.StatusOK {
-			// refresh token successful --> retry the event
-			// rts.res.StatusCode = http.StatusInternalServerError
-			interceptorResp.StatusCode = http.StatusInternalServerError
-		}
-
+		interceptorResp.StatusCode = http.StatusInternalServerError
 	} else if authErrorCategory == oauth.CategoryAuthStatusInactive {
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
@@ -192,7 +188,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	}
 	applyInterceptorRespToHttpResp()
 	// when error is not nil, the response sent will be ignored(downstream)
-	return rts.res, err
+	return rts.res, nil
 }
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {

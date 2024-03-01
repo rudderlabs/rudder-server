@@ -577,6 +577,39 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 		},
 	},
+	{
+		description: "when refreshToken response is not unmarshallable(CP is not responding correctly), should only set the jobs with '500' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_token","refresh_token":"refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     503,
+				Response: `Bad Gateway`,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
 }
 
 type mockIdentifier struct {
@@ -633,7 +666,15 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 
 			transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMsg)
 			require.NotNil(t, transformerResponse)
-			require.Equal(t, tc.expected, transformerResponse)
+
+			for i, ex := range tc.expected {
+				require.Equal(t, ex.Batched, transformerResponse[i].Batched, "Batched assertion failed")
+				require.Equal(t, ex.Message, transformerResponse[i].Message, "Message assertion failed")
+				require.Equal(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "AuthErrorCategory assertion failed")
+				require.Equal(t, ex.JobMetadataArray, transformerResponse[i].JobMetadataArray, "JobMetadataArray assertion failed")
+				require.Equal(t, ex.Error, transformerResponse[i].Error, "Error field assertion failed")
+				require.Equal(t, ex.StatusCode, transformerResponse[i].StatusCode, "StatusCode assertion failed")
+			}
 		})
 	}
 }
@@ -815,11 +856,18 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				1: false,
 				2: false,
 			},
-			RespBodys:                map[int64]string{},
-			RespContentType:          "text/plain; charset=utf-8",
+			RespBodys: map[int64]string{
+				1: "token has expired",
+				2: "token has expired",
+			},
+			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
 			ProxyRequestStatusCode:   500,
-			RespStatusCodes:          map[int64]int{},
+			RespStatusCodes: map[int64]int{
+				1: 401,
+				2: 401,
+			},
+			OAuthErrorCategory: v2.CategoryRefreshToken,
 		},
 		destination: oauthDests[0],
 	},
@@ -995,7 +1043,6 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		destination: oauthDests[0],
 	},
-
 	{
 		description:  "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
 		proxyVersion: "v1",
