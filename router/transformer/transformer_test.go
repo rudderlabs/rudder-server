@@ -716,6 +716,9 @@ type oauthv2ProxyTcs struct {
 	proxyVersion               string
 	transformerProxyResponseV1 ProxyResponseV1
 	transformerProxyResponseV0 ProxyResponseV0
+
+	// When to use this field: we made proxy v1 call but got proxyv0 response in such cases this field can be used
+	transformerResponse string
 	// oauth calls
 	cpResponses []testutils.CpResponseParams
 	// output
@@ -1242,7 +1245,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			DestinationConfig: oauthDests[0].Config,
 		},
 		cpResponses: []testutils.CpResponseParams{
-			// refresh token http request
+			// fetch token http request
 			{
 				Code:     200,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
@@ -1257,6 +1260,55 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": failed to get auth error category: LB cannot send to transformer"
 			ProxyRequestResponseBody: `failed to get auth error category: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:         "[v1proxy] when v1Proxy endpoint sending v0Proxy response, unmarshal should happen at proxyAdapter.getResponse level",
+		transformerResponse: `{"message": ["some other error"]}`,
+		destType:            "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "wsp",
+					DestinationID: "d1",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				2: false,
+			},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
+			ProxyRequestStatusCode:   200, // transformer returned response
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
@@ -1290,6 +1342,8 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					b, _ = json.Marshal(tc.transformerProxyResponseV1)
 				} else if tc.proxyVersion == "v0" {
 					b, _ = json.Marshal(tc.transformerProxyResponseV0)
+				} else {
+					b = []byte(tc.transformerResponse)
 				}
 				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
 				if tc.ioReadError {
@@ -1321,9 +1375,9 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, &isOAuthV2EnabledLoader, &expTimeDiff)
 
 			var adapter transformerProxyAdapter
-			adapter = NewTransformerProxyAdapter("v0", loggerOverride)
-			if tc.proxyVersion == "v1" {
-				adapter = NewTransformerProxyAdapter("v1", loggerOverride)
+			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
+			if tc.proxyVersion == "v0" {
+				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
 			}
 
 			reqParams := &ProxyRequestParams{

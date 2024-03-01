@@ -89,7 +89,7 @@ func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) 
 }
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
-	transformedJobs := &TransformerResponse{}
+	transformedJobs := TransformerResponse{}
 	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
