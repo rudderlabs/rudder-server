@@ -192,6 +192,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 }
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// TODO: Remove later
+	t.log.Infon("Inside RoundTrip")
 	contextData := req.Context().Value(oauth.DestKey)
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil

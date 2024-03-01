@@ -85,6 +85,8 @@ func Run(ctx context.Context) error {
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
 	oauthV2Enabled := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
+	// TODO: Remove later
+	pkgLogger.Infon("[regulationApi]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled.Load()))
 	httpTimeout := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))

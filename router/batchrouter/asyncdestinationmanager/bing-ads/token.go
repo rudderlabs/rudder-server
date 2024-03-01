@@ -148,6 +148,8 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	oauthV2Enabled := config.GetReloadableBoolVar(false, "BatchRouter."+ts.destinationName+".oauthV2Enabled", "BatchRouter.oauthV2Enabled")
+	// TODO: Remove later
+	fmt.Println("[batchRouter token()]", oauthV2Enabled.Load())
 	var secret *secretStruct
 	var err error
 	if oauthV2Enabled.Load() {

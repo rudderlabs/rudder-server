@@ -185,6 +185,8 @@ func (w *worker) workLoop() {
 			}
 			destination := batchDestination.Destination
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
+			// TODO: Remove later
+			w.logger.Infon("[router worker]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled))
 			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 

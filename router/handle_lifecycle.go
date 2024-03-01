@@ -118,6 +118,8 @@ func (rt *Handle) Setup(
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
+	// TODO: Remove later
+	rt.logger.Infon("[router handle_lifecycle]", logger.NewBoolField("OauthV2Enabled", rt.reloadableConfig.oauthV2Enabled.Load()))
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
 		backendConfig, &rt.reloadableConfig.oauthV2Enabled,
 		&rt.reloadableConfig.oauthV2ExpirationTimeDiff,
