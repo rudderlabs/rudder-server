@@ -20,6 +20,14 @@ import (
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
+var Destination = &v2.DestinationInfo{
+	DestDefName:   "testDest",
+	DestinationId: "Destination123",
+	WorkspaceID:   "456",
+	DestDefConfig: map[string]interface{}{},
+	DestConfig:    map[string]interface{}{},
+}
+
 var _ = Describe("Oauth", func() {
 	Describe("Test NewOAuthHandler function", func() {
 		It("Returns a pointer to OAuthHandler with default values", func() {
@@ -39,6 +47,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -75,6 +84,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			expectedResponse := &v2.AuthResponse{
@@ -114,6 +124,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -158,6 +169,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -185,6 +197,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -218,6 +231,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -257,6 +271,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -299,6 +314,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
@@ -343,6 +359,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
@@ -378,11 +395,8 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -430,11 +444,8 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -475,11 +486,8 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -534,10 +542,7 @@ var _ = Describe("Oauth", func() {
 				  "message":"unable to update the auth status for the destination"
 			  }`)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
+				Destination:     Destination,
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
@@ -561,10 +566,7 @@ var _ = Describe("Oauth", func() {
 			}
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, ``)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
+				Destination:     Destination,
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
@@ -601,10 +603,7 @@ var _ = Describe("Oauth", func() {
 				AuthStatusUpdateActiveMap: make(map[string]bool),
 			}
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
-				Destination: &v2.DestinationInfo{
-					DestDefName:   "testDest",
-					DestinationId: "Destination123",
-				},
+				Destination:     Destination,
 				WorkspaceId:     "workspaceID",
 				RudderAccountId: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
@@ -621,6 +620,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{
@@ -671,6 +671,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{
@@ -716,6 +717,7 @@ var _ = Describe("Oauth", func() {
 				AccountId:   "123",
 				WorkspaceId: "456",
 				DestDefName: "testDest",
+				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
 			}
 			// Invoke code under test

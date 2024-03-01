@@ -780,7 +780,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		DestDefConfig: destination.DestinationDefinition.Config,
 		WorkspaceID:   destination.WorkspaceID,
 		DestDefName:   destination.DestinationDefinition.Name,
-		DestinationId: destination.DestinationDefinition.ID,
+		DestinationId: destination.ID,
 	}
 	ctx = context.WithValue(ctx, oauthv2.DestKey, destinationInfo)
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()

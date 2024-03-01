@@ -83,7 +83,6 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 	if t.Augmenter != nil {
 		body, err := io.ReadAll(rts.req.Body)
 		if err != nil {
-			// TODO: log the error
 			t.log.Errorn("failed to read request body",
 				obskit.DestinationID(rts.destination.DestinationId),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
