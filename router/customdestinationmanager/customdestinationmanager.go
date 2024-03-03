@@ -144,7 +144,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 		case "update":
 			err = kvManager.HSet(hash, key, value)
 		case "delete":
-			err = kvManager.HDel(hash, value)
+			err = kvManager.HDel(hash, key)
 		default:
 			key, fields := kvstoremanager.EventToKeyValue(jsonData)
 			err = kvManager.HMSet(key, fields)
