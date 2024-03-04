@@ -1456,7 +1456,11 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}
 }
 
-func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64) []*types.PUReportedMetric {
+func getDiffMetrics(
+	inPU, pu string,
+	inCountMetadataMap map[string]MetricMetadata,
+	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
+) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
@@ -1849,6 +1853,17 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			map[string]int64{},
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
+		for _, diff := range diffMetrics {
+			proc.statsFactory.NewTaggedStat(
+				"processor_drop_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         types.DESTINATION_FILTER,
+					"sourceId":      diff.ConnectionDetails.SourceID,
+					"destinationId": diff.ConnectionDetails.DestinationID,
+				},
+			).Count(int(diff.StatusDetail.Count))
+		}
 	}
 	// REPORTING - GATEWAY metrics - END
 
@@ -2508,6 +2523,17 @@ func (proc *Handle) transformSrcDest(
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 				)
+				for _, diff := range diffMetrics {
+					proc.statsFactory.NewTaggedStat(
+						"processor_drop_count",
+						stats.CountType,
+						stats.Tags{
+							"stage":         types.USER_TRANSFORMER,
+							"sourceId":      diff.ConnectionDetails.SourceID,
+							"destinationId": diff.ConnectionDetails.DestinationID,
+						},
+					).Count(int(diff.StatusDetail.Count))
+				}
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2583,7 +2609,26 @@ func (proc *Handle) transformSrcDest(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+		diffMetrics := getDiffMetrics(
+			inPU,
+			types.EVENT_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			successCountMap,
+			nonSuccessMetrics.failedCountMap,
+			nonSuccessMetrics.filteredCountMap,
+		)
+		for _, diff := range diffMetrics {
+			proc.statsFactory.NewTaggedStat(
+				"processor_drop_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         types.EVENT_FILTER,
+					"sourceId":      diff.ConnectionDetails.SourceID,
+					"destinationId": diff.ConnectionDetails.DestinationID,
+				},
+			).Count(int(diff.StatusDetail.Count))
+		}
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2671,7 +2716,26 @@ func (proc *Handle) transformSrcDest(
 					}
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+				diffMetrics := getDiffMetrics(
+					types.EVENT_FILTER,
+					types.DEST_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					nonSuccessMetrics.failedCountMap,
+					nonSuccessMetrics.filteredCountMap,
+				)
+				for _, diff := range diffMetrics {
+					proc.statsFactory.NewTaggedStat(
+						"processor_drop_count",
+						stats.CountType,
+						stats.Tags{
+							"stage":         types.DEST_TRANSFORMER,
+							"sourceId":      diff.ConnectionDetails.SourceID,
+							"destinationId": diff.ConnectionDetails.DestinationID,
+						},
+					).Count(int(diff.StatusDetail.Count))
+				}
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
