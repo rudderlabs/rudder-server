@@ -95,7 +95,14 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	isOAuth := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
+	dest := &oauthv2.DestinationInfo{
+		WorkspaceID:   job.WorkspaceID,
+		DestDefName:   destination.Name,
+		DestinationId: destination.DestinationID,
+		DestConfig:    destination.Config,
+		DestDefConfig: destination.DestDefConfig,
+	}
+	isOAuth := dest.IsOAuthDestination()
 	var oAuthDetail oauthDetail
 	if isOAuth && !api.IsOAuthV2Enabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
@@ -112,13 +119,6 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	}
 
 	if isOAuth && api.IsOAuthV2Enabled {
-		dest := &oauthv2.DestinationInfo{
-			WorkspaceID:   job.WorkspaceID,
-			DestDefName:   destination.Name,
-			DestinationId: destination.DestinationID,
-			DestConfig:    destination.Config,
-			DestDefConfig: destination.DestDefConfig,
-		}
 		req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, dest))
 	}
 
@@ -143,7 +143,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	if err != nil {
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
-	stCd := resp.StatusCode
+	respStatusCode := resp.StatusCode
 	respBodyBytes := bodyBytes
 	// Post response work to be done for OAuthV2
 	if isOAuth && api.IsOAuthV2Enabled {
@@ -154,7 +154,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 			respBodyBytes = []byte(transportResponse.OriginalResponse) // setting original response
 		}
 		if transportResponse.InterceptorResponse.StatusCode > 0 {
-			stCd = transportResponse.InterceptorResponse.StatusCode
+			respStatusCode = transportResponse.InterceptorResponse.StatusCode
 		}
 		if strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
 			pkgLogger.Debugf("Actual response received: %v", respBodyBytes)
@@ -172,7 +172,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 		oAuthDetail:              oAuthDetail,
 		responseBodyBytes:        respBodyBytes,
-		responseStatusCode:       stCd,
+		responseStatusCode:       respStatusCode,
 	})
 }
 

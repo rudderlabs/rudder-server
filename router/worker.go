@@ -790,7 +790,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+	if authType == oauth.OAuth {
 		if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
 			w.logger.Debugf(`Sending for OAuth destination`)
 			// Token from header of the request

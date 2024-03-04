@@ -241,13 +241,13 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
-			isValidOAuthCategory := oauthv2.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory)
-			if isValidOAuthCategory && transResp.InterceptorResponse.StatusCode > 0 {
-				destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
-			}
-			if isValidOAuthCategory && strings.TrimSpace(transResp.InterceptorResponse.Response) != "" {
-				// Should this be set to `error` alone ?
-				destinationJobs[i].Error = transResp.InterceptorResponse.Response
+			if oauthv2.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory) {
+				if transResp.InterceptorResponse.StatusCode > 0 {
+					destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
+				}
+				if strings.TrimSpace(transResp.InterceptorResponse.Response) != "" {
+					destinationJobs[i].Error = transResp.InterceptorResponse.Response
+				}
 			}
 			for k, v := range destinationJobs[i].JobIDs() {
 				out = append(out, k)
