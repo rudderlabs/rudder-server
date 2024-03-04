@@ -61,7 +61,7 @@ var _ = Describe("CpConnector", func() {
 			BasicAuthUser: &mock_oauthV2.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(`{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out"}`).To(MatchJSON(respBody))
+		Expect(`{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out"}`).To(MatchJSON(respBody))
 	})
 
 	It("Test CpApiCall function to test connection reset by peer", func() {

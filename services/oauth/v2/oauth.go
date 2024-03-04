@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
@@ -141,7 +142,10 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	h.Logger.Debugn("[request] :: Get Token Info request received",
 		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
-		logger.NewStringField("AccountId", refTokenParams.AccountId))
+		logger.NewStringField("AccountId", refTokenParams.AccountId),
+		obskit.DestinationID(refTokenParams.Destination.DestinationId),
+		obskit.WorkspaceID(refTokenParams.WorkspaceId),
+		obskit.DestinationType(refTokenParams.DestDefName))
 	startTime := time.Now()
 	defer func() {
 		authStats.statName = GetOAuthActionStatName("total_latency")
@@ -153,7 +157,18 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	refTokenBody := RefreshTokenBodyParams{}
 	storedCache, ok := h.Cache.Get(refTokenParams.AccountId)
 	if ok {
-		cachedSecret := storedCache.(*AuthResponse)
+		cachedSecret, ok := storedCache.(*AuthResponse)
+		if !ok {
+			h.Logger.Debugn("[request] :: Failed to type assert the stored cache",
+				logger.NewStringField("Module name", h.LoggerName),
+				logger.NewStringField("Call Type", logTypeName),
+				logger.NewStringField("AccountId", refTokenParams.AccountId),
+				obskit.DestinationID(refTokenParams.Destination.DestinationId),
+				obskit.WorkspaceID(refTokenParams.WorkspaceId),
+				obskit.DestinationType(refTokenParams.DestDefName))
+			return http.StatusInternalServerError, nil, errors.New("failed to type assert the stored cache")
+		}
+		// TODO: verify if the storedCache is nil at this point
 		if !checkIfTokenExpired(cachedSecret.Account, refTokenParams.Secret, h.ExpirationTimeDiff, authStats) {
 			return http.StatusOK, cachedSecret, nil
 		}
@@ -270,6 +285,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
 	if gjson.Get(response, ErrorType).String() != "" {
+		// Network error
 		errorType = gjson.Get(response, ErrorType).String()
 		message = gjson.Get(response, "message").String()
 	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {

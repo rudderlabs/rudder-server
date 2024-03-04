@@ -640,7 +640,6 @@ var oauthTests = []oauthTestCases{
 		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)")},
 		expectedPayload:              `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
 	},
-
 	{
 		name: "when AUTH_STATUS_INACTIVE error happens & authStatus/toggle success, fail the job with Failed status",
 		job: model.Job{
@@ -744,7 +743,6 @@ var oauthTests = []oauthTestCases{
 		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauthV2.CategoryAuthStatusInactive))},
 		expectedPayload:              `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
 	},
-
 	{
 		name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
 		job: model.Job{

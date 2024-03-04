@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
@@ -82,6 +83,11 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 	if t.Augmenter != nil {
 		body, err := io.ReadAll(rts.req.Body)
 		if err != nil {
+			t.log.Errorn("failed to read request body",
+				obskit.DestinationID(rts.destination.DestinationId),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DestDefName),
+				logger.NewStringField("flow", string(t.flow)))
 			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
 		}
 		statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
@@ -111,13 +117,24 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
+	// t.log.Infon("response data", logger.NewStringField("response", string(respData)))
 	if err != nil {
-		return rts.res, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
+		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
-	rts.res.Body = io.NopCloser(bytes.NewReader(respData))
+	interceptorResp := oauth.OAuthInterceptorResponse{}
+	// internal function
+	applyInterceptorRespToHttpResp := func() {
+		var interceptorRespBytes []byte
+		transResp := oauth.TransportResponse{
+			OriginalResponse:    string(respData),
+			InterceptorResponse: interceptorResp,
+		}
+		interceptorRespBytes, _ = json.Marshal(transResp)
+		rts.res.Body = io.NopCloser(bytes.NewReader(interceptorRespBytes))
+	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		return rts.res, fmt.Errorf("failed to get auth error category: %w", err)
+		return nil, fmt.Errorf("failed to get auth error category: %s", string(respData))
 	}
 	if authErrorCategory == oauth.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
@@ -128,14 +145,19 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
 		t.log.Infon("refreshing token")
-		statusCode, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
+		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
-			err = refErr
+			interceptorResp.Response = refErr.Error()
 		}
+		// refresh token success(retry)
+		// refresh token failed
+		// It can be failed due to the following reasons
+		// 1. invalid grant(abort)
+		// 2. control plan api call failed(retry)
+		// 3. some error happened while returning from RefreshToken function(retry)
 		if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			// Setting the response we obtained from trying to Refresh the token
-			errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
-			rts.res.StatusCode = http.StatusBadRequest
+			interceptorResp.StatusCode = http.StatusBadRequest
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
 				WorkspaceId:     rts.destination.WorkspaceID,
@@ -143,19 +165,12 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 				StatPrefix:      oauth.AuthStatusInactive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
-			rts.res.Body = errorInRefToken
+			// rts.res.Body = errorInRefToken
+			interceptorResp.Response = authResponse.ErrorMessage
+			applyInterceptorRespToHttpResp()
 			return rts.res, nil
 		}
-		// refresh token failed --> abort the event
-		// It can be failed due to the following reasons
-		// 1. invalid grant
-		// 2. control plan api call failed
-		rts.res.StatusCode = statusCode
-		if statusCode == http.StatusOK {
-			// refresh token successful --> retry the event
-			rts.res.StatusCode = http.StatusInternalServerError
-		}
-
+		interceptorResp.StatusCode = http.StatusInternalServerError
 	} else if authErrorCategory == oauth.CategoryAuthStatusInactive {
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
@@ -164,12 +179,16 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			StatPrefix:      oauth.AuthStatusInactive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
-		rts.res.StatusCode = http.StatusBadRequest
+		interceptorResp.StatusCode = http.StatusBadRequest
 	}
-	return rts.res, err
+	applyInterceptorRespToHttpResp()
+	// when error is not nil, the response sent will be ignored(downstream)
+	return rts.res, nil
 }
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// TODO: Remove later
+	t.log.Infon("Inside RoundTrip")
 	contextData := req.Context().Value(oauth.DestKey)
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
@@ -195,17 +214,23 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		rts.accountId = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
 	}
 	if rts.accountId == "" {
+		t.log.Errorn("accountId not found for destination",
+			obskit.DestinationID(rts.destination.DestinationId),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DestDefName),
+			logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.DestinationId, t.flow))), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
 		AccountId:   rts.accountId,
 		WorkspaceId: rts.destination.WorkspaceID,
 		DestDefName: rts.destination.DestDefName,
+		Destination: rts.destination,
 	}
 	rts.req = req
-	res := t.preRoundTrip(rts)
-	if res != nil {
-		return res, nil
+	errorHttpResponse := t.preRoundTrip(rts)
+	if errorHttpResponse != nil {
+		return errorHttpResponse, nil
 	}
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -94,9 +95,16 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	isOAuthEnabled := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
+	dest := &oauthv2.DestinationInfo{
+		WorkspaceID:   job.WorkspaceID,
+		DestDefName:   destination.Name,
+		DestinationId: destination.DestinationID,
+		DestConfig:    destination.Config,
+		DestDefConfig: destination.DestDefConfig,
+	}
+	isOAuth := dest.IsOAuthDestination()
 	var oAuthDetail oauthDetail
-	if isOAuthEnabled && !api.IsOAuthV2Enabled {
+	if isOAuth && !api.IsOAuthV2Enabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
@@ -110,14 +118,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 	}
 
-	if isOAuthEnabled && api.IsOAuthV2Enabled {
-		dest := &oauthv2.DestinationInfo{
-			WorkspaceID:   job.WorkspaceID,
-			DestDefName:   destination.Name,
-			DestinationId: destination.DestinationID,
-			DestConfig:    destination.Config,
-			DestDefConfig: destination.DestDefConfig,
-		}
+	if isOAuth && api.IsOAuthV2Enabled {
 		req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, dest))
 	}
 
@@ -142,14 +143,38 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	if err != nil {
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
+	respStatusCode := resp.StatusCode
+	respBodyBytes := bodyBytes
+	// Post response work to be done for OAuthV2
+	if isOAuth && api.IsOAuthV2Enabled {
+		transportResponse := oauthv2.TransportResponse{} // initing to prevent panic
+		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
+		// It's acceptable if the structure of bodyBytes doesn't match the oauthv2.TransportResponse struct.
+		err = json.Unmarshal(bodyBytes, &transportResponse)
+		if err == nil && transportResponse.OriginalResponse != "" {
+			// most probably it was thrown before postRoundTrip through interceptor itself
+			respBodyBytes = []byte(transportResponse.OriginalResponse) // setting original response
+		}
+		if transportResponse.InterceptorResponse.StatusCode > 0 {
+			respStatusCode = transportResponse.InterceptorResponse.StatusCode
+		}
+		if transportResponse.InterceptorResponse.Response != "" {
+			pkgLogger.Debugf("Actual response received: %v", respBodyBytes)
+			// Update the same error response to all as the response received would be []JobRespSchema
+			respBodyBytes, err = sjson.SetRawBytes(respBodyBytes, "#.error", []byte(transportResponse.InterceptorResponse.Response))
+			if err != nil {
+				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+			}
+		}
+	}
 	return api.PostResponse(ctx, PostResponseParams{
 		destination:              destination,
 		job:                      job,
-		isOAuthEnabled:           isOAuthEnabled,
+		isOAuthEnabled:           isOAuth,
 		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 		oAuthDetail:              oAuthDetail,
-		responseBodyBytes:        bodyBytes,
-		responseStatusCode:       resp.StatusCode,
+		responseBodyBytes:        respBodyBytes,
+		responseStatusCode:       respStatusCode,
 	})
 }
 

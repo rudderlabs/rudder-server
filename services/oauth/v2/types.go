@@ -108,3 +108,13 @@ type AuthStatusToggleResponse struct {
 type TransformerResponse struct {
 	AuthErrorCategory string `json:"authErrorCategory"`
 }
+
+type OAuthInterceptorResponse struct {
+	StatusCode int    `json:"statusCode"`         // This is non-zero when the OAuth interceptor, upon completing its functions, intends to pass on the status code to the caller.
+	Response   string `json:"response,omitempty"` // This is non-empty when the OAuth interceptor, upon completing its functions, intends to pass on the response body to the caller.
+}
+
+type TransportResponse struct {
+	OriginalResponse    string                   `json:"originalResponse"`
+	InterceptorResponse OAuthInterceptorResponse `json:"interceptorResponse"`
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -68,17 +69,27 @@ func (s *OAuthStats) SendCountStat() {
 	stats.Default.NewTaggedStat(s.statName, stats.CountType, statsTags).Increment()
 }
 
+// {input: [{}]}
+// {input: [{}, {}, {}, {}]}
+// {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
 func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
-	transformedJobs := &TransformerResponse{}
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output.0").Raw), &transformedJobs)
+	var transformedJobs []TransformerResponse
+	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}
-	return transformedJobs.AuthErrorCategory, nil
+	tfJob, found := lo.Find(transformedJobs, func(item TransformerResponse) bool {
+		return IsValidAuthErrorCategory(item.AuthErrorCategory)
+	})
+	if !found {
+		// can be a valid scenario
+		return "", nil
+	}
+	return tfJob.AuthErrorCategory, nil
 }
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
-	transformedJobs := &TransformerResponse{}
+	transformedJobs := TransformerResponse{}
 	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
@@ -139,4 +150,8 @@ func GetErrorType(err error) string {
 		return "network_error"
 	}
 	return "none"
+}
+
+func IsValidAuthErrorCategory(category string) bool {
+	return lo.Contains([]string{CategoryRefreshToken, CategoryAuthStatusInactive}, category)
 }
