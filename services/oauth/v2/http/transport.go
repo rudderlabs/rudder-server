@@ -121,7 +121,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
-	interceptorResp := oauth.OAuthTransportResponse{}
+	interceptorResp := oauth.OAuthInterceptorResponse{}
 	// internal function
 	applyInterceptorRespToHttpResp := func() {
 		var interceptorRespBytes []byte
@@ -130,7 +130,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			InterceptorResponse: interceptorResp,
 		}
 		interceptorRespBytes, _ = json.Marshal(transResp)
-		// newRespData, err = sjson.SetRawBytes(respData, "interceptorResponse", interceptorRespBytes)
 		rts.res.Body = io.NopCloser(bytes.NewReader(interceptorRespBytes))
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
@@ -148,7 +147,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		t.log.Infon("refreshing token")
 		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
-			// err = refErr
 			interceptorResp.Response = refErr.Error()
 		}
 		// refresh token success(retry)
@@ -159,8 +157,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		// 3. some error happened while returning from RefreshToken function(retry)
 		if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			// Setting the response we obtained from trying to Refresh the token
-			// errorInRefToken := io.NopCloser(bytes.NewBufferString(authResponse.ErrorMessage))
-			// rts.res.StatusCode = http.StatusBadRequest
 			interceptorResp.StatusCode = http.StatusBadRequest
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
@@ -183,7 +179,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			StatPrefix:      oauth.AuthStatusInactive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
-		// rts.res.StatusCode = http.StatusBadRequest
 		interceptorResp.StatusCode = http.StatusBadRequest
 	}
 	applyInterceptorRespToHttpResp()

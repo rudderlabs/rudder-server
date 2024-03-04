@@ -285,6 +285,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
 	if gjson.Get(response, ErrorType).String() != "" {
+		// Network error
 		errorType = gjson.Get(response, ErrorType).String()
 		message = gjson.Get(response, "message").String()
 	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {

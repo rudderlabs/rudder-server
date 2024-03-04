@@ -209,9 +209,10 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 	transResp := oauthv2.TransportResponse{}
 	if (*trans.oauthV2EnabledLoader).Load() {
-		// Enabled only for OAuth destinations that are using V2
+		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
+		// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
 		err = json.Unmarshal(respData, &transResp)
-		if err == nil && strings.TrimSpace(transResp.OriginalResponse) != "" {
+		if err == nil && transResp.OriginalResponse != "" {
 			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
 		}
 	}
@@ -245,7 +246,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				if transResp.InterceptorResponse.StatusCode > 0 {
 					destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
 				}
-				if strings.TrimSpace(transResp.InterceptorResponse.Response) != "" {
+				if transResp.InterceptorResponse.Response != "" {
 					destinationJobs[i].Error = transResp.InterceptorResponse.Response
 				}
 			}
@@ -384,7 +385,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		_ = json.Unmarshal(respData, &transportResponse)
 		// unmarshal unsuccessful scenarios
 		// if respData is not a valid json
-		if strings.TrimSpace(transportResponse.OriginalResponse) != "" {
+		if transportResponse.OriginalResponse != "" {
 			respData = []byte(transportResponse.OriginalResponse)
 		}
 
@@ -420,8 +421,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
-	if (*trans.oauthV2EnabledLoader).Load() && strings.TrimSpace(transportResponse.InterceptorResponse.Response) != "" {
-		// Should this be set to `error` alone ?
+	if (*trans.oauthV2EnabledLoader).Load() && transportResponse.InterceptorResponse.Response != "" {
 		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
 
