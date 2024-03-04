@@ -50,6 +50,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
+	SourceName          string                            `json:"sourceName"`
 	WorkspaceID         string                            `json:"workspaceId"`
 	Namespace           string                            `json:"namespace"`
 	InstanceID          string                            `json:"instanceId"`

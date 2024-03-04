@@ -201,6 +201,7 @@ type DestStatT struct {
 
 type ParametersT struct {
 	SourceID                string      `json:"source_id"`
+	SourceName              string      `json:"source_name"`
 	DestinationID           string      `json:"destination_id"`
 	ReceivedAt              string      `json:"received_at"`
 	TransformAt             string      `json:"transform_at"`
@@ -909,6 +910,7 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
+	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = misc.GetInstanceID()
@@ -940,6 +942,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
 	metadata.InstanceID = commonMetadata.InstanceID
@@ -2385,11 +2388,13 @@ func (proc *Handle) transformSrcDest(
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
+	sourceName := eventList[0].Metadata.SourceName
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
 	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
+		SourceName:           sourceName,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
@@ -2717,6 +2722,7 @@ func (proc *Handle) transformSrcDest(
 
 			params := ParametersT{
 				SourceID:                sourceID,
+				SourceName:              sourceName,
 				DestinationID:           destID,
 				ReceivedAt:              receivedAt,
 				TransformAt:             transformAt,
