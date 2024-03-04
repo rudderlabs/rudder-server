@@ -44,13 +44,11 @@ func TestBackupTable(t *testing.T) {
 	// running minio container on docker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
 
-	postgresResource, err := postgres.Setup(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
-	minioResource, err = minio.Setup(pool, cleanup)
+	minioResource, err = minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution

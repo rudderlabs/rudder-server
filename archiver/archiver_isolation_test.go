@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,7 +31,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -125,15 +125,13 @@ func ArchivalScenario(
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
 
-	postgresContainer, err := postgres.Setup(pool, cleanup, postgres.WithShmSize(256*bytesize.MB))
+	postgresContainer, err := postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres container")
 
-	minioResource, err := minio.Setup(pool, cleanup)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err, "failed to setup minio container")
-	transformerContainer, err := destination.SetupTransformer(pool, cleanup)
+	transformerContainer, err := destination.SetupTransformer(pool, t)
 	require.NoError(t, err, "failed to setup transformer container")
 
 	configMap := dummyConfig(numWorkspace, numSourcesPerWorkspace, minioResource)

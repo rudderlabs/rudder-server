@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -15,14 +14,16 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -153,13 +154,11 @@ var _ = Describe("jobsdb", Ordered, func() {
 	})
 
 	Context("getDSList", func() {
-		var t *ginkgoTestingT
 		var jd *Handle
 		var prefix string
 
 		BeforeEach(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
+			_ = startPostgres(ginkgo.GinkgoT())
 			prefix = strings.ToLower(rsRand.String(5))
 			jd = &Handle{}
 
@@ -170,7 +169,6 @@ var _ = Describe("jobsdb", Ordered, func() {
 
 		AfterEach(func() {
 			jd.TearDown()
-			t.Teardown()
 		})
 
 		It("doesn't make db calls if !refreshFromDB", func() {
@@ -180,13 +178,10 @@ var _ = Describe("jobsdb", Ordered, func() {
 	})
 
 	Context("Start & Stop", Ordered, func() {
-		var t *ginkgoTestingT
 		var jd *Handle
 		var prefix string
-
 		BeforeAll(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
+			_ = startPostgres(ginkgo.GinkgoT())
 		})
 		BeforeEach(func() {
 			prefix = strings.ToLower(rsRand.String(5))
@@ -197,9 +192,6 @@ var _ = Describe("jobsdb", Ordered, func() {
 		})
 		AfterEach(func() {
 			jd.TearDown()
-		})
-		AfterAll(func() {
-			t.Teardown()
 		})
 		It("can call Stop before Start without side-effects", func() {
 			jd.Stop()
@@ -1534,46 +1526,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
 }
 
-type testingT interface {
-	Errorf(format string, args ...interface{})
-	FailNow()
-	Setenv(key, value string)
-	Log(...interface{})
-	Cleanup(func())
-}
-
-type ginkgoTestingT struct {
-	cleanups []func()
-}
-
-func (t *ginkgoTestingT) Teardown() {
-	for _, f := range t.cleanups {
-		f()
-	}
-}
-
-func (*ginkgoTestingT) Errorf(format string, args ...interface{}) {
-	Fail(fmt.Sprintf(format, args...))
-}
-
-func (*ginkgoTestingT) FailNow() {
-	Fail("FailNow called")
-}
-
-func (*ginkgoTestingT) Setenv(key, value string) {
-	_ = os.Setenv(key, value) // skipcq: GO-W1032
-}
-
-func (*ginkgoTestingT) Log(args ...interface{}) {
-	fmt.Print(args...)
-}
-
-func (t *ginkgoTestingT) Cleanup(f func()) {
-	t.cleanups = append(t.cleanups, f)
-}
-
 // startPostgres starts a postgres container and (re)initializes global vars
-func startPostgres(t testingT) *postgres.Resource {
+func startPostgres(t GinkgoTInterface) *postgres.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	postgresContainer, err := postgres.Setup(pool, t)
