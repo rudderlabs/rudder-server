@@ -1456,7 +1456,12 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}
 }
 
-func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64) []*types.PUReportedMetric {
+func getDiffMetrics(
+	inPU, pu string,
+	inCountMetadataMap map[string]MetricMetadata,
+	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
+	statFactory stats.Stats,
+) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
@@ -1482,6 +1487,15 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
 			diffMetrics = append(diffMetrics, metric)
+			statFactory.NewTaggedStat(
+				"processor_diff_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         metric.PU,
+					"sourceId":      metric.ConnectionDetails.SourceID,
+					"destinationId": metric.ConnectionDetails.DestinationID,
+				},
+			).Count(int(-diff))
 		}
 	}
 
@@ -1847,6 +1861,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			outCountMap,
 			map[string]int64{},
 			map[string]int64{},
+			proc.statsFactory,
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
 	}
@@ -2507,6 +2522,7 @@ func (proc *Handle) transformSrcDest(
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2583,7 +2599,16 @@ func (proc *Handle) transformSrcDest(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+		diffMetrics := getDiffMetrics(
+			inPU,
+			types.EVENT_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			successCountMap,
+			nonSuccessMetrics.failedCountMap,
+			nonSuccessMetrics.filteredCountMap,
+			proc.statsFactory,
+		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2671,7 +2696,16 @@ func (proc *Handle) transformSrcDest(
 					}
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+				diffMetrics := getDiffMetrics(
+					types.EVENT_FILTER,
+					types.DEST_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					nonSuccessMetrics.failedCountMap,
+					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
+				)
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)

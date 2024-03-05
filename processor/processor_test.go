@@ -25,6 +25,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -3271,7 +3273,16 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("getDiffMetrics Tests", func() {
 		It("Should match diffMetrics response for Empty Inputs", func() {
-			response := getDiffMetrics("some-string-1", "some-string-2", map[string]MetricMetadata{}, map[string]int64{}, map[string]int64{}, map[string]int64{}, map[string]int64{})
+			response := getDiffMetrics(
+				"some-string-1",
+				"some-string-2",
+				map[string]MetricMetadata{},
+				map[string]int64{},
+				map[string]int64{},
+				map[string]int64{},
+				map[string]int64{},
+				stats.NOP,
+			)
 			Expect(len(response)).To(Equal(0))
 		})
 
@@ -3357,7 +3368,28 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap, filteredCountMap)
+			statsStore, err := memstats.New()
+			Expect(err).To(BeNil())
+			response := getDiffMetrics(
+				"some-string-1",
+				"some-string-2",
+				inCountMetadataMap,
+				inCountMap,
+				successCountMap,
+				failedCountMap,
+				filteredCountMap,
+				statsStore,
+			)
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "some-string-2",
+				"sourceId":      "some-source-id-1",
+				"destinationId": "some-destination-id-1",
+			}).LastValue()).To(Equal(float64(-5)))
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "some-string-2",
+				"sourceId":      "some-source-id-2",
+				"destinationId": "some-destination-id-2",
+			}).LastValue()).To(Equal(float64(-7)))
 			assertReportMetric(expectedResponse, response)
 		})
 	})
