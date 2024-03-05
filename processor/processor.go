@@ -1460,6 +1460,7 @@ func getDiffMetrics(
 	inPU, pu string,
 	inCountMetadataMap map[string]MetricMetadata,
 	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
+	statFactory stats.Stats,
 ) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
@@ -1486,6 +1487,15 @@ func getDiffMetrics(
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
 			diffMetrics = append(diffMetrics, metric)
+			statFactory.NewTaggedStat(
+				"processor_diff_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         metric.PU,
+					"sourceId":      metric.ConnectionDetails.SourceID,
+					"destinationId": metric.ConnectionDetails.DestinationID,
+				},
+			).Count(int(-diff))
 		}
 	}
 
@@ -1851,19 +1861,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			outCountMap,
 			map[string]int64{},
 			map[string]int64{},
+			proc.statsFactory,
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
-		for _, diff := range diffMetrics {
-			proc.statsFactory.NewTaggedStat(
-				"processor_drop_count",
-				stats.CountType,
-				stats.Tags{
-					"stage":         types.DESTINATION_FILTER,
-					"sourceId":      diff.ConnectionDetails.SourceID,
-					"destinationId": diff.ConnectionDetails.DestinationID,
-				},
-			).Count(int(diff.StatusDetail.Count))
-		}
 	}
 	// REPORTING - GATEWAY metrics - END
 
@@ -2522,18 +2522,8 @@ func (proc *Handle) transformSrcDest(
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
 				)
-				for _, diff := range diffMetrics {
-					proc.statsFactory.NewTaggedStat(
-						"processor_drop_count",
-						stats.CountType,
-						stats.Tags{
-							"stage":         types.USER_TRANSFORMER,
-							"sourceId":      diff.ConnectionDetails.SourceID,
-							"destinationId": diff.ConnectionDetails.DestinationID,
-						},
-					).Count(int(diff.StatusDetail.Count))
-				}
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2617,18 +2607,8 @@ func (proc *Handle) transformSrcDest(
 			successCountMap,
 			nonSuccessMetrics.failedCountMap,
 			nonSuccessMetrics.filteredCountMap,
+			proc.statsFactory,
 		)
-		for _, diff := range diffMetrics {
-			proc.statsFactory.NewTaggedStat(
-				"processor_drop_count",
-				stats.CountType,
-				stats.Tags{
-					"stage":         types.EVENT_FILTER,
-					"sourceId":      diff.ConnectionDetails.SourceID,
-					"destinationId": diff.ConnectionDetails.DestinationID,
-				},
-			).Count(int(diff.StatusDetail.Count))
-		}
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2724,18 +2704,8 @@ func (proc *Handle) transformSrcDest(
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
 				)
-				for _, diff := range diffMetrics {
-					proc.statsFactory.NewTaggedStat(
-						"processor_drop_count",
-						stats.CountType,
-						stats.Tags{
-							"stage":         types.DEST_TRANSFORMER,
-							"sourceId":      diff.ConnectionDetails.SourceID,
-							"destinationId": diff.ConnectionDetails.DestinationID,
-						},
-					).Count(int(diff.StatusDetail.Count))
-				}
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
