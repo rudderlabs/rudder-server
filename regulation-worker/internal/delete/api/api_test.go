@@ -812,7 +812,7 @@ func TestOAuth(t *testing.T) {
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSrv.URL)
 			t.Setenv("CONFIG_BACKEND_TOKEN", "config_backend_token")
 
-			backendconfig.Init()
+			backendconfig.Init(nil)
 			oauth.Init()
 			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
 			api := api.APIManager{

@@ -48,6 +48,7 @@ type processorApp struct {
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
+	conf           *config.Config
 	config         struct {
 		processorDSLimit   misc.ValueLoader[int]
 		routerDSLimit      misc.ValueLoader[int]
@@ -65,26 +66,28 @@ type processorApp struct {
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
-	a.config.http.ReadTimeout = config.GetDurationVar(0, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
-	a.config.http.ReadHeaderTimeout = config.GetDurationVar(0, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	a.config.http.WriteTimeout = config.GetDurationVar(10, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
-	a.config.http.IdleTimeout = config.GetDurationVar(720, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
-	a.config.http.webPort = config.GetIntVar(8086, 1, "Processor.webPort")
-	a.config.http.MaxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
-	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR); err != nil {
+	a.config.http.ReadTimeout = a.conf.GetDurationVar(0, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
+	a.config.http.ReadHeaderTimeout = a.conf.GetDurationVar(0, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
+	a.config.http.WriteTimeout = a.conf.GetDurationVar(10, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
+	a.config.http.IdleTimeout = a.conf.GetDurationVar(720, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	a.config.http.webPort = a.conf.GetIntVar(8086, 1, "Processor.webPort")
+	a.config.http.MaxHeaderBytes = a.conf.GetIntVar(524288, 1, "MaxHeaderBytes")
+	a.config.processorDSLimit = a.conf.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.gatewayDSLimit = a.conf.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.routerDSLimit = a.conf.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.batchRouterDSLimit = a.conf.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	if a.conf.GetBool("recovery.enabled", true) {
+		if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR); err != nil {
+			return err
+		}
+	}
+	if err := rudderCoreDBValidator(a.conf); err != nil {
 		return err
 	}
-	if err := rudderCoreDBValidator(); err != nil {
+	if err := rudderCoreWorkSpaceTableSetup(a.conf); err != nil {
 		return err
 	}
-	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
-		return err
-	}
-	if err := rudderCoreNodeSetup(); err != nil {
+	if err := rudderCoreNodeSetup(a.conf); err != nil {
 		return err
 	}
 	a.setupDone = true
@@ -100,7 +103,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	g, ctx := errgroup.WithContext(ctx)
 	terminalErrFn := terminalErrorFunction(ctx, g)
 
-	deploymentType, err := deployment.GetFromEnv()
+	deploymentType, err := deployment.GetType(a.conf)
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
@@ -134,7 +137,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(a.conf, deploymentType, true)
 	if err != nil {
 		return err
 	}
@@ -151,7 +154,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithSkipMaintenanceErr(a.conf.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -161,6 +165,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -170,6 +175,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer batchRouterDB.Close()
 	errDBForRead := jobsdb.NewForRead(
@@ -179,12 +185,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithConfig(a.conf),
 	)
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
@@ -195,6 +203,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer schemaDB.Close()
 
@@ -208,6 +217,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
 			},
 		),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer archivalDB.Close()
 
@@ -223,12 +233,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
 	}
 
-	modeProvider, err := resolveModeProvider(a.log, deploymentType)
+	modeProvider, err := resolveModeProvider(a.conf, a.log, deploymentType)
 	if err != nil {
 		return err
 	}
 
-	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
+	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g, a.conf)
 
 	enrichers, err := setupPipelineEnrichers(config.Default, a.log, stats.Default)
 	if err != nil {
@@ -241,7 +251,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}
 	}()
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(a.conf, a.log.Child("drain-config"))
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
@@ -255,6 +265,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	p := proc.New(
 		ctx,
+		a.conf,
 		&options.ClearDB,
 		gwDBForProcessor,
 		routerDB,
@@ -278,6 +289,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
+		Conf:                       a.conf,
 		Logger:                     logger.NewLogger().Child("router"),
 		Reporting:                  reporting,
 		BackendConfig:              backendconfig.DefaultBackendConfig,
@@ -291,6 +303,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		AdaptiveLimit:              adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
+		Conf:             a.conf,
 		Reporting:        reporting,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         batchRouterDB,

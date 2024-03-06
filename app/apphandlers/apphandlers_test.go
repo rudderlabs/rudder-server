@@ -19,7 +19,7 @@ func TestAppHandlerStartSequence(t *testing.T) {
 	application := app.New(options)
 	versionHandler := func(w http.ResponseWriter, _ *http.Request) {}
 
-	suite := func(t *testing.T, appHandler AppHandler) {
+	suite := func(t *testing.T, conf *config.Config, appHandler AppHandler) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		t.Run("it shouldn't be able to start without setup being called first", func(t *testing.T) {
@@ -31,39 +31,42 @@ func TestAppHandlerStartSequence(t *testing.T) {
 		})
 
 		t.Run("it should be able to setup if database is up", func(t *testing.T) {
-			startJobsDBPostgresql(t)
+			startJobsDBPostgresql(t, conf)
 			require.NoError(t, appHandler.Setup(options))
 		})
 	}
 
 	t.Run("embedded", func(t *testing.T) {
-		h, err := GetAppHandler(application, app.EMBEDDED, versionHandler)
+		conf := config.New()
+		h, err := GetAppHandler(conf, application, app.EMBEDDED, versionHandler)
 		require.NoError(t, err)
-		suite(t, h)
+		suite(t, conf, h)
 	})
 
 	t.Run("gateway", func(t *testing.T) {
-		h, err := GetAppHandler(application, app.GATEWAY, versionHandler)
+		conf := config.New()
+		h, err := GetAppHandler(conf, application, app.GATEWAY, versionHandler)
 		require.NoError(t, err)
-		suite(t, h)
+		suite(t, conf, h)
 	})
 
 	t.Run("processor", func(t *testing.T) {
-		h, err := GetAppHandler(application, app.PROCESSOR, versionHandler)
+		conf := config.New()
+		h, err := GetAppHandler(conf, application, app.PROCESSOR, versionHandler)
 		require.NoError(t, err)
-		suite(t, h)
+		suite(t, conf, h)
 	})
 }
 
-func startJobsDBPostgresql(t *testing.T) {
+func startJobsDBPostgresql(t *testing.T, conf *config.Config) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	config.Set("DB.port", r.Port)
-	config.Set("DB.user", r.User)
-	config.Set("DB.name", r.Database)
-	config.Set("DB.password", r.Password)
+	conf.Set("DB.port", r.Port)
+	conf.Set("DB.user", r.User)
+	conf.Set("DB.name", r.Database)
+	conf.Set("DB.password", r.Password)
 }
 
 func init() {

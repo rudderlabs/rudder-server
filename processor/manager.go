@@ -102,6 +102,7 @@ func (proc *LifecycleManager) Stop() {
 // New creates a new Processor instance
 func New(
 	ctx context.Context,
+	conf *config.Config,
 	clearDb *bool,
 	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting,
@@ -116,7 +117,7 @@ func New(
 ) *LifecycleManager {
 	proc := &LifecycleManager{
 		Handle: NewHandle(
-			config.Default,
+			conf,
 			transformer.NewTransformer(
 				config.Default,
 				logger.NewLogger().Child("processor"),

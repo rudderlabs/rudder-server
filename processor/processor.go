@@ -365,10 +365,10 @@ func (proc *Handle) Setup(
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
-	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
+	proc.reportingEnabled = proc.conf.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig

@@ -21,7 +21,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 	var (
 		conf   = config.New()
 		client = &namespaceConfig{
-			config: conf,
+			conf:   conf,
 			logger: logger.NOP,
 		}
 		configBackendURL = "https://api.test.rudderstack.com"
@@ -57,7 +57,7 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		config: config.New(),
+		conf:   config.New(),
 		logger: logger.NOP,
 
 		client:           ts.Client(),
@@ -210,7 +210,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		config: config.New(),
+		conf:   config.New(),
 		logger: logger.NOP,
 
 		client:           ts.Client(),

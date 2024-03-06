@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -15,7 +16,7 @@ import (
 
 func Test_mustRenameDS(t *testing.T) {
 	prefix := strings.ToLower(rsRand.String(5))
-	postgresql := startPostgres(t)
+	postgresql := startPostgres(t, config.Default)
 	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
 	dbHandle := postgresql.DB
 	jobsdb := &Handle{
@@ -59,7 +60,7 @@ func Test_mustRenameDS(t *testing.T) {
 
 func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	prefix := strings.ToLower(rsRand.String(5))
-	postgresql := startPostgres(t)
+	postgresql := startPostgres(t, config.Default)
 
 	dbHandle := postgresql.DB
 

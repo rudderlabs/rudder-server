@@ -57,12 +57,12 @@ func getBRTErrorCode(state string) int {
 	return 500
 }
 
-func getBatchRouterConfigInt(key, destType string, defaultValue int) int {
-	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
+func getBatchRouterConfigInt(conf *config.Config, key, destType string, defaultValue int) int {
+	destOverrideFound := conf.IsSet("BatchRouter." + destType + "." + key)
 	if destOverrideFound {
-		return config.GetInt("BatchRouter."+destType+"."+key, defaultValue)
+		return conf.GetInt("BatchRouter."+destType+"."+key, defaultValue)
 	}
-	return config.GetInt("BatchRouter."+key, defaultValue)
+	return conf.GetInt("BatchRouter."+key, defaultValue)
 }
 
 type storageDateFormatProvider struct {

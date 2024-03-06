@@ -89,7 +89,7 @@ func generateTests(getRepo func() Repository) {
 
 	BeforeEach(func() {
 		config.Reset()
-		backendconfig.Init()
+		backendconfig.Init(nil)
 		server = newTestServer()
 
 		r := getRepo()

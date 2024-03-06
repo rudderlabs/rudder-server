@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
@@ -128,7 +129,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(config.GetWorkspaceToken(), "")
+		req.SetBasicAuth(deployment.GetWorkspaceToken(config.Default), "")
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {

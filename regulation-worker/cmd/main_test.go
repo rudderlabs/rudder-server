@@ -117,7 +117,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 		go func() {
 			defer close(done)
 			defer svcCancel()
-			err := main.Run(svcCtx)
+			err := main.Run(svcCtx, nil)
 			require.NoError(t, err, "error while running regulation-worker")
 		}()
 		require.Eventually(t, func() bool {
@@ -158,7 +158,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 		go func() {
 			defer close(done)
 			defer svcCancel()
-			err := main.Run(svcCtx)
+			err := main.Run(svcCtx, nil)
 			require.NoError(t, err, "error while running regulation-worker")
 		}()
 		require.Eventually(t, func() bool {

@@ -31,7 +31,7 @@ type namespaceConfig struct {
 	configEnvHandler types.ConfigEnvI
 	cpRouterURL      string
 
-	config *config.Config
+	conf   *config.Config
 	logger logger.Logger
 	client *http.Client
 
@@ -49,23 +49,23 @@ type namespaceConfig struct {
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
-	if nc.config == nil {
-		nc.config = config.Default
+	if nc.conf == nil {
+		nc.conf = config.Default
 	}
 	if nc.namespace == "" {
-		if !nc.config.IsSet("WORKSPACE_NAMESPACE") {
+		if !nc.conf.IsSet("WORKSPACE_NAMESPACE") {
 			return errors.New("workspaceNamespace is not configured")
 		}
-		nc.namespace = nc.config.GetString("WORKSPACE_NAMESPACE", "")
+		nc.namespace = nc.conf.GetString("WORKSPACE_NAMESPACE", "")
 	}
 	if nc.hostedServiceSecret == "" {
-		if !nc.config.IsSet("HOSTED_SERVICE_SECRET") {
+		if !nc.conf.IsSet("HOSTED_SERVICE_SECRET") {
 			return errors.New("hostedServiceSecret is not configured")
 		}
-		nc.hostedServiceSecret = nc.config.GetString("HOSTED_SERVICE_SECRET", "")
+		nc.hostedServiceSecret = nc.conf.GetString("HOSTED_SERVICE_SECRET", "")
 	}
 	if nc.configBackendURL == nil {
-		configBackendURL := nc.config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+		configBackendURL := nc.conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 		nc.configBackendURL, err = url.Parse(configBackendURL)
 		if err != nil {
 			return err
@@ -73,7 +73,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 	if nc.client == nil {
 		nc.client = &http.Client{
-			Timeout: nc.config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
+			Timeout: nc.conf.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
 		}
 	}
 	nc.workspacesConfig = make(map[string]ConfigT)

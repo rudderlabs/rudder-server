@@ -118,7 +118,7 @@ func NewGRPCServer(
 		},
 	)
 
-	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
+	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken(conf)
 	if err != nil {
 		return nil, fmt.Errorf("connection token: %w", err)
 	}

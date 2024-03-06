@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,8 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -36,251 +33,219 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
-	BeforeAll(func() {
+func TestComputeInsertIdx(t *testing.T) {
+	t.Run("newDSIdx tests", func(t *testing.T) {
+		testCases := []struct {
+			before   string
+			after    string
+			expected string
+		}{
+			// dList => 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"2", "3", "2_1"},
+			// dList => 1_1 2 3 4 5
+			{"1_1", "2", "1_2"},
+			{"2", "3", "2_1"},
+			// dList => 1 2_1 3 4 5
+			{"1", "2_1", "1_1"},
+			{"2_1", "3", "2_2"},
+			{"3", "4", "3_1"},
+			// dList => 1_1 2_1 3 4 5
+			{"1_1", "2_1", "1_2"},
+			// dList => 0_1 1 2 3 4 5
+			{"0_1", "1", "0_2"},
+			{"1", "2", "1_1"},
+			{"0_2", "1", "0_3"},
+			{"1", "2", "1_1"},
+			{"0_2", "1", "0_3"},
+			{"9", "10", "9_1"},
+			{"10_1", "11_3", "10_2"},
+			{"0_1", "1", "0_2"},
+			{"0_1", "20", "0_2"},
+			{"10_1_2", "11_3", "10_2"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, computedIdx)
+			})
+		}
 	})
 
-	DescribeTable("newDSIdx tests",
-		func(before, after, expected string) {
-			computedIdx, err := computeInsertIdx(before, after)
-			Expect(err).To(BeNil(), "No error should occur when computing newDSIdx for before: %s, after: %s", before, after)
-			Expect(computedIdx).To(Equal(expected), "unexpected result using before: %s, after: %s", before, after)
-		},
-		// dList => 1 2 3 4 5
-		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
-		Entry("Internal Migration for regular tables 1 Test 2 : ", "2", "3", "2_1"),
+	t.Run("computeInsertIdx - bad input tests", func(t *testing.T) {
+		testCases := []struct {
+			before string
+			after  string
+		}{
+			{"1", "1_1"},
+			{"10_1", "10_2"},
+			{"10_1", "10_1"},
+			{"10", "9"},
+			{"0_1", "0_2"},
+			{"0_1", "0"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.Error(t, err)
+				require.Empty(t, computedIdx)
+			})
+		}
+	})
 
-		// dList => 1_1 2 3 4 5
-		Entry("Internal Migration for regular tables 2 Test 1 : ", "1_1", "2", "1_2"),
-		Entry("Internal Migration for regular tables 2 Test 2 : ", "2", "3", "2_1"),
+	t.Run("computeInsertIdx - skipZeroAssertionForMultitenant", func(t *testing.T) {
+		testCases := []struct {
+			before   string
+			after    string
+			expected string
+		}{
+			// dList => 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"2", "3", "2_1"},
+			// dList => 1_1 2 3 4 5
+			{"1_1", "2", "1_2"},
+			{"2", "3", "2_1"},
+			// dList => 1 2_1 3 4 5
+			{"1", "2_1", "1_1"},
+			{"2_1", "3", "2_2"},
+			{"3", "4", "3_1"},
+			// dList => 1_1 2_1 3 4 5
+			{"1_1", "2_1", "1_2"},
+			// dList => 0_1 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"1", "2", "1_1"},
+			{"1", "2", "1_1"},
+			{"9", "10", "9_1"},
+			{"10_1", "11_3", "10_2"},
+			{"0_1", "1", "0_2"},
+			{"0_1", "20", "0_2"},
+			{"-1", "0", "-1_1"},
+			{"0", "1", "0_1"},
+			{"-2_1", "-1_1", "-2_2"},
+			{"-2_1", "-1", "-2_2"},
+			{"-2_1", "0", "-2_2"},
+			{"-2_1", "20", "-2_2"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, computedIdx)
+			})
+		}
+	})
+}
 
-		// dList => 1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 3 Test 1 : ", "1", "2_1", "1_1"),
-		Entry("Internal Migration for regular tables 3 Test 2 : ", "2_1", "3", "2_2"),
-		Entry("Internal Migration for regular tables 3 Test 3 : ", "3", "4", "3_1"),
-
-		// dList => 1_1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
-
-		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_3"),
-		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_3"),
-
-		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
-
-		Entry("Internal Migration for tables : ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables : ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for tables : ", "0_1", "20", "0_2"),
-
-		Entry("Excotic scenario 1 - bumping from level 3 to level 2", "10_1_2", "11_3", "10_2"),
+func startTestJobsDB(t *testing.T, conf *config.Config) *Handle {
+	_ = startPostgres(t, conf)
+	jd := &Handle{}
+	require.NoError(
+		t,
+		jd.Setup(
+			conf,
+			ReadWrite,
+			false,
+			strings.ToLower(rsRand.String(5)),
+			[]prebackup.Handler{},
+			fileuploader.NewDefaultProvider(),
+		),
 	)
+	return jd
+}
 
-	Context("computeInsertIdx - bad input tests", func() {
-		It("Should throw error for input 1, 1_1", func() {
-			idx, err := computeInsertIdx("1", "1_1")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10_1, 10_2", func() {
-			idx, err := computeInsertIdx("10_1", "10_2")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10_1, 10_1", func() {
-			idx, err := computeInsertIdx("10_1", "10_1")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10, 9", func() {
-			idx, err := computeInsertIdx("10", "9")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 0_1, 0_2", func() {
-			idx, err := computeInsertIdx("0_1", "0_2")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 0_1, 0", func() {
-			idx, err := computeInsertIdx("0_1", "0")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-	})
-
-	DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
-		func(before, after, expected string) {
-			computedIdx, err := computeInsertIdx(before, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
-		},
-		// dList => 1 2 3 4 5
-		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-		Entry("Internal Migration for regular tables 1 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
-
-		// dList => 1_1 2 3 4 5
-		Entry("Internal Migration for regular tables 2 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2", "1_2"),
-		Entry("Internal Migration for regular tables 2 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
-
-		// dList => 1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 3 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2_1", "1_1"),
-		Entry("Internal Migration for regular tables 3 Test 2 with skipZeroAssertionForMultitenant: ", "2_1", "3", "2_2"),
-		Entry("Internal Migration for regular tables 3 Test 3 with skipZeroAssertionForMultitenant: ", "3", "4", "3_1"),
-
-		// dList => 1_1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 4 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2_1", "1_2"),
-
-		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 2 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 2 Test 3 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-
-		Entry("OrderTest Case 1 Test 1 with skipZeroAssertionForMultitenant: ", "9", "10", "9_1"),
-
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "20", "0_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-1", "0", "-1_1"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "0", "1", "0_1"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1_1", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
-	)
-})
-
-var _ = Describe("jobsdb", Ordered, func() {
-	BeforeAll(func() {
-	})
-
-	Context("getDSList", func() {
-		var t *ginkgoTestingT
-		var jd *Handle
-		var prefix string
-
-		BeforeEach(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
-			prefix = strings.ToLower(rsRand.String(5))
-			jd = &Handle{}
-
-			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-			Expect(err).To(BeNil())
-		})
-
-		AfterEach(func() {
-			jd.TearDown()
-			t.Teardown()
-		})
-
-		It("doesn't make db calls if !refreshFromDB", func() {
+func TestJobsdbLifecycle(t *testing.T) {
+	t.Run("getDSList", func(t *testing.T) {
+		c := config.New()
+		jd := startTestJobsDB(t, c)
+		defer jd.TearDown()
+		t.Run("doesn't make db calls if !refreshFromDB", func(t *testing.T) {
 			jd.datasetList = dsListInMemory
-			Expect(jd.getDSList()).To(Equal(dsListInMemory))
+			require.Equal(t, dsListInMemory, jd.getDSList())
 		})
 	})
 
-	Context("Start & Stop", Ordered, func() {
-		var t *ginkgoTestingT
-		var jd *Handle
-		var prefix string
-
-		BeforeAll(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
-		})
-		BeforeEach(func() {
-			prefix = strings.ToLower(rsRand.String(5))
-			jd = &Handle{}
-			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-			Expect(err).To(BeNil())
-		})
-		AfterEach(func() {
-			jd.TearDown()
-		})
-		AfterAll(func() {
-			t.Teardown()
-		})
-		It("can call Stop before Start without side-effects", func() {
+	t.Run("Start & Stop", func(t *testing.T) {
+		t.Run("can call Stop before Start without side-effects", func(t *testing.T) {
+			c := config.New()
+			jd := startTestJobsDB(t, c)
+			defer jd.TearDown()
 			jd.Stop()
-			Expect(jd.Start()).To(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.NoError(t, jd.Start())
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Start twice without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
+		t.Run("can call Start twice without side-effects", func(t *testing.T) {
+			c := config.New()
+			jd := startTestJobsDB(t, c)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
 			group1 := jd.backgroundGroup
-			Expect(jd.Start()).To(BeNil())
+			require.NoError(t, jd.Start())
 			group2 := jd.backgroundGroup
-			Expect(group1).To(Equal(group2))
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.Equal(t, group1, group2)
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Start in parallel without side-effects", func() {
+		t.Run("can call Start in parallel without side-effects", func(t *testing.T) {
+			c := config.New()
+			jd := startTestJobsDB(t, c)
+			defer jd.TearDown()
 			var wg sync.WaitGroup
 			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				idx := i
 				go func() {
-					Expect(jd.Start()).To(BeNil())
+					require.NoError(t, jd.Start())
 					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
 			}
 			wg.Wait()
 			for i := 1; i < 10; i++ {
-				Expect(bgGroups[i-1]).To(Equal(bgGroups[i]))
+				require.Equal(t, bgGroups[i-1], bgGroups[i])
 			}
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Stop twice without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(true))
-			Expect(jd.backgroundGroup).ToNot(BeNil())
+		t.Run("can call Stop twice without side-effects", func(t *testing.T) {
+			c := config.New()
+			jd := startTestJobsDB(t, c)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
+			require.True(t, jd.lifecycle.started)
+			require.NotNil(t, jd.backgroundGroup)
 			jd.Stop()
-			Expect(jd.backgroundGroup).ToNot(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(false))
-			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+			require.NotNil(t, jd.backgroundGroup)
+			require.False(t, jd.lifecycle.started)
+			require.NoError(t, jd.backgroundGroup.Wait())
 			jd.Stop()
-			Expect(jd.backgroundGroup).ToNot(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(false))
-			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+			require.NotNil(t, jd.backgroundGroup)
+			require.False(t, jd.lifecycle.started)
+			require.NoError(t, jd.backgroundGroup.Wait())
 		})
 
-		It("can call Stop in parallel without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
+		t.Run("can call Stop in parallel without side-effects", func(t *testing.T) {
+			c := config.New()
+			jd := startTestJobsDB(t, c)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				go func() {
 					jd.Stop()
-					Expect(jd.backgroundGroup.Wait()).To(BeNil())
+					require.NoError(t, jd.backgroundGroup.Wait())
 					wg.Done()
 				}()
 			}
 			wg.Wait()
-		})
-
-		It("can call Start & Stop in parallel without problems", func() {
-			Expect(jd.Start()).To(BeNil())
-
-			var wg sync.WaitGroup
-			wg.Add(10)
-			for i := 0; i < 10; i++ {
-				go func() {
-					Expect(jd.Start()).To(BeNil())
-					jd.Stop()
-					wg.Done()
-				}()
-			}
-			wg.Wait()
-			Expect(jd.lifecycle.started).To(Equal(false))
+			require.False(t, jd.lifecycle.started)
 		})
 	})
-})
+}
 
 var d1 = dataSetT{
 	JobTable:       "tt_jobs_1",
@@ -379,7 +344,8 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 }
 
 func TestRefreshDSList(t *testing.T) {
-	_ = startPostgres(t)
+	c := config.New()
+	_ = startPostgres(t, c)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -388,7 +354,7 @@ func TestRefreshDSList(t *testing.T) {
 	}
 
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -405,18 +371,16 @@ func TestRefreshDSList(t *testing.T) {
 }
 
 func TestJobsDBTimeout(t *testing.T) {
-	_ = startPostgres(t)
 	defaultWorkspaceID := "workspaceId"
 	c := config.New()
+	_ = startPostgres(t, c)
 
 	c.Set("JobsDB.maxDSSize", 10)
-	jobDB := Handle{
-		config: c,
-	}
+	jobDB := Handle{}
 
 	customVal := "MOCKDS"
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -489,19 +453,18 @@ func TestJobsDBTimeout(t *testing.T) {
 }
 
 func TestThreadSafeAddNewDSLoop(t *testing.T) {
-	_ = startPostgres(t)
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 1)
+	_ = startPostgres(t, c)
 	triggerAddNewDS1 := make(chan time.Time)
 	// jobsDB-1 setup
 	jobsDB1 := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS1
 		},
-		config: c,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB1.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB1.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
 	defer jobsDB1.TearDown()
@@ -512,9 +475,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS2
 		},
-		config: c,
 	}
-	err = jobsDB2.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err = jobsDB2.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobsDB2.TearDown()
 	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -587,19 +549,17 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 }
 
 func TestThreadSafeJobStorage(t *testing.T) {
-	_ = startPostgres(t)
-
 	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		c := config.New()
+		_ = startPostgres(t, c)
 		c.Set("JobsDB.maxDSSize", 1)
 		jobsDB := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			config: c,
 		}
-		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDB.Setup(c, ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobsDB.TearDown()
 		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -651,6 +611,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 	t.Run(`verify that even if jobsDB instance is unaware of new DS addition by other jobsDB instance.
 	 And, it tries to Store() in postgres, then the exception thrown is handled properly & DS cache is refreshed`, func(t *testing.T) {
 		c := config.New()
+		_ = startPostgres(t, c)
 		c.Set("JobsDB.maxDSSize", 1)
 
 		triggerRefreshDS := make(chan time.Time)
@@ -661,12 +622,11 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS1
 			},
-			config: c,
 		}
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
 		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
-		err := jobsDB1.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDB1.Setup(c, ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobsDB1.TearDown()
 		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -680,9 +640,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			config: c,
 		}
-		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDB2.Setup(c, ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobsDB2.TearDown()
 		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -696,9 +655,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			config: c,
 		}
-		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDB3.Setup(c, ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobsDB3.TearDown()
 		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -759,7 +717,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 }
 
 func TestCacheScenarios(t *testing.T) {
-	_ = startPostgres(t)
+	c := config.New()
+	_ = startPostgres(t, c)
 
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
@@ -779,7 +738,6 @@ func TestCacheScenarios(t *testing.T) {
 
 	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
 		maxDSSize := 1
-		c := config.New()
 		c.Set("JobsDB.maxDSSize", maxDSSize)
 		var dbWithOneLimit *Handle
 		triggerAddNewDS := make(chan time.Time)
@@ -800,7 +758,7 @@ func TestCacheScenarios(t *testing.T) {
 		}
 
 		prefix := strings.ToLower(rsRand.String(5))
-		err := dbWithOneLimit.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := dbWithOneLimit.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
 		defer dbWithOneLimit.TearDown()
@@ -843,11 +801,11 @@ func TestCacheScenarios(t *testing.T) {
 	})
 
 	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {
-		gwDB := NewForWrite("gw_cache")
+		gwDB := NewForWrite("gw_cache", WithConfig(c))
 		require.NoError(t, gwDB.Start())
 		defer gwDB.TearDown()
 
-		gwDBForProcessor := NewForRead("gw_cache")
+		gwDBForProcessor := NewForRead("gw_cache", WithConfig(c))
 		require.NoError(t, gwDBForProcessor.Start())
 		defer gwDBForProcessor.TearDown()
 
@@ -869,7 +827,7 @@ func TestCacheScenarios(t *testing.T) {
 	})
 
 	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {
-		jobsDB := NewForReadWrite("params_cache")
+		jobsDB := NewForReadWrite("params_cache", WithConfig(c))
 		require.NoError(t, jobsDB.Start())
 		defer jobsDB.TearDown()
 
@@ -900,7 +858,7 @@ func TestCacheScenarios(t *testing.T) {
 	})
 
 	t.Run("Test cache with two parameter filters (destination_id & source_id)", func(t *testing.T) {
-		jobsDB := NewForReadWrite("two_params_cache")
+		jobsDB := NewForReadWrite("two_params_cache", WithConfig(c))
 		require.NoError(t, jobsDB.Start())
 		defer jobsDB.TearDown()
 
@@ -922,7 +880,7 @@ func TestCacheScenarios(t *testing.T) {
 		defer func() {
 			cacheParameterFilters = previousParameterFilters
 		}()
-		jobsDB := NewForReadWrite("two_params_cache_query_less")
+		jobsDB := NewForReadWrite("two_params_cache_query_less", WithConfig(c))
 		require.NoError(t, jobsDB.Start())
 		defer jobsDB.TearDown()
 
@@ -947,7 +905,7 @@ func TestCacheScenarios(t *testing.T) {
 	}
 
 	t.Run("supports with and without workspace query filters at the same time", func(t *testing.T) {
-		jobDB := NewForReadWrite("workspace_query_filters")
+		jobDB := NewForReadWrite("workspace_query_filters", WithConfig(c))
 		require.NoError(t, jobDB.Start())
 		defer jobDB.TearDown()
 
@@ -1016,7 +974,7 @@ func Test_GetAdvisoryLockForOperation_Unique(t *testing.T) {
 }
 
 func TestAfterJobIDQueryParam(t *testing.T) {
-	_ = startPostgres(t)
+	_ = startPostgres(t, config.Default)
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
@@ -1093,7 +1051,7 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 }
 
 func TestDeleteExecuting(t *testing.T) {
-	_ = startPostgres(t)
+	_ = startPostgres(t, config.Default)
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
@@ -1147,7 +1105,7 @@ func TestDeleteExecuting(t *testing.T) {
 }
 
 func TestFailExecuting(t *testing.T) {
-	_ = startPostgres(t)
+	_ = startPostgres(t, config.Default)
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
@@ -1207,7 +1165,7 @@ func TestFailExecuting(t *testing.T) {
 }
 
 func TestMaxAgeCleanup(t *testing.T) {
-	_ = startPostgres(t)
+	_ = startPostgres(t, config.Default)
 	customVal := "CUSTOMVAL"
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
@@ -1239,6 +1197,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	}
 	tablePrefix := strings.ToLower(rsRand.String(5))
 	err := jobsDB.Setup(
+		config.Default,
 		ReadWrite,
 		true,
 		tablePrefix,
@@ -1328,17 +1287,16 @@ func TestConstructParameterJSONQuery(t *testing.T) {
 }
 
 func TestGetActiveWorkspaces(t *testing.T) {
-	_ = startPostgres(t)
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("JobsDB.maxDSSize", 1)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		config: c,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(c, ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -1440,17 +1398,16 @@ func TestGetActiveWorkspaces(t *testing.T) {
 }
 
 func TestGetDistinctParameterValues(t *testing.T) {
-	_ = startPostgres(t)
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("JobsDB.maxDSSize", 1)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		config: c,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(c, ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -1534,63 +1491,23 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
 }
 
-type testingT interface {
-	Errorf(format string, args ...interface{})
-	FailNow()
-	Setenv(key, value string)
-	Log(...interface{})
-	Cleanup(func())
-}
-
-type ginkgoTestingT struct {
-	cleanups []func()
-}
-
-func (t *ginkgoTestingT) Teardown() {
-	for _, f := range t.cleanups {
-		f()
-	}
-}
-
-func (*ginkgoTestingT) Errorf(format string, args ...interface{}) {
-	Fail(fmt.Sprintf(format, args...))
-}
-
-func (*ginkgoTestingT) FailNow() {
-	Fail("FailNow called")
-}
-
-func (*ginkgoTestingT) Setenv(key, value string) {
-	_ = os.Setenv(key, value) // skipcq: GO-W1032
-}
-
-func (*ginkgoTestingT) Log(args ...interface{}) {
-	fmt.Print(args...)
-}
-
-func (t *ginkgoTestingT) Cleanup(f func()) {
-	t.cleanups = append(t.cleanups, f)
-}
-
 // startPostgres starts a postgres container and (re)initializes global vars
-func startPostgres(t testingT) *postgres.Resource {
+func startPostgres(t testing.TB, conf *config.Config) *postgres.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	t.Setenv("LOG_LEVEL", "DEBUG")
-	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-	t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
-	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
-	t.Setenv("JOBS_DB_USER", postgresContainer.User)
-	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
-	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	conf.Set("LOG_LEVEL", "DEBUG")
+	conf.Set("DB.name", postgresContainer.Database)
+	conf.Set("DB.host", postgresContainer.Host)
+	conf.Set("DB.user", postgresContainer.User)
+	conf.Set("DB.password", postgresContainer.Password)
+	conf.Set("DB.port", postgresContainer.Port)
 	initJobsDB()
 	return postgresContainer
 }
 
 func initJobsDB() {
-	config.Reset()
 	logger.Reset()
 	admin.Init()
 	misc.Init()

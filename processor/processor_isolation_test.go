@@ -28,11 +28,13 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -169,11 +171,9 @@ func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, even
 // 4. Returns the total processing duration (last event time - first event time).
 func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overallDuration time.Duration) {
 	var m procIsolationMethods
-
-	config.Reset()
 	defer logger.Reset()
-	defer config.Reset()
-	config.Set("LOG_LEVEL", "ERROR")
+	conf := config.New()
+	conf.Set("LOG_LEVEL", "ERROR")
 	logger.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -182,18 +182,9 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		transformerContainer *destination.TransformerResource
 		gatewayPort          string
 	)
-	pool, err := dockertest.NewPool("")
+	pool, postgresContainer := startPostgres(t, conf)
+	transformerContainer, err := destination.SetupTransformer(pool, t)
 	require.NoError(t, err)
-	containersGroup, _ := errgroup.WithContext(ctx)
-	containersGroup.Go(func() (err error) {
-		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
-		return err
-	})
-	require.NoError(t, containersGroup.Wait())
 
 	destinationID := trand.String(27)
 
@@ -204,40 +195,36 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/procIsolationTestTemplate.json.tpl", templateCtx)
 	mockCBE := m.newMockConfigBackend(t, configJsonPath)
-	config.Set("CONFIG_BACKEND_URL", mockCBE.URL)
+	conf.Set("CONFIG_BACKEND_URL", mockCBE.URL)
 
-	config.Set("forceStaticModeProvider", true)
-	config.Set("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-	config.Set("WORKSPACE_NAMESPACE", "proc_isolation_test")
-	config.Set("HOSTED_SERVICE_SECRET", "proc_isolation_secret")
-	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
+	conf.Set("forceStaticModeProvider", true)
+	conf.Set("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+	conf.Set("WORKSPACE_NAMESPACE", "proc_isolation_test")
+	conf.Set("HOSTED_SERVICE_SECRET", "proc_isolation_secret")
+	conf.Set("RECOVERY_STORAGE_PATH", path.Join(t.TempDir(), "/recovery_data.json"))
 
-	config.Set("DB.port", postgresContainer.Port)
-	config.Set("DB.user", postgresContainer.User)
-	config.Set("DB.name", postgresContainer.Database)
-	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	conf.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 
-	config.Set("Warehouse.mode", "off")
-	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
-	config.Set("SourceDebugger.disableEventUploads", true)
-	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
-	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
-	config.Set("Router.toAbortDestinationIDs", destinationID)
-	config.Set("archival.Enabled", false)
+	conf.Set("Warehouse.mode", "off")
+	conf.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
+	conf.Set("SourceDebugger.disableEventUploads", true)
+	conf.Set("TransformationDebugger.disableTransformationStatusUploads", true)
+	conf.Set("JobsDB.backup.enabled", false)
+	conf.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	conf.Set("Router.toAbortDestinationIDs", destinationID)
+	conf.Set("archival.Enabled", false)
 
-	config.Set("Processor.isolationMode", string(spec.isolationMode))
+	conf.Set("Processor.isolationMode", string(spec.isolationMode))
 
-	config.Set("JobsDB.enableWriterQueue", false)
+	conf.Set("JobsDB.enableWriterQueue", "false")
 
 	// find free port for gateway http server to listen on
 	httpPortInt, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 
-	config.Set("Gateway.webPort", gatewayPort)
-	config.Set("RUDDER_TMPDIR", os.TempDir())
+	conf.Set("Gateway.webPort", gatewayPort)
+	conf.Set("RUDDER_TMPDIR", os.TempDir())
 
 	svcDone := make(chan struct{})
 	go func() {
@@ -247,7 +234,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 				close(svcDone)
 			}
 		}()
-		r := runner.New(runner.ReleaseInfo{})
+		r := runner.New(runner.ReleaseInfo{}, runner.WithConfig(conf))
 		c := r.Run(ctx, []string{"proc-isolation-test-rudder-server"})
 		if c != 0 {
 			t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
@@ -413,4 +400,22 @@ func (procIsolationMethods) splitInBatches(jobs []*procIsolationJobSpec, batchSi
 		})...)
 	}
 	return lo.Shuffle(batches)
+}
+
+// startPostgres starts a postgres container and (re)initializes global vars
+func startPostgres(t testing.TB, conf *config.Config) (*dockertest.Pool, *postgres.Resource) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
+	require.NoError(t, err)
+	conf.Set("LOG_LEVEL", "DEBUG")
+	conf.Set("DB.name", postgresContainer.Database)
+	conf.Set("DB.host", postgresContainer.Host)
+	conf.Set("DB.user", postgresContainer.User)
+	conf.Set("DB.password", postgresContainer.Password)
+	conf.Set("DB.port", postgresContainer.Port)
+	logger.Reset()
+	admin.Init()
+	misc.Init()
+	return pool, postgresContainer
 }

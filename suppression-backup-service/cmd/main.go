@@ -117,9 +117,9 @@ func getIdentity(ctx context.Context) (identity.Identifier, error) {
 	admin.Init()
 	misc.Init()
 	diagnostics.Init()
-	backendconfig.Init()
+	backendconfig.Init(nil)
 
-	if err := backendconfig.Setup(nil); err != nil {
+	if err := backendconfig.Setup(nil, nil); err != nil {
 		return &identity.NOOP{}, fmt.Errorf("setting up backend config: %w", err)
 	}
 	defer backendconfig.DefaultBackendConfig.Stop()

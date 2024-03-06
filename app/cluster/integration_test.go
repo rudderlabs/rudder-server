@@ -198,6 +198,7 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	processor := processor.New(
 		ctx,
+		config.Default,
 		&clearDb,
 		gwDB,
 		rtDB,

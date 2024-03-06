@@ -60,19 +60,16 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 }
 
 func TestJobsDB(t *testing.T) {
-	_ = startPostgres(t)
-
 	triggerAddNewDS := make(chan time.Time)
-	config.Reset()
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		config: c,
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(c, ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -233,7 +230,7 @@ func TestJobsDB(t *testing.T) {
 			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -319,7 +316,7 @@ func TestJobsDB(t *testing.T) {
 			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -358,7 +355,7 @@ func TestJobsDB(t *testing.T) {
 			},
 			config: c,
 		}
-		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -391,7 +388,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -416,6 +413,7 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 
 		c.Set("jobsdb.maxDSSize", 4)
+		defer c.Set("jobsdb.maxDSSize", 100000)
 		jobDB := Handle{
 			config: c,
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -423,7 +421,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -461,12 +459,11 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			config: c,
 		}
 
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -486,7 +483,6 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 
-		c := config.New()
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
@@ -499,7 +495,7 @@ func TestJobsDB(t *testing.T) {
 
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -580,12 +576,11 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			config: c,
 		}
 		prefix := strings.ToLower(rand.String(5))
 		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
 		c.Set("JobsDB.jobMinRowsMigrateThreshold", 0.6)
-		err := jobDB.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -693,8 +688,6 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 
-		config.Reset()
-		c := config.New()
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
@@ -702,11 +695,10 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(c, ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -803,10 +795,10 @@ func TestJobsDB(t *testing.T) {
 }
 
 func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
-	_ = startPostgres(t)
 	triggerAddNewDS := make(chan time.Time)
 	config.Reset()
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
 		config: c,
@@ -816,7 +808,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(c, ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -887,17 +879,14 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 
 func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_ANALYZE_THRESHOLD", "0")
-	_ = startPostgres(t)
 
-	config.Reset()
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("jobsdb.maxDSSize", 10)
 
-	jobDB := Handle{
-		config: c,
-	}
+	jobDB := Handle{}
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(c, ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := JobT{
@@ -936,7 +925,8 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 }
 
 func TestCreateDS(t *testing.T) {
-	postgresql := startPostgres(t)
+	c := config.New()
+	postgresql := startPostgres(t, c)
 	t.Run("CreateDS in case of negative job_indices in the previous", func(t *testing.T) {
 		prefix := strings.ToLower(rand.String(5))
 		// create -ve index table
@@ -975,7 +965,6 @@ func TestCreateDS(t *testing.T) {
 			require.NoError(t, err)
 
 			triggerAddNewDS := make(chan time.Time)
-			c := config.New()
 			c.Set("jobsdb.maxDSSize", 1)
 			jobDB := Handle{
 				dbHandle: postgresql.DB,
@@ -984,7 +973,7 @@ func TestCreateDS(t *testing.T) {
 					return triggerAddNewDS
 				},
 			}
-			err = jobDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+			err = jobDB.Setup(c, ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
@@ -1025,9 +1014,9 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 }
 
 func TestJobsDB_IncompatiblePayload(t *testing.T) {
-	_ = startPostgres(t)
 	triggerAddNewDS := make(chan time.Time)
 	c := config.New()
+	_ = startPostgres(t, c)
 	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
 		config: c,
@@ -1035,7 +1024,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(c, ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
@@ -1080,14 +1069,14 @@ func BenchmarkJobsdb(b *testing.B) {
 		pageSize = 10
 	)
 	b.Setenv("RSERVER_JOBS_DB_MAX_DSSIZE", fmt.Sprintf("%d", maxDsSize))
-	_ = startPostgres(b)
+	_ = startPostgres(b, config.Default)
 	concurrencies := []int{16, 64, 256, 512}
 
 	for _, concurrency := range concurrencies {
 		jobsDb1 := Handle{}
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDb1.Setup(config.Default, ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) with reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1099,7 +1088,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_GW_MAX_OPEN_CONNECTIONS", "64")
-		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDb2.Setup(config.Default, ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) without reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1226,8 +1215,8 @@ func chunkJobs(slice []JobT, chunkSize int) [][]*JobT {
 }
 
 func BenchmarkLifecycle(b *testing.B) {
-	_ = startPostgres(b)
 	c := config.New()
+	_ = startPostgres(b, c)
 
 	const writeConcurrency = 10
 	const newJobs = 100

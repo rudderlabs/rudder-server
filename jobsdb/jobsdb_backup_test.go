@@ -47,10 +47,10 @@ func TestBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := postgres.Setup(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
-	minioResource, err = minio.Setup(pool, cleanup)
+	minioResource, err = minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution
@@ -190,6 +190,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		goldenFileJobsFileName   = "testdata/MultiWorkspaceBackupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/MultiWorkspaceBackupStatus.json.gz"
 		uniqueWorkspaces         = 3
+		conf                     = config.New()
 	)
 
 	// running minio container on docker
@@ -198,12 +199,11 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := postgres.Setup(pool, cleanup)
-	require.NoError(t, err)
+	_ = startPostgres(t, conf)
 
 	minioResource = make([]*minio.Resource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = minio.Setup(pool, cleanup)
+		minioResource[i], err = minio.Setup(pool, t)
 		require.NoError(t, err)
 	}
 
@@ -211,22 +211,15 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	{ // skipcq: CRT-A0008
-		t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
-		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_FAILED_ONLY", "true")
-		t.Setenv("RSERVER_JOBS_DB_BACKUP_BATCH_RT_ENABLED", "true")
-		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
-		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
-		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.maxDSSize"), "10")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "3")
-		t.Setenv("MINIO_SSL", "false")
-
-		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-		t.Setenv("JOBS_DB_USER", postgresResource.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+		conf.Set("JobsDB.backup.enabled", "true")
+		conf.Set("JobsDB.backup.rt.failedOnly", "true")
+		conf.Set("JobsDB.backup.batch_rt.enabled", "true")
+		conf.Set("JobsDB.backup.rt.enabled", "true")
+		conf.Set("JOBS_BACKUP_BUCKET", "backup-test")
+		conf.Set("RUDDER_TMPDIR", tmpDir)
+		conf.Set(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.maxDSSize"), "10")
+		conf.Set(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "3")
+		conf.Set("MINIO_SSL", "false")
 
 		initJobsDB()
 	}
@@ -411,7 +404,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", []prebackup.Handler{}, fileuploader)
+	err := jobsDB.Setup(config.Default, ReadWrite, false, "rt", []prebackup.Handler{}, fileuploader)
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -448,7 +441,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", []prebackup.Handler{}, fileUploaderProvider)
+	err := jobsDB.Setup(config.Default, ReadWrite, false, "batch_rt", []prebackup.Handler{}, fileUploaderProvider)
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")

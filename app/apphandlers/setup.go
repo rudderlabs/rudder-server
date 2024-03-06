@@ -30,40 +30,46 @@ type AppHandler interface {
 	StartRudderCore(context.Context, *app.Options) error
 }
 
-func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) (AppHandler, error) {
+func GetAppHandler(
+	conf *config.Config,
+	application app.App,
+	appType string,
+	versionHandler func(w http.ResponseWriter, r *http.Request),
+) (AppHandler, error) {
 	log := logger.NewLogger().Child("apphandlers").Child(appType)
 	switch appType {
 	case app.GATEWAY:
-		return &gatewayApp{app: application, versionHandler: versionHandler, log: log}, nil
+		return &gatewayApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
 	case app.PROCESSOR:
-		return &processorApp{app: application, versionHandler: versionHandler, log: log}, nil
+		return &processorApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
 	case app.EMBEDDED:
-		return &embeddedApp{app: application, versionHandler: versionHandler, log: log}, nil
+		return &embeddedApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
 	default:
 		return nil, fmt.Errorf("unsupported app type %s", appType)
 	}
 }
 
-func rudderCoreDBValidator() error {
-	return validators.ValidateEnv()
+func rudderCoreDBValidator(conf *config.Config) error {
+	return validators.ValidateEnv(conf)
 }
 
-func rudderCoreNodeSetup() error {
-	return validators.InitializeNodeMigrations()
+func rudderCoreNodeSetup(conf *config.Config) error {
+	return validators.InitializeNodeMigrations(conf)
 }
 
-func rudderCoreWorkSpaceTableSetup() error {
-	return validators.CheckAndValidateWorkspaceToken()
+func rudderCoreWorkSpaceTableSetup(conf *config.Config) error {
+	return validators.CheckAndValidateWorkspaceToken(conf)
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
-func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool) (rsources.JobService, error) {
+func NewRsourcesService(conf *config.Config, deploymentType deployment.Type, shouldSetupSharedDB bool) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
-	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
-	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
-	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default, "rsources")
-	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
-	sharedDBConnUrl := config.GetString("SharedDB.dsn", "")
+	rsourcesConfig.Conf = conf
+	rsourcesConfig.MaxPoolSize = conf.GetInt("Rsources.MaxPoolSize", 3)
+	rsourcesConfig.MinPoolSize = conf.GetInt("Rsources.MinPoolSize", 1)
+	rsourcesConfig.LocalConn = misc.GetConnectionString(conf, "rsources")
+	rsourcesConfig.LocalHostname = conf.GetString("DB.host", "localhost")
+	sharedDBConnUrl := conf.GetString("SharedDB.dsn", "")
 	if len(sharedDBConnUrl) != 0 {
 		var err error
 		sharedDBConnUrl, err = misc.SetAppNameInDBConnURL(sharedDBConnUrl, "rsources")
@@ -72,12 +78,12 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 		}
 	}
 	rsourcesConfig.SharedConn = sharedDBConnUrl
-	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)
+	rsourcesConfig.SkipFailedRecordsCollection = !conf.GetBool("Router.failedKeysEnabled", true)
 
 	if deploymentType == deployment.MultiTenantType {
 		// For multitenant deployment type we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
-		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
+		if rsourcesConfig.SharedConn == "" && conf.GetBool("Rsources.FailOnMissingSharedDB", false) {
 			return nil, fmt.Errorf("deployment type %s requires SharedDB.dsn to be provided", deploymentType)
 		}
 	}
@@ -87,10 +93,10 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 	return rsources.NewJobService(rsourcesConfig)
 }
 
-func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
-	enableProcessor := config.GetBool("enableProcessor", true)
-	enableRouter := config.GetBool("enableRouter", true)
-	forceStaticMode := config.GetBool("forceStaticModeProvider", false)
+func resolveModeProvider(conf *config.Config, log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
+	enableProcessor := conf.GetBool("enableProcessor", true)
+	enableRouter := conf.GetBool("enableRouter", true)
+	forceStaticMode := conf.GetBool("forceStaticModeProvider", false)
 
 	var modeProvider cluster.ChangeEventProvider
 
@@ -109,7 +115,7 @@ func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (clu
 		switch deploymentType {
 		case deployment.MultiTenantType:
 			log.Info("using ETCD Based Dynamic Cluster Manager")
-			modeProvider = state.NewETCDDynamicProvider()
+			modeProvider = state.NewETCDDynamicProvider(conf)
 		case deployment.DedicatedType:
 			log.Info("using Static Cluster Manager")
 			modeProvider = staticModeProvider()

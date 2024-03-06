@@ -21,7 +21,7 @@ func TestMigration(t *testing.T) {
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
 
-		_ = startPostgres(t)
+		_ = startPostgres(t, c)
 
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
@@ -37,6 +37,7 @@ func TestMigration(t *testing.T) {
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		err := jobDB.Setup(
+			c,
 			ReadWrite,
 			true,
 			tablePrefix,
@@ -205,13 +206,12 @@ func TestMigration(t *testing.T) {
 	})
 
 	t.Run("cleanup status tables", func(t *testing.T) {
-		_ = startPostgres(t)
-
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 		config.Reset()
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
+		_ = startPostgres(t, c)
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -224,6 +224,7 @@ func TestMigration(t *testing.T) {
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		require.NoError(t, jobDB.Setup(
+			c,
 			ReadWrite,
 			true,
 			tablePrefix,

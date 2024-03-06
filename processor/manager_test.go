@@ -206,6 +206,7 @@ func TestProcessorManager(t *testing.T) {
 
 	processor := New(
 		ctx,
+		c,
 		&clearDb,
 		gwDB,
 		rtDB,

@@ -312,7 +312,7 @@ var _ = Describe("BatchRouter", func() {
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
-				config.New(),
+				config.Default,
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory

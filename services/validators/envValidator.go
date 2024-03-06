@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 const (
@@ -42,7 +43,7 @@ func createWorkspaceTable(dbHandle *sql.DB) error {
 	return nil
 }
 
-func insertTokenIfNotExists(dbHandle *sql.DB) error {
+func insertTokenIfNotExists(conf *config.Config, dbHandle *sql.DB) error {
 	// Read entries, if there are no entries insert hashed current workspace token
 	var totalCount int
 	sqlStatement := `SELECT COUNT(*) FROM workspace`
@@ -59,16 +60,16 @@ func insertTokenIfNotExists(dbHandle *sql.DB) error {
 	// There are no entries in the table, hash current workspace token and insert
 	if _, err := dbHandle.Exec(`INSERT INTO workspace (token, created_at)
 									VALUES ($1, $2)`,
-		misc.GetMD5Hash(config.GetWorkspaceToken()),
+		misc.GetMD5Hash(deployment.GetWorkspaceToken(conf)),
 		time.Now()); err != nil {
 		return fmt.Errorf("error inserting workspace token: %w", err)
 	}
 	return nil
 }
 
-func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) error {
-	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
-	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
+func setWHSchemaVersionIfNotExists(conf *config.Config, dbHandle *sql.DB) error {
+	hashedToken := misc.GetMD5Hash(deployment.GetWorkspaceToken(conf))
+	whSchemaVersion := conf.GetString("Warehouse.schemaVersion", "v1")
 
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
@@ -96,7 +97,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) error {
 		}
 		if version, ok := parametersMap["wh_schema_version"]; ok {
 			whSchemaVersion = version.(string)
-			config.Set("Warehouse.schemaVersion", whSchemaVersion)
+			conf.Set("Warehouse.schemaVersion", whSchemaVersion)
 			return nil
 		}
 		parametersMap["wh_schema_version"] = whSchemaVersion
@@ -123,8 +124,8 @@ func getWorkspaceFromDB(dbHandle *sql.DB) (string, error) {
 	return token, nil
 }
 
-func createDBConnection() (*sql.DB, error) {
-	psqlInfo := misc.GetConnectionString(config.Default, "env-validator")
+func createDBConnection(conf *config.Config) (*sql.DB, error) {
+	psqlInfo := misc.GetConnectionString(conf, "env-validator")
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
@@ -200,8 +201,8 @@ func IsPostgresCompatible(ctx context.Context, db *sql.DB) (bool, error) {
 }
 
 // ValidateEnv validates the current environment available for the server
-func ValidateEnv() error {
-	dbHandle, err := createDBConnection()
+func ValidateEnv(conf *config.Config) error {
+	dbHandle, err := createDBConnection(conf)
 	if err != nil {
 		return err
 	}
@@ -224,8 +225,8 @@ func ValidateEnv() error {
 }
 
 // InitializeEnv initializes the environment for the server
-func InitializeNodeMigrations() error {
-	dbHandle, err := createDBConnection()
+func InitializeNodeMigrations(conf *config.Config) error {
+	dbHandle, err := createDBConnection(conf)
 	if err != nil {
 		return err
 	}
@@ -242,8 +243,8 @@ func InitializeNodeMigrations() error {
 	return nil
 }
 
-func CheckAndValidateWorkspaceToken() error {
-	dbHandle, err := createDBConnection()
+func CheckAndValidateWorkspaceToken(conf *config.Config) error {
+	dbHandle, err := createDBConnection(conf)
 	if err != nil {
 		return err
 	}
@@ -252,10 +253,10 @@ func CheckAndValidateWorkspaceToken() error {
 	if err := createWorkspaceTable(dbHandle); err != nil {
 		return err
 	}
-	if err := insertTokenIfNotExists(dbHandle); err != nil {
+	if err := insertTokenIfNotExists(conf, dbHandle); err != nil {
 		return err
 	}
-	if err := setWHSchemaVersionIfNotExists(dbHandle); err != nil {
+	if err := setWHSchemaVersionIfNotExists(conf, dbHandle); err != nil {
 		return err
 	}
 
@@ -263,7 +264,7 @@ func CheckAndValidateWorkspaceToken() error {
 	if err != nil {
 		return err
 	}
-	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
+	if workspaceTokenHashInDB == misc.GetMD5Hash(deployment.GetWorkspaceToken(conf)) {
 		return nil
 	}
 
@@ -276,7 +277,7 @@ func CheckAndValidateWorkspaceToken() error {
 	dbName := config.GetString("DB.name", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB, config.Default)
 
-	dbHandle, err = createDBConnection()
+	dbHandle, err = createDBConnection(conf)
 	if err != nil {
 		return err
 	}
@@ -285,10 +286,10 @@ func CheckAndValidateWorkspaceToken() error {
 	if err := createWorkspaceTable(dbHandle); err != nil {
 		return err
 	}
-	if err := insertTokenIfNotExists(dbHandle); err != nil {
+	if err := insertTokenIfNotExists(conf, dbHandle); err != nil {
 		return err
 	}
-	if err := setWHSchemaVersionIfNotExists(dbHandle); err != nil {
+	if err := setWHSchemaVersionIfNotExists(conf, dbHandle); err != nil {
 		return err
 	}
 	return nil

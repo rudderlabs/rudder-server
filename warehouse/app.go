@@ -43,6 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -161,7 +162,7 @@ func (a *App) Setup(ctx context.Context) error {
 
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`,
 		config.GetKubeNamespace(),
-		misc.GetMD5Hash(config.GetWorkspaceToken()),
+		misc.GetMD5Hash(deployment.GetWorkspaceToken(a.conf)),
 	)
 	a.notifier = notifier.New(
 		a.conf,

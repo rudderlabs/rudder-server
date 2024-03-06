@@ -15,9 +15,9 @@ import (
 type AdaptiveLimiterFunc func(int64) int64
 
 // SetupAdaptiveLimiter creates a new AdaptiveLimiter, starts its RunLoop in a goroutine and periodically collects statistics.
-func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimiterFunc {
+func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group, conf *config.Config) AdaptiveLimiterFunc {
 	var freeMem FreeMemory
-	if config.GetBool("AdaptivePayloadLimiter.enabled", true) {
+	if conf.GetBool("AdaptivePayloadLimiter.enabled", true) {
 		freeMem = func() (float64, error) {
 			s, err := mem.Get()
 			if err != nil {
@@ -28,15 +28,15 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 	}
 
 	limiterConfig := AdaptiveLimiterConfig{
-		FreeMemThresholdLimit: config.GetFloat64("AdaptivePayloadLimiter.freeMemThresholdLimit", 30),
-		FreeMemCriticalLimit:  config.GetFloat64("AdaptivePayloadLimiter.freeMemCriticalLimit", 10),
-		MaxThresholdFactor:    config.GetInt("AdaptivePayloadLimiter.maxThresholdFactor", 9),
+		FreeMemThresholdLimit: conf.GetFloat64("AdaptivePayloadLimiter.freeMemThresholdLimit", 30),
+		FreeMemCriticalLimit:  conf.GetFloat64("AdaptivePayloadLimiter.freeMemCriticalLimit", 10),
+		MaxThresholdFactor:    conf.GetInt("AdaptivePayloadLimiter.maxThresholdFactor", 9),
 		Log:                   logger.NewLogger().Child("payload_limiter"),
 		FreeMemory:            freeMem,
 	}
 
 	// run tick periodically
-	tickFrequency := config.GetDuration("AdaptivePayloadLimiter.tickFrequency", 1, time.Second)
+	tickFrequency := conf.GetDuration("AdaptivePayloadLimiter.tickFrequency", 1, time.Second)
 	limiter := NewAdaptiveLimiter(limiterConfig)
 	g.Go(func() error {
 		limiter.RunLoop(ctx, func() <-chan time.Time {
@@ -46,7 +46,7 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 	})
 
 	// collect statistics
-	statsFrequency := config.GetDuration("AdaptivePayloadLimiter.statsFrequency", 15, time.Second)
+	statsFrequency := conf.GetDuration("AdaptivePayloadLimiter.statsFrequency", 15, time.Second)
 	g.Go(func() error {
 		for {
 			select {

@@ -56,17 +56,17 @@ type modeAckValue struct {
 	Status servermode.Mode `json:"status"`
 }
 
-func EnvETCDConfig() *ETCDConfig {
-	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+func EnvETCDConfig(conf *config.Config) *ETCDConfig {
+	endpoints := strings.Split(conf.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetReleaseName()
 	serverIndex := misc.GetInstanceID()
 	var ackTimeout time.Duration
 
 	envConfigOnce.Do(func() {
-		ackTimeout = config.GetDurationVar(15, time.Second, "etcd.ackTimeout")
-		keepaliveTime = config.GetDurationVar(30, time.Second, "etcd.keepaliveTime")
-		keepaliveTimeout = config.GetDurationVar(10, time.Second, "etcd.keepaliveTimeout")
-		dialTimeout = config.GetDurationVar(20, time.Second, "etcd.dialTimeout")
+		ackTimeout = conf.GetDurationVar(15, time.Second, "etcd.ackTimeout")
+		keepaliveTime = conf.GetDurationVar(30, time.Second, "etcd.keepaliveTime")
+		keepaliveTimeout = conf.GetDurationVar(10, time.Second, "etcd.keepaliveTimeout")
+		dialTimeout = conf.GetDurationVar(20, time.Second, "etcd.dialTimeout")
 	})
 
 	return &ETCDConfig{
@@ -228,8 +228,8 @@ func (manager *ETCDManager) Close() {
 	}
 }
 
-func NewETCDDynamicProvider() *ETCDManager {
+func NewETCDDynamicProvider(conf *config.Config) *ETCDManager {
 	return &ETCDManager{
-		Config: EnvETCDConfig(),
+		Config: EnvETCDConfig(conf),
 	}
 }

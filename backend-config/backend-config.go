@@ -92,20 +92,20 @@ type backendConfigImpl struct {
 	cache             cache.Cache
 }
 
-func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
-	pollInterval = config.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
-	configJSONPath = config.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
-	configFromFile = config.GetBoolVar(false, "BackendConfig.configFromFile")
-	configEnvReplacementEnabled = config.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
-	incrementalConfigUpdates = config.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
-	dbCacheEnabled = config.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
+func loadConfig(conf *config.Config) {
+	configBackendURL = conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+	cpRouterURL = conf.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
+	pollInterval = conf.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
+	configJSONPath = conf.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
+	configFromFile = conf.GetBoolVar(false, "BackendConfig.configFromFile")
+	configEnvReplacementEnabled = conf.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
+	incrementalConfigUpdates = conf.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
+	dbCacheEnabled = conf.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
 }
 
-func Init() {
+func Init(conf *config.Config) {
 	Diagnostics = diagnostics.Diagnostics
-	loadConfig()
+	loadConfig(conf)
 }
 
 func trackConfig(preConfig, curConfig ConfigT) {
@@ -268,7 +268,7 @@ func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
-func newForDeployment(deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+func newForDeployment(conf *config.Config, deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	backendConfig := &backendConfigImpl{
 		eb: pubsub.New(),
 	}
@@ -280,6 +280,7 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 	switch deploymentType {
 	case deployment.DedicatedType:
 		backendConfig.workspaceConfig = &singleWorkspaceConfig{
+			conf:             conf,
 			configJSONPath:   configJSONPath,
 			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
@@ -287,6 +288,7 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 		}
 	case deployment.MultiTenantType:
 		backendConfig.workspaceConfig = &namespaceConfig{
+			conf:                     conf,
 			configBackendURL:         parsedConfigBackendURL,
 			configEnvHandler:         configEnvHandler,
 			cpRouterURL:              cpRouterURL,
@@ -301,14 +303,19 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 }
 
 // Setup backend config
-func Setup(configEnvHandler types.ConfigEnvI) (err error) {
-	deploymentType, err := deployment.GetFromEnv()
-	region := config.GetString("region", "")
+func Setup(configEnvHandler types.ConfigEnvI, conf *config.Config) (err error) {
+	deploymentType, err := deployment.GetType(conf)
+	region := conf.GetString("region", "")
 	if err != nil {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err := newForDeployment(deploymentType, region, configEnvHandler)
+	backendConfig, err := newForDeployment(
+		conf,
+		deploymentType,
+		region,
+		configEnvHandler,
+	)
 	if err != nil {
 		return err
 	}

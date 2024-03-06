@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -195,6 +196,7 @@ type StatsIncrementer interface {
 }
 
 type JobServiceConfig struct {
+	Conf                        *config.Config
 	LocalHostname               string
 	LocalConn                   string
 	MaxPoolSize                 int

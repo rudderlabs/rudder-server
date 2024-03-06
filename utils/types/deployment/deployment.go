@@ -27,8 +27,8 @@ const defaultClusterType = DedicatedType
 
 var pkgLogger = logger.NewLogger().Child("deployment")
 
-func GetFromEnv() (Type, error) {
-	t := Type(config.GetString("DEPLOYMENT_TYPE", ""))
+func GetType(conf *config.Config) (Type, error) {
+	t := Type(conf.GetString("DEPLOYMENT_TYPE", ""))
 	if t == "" {
 		t = defaultClusterType
 	}
@@ -46,8 +46,8 @@ func (t Type) Valid() bool {
 	return false
 }
 
-func GetConnectionToken() (string, string, bool, error) {
-	deploymentType, err := GetFromEnv()
+func GetConnectionToken(conf *config.Config) (string, string, bool, error) {
+	deploymentType, err := GetType(conf)
 	if err != nil {
 		pkgLogger.Errorf("error getting deployment type: %v", err)
 		return "", "", false, err
@@ -56,21 +56,21 @@ func GetConnectionToken() (string, string, bool, error) {
 	var isMultiWorkspace bool
 	switch deploymentType {
 	case DedicatedType:
-		connectionToken = config.GetWorkspaceToken()
+		connectionToken = GetWorkspaceToken(conf)
 		tokenType = workspaceToken
 	case MultiTenantType:
 		isMultiWorkspace = true
 		tokenType = namespace
-		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
+		isNamespaced := conf.IsSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			connectionToken = config.GetString("WORKSPACE_NAMESPACE", "")
+			connectionToken = conf.GetString("WORKSPACE_NAMESPACE", "")
 			if connectionToken == hostedNamespace {
 				// CP Router still has some things hardcoded for hosted
 				// which needs to be supported
-				connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
+				connectionToken = conf.GetString("HOSTED_SERVICE_SECRET", "")
 			}
 		} else {
-			if !config.IsSet("HOSTED_SERVICE_SECRET") {
+			if !conf.IsSet("HOSTED_SERVICE_SECRET") {
 				pkgLogger.Error("hosted service secret not set")
 				return "", "", false, errors.New("hosted service secret not set")
 			}
@@ -78,4 +78,12 @@ func GetConnectionToken() (string, string, bool, error) {
 		}
 	}
 	return connectionToken, tokenType, isMultiWorkspace, nil
+}
+
+func GetWorkspaceToken(conf *config.Config) string {
+	token := conf.GetString("WORKSPACE_TOKEN", "")
+	if token != "" && token != "<your_token_here>" {
+		return token
+	}
+	return conf.GetString("CONFIG_BACKEND_TOKEN", "")
 }

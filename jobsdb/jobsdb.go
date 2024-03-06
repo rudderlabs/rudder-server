@@ -450,10 +450,6 @@ type Handle struct {
 	backgroundCancel context.CancelFunc
 	backgroundGroup  *errgroup.Group
 
-	// skipSetupDBSetup is useful for testing as we mock the database client
-	// TODO: Remove this flag once we have test setup that uses real database
-	skipSetupDBSetup bool
-
 	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
@@ -716,9 +712,11 @@ tablePrefix must be unique and is used to separate
 multiple users of JobsDB
 */
 func (jd *Handle) Setup(
+	conf *config.Config,
 	ownerType OwnerType, clearAll bool, tablePrefix string,
 	preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
+	jd.config = conf
 	jd.ownerType = ownerType
 	jd.conf.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
@@ -992,9 +990,7 @@ func (jd *Handle) Start() error {
 	jd.backgroundCancel = cancel
 	jd.backgroundGroup = g
 
-	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, jd.ownerType)
-	}
+	jd.setUpForOwnerType(ctx, jd.ownerType)
 	return nil
 }
 

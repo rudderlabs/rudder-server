@@ -32,6 +32,7 @@ type gatewayApp struct {
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
+	conf           *config.Config
 	config         struct {
 		gatewayDSLimit misc.ValueLoader[int]
 	}
@@ -42,10 +43,10 @@ func (a *gatewayApp) Setup(options *app.Options) error {
 	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY); err != nil {
 		return err
 	}
-	if err := rudderCoreDBValidator(); err != nil {
+	if err := rudderCoreDBValidator(a.conf); err != nil {
 		return err
 	}
-	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
+	if err := rudderCoreWorkSpaceTableSetup(a.conf); err != nil {
 		return err
 	}
 	a.setupDone = true
@@ -59,7 +60,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	a.log.Info("Gateway starting")
 
-	deploymentType, err := deployment.GetFromEnv()
+	deploymentType, err := deployment.GetType(a.conf)
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %v", err)
 	}
@@ -81,6 +82,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer gatewayDB.Close()
 
@@ -93,6 +95,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithConfig(a.conf),
 	)
 	defer errDB.Close()
 
@@ -103,7 +106,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	modeProvider, err := resolveModeProvider(a.log, deploymentType)
+	modeProvider, err := resolveModeProvider(a.conf, a.log, deploymentType)
 	if err != nil {
 		return err
 	}
@@ -121,7 +124,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	rsourcesService, err := NewRsourcesService(deploymentType, false)
+	rsourcesService, err := NewRsourcesService(a.conf, deploymentType, false)
 	if err != nil {
 		return err
 	}

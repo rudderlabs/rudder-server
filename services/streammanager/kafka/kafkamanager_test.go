@@ -243,7 +243,7 @@ func TestNewProducer(t *testing.T) {
 		t.Setenv("CP_INTERNAL_API_USERNAME", "johnDoe")
 		t.Setenv("CP_INTERNAL_API_PASSWORD", "so-secret")
 
-		require.NoError(t, backendconfig.Setup(nil))
+		require.NoError(t, backendconfig.Setup(nil, nil))
 		defer backendconfig.DefaultBackendConfig.Stop()
 
 		// Populate destConfig according to the above configuration

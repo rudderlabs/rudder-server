@@ -37,7 +37,7 @@ var pkgLogger = logger.NewLogger().Child("regulation-worker")
 func main() {
 	pkgLogger.Info("Starting regulation-worker")
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	err := Run(ctx)
+	err := Run(ctx, config.Default)
 	if ctx.Err() == nil {
 		cancel()
 	}
@@ -47,10 +47,13 @@ func main() {
 	}
 }
 
-func Run(ctx context.Context) error {
-	config.Set("Diagnostics.enableDiagnostics", false)
+func Run(ctx context.Context, conf *config.Config) error {
+	if conf == nil {
+		conf = config.Default
+	}
+	conf.Set("Diagnostics.enableDiagnostics", false)
 
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+	stats.Default = stats.NewStats(conf, logger.Default, svcMetric.Instance,
 		stats.WithServiceName("regulation-worker"),
 	)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
@@ -61,16 +64,16 @@ func Run(ctx context.Context) error {
 	admin.Init()
 	misc.Init()
 	diagnostics.Init()
-	backendconfig.Init()
+	backendconfig.Init(conf)
 
-	if err := backendconfig.Setup(nil); err != nil {
+	if err := backendconfig.Setup(nil, nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
 	}
 	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
 	}
 
-	deploymentType, err := deployment.GetFromEnv()
+	deploymentType, err := deployment.GetType(conf)
 	if err != nil {
 		return fmt.Errorf("getting deployment type: %w", err)
 	}

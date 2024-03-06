@@ -18,6 +18,7 @@ import (
 
 type Factory struct {
 	Logger                     logger.Logger
+	Conf                       *config.Config
 	Reporting                  reporter
 	BackendConfig              backendconfig.BackendConfig
 	RouterDB                   jobsdb.JobsDB
@@ -38,7 +39,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 	r.Setup(
 		destination.DestinationDefinition,
 		f.Logger,
-		config.Default,
+		f.Conf,
 		f.BackendConfig,
 		f.RouterDB,
 		f.ProcErrorDB,

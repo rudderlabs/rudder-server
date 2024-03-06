@@ -11,6 +11,7 @@ import (
 )
 
 type Factory struct {
+	Conf             *config.Config
 	Reporting        types.Reporting
 	BackendConfig    backendconfig.BackendConfig
 	RouterDB         jobsdb.JobsDB
@@ -35,7 +36,7 @@ func (f *Factory) New(destType string) *Handle {
 		f.TransientSources,
 		f.RsourcesService,
 		f.Debugger,
-		config.Default,
+		f.Conf,
 	)
 	return r
 }

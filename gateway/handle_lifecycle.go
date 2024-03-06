@@ -47,13 +47,13 @@ This function will block until backend config is initially received.
 */
 func (gw *Handle) Setup(
 	ctx context.Context,
-	config *config.Config, logger logger.Logger, stat stats.Stats,
+	conf *config.Config, logger logger.Logger, stat stats.Stats,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService, sourcehandle sourcedebugger.SourceDebugger,
 	opts ...OptFunc,
 ) error {
-	gw.config = config
+	gw.config = conf
 	gw.logger = logger
 	gw.stats = stat
 	gw.tracer = stat.NewTracer("gateway")
@@ -67,36 +67,36 @@ func (gw *Handle) Setup(
 	gw.sourcehandle = sourcehandle
 
 	// Port where GW is running
-	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
+	gw.conf.webPort = conf.GetIntVar(8080, 1, "Gateway.webPort")
 	// Number of incoming requests that are batched before handing off to write workers
-	gw.conf.maxUserWebRequestBatchSize = config.GetIntVar(128, 1, "Gateway.maxUserRequestBatchSize")
+	gw.conf.maxUserWebRequestBatchSize = conf.GetIntVar(128, 1, "Gateway.maxUserRequestBatchSize")
 	// Number of userWorkerBatchRequest that are batched before initiating write
-	gw.conf.maxDBBatchSize = config.GetIntVar(128, 1, "Gateway.maxDBBatchSize")
+	gw.conf.maxDBBatchSize = conf.GetIntVar(128, 1, "Gateway.maxDBBatchSize")
 	// Multiple workers are used to batch user web requests
-	gw.conf.maxUserWebRequestWorkerProcess = config.GetIntVar(64, 1, "Gateway.maxUserWebRequestWorkerProcess")
+	gw.conf.maxUserWebRequestWorkerProcess = conf.GetIntVar(64, 1, "Gateway.maxUserWebRequestWorkerProcess")
 	// Multiple DB writers are used to write data to DB
-	gw.conf.maxDBWriterProcess = config.GetIntVar(256, 1, "Gateway.maxDBWriterProcess")
+	gw.conf.maxDBWriterProcess = conf.GetIntVar(256, 1, "Gateway.maxDBWriterProcess")
 	// Timeout after which batch is formed anyway with whatever requests are available
-	gw.conf.userWebRequestBatchTimeout = config.GetReloadableDurationVar(15, time.Millisecond, "Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS")
-	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
+	gw.conf.userWebRequestBatchTimeout = conf.GetReloadableDurationVar(15, time.Millisecond, "Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS")
+	gw.conf.dbBatchWriteTimeout = conf.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
-	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
+	gw.conf.allowReqsWithoutUserIDAndAnonymousID = conf.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
+	gw.conf.gwAllowPartialWriteWithErrors = conf.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
 	// Maximum request size to gateway
-	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
+	gw.conf.maxReqSize = conf.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
-	gw.conf.enableRateLimit = config.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
+	gw.conf.enableRateLimit = conf.GetReloadableBoolVar(false, "Gateway.enableRateLimit")
 	// Enable suppress user feature. false by default
-	gw.conf.enableSuppressUserFeature = config.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
+	gw.conf.enableSuppressUserFeature = conf.GetBoolVar(true, "Gateway.enableSuppressUserFeature")
 	// Time period for diagnosis ticker
-	gw.conf.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS")
-	gw.conf.ReadTimeout = config.GetDurationVar(0, time.Second, "ReadTimeout", "ReadTimeOutInSec")
-	gw.conf.ReadHeaderTimeout = config.GetDurationVar(0, time.Second, "ReadHeaderTimeout", "ReadHeaderTimeoutInSec")
-	gw.conf.WriteTimeout = config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec")
-	gw.conf.IdleTimeout = config.GetDurationVar(720, time.Second, "IdleTimeout", "IdleTimeoutInSec")
-	gw.conf.maxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
+	gw.conf.diagnosisTickerTime = conf.GetDurationVar(60, time.Second, "Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS")
+	gw.conf.ReadTimeout = conf.GetDurationVar(0, time.Second, "ReadTimeout", "ReadTimeOutInSec")
+	gw.conf.ReadHeaderTimeout = conf.GetDurationVar(0, time.Second, "ReadHeaderTimeout", "ReadHeaderTimeoutInSec")
+	gw.conf.WriteTimeout = conf.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec")
+	gw.conf.IdleTimeout = conf.GetDurationVar(720, time.Second, "IdleTimeout", "IdleTimeoutInSec")
+	gw.conf.maxHeaderBytes = conf.GetIntVar(524288, 1, "MaxHeaderBytes")
 	// if set to '0', it means disabled.
-	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
+	gw.conf.maxConcurrentRequests = conf.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)

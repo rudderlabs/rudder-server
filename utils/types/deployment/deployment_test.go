@@ -83,7 +83,7 @@ func Test_GetFromEnv(t *testing.T) {
 				t.Setenv(v, tt.envs[v])
 			}
 
-			dType, err := deployment.GetFromEnv()
+			dType, err := deployment.GetType(config.Default)
 			require.Equal(t, tt.expectedType, dType)
 			require.Equal(t, tt.err, err)
 		})
@@ -150,7 +150,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			t.Setenv("HOSTED_SERVICE_SECRET", tt.secret)
 			t.Setenv("WORKSPACE_NAMESPACE", tt.namespace)
 			t.Setenv("WORKSPACE_TOKEN", tt.workspaceToken)
-			identifier, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
+			identifier, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken(config.Default)
 			require.Equal(t, tt.err, err)
 			require.Equal(t, tt.expectedIdentifier, identifier)
 			require.Equal(t, tt.expectedBool, isMultiWorkspace)

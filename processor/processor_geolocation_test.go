@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -22,12 +21,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func TestProcessorGeolocation(t *testing.T) {
@@ -45,7 +44,7 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
 			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.Empty(t, gjson.GetBytes(event, "context.geo").Raw, "no geolocation information should be present when the feature is disabled")
+				require.Empty(t, gjson.GetBytes(event, "body.JSON.context.geo").Raw, "no geolocation information should be present when the feature is disabled")
 			})
 	})
 
@@ -56,7 +55,7 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
 			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.Empty(t, gjson.GetBytes(event, "context.geo").Raw, "no geolocation information should be present when geolocation is disabled at source")
+				require.Empty(t, gjson.GetBytes(event, "body.JSON.context.geo").Raw, "no geolocation information should be present when geolocation is disabled at source")
 			})
 	})
 
@@ -67,9 +66,9 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
 			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, londonIP, gjson.GetBytes(event, "context.geo.ip").String(), "contex.ip should take precedence over clientIP")
-				require.Equal(t, "London", gjson.GetBytes(event, "context.geo.city").String(), "contex.ip should take precedence over clientIP")
+				require.NotEmpty(t, gjson.GetBytes(event, "body.JSON.context.geo").Raw, string(event), "geolocation information should be present")
+				require.Equal(t, londonIP, gjson.GetBytes(event, "body.JSON.context.geo.ip").String(), "contex.ip should take precedence over clientIP")
+				require.Equal(t, "London", gjson.GetBytes(event, "body.JSON.context.geo.city").String(), "contex.ip should take precedence over clientIP")
 			})
 	})
 
@@ -80,9 +79,9 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP("").
 			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, boxfordIP, gjson.GetBytes(event, "context.geo.ip").String(), "clientIP should be used by the geolocation service")
-				require.Equal(t, "Boxford", gjson.GetBytes(event, "context.geo.city").String(), "clientIP should be used by the geolocation service")
+				require.NotEmpty(t, gjson.GetBytes(event, "body.JSON.context.geo").Raw, string(event), "geolocation information should be present")
+				require.Equal(t, boxfordIP, gjson.GetBytes(event, "body.JSON.context.geo.ip").String(), "clientIP should be used by the geolocation service")
+				require.Equal(t, "Boxford", gjson.GetBytes(event, "body.JSON.context.geo.city").String(), "clientIP should be used by the geolocation service")
 			})
 	})
 
@@ -93,9 +92,9 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(londonIP).
 			WithContextIP(invalidIP).
 			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, invalidIP, gjson.GetBytes(event, "context.geo.ip").String(), "geolocation service should use the first non blank context.ip even if invalid")
-				require.Equal(t, "", gjson.GetBytes(event, "context.geo.city").String(), "geolocation service should use the first non blank context.ip even if invalid")
+				require.NotEmpty(t, gjson.GetBytes(event, "body.JSON.context.geo").Raw, string(event), "geolocation information should be present")
+				require.Equal(t, invalidIP, gjson.GetBytes(event, "body.JSON.context.geo.ip").String(), "geolocation service should use the first non blank context.ip even if invalid")
+				require.Equal(t, "", gjson.GetBytes(event, "body.JSON.context.geo.city").String(), "geolocation service should use the first non blank context.ip even if invalid")
 			})
 	})
 }
@@ -128,8 +127,6 @@ func (s *geolocationScenario) WithClientIP(ip string) *geolocationScenario {
 }
 
 func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, event json.RawMessage)) {
-	config.Reset()
-	defer config.Reset()
 	writeKey := "writekey-1"
 
 	gatewayUrl, db, cancel, wg := s.startAll(t, writeKey)
@@ -146,7 +143,12 @@ func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, 
 	verification(t, payload)
 }
 
-func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUrl string, db *sql.DB, cancel context.CancelFunc, wg *errgroup.Group) {
+func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (
+	gatewayUrl string,
+	db *sql.DB,
+	cancel context.CancelFunc,
+	wg *errgroup.Group,
+) {
 	ctx, cancel := context.WithCancel(context.Background())
 	wg, ctx = errgroup.WithContext(ctx)
 
@@ -161,22 +163,24 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 						WithConnection(
 							backendconfigtest.NewDestinationBuilder("WEBHOOK").
 								WithID("destination-1").
+								WithConfigOption("webhookUrl", "http://localhost:8000/random").
 								Build()).
 						Build()).
 				Build()).
 		Build()
-
 	trServer := transformertest.NewBuilder().Build()
+	conf := config.New()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	postgresContainer, err := postgres.Setup(pool, t)
-	require.NoError(t, err)
+	conf.Set("CONFIG_BACKEND_URL", bcserver.URL)
+	conf.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	conf.Set("WORKSPACE_TOKEN", "token")
+
+	_, postgresContainer := startPostgres(t, conf)
 
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	wg.Go(func() error {
-		err := s.runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+		err := s.runRudderServer(ctx, conf, gwPort, trServer.URL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		} else {
@@ -191,37 +195,36 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 	return url, postgresContainer.DB, cancel, wg
 }
 
-func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
-	config.Set("CONFIG_BACKEND_URL", cbURL)
-	config.Set("WORKSPACE_TOKEN", "token")
-	config.Set("DB.port", postgresContainer.Port)
-	config.Set("DB.user", postgresContainer.User)
-	config.Set("DB.name", postgresContainer.Database)
-	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerURL)
+func (s *geolocationScenario) runRudderServer(
+	ctx context.Context,
+	conf *config.Config,
+	port int,
+	transformerURL, tmpDir string,
+) (err error) {
+	conf.Set("DEST_TRANSFORM_URL", transformerURL)
 
-	config.Set("Warehouse.mode", "off")
-	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
-	config.Set("SourceDebugger.disableEventUploads", true)
-	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
-	config.Set("JobsDB.backup.enabled", false)
-	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
-	config.Set("archival.Enabled", false)
-	config.Set("Reporting.syncer.enabled", false)
-	config.Set("BatchRouter.mainLoopFreq", "1s")
-	config.Set("BatchRouter.uploadFreq", "1s")
-	config.Set("Gateway.webPort", strconv.Itoa(port))
-	config.Set("RUDDER_TMPDIR", tmpDir)
-	config.Set("recovery.storagePath", path.Join(tmpDir, "/recovery_data.json"))
-	config.Set("recovery.enabled", false)
-	config.Set("Profiler.Enabled", false)
-	config.Set("Router.toAbortDestinationIDs", "destination-1")
-	config.Set("Gateway.enableSuppressUserFeature", false)
-	config.Set("Router.readSleep", "10ms")
-	config.Set("Processor.pingerSleep", "10ms")
-	config.Set("Processor.readLoopSleep", "10ms")
-	config.Set("Processor.maxLoopSleep", "10ms")
-	config.Set("AdminServer.enabled", false)
+	conf.Set("Warehouse.mode", "off")
+	conf.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
+	conf.Set("SourceDebugger.disableEventUploads", true)
+	conf.Set("TransformationDebugger.disableTransformationStatusUploads", true)
+	conf.Set("JobsDB.backup.enabled", false)
+	conf.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	conf.Set("archival.Enabled", false)
+	conf.Set("Reporting.syncer.enabled", false)
+	conf.Set("BatchRouter.mainLoopFreq", "1s")
+	conf.Set("BatchRouter.uploadFreq", "1s")
+	conf.Set("Gateway.webPort", strconv.Itoa(port))
+	conf.Set("RUDDER_TMPDIR", tmpDir)
+	conf.Set("recovery.storagePath", path.Join(tmpDir, "/recovery_data.json"))
+	conf.Set("recovery.enabled", false)
+	conf.Set("Profiler.Enabled", false)
+	conf.Set("Router.toAbortDestinationIDs", []string{"destination-1"})
+	conf.Set("Gateway.enableSuppressUserFeature", false)
+	conf.Set("Router.readSleep", "10ms")
+	conf.Set("Processor.pingerSleep", "10ms")
+	conf.Set("Processor.readLoopSleep", "10ms")
+	conf.Set("Processor.maxLoopSleep", "10ms")
+	conf.Set("AdminServer.enabled", false)
 
 	if s.geolocationFeatureEnabled {
 		// copy file to tmpDir/geolocation/geolite2City.mmdb
@@ -247,14 +250,17 @@ func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, pos
 			return err
 		}
 	}
-	config.Set("GeoEnrichment.enabled", s.geolocationFeatureEnabled)
+	conf.Set("GeoEnrichment.enabled", s.geolocationFeatureEnabled)
 
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
 		}
 	}()
-	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
+	r := runner.New(
+		runner.ReleaseInfo{EnterpriseToken: "TOKEN"},
+		runner.WithConfig(conf),
+	)
 	c := r.Run(ctx, []string{"proc-geolocation-test-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
@@ -302,10 +308,10 @@ func (s *geolocationScenario) sendEvent(url, writeKey string) error {
 }
 
 func (s *geolocationScenario) requireJobsCount(t *testing.T, db *sql.DB, queue, state string, expectedCount int) {
+	var jobsCount int
 	require.Eventually(t, func() bool {
-		var jobsCount int
 		require.NoError(t, db.QueryRow(fmt.Sprintf("SELECT count(*) FROM unionjobsdbmetadata('%s',10) WHERE job_state = '%s'", queue, state)).Scan(&jobsCount))
 		t.Logf("%s %s Count: %d", queue, state, jobsCount)
 		return jobsCount == expectedCount
-	}, 20*time.Second, 1*time.Second, fmt.Sprintf("%d %s events should be in %s state", expectedCount, queue, state))
+	}, 20*time.Second, 1*time.Second, fmt.Sprintf("%d %s events should be in %s state - actual: %d", expectedCount, queue, state, jobsCount))
 }

@@ -42,9 +42,9 @@ func TestSuppressionSetup(t *testing.T) {
 	admin.Init()
 	misc.Init()
 	diagnostics.Init()
-	backendconfig.Init()
+	backendconfig.Init(nil)
 
-	require.NoError(t, backendconfig.Setup(nil))
+	require.NoError(t, backendconfig.Setup(nil, nil))
 	defer backendconfig.DefaultBackendConfig.Stop()
 	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
 

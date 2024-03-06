@@ -19,6 +19,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 type singleWorkspaceConfig struct {
@@ -27,6 +28,7 @@ type singleWorkspaceConfig struct {
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
 	region           string
+	conf             *config.Config
 
 	workspaceIDOnce sync.Once
 	workspaceID     string
@@ -37,6 +39,9 @@ type singleWorkspaceConfig struct {
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
+	if wc.conf == nil {
+		wc.conf = config.Default
+	}
 	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
 	wc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
 
@@ -51,7 +56,7 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 		return nil
 	}
 	if wc.token == "" {
-		wc.token = config.GetWorkspaceToken()
+		wc.token = deployment.GetWorkspaceToken(wc.conf)
 	}
 	if wc.token == "" {
 		return fmt.Errorf("single workspace: empty workspace config token")
@@ -172,7 +177,7 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 
 	defer wc.httpCallsStat.Increment()
 
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: wc.conf.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

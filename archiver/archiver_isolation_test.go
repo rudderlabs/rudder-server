@@ -30,7 +30,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -125,15 +124,13 @@ func ArchivalScenario(
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
 
-	postgresContainer, err := postgres.Setup(pool, cleanup, postgres.WithShmSize(256*bytesize.MB))
+	postgresContainer, err := postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "failed to setup postgres container")
 
-	minioResource, err := minio.Setup(pool, cleanup)
+	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err, "failed to setup minio container")
-	transformerContainer, err := destination.SetupTransformer(pool, cleanup)
+	transformerContainer, err := destination.SetupTransformer(pool, t)
 	require.NoError(t, err, "failed to setup transformer container")
 
 	configMap := dummyConfig(numWorkspace, numSourcesPerWorkspace, minioResource)

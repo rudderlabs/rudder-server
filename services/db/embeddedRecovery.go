@@ -4,16 +4,10 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 // HandleEmbeddedRecovery decides the recovery Mode in which app should run based on earlier crashes
 func HandleEmbeddedRecovery(forceNormal, forceDegraded bool, currTime int64, appType string) error {
-	enabled := config.GetBool("recovery.enabled", true)
-	if !enabled {
-		return nil
-	}
 	isForced := false
 	forceMode := getForceRecoveryMode(forceNormal, forceDegraded)
 

@@ -71,6 +71,7 @@ type ReleaseInfo struct {
 
 // Runner is responsible for running the application
 type Runner struct {
+	conf                      *config.Config
 	appType                   string
 	application               app.App
 	releaseInfo               ReleaseInfo
@@ -83,30 +84,57 @@ type Runner struct {
 }
 
 // New creates and initializes a new Runner
-func New(releaseInfo ReleaseInfo) *Runner {
-	return &Runner{
-		appType:                   strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED)),
-		releaseInfo:               releaseInfo,
-		logger:                    logger.NewLogger().Child("runner"),
-		warehouseMode:             config.GetString("Warehouse.mode", "embedded"),
-		enableSuppressUserFeature: config.GetBool("Gateway.enableSuppressUserFeature", true),
-		gracefulShutdownTimeout:   config.GetDuration("GracefulShutdownTimeout", 15, time.Second),
+func New(releaseInfo ReleaseInfo, options ...OptFunc) *Runner {
+	r := &Runner{
+		releaseInfo: releaseInfo,
+	}
+	for _, opt := range options {
+		opt(r)
+	}
+	if r.conf == nil {
+		r.conf = config.Default
+	}
+	if r.logger == nil {
+		r.logger = logger.NewLogger().Child("runner")
+	}
+	r.appType = strings.ToUpper(r.conf.GetString("APP_TYPE", app.EMBEDDED))
+	r.warehouseMode = r.conf.GetString("Warehouse.mode", "embedded")
+	r.enableSuppressUserFeature = r.conf.GetBool("Gateway.enableSuppressUserFeature", true)
+	r.gracefulShutdownTimeout = r.conf.GetDuration("GracefulShutdownTimeout", 15, time.Second)
+
+	return r
+}
+
+type OptFunc func(*Runner)
+
+func WithLogger(logger logger.Logger) OptFunc {
+	return func(r *Runner) {
+		r.logger = logger
+	}
+}
+
+func WithConfig(conf *config.Config) OptFunc {
+	return func(r *Runner) {
+		r.conf = conf
 	}
 }
 
 // Run runs the application and returns the exit code
 func (r *Runner) Run(ctx context.Context, args []string) int {
+	if r.conf == nil {
+		r.conf = config.Default
+	}
 	// Start stats
-	deploymentType, err := deployment.GetFromEnv()
+	deploymentType, err := deployment.GetType(r.conf)
 	if err != nil {
 		r.logger.Errorf("failed to get deployment type: %v", err)
 		return 1
 	}
 
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
-	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
-		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
-		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
+	if !r.conf.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
+		(!r.conf.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(r.conf.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+		r.conf.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
 	statsOptions := []stats.Option{
 		stats.WithServiceName(r.appType),
@@ -120,13 +148,13 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	for histogramName, buckets := range customBuckets {
 		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
 	}
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance, statsOptions...)
+	stats.Default = stats.NewStats(r.conf, logger.Default, svcMetric.Instance, statsOptions...)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
 		return 1
 	}
 
-	runAllInit()
+	runAllInit(r.conf)
 
 	options := app.LoadOptions(args)
 	if options.VersionFlag {
@@ -141,7 +169,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
-	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
+	r.appHandler, err = apphandlers.GetAppHandler(r.conf, r.application, r.appType, r.versionHandler)
 	if err != nil {
 		r.logger.Errorf("Failed to get app handler: %v", err)
 		return 1
@@ -149,8 +177,8 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Start bugsnag
 	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetString("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetString("GO_ENV", "development"),
+		APIKey:       r.conf.GetString("BUGSNAG_KEY", ""),
+		ReleaseStage: r.conf.GetString("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
@@ -177,7 +205,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
-	if err := backendconfig.Setup(configEnvHandler); err != nil {
+	if err := backendconfig.Setup(configEnvHandler, r.conf); err != nil {
 		r.logger.Errorf("Unable to setup backend config: %s", err)
 		return 1
 	}
@@ -208,7 +236,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start admin server
-	if config.GetBool("AdminServer.enabled", true) {
+	if r.conf.GetBool("AdminServer.enabled", true) {
 		g.Go(func() error {
 			if err := admin.StartServer(ctx); err != nil {
 				return fmt.Errorf("admin server routine: %w", err)
@@ -217,9 +245,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		})
 	}
 
-	if config.GetBool("Profiler.Enabled", true) {
+	if r.conf.GetBool("Profiler.Enabled", true) {
 		g.Go(func() error {
-			return profiler.StartServer(ctx, config.GetInt("Profiler.Port", 7777))
+			return profiler.StartServer(ctx, r.conf.GetInt("Profiler.Port", 7777))
 		})
 	}
 
@@ -237,7 +265,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := controlplane.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+				r.conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
@@ -302,7 +330,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		r.application.Stop()
 		logger.Sync()
 		stats.Default.Stop()
-		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
+		if r.conf.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1
 		}
 	}
@@ -310,12 +338,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	return 0
 }
 
-func runAllInit() {
+func runAllInit(conf *config.Config) {
 	admin.Init()
 	misc.Init()
 	db.Init()
 	diagnostics.Init()
-	backendconfig.Init()
+	backendconfig.Init(conf)
 	warehouseutils.Init()
 	validations.Init()
 	kafka.Init()
