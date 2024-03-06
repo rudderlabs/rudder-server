@@ -159,6 +159,7 @@ func (w *worker) workLoop() {
 			}
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
+			dontBatch := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "dontBatch").Bool()
 			jobMetadata := types.JobMetadataT{
 				UserID:             userID,
 				JobID:              job.JobID,
@@ -172,7 +173,7 @@ func (w *worker) workLoop() {
 				JobT:               job,
 				WorkspaceID:        parameters.WorkspaceID,
 				WorkerAssignedTime: message.assignedAt,
-				DontBatch:          parameters.DontBatch,
+				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
 			}
 
@@ -683,7 +684,7 @@ func (w *worker) processDestinationJobs() {
 			dontBatch, ok := dontBatchDirectives[destinationJobMetadata.JobID]
 			if ok && dontBatch {
 				// Used to send this as a directive for transformer to not let this job batch with other jobs
-				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "dontBatch", true)
+				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "dontBatch", true)
 			}
 		}
 		w.postStatusOnResponseQ(respStatusCode, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
