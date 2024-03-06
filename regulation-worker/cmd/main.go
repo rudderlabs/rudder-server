@@ -67,6 +67,7 @@ func Run(ctx context.Context) error {
 	misc.Init()
 	diagnostics.Init()
 	backendconfig.Init()
+	oauth.Init() // initialise oauth
 
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
