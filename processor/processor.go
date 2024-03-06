@@ -2379,10 +2379,10 @@ type transformSrcDestOutput struct {
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
 	partition string,
-	// main inputs
+// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEvent,
 
-	// helpers
+// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
@@ -3145,24 +3145,5 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 }
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
-	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
-	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
-	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
-
-	for tablePrefix, db := range dbs {
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
-			jobdDBQueryRequestTimeout,
-			jobdDBMaxRetries.Load(),
-			func(ctx context.Context) (map[string]map[string]int, error) {
-				return db.GetPileUpCounts(ctx)
-			}, func(attempt int) {
-				proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
-				stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Count(1)
-			})
-		if err != nil {
-			return err
-		}
-		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
-	}
 	return nil
 }
