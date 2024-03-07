@@ -142,7 +142,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		return configOnError, err
 	}
 	configEnvHandler := nc.configEnvHandler
-	if configEnvReplacementEnabled && configEnvHandler != nil {
+	if nc.conf.GetBoolVar(true, "BackendConfig.envReplacementEnabled") && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 

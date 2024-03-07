@@ -331,8 +331,10 @@ func TestWaitForConfig(t *testing.T) {
 		defer ctrl.Finish()
 
 		pkgLogger = logger.NOP
-		pollInterval = misc.SingleValueLoader(time.Millisecond)
-		bc := &backendConfigImpl{initialized: false}
+		bc := &backendConfigImpl{
+			initialized:  false,
+			pollInterval: misc.SingleValueLoader(time.Millisecond),
+		}
 
 		var done int32
 		go func() {

@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/app"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/db"
 )
 
@@ -23,7 +24,7 @@ func TestAppHandlerStartSequence(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		t.Run("it shouldn't be able to start without setup being called first", func(t *testing.T) {
-			require.Error(t, appHandler.StartRudderCore(ctx, options))
+			require.Error(t, appHandler.StartRudderCore(ctx, options, backendconfig.DefaultBackendConfig))
 		})
 
 		t.Run("it shouldn't be able to setup if database is down", func(t *testing.T) {

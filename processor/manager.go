@@ -103,6 +103,7 @@ func (proc *LifecycleManager) Stop() {
 func New(
 	ctx context.Context,
 	conf *config.Config,
+	backendConfig backendconfig.BackendConfig,
 	clearDb *bool,
 	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting,
@@ -133,7 +134,7 @@ func New(
 		esDB:                       esDB,
 		arcDB:                      arcDB,
 		clearDB:                    clearDb,
-		BackendConfig:              backendconfig.DefaultBackendConfig,
+		BackendConfig:              backendConfig,
 		ReportingI:                 reporting,
 		transientSources:           transientSources,
 		fileuploader:               fileuploader,

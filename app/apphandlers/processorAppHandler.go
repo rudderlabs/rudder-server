@@ -49,6 +49,7 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	conf           *config.Config
+	backendConfig  backendconfig.BackendConfig
 	config         struct {
 		processorDSLimit   misc.ValueLoader[int]
 		routerDSLimit      misc.ValueLoader[int]
@@ -94,7 +95,7 @@ func (a *processorApp) Setup(options *app.Options) error {
 	return nil
 }
 
-func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options, bConfig backendconfig.BackendConfig) error {
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
@@ -109,7 +110,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
-	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
+	reporting := a.app.Features().Reporting.Setup(ctx, bConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default, "reporting")})
 	g.Go(misc.WithBugsnag(func() error {
@@ -119,23 +120,23 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	transformationhandle, err := transformationdebugger.NewHandle(bConfig)
 	if err != nil {
 		return err
 	}
 	defer transformationhandle.Stop()
-	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	destinationHandle, err := destinationdebugger.NewHandle(bConfig)
 	if err != nil {
 		return err
 	}
 	defer destinationHandle.Stop()
 
-	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
+	transientSources := transientsource.NewService(ctx, bConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
 
-	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
+	fileUploaderProvider := fileuploader.NewProvider(ctx, bConfig)
 
 	rsourcesService, err := NewRsourcesService(a.conf, deploymentType, true)
 	if err != nil {
@@ -228,7 +229,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, bConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
 	} else {
 		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
 	}
@@ -266,6 +267,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	p := proc.New(
 		ctx,
 		a.conf,
+		bConfig,
 		&options.ClearDB,
 		gwDBForProcessor,
 		routerDB,
@@ -292,7 +294,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Conf:                       a.conf,
 		Logger:                     logger.NewLogger().Child("router"),
 		Reporting:                  reporting,
-		BackendConfig:              backendconfig.DefaultBackendConfig,
+		BackendConfig:              bConfig,
 		RouterDB:                   routerDB,
 		ProcErrorDB:                errDBForWrite,
 		TransientSources:           transientSources,
@@ -305,7 +307,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	brtFactory := &batchrouter.Factory{
 		Conf:             a.conf,
 		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
+		BackendConfig:    bConfig,
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDBForWrite,
 		TransientSources: transientSources,
@@ -313,7 +315,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Debugger:         destinationHandle,
 		AdaptiveLimit:    adaptiveLimit,
 	}
-	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
+	rt := routerManager.New(rtFactory, brtFactory, bConfig, logger.NewLogger())
 
 	dm := cluster.Dynamic{
 		Provider:         modeProvider,

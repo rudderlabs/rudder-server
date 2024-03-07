@@ -207,6 +207,7 @@ func TestProcessorManager(t *testing.T) {
 	processor := New(
 		ctx,
 		c,
+		mockBackendConfig,
 		&clearDb,
 		gwDB,
 		rtDB,

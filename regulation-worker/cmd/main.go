@@ -66,11 +66,13 @@ func Run(ctx context.Context, conf *config.Config) error {
 	diagnostics.Init()
 	backendconfig.Init(conf)
 
-	if err := backendconfig.Setup(nil, nil); err != nil {
+	bConfig, err := backendconfig.NewBackendConfig(nil, conf)
+	if err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
 	}
+	bConfig.StartWithIDs(ctx, "")
 	dest := &destination.DestinationConfig{
-		Dest: backendconfig.DefaultBackendConfig,
+		Dest: bConfig,
 	}
 
 	deploymentType, err := deployment.GetType(conf)
@@ -78,9 +80,9 @@ func Run(ctx context.Context, conf *config.Config) error {
 		return fmt.Errorf("getting deployment type: %w", err)
 	}
 	pkgLogger.Infof("Running regulation worker in %s mode", deploymentType)
-	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
-	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-	identity := backendconfig.DefaultBackendConfig.Identity()
+	bConfig.StartWithIDs(ctx, "")
+	bConfig.WaitForConfig(ctx)
+	identity := bConfig.Identity()
 	dest.Start(ctx)
 
 	// setting up oauth

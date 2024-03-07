@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -27,8 +28,10 @@ type AppHandler interface {
 	// Setup to be called only once before starting the app.
 	Setup(*app.Options) error
 	// StartRudderCore starts the app
-	StartRudderCore(context.Context, *app.Options) error
+	StartRudderCore(context.Context, *app.Options, backendconfig.BackendConfig) error
 }
+
+type StartOpt func(AppHandler)
 
 func GetAppHandler(
 	conf *config.Config,
@@ -39,11 +42,26 @@ func GetAppHandler(
 	log := logger.NewLogger().Child("apphandlers").Child(appType)
 	switch appType {
 	case app.GATEWAY:
-		return &gatewayApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
+		return &gatewayApp{
+			app:            application,
+			versionHandler: versionHandler,
+			log:            log,
+			conf:           conf,
+		}, nil
 	case app.PROCESSOR:
-		return &processorApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
+		return &processorApp{
+			app:            application,
+			versionHandler: versionHandler,
+			log:            log,
+			conf:           conf,
+		}, nil
 	case app.EMBEDDED:
-		return &embeddedApp{app: application, versionHandler: versionHandler, log: log, conf: conf}, nil
+		return &embeddedApp{
+			app:            application,
+			versionHandler: versionHandler,
+			log:            log,
+			conf:           conf,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported app type %s", appType)
 	}

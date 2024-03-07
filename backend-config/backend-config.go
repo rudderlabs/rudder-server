@@ -32,24 +32,17 @@ import (
 
 var (
 	// environment variables
-	configBackendURL            string
-	cpRouterURL                 string
-	pollInterval                misc.ValueLoader[time.Duration]
-	configJSONPath              string
-	configFromFile              bool
-	configEnvReplacementEnabled bool
-	dbCacheEnabled              bool
+	configBackendURL string
 
 	LastSync           string
 	LastRegulationSync string
 
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
-	DefaultBackendConfig     BackendConfig
-	pkgLogger                = logger.NewLogger().Child("backend-config")
-	IoUtil                   = sysUtils.NewIoUtil()
-	Diagnostics              diagnostics.DiagnosticsI
-	cacheOverride            cache.Cache
-	incrementalConfigUpdates bool
+	DefaultBackendConfig BackendConfig
+	pkgLogger            = logger.NewLogger().Child("backend-config")
+	IoUtil               = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI
+	cacheOverride        cache.Cache
 )
 
 func disableCache() {
@@ -90,17 +83,12 @@ type backendConfigImpl struct {
 	curSourceJSONLock sync.RWMutex
 	usingCache        bool
 	cache             cache.Cache
+	pollInterval      misc.ValueLoader[time.Duration]
+	dbCacheEnabled    bool
 }
 
 func loadConfig(conf *config.Config) {
 	configBackendURL = conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	cpRouterURL = conf.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
-	pollInterval = conf.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
-	configJSONPath = conf.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
-	configFromFile = conf.GetBoolVar(false, "BackendConfig.configFromFile")
-	configEnvReplacementEnabled = conf.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
-	incrementalConfigUpdates = conf.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
-	dbCacheEnabled = conf.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
 }
 
 func Init(conf *config.Config) {
@@ -244,7 +232,7 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(pollInterval.Load()):
+		case <-time.After(bc.pollInterval.Load()):
 		}
 	}
 }
@@ -270,9 +258,13 @@ func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.
 
 func newForDeployment(conf *config.Config, deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	backendConfig := &backendConfigImpl{
-		eb: pubsub.New(),
+		eb:             pubsub.New(),
+		pollInterval:   conf.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"),
+		dbCacheEnabled: conf.GetBoolVar(true, "BackendConfig.dbCacheEnabled"),
 	}
-	parsedConfigBackendURL, err := url.Parse(configBackendURL)
+	parsedConfigBackendURL, err := url.Parse(
+		conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid config backend URL: %v", err)
 	}
@@ -281,7 +273,7 @@ func newForDeployment(conf *config.Config, deploymentType deployment.Type, regio
 	case deployment.DedicatedType:
 		backendConfig.workspaceConfig = &singleWorkspaceConfig{
 			conf:             conf,
-			configJSONPath:   configJSONPath,
+			configJSONPath:   conf.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath"),
 			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
 			region:           region,
@@ -291,9 +283,9 @@ func newForDeployment(conf *config.Config, deploymentType deployment.Type, regio
 			conf:                     conf,
 			configBackendURL:         parsedConfigBackendURL,
 			configEnvHandler:         configEnvHandler,
-			cpRouterURL:              cpRouterURL,
+			cpRouterURL:              conf.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com"),
 			region:                   region,
-			incrementalConfigUpdates: incrementalConfigUpdates,
+			incrementalConfigUpdates: conf.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates"),
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
@@ -325,6 +317,21 @@ func Setup(configEnvHandler types.ConfigEnvI, conf *config.Config) (err error) {
 	return nil
 }
 
+func NewBackendConfig(configEnvHandler types.ConfigEnvI, conf *config.Config) (BackendConfig, error) {
+	deploymentType, err := deployment.GetType(conf)
+	region := conf.GetString("region", "")
+	if err != nil {
+		return nil, fmt.Errorf("deployment type from env: %w", err)
+	}
+
+	return newForDeployment(
+		conf,
+		deploymentType,
+		region,
+		configEnvHandler,
+	)
+}
+
 func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
 	var err error
 	ctx, cancel := context.WithCancel(ctx)
@@ -333,7 +340,7 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
 	bc.blockChan = make(chan struct{})
 	bc.cache = cacheOverride
 
-	if !dbCacheEnabled {
+	if !bc.dbCacheEnabled {
 		bc.cache = &noCache{}
 	}
 	if bc.cache == nil {
@@ -389,7 +396,7 @@ func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(pollInterval.Load()):
+		case <-time.After(bc.pollInterval.Load()):
 		}
 	}
 }

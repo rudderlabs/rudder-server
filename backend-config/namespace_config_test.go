@@ -130,7 +130,6 @@ func Test_Namespace_Identity(t *testing.T) {
 
 		namespace:           namespace,
 		hostedServiceSecret: secret,
-		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
 
@@ -218,7 +217,6 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 
 		namespace:                namespace,
 		hostedServiceSecret:      secret,
-		cpRouterURL:              cpRouterURL,
 		incrementalConfigUpdates: true,
 	}
 	require.NoError(t, client.SetUp())

@@ -172,6 +172,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (
 	conf := config.New()
 
 	conf.Set("CONFIG_BACKEND_URL", bcserver.URL)
+	conf.Set("LOG_LEVEL", "DEBUG")
 	conf.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 	conf.Set("WORKSPACE_TOKEN", "token")
 

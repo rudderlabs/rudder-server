@@ -169,7 +169,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
-	r.appHandler, err = apphandlers.GetAppHandler(r.conf, r.application, r.appType, r.versionHandler)
+	r.appHandler, err = apphandlers.GetAppHandler(
+		r.conf,
+		r.application,
+		r.appType,
+		r.versionHandler,
+	)
 	if err != nil {
 		r.logger.Errorf("Failed to get app handler: %v", err)
 		return 1
@@ -205,11 +210,13 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
-	if err := backendconfig.Setup(configEnvHandler, r.conf); err != nil {
+	bConfig, err := backendconfig.NewBackendConfig(configEnvHandler, r.conf)
+	if err != nil {
 		r.logger.Errorf("Unable to setup backend config: %s", err)
 		return 1
+
 	}
-	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	bConfig.StartWithIDs(ctx, "")
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
@@ -224,7 +231,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			config.Default,
 			r.logger,
 			stats.Default,
-			backendconfig.DefaultBackendConfig,
+			bConfig,
 			filemanager.New,
 		)
 
@@ -256,17 +263,17 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// Start rudder core
 	if r.canStartServer() {
 		g.Go(misc.WithBugsnag(func() (err error) {
-			if err := r.appHandler.StartRudderCore(ctx, options); err != nil {
+			if err := r.appHandler.StartRudderCore(ctx, options, bConfig); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
 			}
 			return nil
 		}))
 		g.Go(misc.WithBugsnag(func() error {
-			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+			bConfig.WaitForConfig(ctx)
 
 			c := controlplane.NewClient(
 				r.conf.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
-				backendconfig.DefaultBackendConfig.Identity(),
+				bConfig.Identity(),
 			)
 
 			err := c.SendFeatures(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
@@ -298,7 +305,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}
 
 		r.logger.Info("Attempting to shutdown gracefully")
-		backendconfig.DefaultBackendConfig.Stop()
+		bConfig.Stop()
 		close(shutdownDone)
 	}()
 

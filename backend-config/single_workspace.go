@@ -49,7 +49,7 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
 	}
 
-	if configFromFile {
+	if wc.conf.GetBoolVar(false, "BackendConfig.configFromFile") {
 		if wc.configJSONPath == "" {
 			return fmt.Errorf("valid configJSONPath is required when configFromFile is set to true")
 		}
@@ -73,7 +73,7 @@ func (wc *singleWorkspaceConfig) AccessToken() string {
 
 // Get returns sources from the workspace
 func (wc *singleWorkspaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) {
-	if configFromFile {
+	if wc.conf.GetBoolVar(false, "BackendConfig.configFromFile") {
 		return wc.getFromFile()
 	} else {
 		return wc.getFromAPI(ctx)
@@ -112,7 +112,8 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	}
 
 	configEnvHandler := wc.configEnvHandler
-	if configEnvReplacementEnabled && configEnvHandler != nil {
+
+	if wc.conf.GetBoolVar(true, "BackendConfig.envReplacementEnabled") && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 

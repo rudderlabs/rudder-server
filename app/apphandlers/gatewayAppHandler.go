@@ -33,6 +33,7 @@ type gatewayApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	conf           *config.Config
+	backendConfig  backendconfig.BackendConfig
 	config         struct {
 		gatewayDSLimit misc.ValueLoader[int]
 	}
@@ -53,7 +54,7 @@ func (a *gatewayApp) Setup(options *app.Options) error {
 	return nil
 }
 
-func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options, bConfing backendconfig.BackendConfig) error {
 	config := config.Default
 	if !a.setupDone {
 		return fmt.Errorf("gateway cannot start, database is not setup")
@@ -68,13 +69,13 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	sourceHandle, err := sourcedebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	sourceHandle, err := sourcedebugger.NewHandle(bConfing)
 	if err != nil {
 		return err
 	}
 	defer sourceHandle.Stop()
 
-	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
+	fileUploaderProvider := fileuploader.NewProvider(ctx, bConfing)
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
@@ -147,7 +148,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	err = gw.Setup(
 		ctx,
 		config, logger.NewLogger().Child("gateway"), stats.Default,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
+		a.app, bConfing, gatewayDB, errDB,
 		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{

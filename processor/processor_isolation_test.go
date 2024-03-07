@@ -173,7 +173,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	var m procIsolationMethods
 	defer logger.Reset()
 	conf := config.New()
-	conf.Set("LOG_LEVEL", "ERROR")
+	conf.Set("LOG_LEVEL", "DEBUG")
 	logger.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

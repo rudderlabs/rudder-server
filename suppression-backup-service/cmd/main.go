@@ -119,15 +119,16 @@ func getIdentity(ctx context.Context) (identity.Identifier, error) {
 	diagnostics.Init()
 	backendconfig.Init(nil)
 
-	if err := backendconfig.Setup(nil, nil); err != nil {
+	bConfig, err := backendconfig.NewBackendConfig(nil, config.Default)
+	if err != nil {
 		return &identity.NOOP{}, fmt.Errorf("setting up backend config: %w", err)
 	}
-	defer backendconfig.DefaultBackendConfig.Stop()
+	defer bConfig.Stop()
 
-	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
-	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+	bConfig.StartWithIDs(context.TODO(), "")
+	bConfig.WaitForConfig(ctx)
 
-	id := backendconfig.DefaultBackendConfig.Identity()
+	id := bConfig.Identity()
 	return id, nil
 }
 
