@@ -343,6 +343,22 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 	return values
 }
 
+func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
+	// for monitoring reports pileups
+	reportingLag := r.stats.NewTaggedStat(
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
+	)
+	for {
+		lag := time.Since(lastReportedAtTime.Load())
+		reportingLag.Gauge(lag.Seconds())
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Minute):
+		}
+	}
+}
+
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.configSubscriber.Wait()
 
@@ -358,103 +374,93 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = r.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
-	reportingLag := r.stats.NewTaggedStat(
-		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
-	)
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer wg.Wait()
-	go func() {
-		// for monitoring reports pileups
-		defer wg.Done()
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return r.emitLagMetric(ctx, c, &lastReportedAtTime)
+	})
+
+	g.Go(func() error {
 		for {
-			lag := time.Since(lastReportedAtTime.Load())
-			reportingLag.Gauge(lag.Seconds())
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(2 * time.Minute):
-			}
-		}
-	}()
-
-	for {
-		if ctx.Err() != nil {
-			r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-			return
-		}
-		requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
-		loopStart := time.Now()
-		currentMs := time.Now().UTC().Unix() / 60
-
-		getReportsStart := time.Now()
-		reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
-		getReportsTimer.Since(getReportsStart)
-		getReportsCount.Observe(float64(len(reports)))
-		if len(reports) == 0 {
-			if err == nil {
-				lastReportedAtTime.Store(loopStart)
-			} else {
-				r.log.Errorw("getting reports", "error", err)
-			}
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return
-			case <-time.After(r.sleepInterval.Load()):
+				return nil
 			}
-			continue
-		}
+			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
+			loopStart := time.Now()
+			currentMs := time.Now().UTC().Unix() / 60
 
-		lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
-		getAggregatedReportsStart := time.Now()
-		metrics := r.getAggregatedReports(reports)
-		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
-		getAggregatedReportsCount.Observe(float64(len(metrics)))
-
-		errGroup, errCtx := errgroup.WithContext(ctx)
-		for _, metric := range metrics {
-			if r.whActionsOnly && metric.SourceCategory != "warehouse" {
-				// if whActionsOnly is true, we only send reports for wh actions sources
-				// we silently drop all other reports
+			getReportsStart := time.Now()
+			reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
+			getReportsTimer.Since(getReportsStart)
+			getReportsCount.Observe(float64(len(reports)))
+			if len(reports) == 0 {
+				if err == nil {
+					lastReportedAtTime.Store(loopStart)
+				} else {
+					r.log.Errorw("getting reports", "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return nil
+				case <-time.After(r.sleepInterval.Load()):
+				}
 				continue
 			}
-			metricToSend := metric
-			requestChan <- struct{}{}
-			if errCtx.Err() != nil {
-				// if any of errGroup's goroutines fail - don't send anymore requests for this batch
-				break
-			}
-			errGroup.Go(func() error {
-				err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
-				<-requestChan
-				return err
-			})
-		}
 
-		err = errGroup.Wait()
-		if err == nil {
-			dbHandle, err := r.getDBHandle(c.ConnInfo)
-			if err != nil {
-				panic(err)
-			}
-			_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
-			if err != nil {
-				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
-			}
-		}
+			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
+			getAggregatedReportsStart := time.Now()
+			metrics := r.getAggregatedReports(reports)
+			getAggregatedReportsTimer.Since(getAggregatedReportsStart)
+			getAggregatedReportsCount.Observe(float64(len(metrics)))
 
-		mainLoopTimer.Since(loopStart)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(r.mainLoopSleepInterval.Load()):
+			errGroup, errCtx := errgroup.WithContext(ctx)
+			for _, metric := range metrics {
+				if r.whActionsOnly && metric.SourceCategory != "warehouse" {
+					// if whActionsOnly is true, we only send reports for wh actions sources
+					// we silently drop all other reports
+					continue
+				}
+				metricToSend := metric
+				requestChan <- struct{}{}
+				if errCtx.Err() != nil {
+					// if any of errGroup's goroutines fail - don't send anymore requests for this batch
+					break
+				}
+				errGroup.Go(func() error {
+					err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
+					<-requestChan
+					return err
+				})
+			}
+
+			err = errGroup.Wait()
+			if err == nil {
+				dbHandle, err := r.getDBHandle(c.ConnInfo)
+				if err != nil {
+					panic(err)
+				}
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
+				if err != nil {
+					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				}
+			}
+
+			mainLoopTimer.Since(loopStart)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(r.mainLoopSleepInterval.Load()):
+			}
 		}
-	}
+	})
+
+	_ = g.Wait()
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
