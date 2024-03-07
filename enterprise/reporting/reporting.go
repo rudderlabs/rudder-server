@@ -388,7 +388,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return nil
+				return ctx.Err()
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
