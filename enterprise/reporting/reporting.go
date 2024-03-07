@@ -157,10 +157,7 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		return func() {}
 	}
 	return func() {
-		r.g.Go(func() error {
-			r.mainLoop(r.ctx, c)
-			return nil
-		})
+		r.mainLoop(r.ctx, c)
 	}
 }
 
@@ -378,13 +375,11 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
 
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
+	r.g.Go(func() error {
 		return r.emitLagMetric(ctx, c, &lastReportedAtTime)
 	})
 
-	g.Go(func() error {
+	r.g.Go(func() error {
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -459,8 +454,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 		}
 	})
-
-	_ = g.Wait()
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
