@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,8 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -36,251 +33,196 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
-	BeforeAll(func() {
+func TestComputeInsertIdx(t *testing.T) {
+	t.Run("newDSIdx tests", func(t *testing.T) {
+		testCases := []struct {
+			before   string
+			after    string
+			expected string
+		}{
+			// dList => 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"2", "3", "2_1"},
+			// dList => 1_1 2 3 4 5
+			{"1_1", "2", "1_2"},
+			{"2", "3", "2_1"},
+			// dList => 1 2_1 3 4 5
+			{"1", "2_1", "1_1"},
+			{"2_1", "3", "2_2"},
+			{"3", "4", "3_1"},
+			// dList => 1_1 2_1 3 4 5
+			{"1_1", "2_1", "1_2"},
+			// dList => 0_1 1 2 3 4 5
+			{"0_1", "1", "0_2"},
+			{"1", "2", "1_1"},
+			{"0_2", "1", "0_3"},
+			{"1", "2", "1_1"},
+			{"0_2", "1", "0_3"},
+			{"9", "10", "9_1"},
+			{"10_1", "11_3", "10_2"},
+			{"0_1", "1", "0_2"},
+			{"0_1", "20", "0_2"},
+			{"10_1_2", "11_3", "10_2"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, computedIdx)
+			})
+		}
 	})
 
-	DescribeTable("newDSIdx tests",
-		func(before, after, expected string) {
-			computedIdx, err := computeInsertIdx(before, after)
-			Expect(err).To(BeNil(), "No error should occur when computing newDSIdx for before: %s, after: %s", before, after)
-			Expect(computedIdx).To(Equal(expected), "unexpected result using before: %s, after: %s", before, after)
-		},
-		// dList => 1 2 3 4 5
-		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
-		Entry("Internal Migration for regular tables 1 Test 2 : ", "2", "3", "2_1"),
-
-		// dList => 1_1 2 3 4 5
-		Entry("Internal Migration for regular tables 2 Test 1 : ", "1_1", "2", "1_2"),
-		Entry("Internal Migration for regular tables 2 Test 2 : ", "2", "3", "2_1"),
-
-		// dList => 1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 3 Test 1 : ", "1", "2_1", "1_1"),
-		Entry("Internal Migration for regular tables 3 Test 2 : ", "2_1", "3", "2_2"),
-		Entry("Internal Migration for regular tables 3 Test 3 : ", "3", "4", "3_1"),
-
-		// dList => 1_1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
-
-		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_3"),
-		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_3"),
-
-		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
-
-		Entry("Internal Migration for tables : ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables : ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for tables : ", "0_1", "20", "0_2"),
-
-		Entry("Excotic scenario 1 - bumping from level 3 to level 2", "10_1_2", "11_3", "10_2"),
-	)
-
-	Context("computeInsertIdx - bad input tests", func() {
-		It("Should throw error for input 1, 1_1", func() {
-			idx, err := computeInsertIdx("1", "1_1")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10_1, 10_2", func() {
-			idx, err := computeInsertIdx("10_1", "10_2")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10_1, 10_1", func() {
-			idx, err := computeInsertIdx("10_1", "10_1")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 10, 9", func() {
-			idx, err := computeInsertIdx("10", "9")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 0_1, 0_2", func() {
-			idx, err := computeInsertIdx("0_1", "0_2")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
-		It("Should throw error for input 0_1, 0", func() {
-			idx, err := computeInsertIdx("0_1", "0")
-			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
-		})
+	t.Run("computeInsertIdx - bad input tests", func(t *testing.T) {
+		testCases := []struct {
+			before string
+			after  string
+		}{
+			{"1", "1_1"},
+			{"10_1", "10_2"},
+			{"10_1", "10_1"},
+			{"10", "9"},
+			{"0_1", "0_2"},
+			{"0_1", "0"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.Error(t, err)
+				require.Empty(t, computedIdx)
+			})
+		}
 	})
 
-	DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
-		func(before, after, expected string) {
-			computedIdx, err := computeInsertIdx(before, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
-		},
-		// dList => 1 2 3 4 5
-		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-		Entry("Internal Migration for regular tables 1 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
-
-		// dList => 1_1 2 3 4 5
-		Entry("Internal Migration for regular tables 2 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2", "1_2"),
-		Entry("Internal Migration for regular tables 2 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
-
-		// dList => 1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 3 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2_1", "1_1"),
-		Entry("Internal Migration for regular tables 3 Test 2 with skipZeroAssertionForMultitenant: ", "2_1", "3", "2_2"),
-		Entry("Internal Migration for regular tables 3 Test 3 with skipZeroAssertionForMultitenant: ", "3", "4", "3_1"),
-
-		// dList => 1_1 2_1 3 4 5
-		Entry("Internal Migration for regular tables 4 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2_1", "1_2"),
-
-		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 2 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-
-		Entry("Internal Migration for import tables Case 2 Test 3 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
-
-		Entry("OrderTest Case 1 Test 1 with skipZeroAssertionForMultitenant: ", "9", "10", "9_1"),
-
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "1", "0_2"),
-		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "20", "0_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-1", "0", "-1_1"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "0", "1", "0_1"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1_1", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
-		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
-	)
-})
-
-var _ = Describe("jobsdb", Ordered, func() {
-	BeforeAll(func() {
+	t.Run("computeInsertIdx - skipZeroAssertionForMultitenant", func(t *testing.T) {
+		testCases := []struct {
+			before   string
+			after    string
+			expected string
+		}{
+			// dList => 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"2", "3", "2_1"},
+			// dList => 1_1 2 3 4 5
+			{"1_1", "2", "1_2"},
+			{"2", "3", "2_1"},
+			// dList => 1 2_1 3 4 5
+			{"1", "2_1", "1_1"},
+			{"2_1", "3", "2_2"},
+			{"3", "4", "3_1"},
+			// dList => 1_1 2_1 3 4 5
+			{"1_1", "2_1", "1_2"},
+			// dList => 0_1 1 2 3 4 5
+			{"1", "2", "1_1"},
+			{"1", "2", "1_1"},
+			{"1", "2", "1_1"},
+			{"9", "10", "9_1"},
+			{"10_1", "11_3", "10_2"},
+			{"0_1", "1", "0_2"},
+			{"0_1", "20", "0_2"},
+			{"-1", "0", "-1_1"},
+			{"0", "1", "0_1"},
+			{"-2_1", "-1_1", "-2_2"},
+			{"-2_1", "-1", "-2_2"},
+			{"-2_1", "0", "-2_2"},
+			{"-2_1", "20", "-2_2"},
+		}
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("computeInsertIdx(%s, %s)", tc.before, tc.after), func(t *testing.T) {
+				computedIdx, err := computeInsertIdx(tc.before, tc.after)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, computedIdx)
+			})
+		}
 	})
+}
 
-	Context("getDSList", func() {
-		var t *ginkgoTestingT
-		var jd *Handle
-		var prefix string
-
-		BeforeEach(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
-			prefix = strings.ToLower(rsRand.String(5))
-			jd = &Handle{}
-
-			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-			Expect(err).To(BeNil())
-		})
-
-		AfterEach(func() {
-			jd.TearDown()
-			t.Teardown()
-		})
-
-		It("doesn't make db calls if !refreshFromDB", func() {
+func TestJobsdbLifecycle(t *testing.T) {
+	t.Run("getDSList", func(t *testing.T) {
+		jd := startTestJobsDB(t)
+		defer jd.TearDown()
+		t.Run("doesn't make db calls if !refreshFromDB", func(t *testing.T) {
 			jd.datasetList = dsListInMemory
-			Expect(jd.getDSList()).To(Equal(dsListInMemory))
+			require.Equal(t, dsListInMemory, jd.getDSList())
 		})
 	})
 
-	Context("Start & Stop", Ordered, func() {
-		var t *ginkgoTestingT
-		var jd *Handle
-		var prefix string
-
-		BeforeAll(func() {
-			t = &ginkgoTestingT{}
-			_ = startPostgres(t)
-		})
-		BeforeEach(func() {
-			prefix = strings.ToLower(rsRand.String(5))
-			jd = &Handle{}
-			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-			Expect(err).To(BeNil())
-		})
-		AfterEach(func() {
-			jd.TearDown()
-		})
-		AfterAll(func() {
-			t.Teardown()
-		})
-		It("can call Stop before Start without side-effects", func() {
+	t.Run("Start & Stop", func(t *testing.T) {
+		t.Run("can call Stop before Start without side-effects", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
 			jd.Stop()
-			Expect(jd.Start()).To(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.NoError(t, jd.Start())
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Start twice without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
+		t.Run("can call Start twice without side-effects", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
 			group1 := jd.backgroundGroup
-			Expect(jd.Start()).To(BeNil())
+			require.NoError(t, jd.Start())
 			group2 := jd.backgroundGroup
-			Expect(group1).To(Equal(group2))
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.Equal(t, group1, group2)
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Start in parallel without side-effects", func() {
+		t.Run("can call Start in parallel without side-effects", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
 			var wg sync.WaitGroup
 			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				idx := i
 				go func() {
-					Expect(jd.Start()).To(BeNil())
+					require.NoError(t, jd.Start())
 					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
 			}
 			wg.Wait()
 			for i := 1; i < 10; i++ {
-				Expect(bgGroups[i-1]).To(Equal(bgGroups[i]))
+				require.Equal(t, bgGroups[i-1], bgGroups[i])
 			}
-			Expect(jd.lifecycle.started).To(Equal(true))
+			require.True(t, jd.lifecycle.started)
 		})
 
-		It("can call Stop twice without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(true))
-			Expect(jd.backgroundGroup).ToNot(BeNil())
+		t.Run("can call Stop twice without side-effects", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
+			require.True(t, jd.lifecycle.started)
+			require.NotNil(t, jd.backgroundGroup)
 			jd.Stop()
-			Expect(jd.backgroundGroup).ToNot(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(false))
-			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+			require.NotNil(t, jd.backgroundGroup)
+			require.False(t, jd.lifecycle.started)
+			require.NoError(t, jd.backgroundGroup.Wait())
 			jd.Stop()
-			Expect(jd.backgroundGroup).ToNot(BeNil())
-			Expect(jd.lifecycle.started).To(Equal(false))
-			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+			require.NotNil(t, jd.backgroundGroup)
+			require.False(t, jd.lifecycle.started)
+			require.NoError(t, jd.backgroundGroup.Wait())
 		})
 
-		It("can call Stop in parallel without side-effects", func() {
-			Expect(jd.Start()).To(BeNil())
+		t.Run("can call Stop in parallel without side-effects", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
+			require.NoError(t, jd.Start())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				go func() {
 					jd.Stop()
-					Expect(jd.backgroundGroup.Wait()).To(BeNil())
+					require.NoError(t, jd.backgroundGroup.Wait())
 					wg.Done()
 				}()
 			}
 			wg.Wait()
-		})
-
-		It("can call Start & Stop in parallel without problems", func() {
-			Expect(jd.Start()).To(BeNil())
-
-			var wg sync.WaitGroup
-			wg.Add(10)
-			for i := 0; i < 10; i++ {
-				go func() {
-					Expect(jd.Start()).To(BeNil())
-					jd.Stop()
-					wg.Done()
-				}()
-			}
-			wg.Wait()
-			Expect(jd.lifecycle.started).To(Equal(false))
+			require.False(t, jd.lifecycle.started)
 		})
 	})
-})
+}
 
 var d1 = dataSetT{
 	JobTable:       "tt_jobs_1",
@@ -295,6 +237,22 @@ var d2 = dataSetT{
 var dsListInMemory = []dataSetT{
 	d1,
 	d2,
+}
+
+func startTestJobsDB(t *testing.T) *Handle {
+	_ = startPostgres(t)
+	jd := &Handle{}
+	require.NoError(
+		t,
+		jd.Setup(
+			ReadWrite,
+			false,
+			strings.ToLower(rsRand.String(5)),
+			[]prebackup.Handler{},
+			fileuploader.NewDefaultProvider(),
+		),
+	)
+	return jd
 }
 
 func BenchmarkSanitizeJson(b *testing.B) {
@@ -1540,36 +1498,7 @@ type testingT interface {
 	Setenv(key, value string)
 	Log(...interface{})
 	Cleanup(func())
-}
-
-type ginkgoTestingT struct {
-	cleanups []func()
-}
-
-func (t *ginkgoTestingT) Teardown() {
-	for _, f := range t.cleanups {
-		f()
-	}
-}
-
-func (*ginkgoTestingT) Errorf(format string, args ...interface{}) {
-	Fail(fmt.Sprintf(format, args...))
-}
-
-func (*ginkgoTestingT) FailNow() {
-	Fail("FailNow called")
-}
-
-func (*ginkgoTestingT) Setenv(key, value string) {
-	_ = os.Setenv(key, value) // skipcq: GO-W1032
-}
-
-func (*ginkgoTestingT) Log(args ...interface{}) {
-	fmt.Print(args...)
-}
-
-func (t *ginkgoTestingT) Cleanup(f func()) {
-	t.cleanups = append(t.cleanups, f)
+	Failed() bool
 }
 
 // startPostgres starts a postgres container and (re)initializes global vars
