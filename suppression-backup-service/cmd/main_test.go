@@ -62,6 +62,7 @@ func TestMain(t *testing.T) {
 	misc.Init()
 	srv := httptest.NewServer(handler(t))
 	defer t.Cleanup(srv.Close)
+	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
