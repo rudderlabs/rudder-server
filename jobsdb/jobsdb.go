@@ -1445,6 +1445,10 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	return nil
 }
 
+func (jd *Handle) CreateDS(tx *Tx, index string) error {
+	return jd.addDSInTx(tx, newDataSet(jd.tablePrefix, index))
+}
+
 func (jd *Handle) setSequenceNumberInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, newDSIdx string) error {
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
