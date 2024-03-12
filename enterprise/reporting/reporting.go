@@ -1,12 +1,14 @@
 package reporting
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,13 +17,14 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -175,170 +178,6 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *DefaultReporter) getReportsV0(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
-	var queryMin sql.NullInt64
-	dbHandle, err := r.getDBHandle(syncerKey)
-	if err != nil {
-		panic(err)
-	}
-
-	queryStart := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
-	defer cancel()
-	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
-
-	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
-		panic(err)
-	}
-	if ctx.Err() != nil {
-		return nil, 0, fmt.Errorf("reporting query timeout")
-	}
-
-	r.getMinReportedAtQueryTime.Since(queryStart)
-	if !queryMin.Valid {
-		return nil, 0, nil
-	}
-
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d order by id`, ReportsTable, queryMin.Int64)
-	var rows *sql.Rows
-	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	r.getReportsQueryTime.Since(queryStart)
-	defer func() { _ = rows.Close() }()
-
-	var metricReports []*types.ReportByStatus
-	for rows.Next() {
-		metricReport := types.ReportByStatus{StatusDetail: &types.StatusDetail{}}
-		err = rows.Scan(
-			&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID,
-			&metricReport.ConnectionDetails.SourceDefinitionId,
-			&metricReport.ConnectionDetails.SourceCategory,
-			&metricReport.ConnectionDetails.SourceID,
-			&metricReport.ConnectionDetails.DestinationDefinitionId,
-			&metricReport.ConnectionDetails.DestinationID,
-			&metricReport.ConnectionDetails.SourceTaskRunID,
-			&metricReport.ConnectionDetails.SourceJobID,
-			&metricReport.ConnectionDetails.SourceJobRunID,
-			&metricReport.ConnectionDetails.TransformationID,
-			&metricReport.ConnectionDetails.TransformationVersionID,
-			&metricReport.ConnectionDetails.TrackingPlanID,
-			&metricReport.ConnectionDetails.TrackingPlanVersion,
-			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
-			&metricReport.ReportedAt,
-			&metricReport.StatusDetail.Status,
-			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
-			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
-			&metricReport.StatusDetail.StatusCode,
-			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
-			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
-			&metricReport.StatusDetail.ErrorType,
-		)
-		if err != nil {
-			panic(err)
-		}
-		metricReports = append(metricReports, &metricReport)
-	}
-	if err := rows.Err(); err != nil {
-		// Handle rows error
-		panic(err)
-	}
-
-	return metricReports, queryMin.Int64, err
-}
-
-func (*DefaultReporter) getAggregatedReportsV0(reports []*types.ReportByStatus) []*types.Metric {
-	metricsByGroup := map[string]*types.Metric{}
-
-	reportIdentifier := func(report *types.ReportByStatus) string {
-		groupingIdentifiers := []string{
-			report.InstanceDetails.WorkspaceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID,
-			report.ConnectionDetails.SourceID,
-			report.ConnectionDetails.DestinationID,
-			report.ConnectionDetails.SourceTaskRunID,
-			report.ConnectionDetails.SourceJobID,
-			report.ConnectionDetails.SourceJobRunID,
-			report.ConnectionDetails.TransformationID,
-			report.ConnectionDetails.TransformationVersionID,
-			report.ConnectionDetails.TrackingPlanID,
-			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
-			report.PUDetails.InPU, report.PUDetails.PU,
-			report.StatusDetail.Status,
-			strconv.Itoa(report.StatusDetail.StatusCode),
-			report.StatusDetail.EventName, report.StatusDetail.EventType,
-		}
-		return strings.Join(groupingIdentifiers, `::`)
-	}
-
-	for _, report := range reports {
-		identifier := reportIdentifier(report)
-		if _, ok := metricsByGroup[identifier]; !ok {
-			metricsByGroup[identifier] = &types.Metric{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: report.WorkspaceID,
-					Namespace:   report.Namespace,
-					InstanceID:  report.InstanceID,
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceDefinitionId:      report.SourceDefinitionId,
-					SourceCategory:          report.SourceCategory,
-					SourceID:                report.SourceID,
-					DestinationDefinitionId: report.DestinationDefinitionId,
-					DestinationID:           report.DestinationID,
-					SourceTaskRunID:         report.SourceTaskRunID,
-					SourceJobID:             report.SourceJobID,
-					SourceJobRunID:          report.SourceJobRunID,
-					TransformationID:        report.TransformationID,
-					TransformationVersionID: report.TransformationVersionID,
-					TrackingPlanID:          report.TrackingPlanID,
-					TrackingPlanVersion:     report.TrackingPlanVersion,
-				},
-				PUDetails: types.PUDetails{
-					InPU:       report.InPU,
-					PU:         report.PU,
-					TerminalPU: report.TerminalPU,
-					InitialPU:  report.InitialPU,
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
-				},
-			}
-		}
-		statusDetailInterface, found := lo.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
-			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode && i.ErrorType == report.StatusDetail.ErrorType
-		})
-		if !found {
-			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
-				Status:         report.StatusDetail.Status,
-				StatusCode:     report.StatusDetail.StatusCode,
-				Count:          report.StatusDetail.Count,
-				ViolationCount: report.StatusDetail.ViolationCount,
-				SampleResponse: report.StatusDetail.SampleResponse,
-				SampleEvent:    report.StatusDetail.SampleEvent,
-				EventName:      report.StatusDetail.EventName,
-				EventType:      report.StatusDetail.EventType,
-				ErrorType:      report.StatusDetail.ErrorType,
-			})
-			continue
-		}
-		statusDetail := statusDetailInterface
-		statusDetail.Count += report.StatusDetail.Count
-		statusDetail.ViolationCount += report.StatusDetail.ViolationCount
-		statusDetail.SampleResponse = report.StatusDetail.SampleResponse
-		statusDetail.SampleEvent = report.StatusDetail.SampleEvent
-	}
-
-	var values []*types.Metric
-	for _, val := range metricsByGroup {
-		values = append(values, val)
-	}
-	return values
-}
-
 func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < %d`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
@@ -365,7 +204,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id desc))[1], (ARRAY_AGG(sample_event order by id desc))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = %d GROUP BY %s`, groupByColumns, ReportsTable, queryMin.Int64, groupByColumns)
+	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response))[1], (ARRAY_AGG(sample_event))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = %d GROUP BY %s`, groupByColumns, ReportsTable, queryMin.Int64, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
@@ -511,8 +350,8 @@ func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfi
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.configSubscriber.Wait()
 
-	// tr := &http.Transport{}
-	// netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	tr := &http.Transport{}
+	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(c.Label)
 	mainLoopTimer := r.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := r.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
@@ -539,18 +378,12 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return ctx.Err()
 			}
-			// requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
+			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
 			currentMs := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
 			reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
-			fmt.Println("timing for getReports ", time.Since(getReportsStart).Seconds()*1000)
-
-			getReportsStartV0 := time.Now()
-			reportsV0, _, _ := r.getReportsV0(currentMs, c.ConnInfo)
-			fmt.Println("timing for getReportsV0 ", time.Since(getReportsStartV0).Seconds()*1000)
-
 			getReportsTimer.Since(getReportsStart)
 			getReportsCount.Observe(float64(len(reports)))
 			if len(reports) == 0 {
@@ -571,85 +404,40 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 			getAggregatedReportsStart := time.Now()
 			metrics := r.getAggregatedReports(reports)
-			fmt.Println("timing for getAggregatedReports ", time.Since(getAggregatedReportsStart).Seconds()*1000)
 			getAggregatedReportsTimer.Since(getAggregatedReportsStart)
 			getAggregatedReportsCount.Observe(float64(len(metrics)))
 
-			getAggregatedReportsStartV0 := time.Now()
-			metricsV0 := r.getAggregatedReportsV0(reportsV0)
-			fmt.Println("timing for getAggregatedReportsV0 ", time.Since(getAggregatedReportsStartV0).Seconds()*1000)
-
-			// compare metrics and metricsV0 values
-			if len(metrics) != len(metricsV0) {
-				panic("mismatch in metrics and metricsV0 length. metrics")
+			errGroup, errCtx := errgroup.WithContext(ctx)
+			for _, metric := range metrics {
+				if r.whActionsOnly && metric.SourceCategory != "warehouse" {
+					// if whActionsOnly is true, we only send reports for wh actions sources
+					// we silently drop all other reports
+					continue
+				}
+				metricToSend := metric
+				requestChan <- struct{}{}
+				if errCtx.Err() != nil {
+					// if any of errGroup's goroutines fail - don't send anymore requests for this batch
+					break
+				}
+				errGroup.Go(func() error {
+					err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
+					<-requestChan
+					return err
+				})
 			}
 
-			seen := make(map[*types.Metric]bool)
-
-			for i := 0; i < len(metrics); i++ {
-				sort.Slice(metrics[i].StatusDetails, func(x int, y int) bool {
-					return metrics[i].StatusDetails[x].ErrorType < metrics[i].StatusDetails[y].ErrorType
-				})
-
-				sort.Slice(metricsV0[i].StatusDetails, func(x int, y int) bool {
-					return metricsV0[i].StatusDetails[x].ErrorType < metricsV0[i].StatusDetails[y].ErrorType
-				})
+			err = errGroup.Wait()
+			if err == nil {
+				dbHandle, err := r.getDBHandle(c.ConnInfo)
+				if err != nil {
+					panic(err)
+				}
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
+				if err != nil {
+					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				}
 			}
-
-			for _, cur := range metrics {
-				jsonCur, _ := json.Marshal(cur)
-				match, found := lo.Find(metricsV0, func(m *types.Metric) bool {
-					jsonMatch, _ := json.Marshal(m)
-					return string(jsonCur) == string(jsonMatch)
-				})
-
-				if !found {
-					fmt.Println(string(jsonCur))
-					panic("mismatch in metrics and metricsV0")
-				}
-
-				if seen[match] {
-					panic("duplicate metrics in metricsV0")
-				}
-
-				if len(cur.StatusDetails) != len(match.StatusDetails) {
-					panic("mismatch in status details length")
-				}
-
-				seen[match] = true
-			}
-
-			// errGroup, errCtx := errgroup.WithContext(ctx)
-			// for _, metric := range metrics {
-			// 	if r.whActionsOnly && metric.SourceCategory != "warehouse" {
-			// 		// if whActionsOnly is true, we only send reports for wh actions sources
-			// 		// we silently drop all other reports
-			// 		continue
-			// 	}
-			// 	metricToSend := metric
-			// 	requestChan <- struct{}{}
-			// 	if errCtx.Err() != nil {
-			// 		// if any of errGroup's goroutines fail - don't send anymore requests for this batch
-			// 		break
-			// 	}
-			// 	errGroup.Go(func() error {
-			// 		err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
-			// 		<-requestChan
-			// 		return err
-			// 	})
-			// }
-
-			// err = errGroup.Wait()
-			// if err == nil {
-			// 	dbHandle, err := r.getDBHandle(c.ConnInfo)
-			// 	if err != nil {
-			// 		panic(err)
-			// 	}
-			// 	_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
-			// 	if err != nil {
-			// 		r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
-			// 	}
-			// }
 
 			mainLoopTimer.Since(loopStart)
 			select {
@@ -661,6 +449,58 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	})
 
 	_ = g.Wait()
+}
+
+func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
+	payload, err := json.Marshal(metric)
+	if err != nil {
+		panic(err)
+	}
+	operation := func() error {
+		uri := fmt.Sprintf("%s/metrics?version=v1", r.reportingServiceURL)
+		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
+		if err != nil {
+			return err
+		}
+		if r.region != "" {
+			q := req.URL.Query()
+			q.Add("region", r.region)
+			req.URL.RawQuery = q.Encode()
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		httpRequestStart := time.Now()
+		resp, err := netClient.Do(req)
+		if err != nil {
+			r.log.Error(err.Error())
+			return err
+		}
+
+		r.requestLatency.Since(httpRequestStart)
+		httpStatTags := r.getTags(label)
+		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
+		r.stats.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
+
+		defer func() { httputil.CloseResponse(resp) }()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			r.log.Error(err.Error())
+			return err
+		}
+
+		if !isMetricPosted(resp.StatusCode) {
+			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+		}
+		return err
+	}
+
+	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
+		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+	})
+	if err != nil {
+		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+	}
+	return err
 }
 
 func isMetricPosted(status int) bool {
