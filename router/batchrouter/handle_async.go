@@ -64,6 +64,16 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
+			tx.Tx().AddSuccessListener(func() {
+				for _, job := range completedJobs {
+					rmetrics.DecreasePendingEvents(
+						"batch_rt",
+						job.WorkspaceId,
+						brt.destType,
+						float64(1),
+					)
+				}
+			})
 			return nil
 		})
 	}, brt.sendRetryUpdateStats)
