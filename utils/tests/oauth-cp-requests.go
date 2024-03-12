@@ -15,21 +15,21 @@ type CpResponseParams struct {
 }
 type CpResponseProducer struct {
 	Responses []CpResponseParams
-	CallCount int
+	callCount int
 }
 
-func (s *CpResponseProducer) GetNext() CpResponseParams {
-	if s.CallCount >= len(s.Responses) {
+func (cp *CpResponseProducer) GetNext() CpResponseParams {
+	if cp.callCount >= len(cp.Responses) {
 		panic("ran out of responses")
 	}
-	cpResp := s.Responses[s.CallCount]
-	s.CallCount++
+	cpResp := cp.Responses[cp.callCount]
+	cp.callCount++
 	return cpResp
 }
 
 func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 	srvMux := chi.NewMux()
-	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
+	srvMux.Post("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
 		// iterating over request parameters
 		for _, reqParam := range []string{"workspaceId", "accountId"} {
 			param := chi.URLParam(req, reqParam)
@@ -48,18 +48,10 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(cpResp.Code)
 		// Lint error fix
-		_, err := w.Write([]byte(cpResp.Response))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
-			return
-		}
+		_, _ = w.Write([]byte(cpResp.Response))
 	})
 
-	srvMux.HandleFunc("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	srvMux.Put("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
 		// iterating over request parameters
 		for _, reqParam := range []string{"workspaceId", "destinationId"} {
 			param := chi.URLParam(req, reqParam)
@@ -78,11 +70,7 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(cpResp.Code)
 		// Lint error fix
-		_, err := w.Write([]byte(cpResp.Response))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
-			return
-		}
+		_, _ = w.Write([]byte(cpResp.Response))
 	})
 	return srvMux
 }
