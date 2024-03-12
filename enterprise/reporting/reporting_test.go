@@ -135,7 +135,7 @@ var _ = Describe("Reporting", func() {
 					WorkspaceID: "some-workspace-id",
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
+					SourceID:         "some-source-id-2",
 					DestinationID:    "some-destination-id",
 					TransformationID: "some-transformation-id",
 					TrackingPlanID:   "some-tracking-plan-id",
@@ -189,8 +189,37 @@ var _ = Describe("Reporting", func() {
 					},
 					{
 						Status:         "some-status",
-						Count:          5,
-						ViolationCount: 20,
+						Count:          2,
+						ViolationCount: 10,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+						ErrorType:      "some-error-type",
+					},
+				},
+			},
+			{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id-2",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690 * 60 * 1000,
+				},
+				StatusDetails: []*types.StatusDetail{
+					{
+						Status:         "some-status",
+						Count:          3,
+						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
 						SampleEvent:    []byte(`{}`),
