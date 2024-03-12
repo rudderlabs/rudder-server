@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -27,21 +28,18 @@ type controlPlaneConnector struct {
 }
 
 func NewControlPlaneConnector(options ...func(*controlPlaneConnector)) ControlPlaneConnector {
-	cpConnector := &controlPlaneConnector{}
+	cpConnector := &controlPlaneConnector{
+		client: &http.Client{
+			Transport: http.DefaultTransport,
+			Timeout:   config.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
+		},
+		logger: logger.NewLogger().Child("ControlPlaneConnector"),
+	}
 
 	for _, opt := range options {
 		opt(cpConnector)
 	}
 
-	if cpConnector.client == nil {
-		cpConnector.client = &http.Client{
-			Transport: http.DefaultTransport,
-			Timeout:   cpConnector.timeOut,
-		}
-	}
-	if cpConnector.logger == nil {
-		cpConnector.logger = logger.NewLogger().Child("ControlPlaneConnector")
-	}
 	return cpConnector
 }
 

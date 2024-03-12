@@ -18,7 +18,7 @@ type HttpClientOptionalArgs struct {
 	ExpirationTimeDiff time.Duration
 }
 
-// OAuthHttpClient returns an http client that will add the appropriate authorization information to oauth requests.
+// OAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
 func OAuthHttpClient(client *http.Client, flowType oauth.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
 	transportArgs := &TransportArgs{
 		BackendConfig:        backendConfig,

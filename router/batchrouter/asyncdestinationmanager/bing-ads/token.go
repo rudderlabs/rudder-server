@@ -100,7 +100,11 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
 	// TODO: check if the error is not nil working verify during unit test
 	if err != nil {
-		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
+		if authResponse != nil {
+			return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
+		} else {
+			return nil, fmt.Errorf("fetching access token resulted in an error: %v,%d", err, statusCode)
+		}
 	}
 
 	/*

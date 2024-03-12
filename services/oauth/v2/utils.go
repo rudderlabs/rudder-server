@@ -30,7 +30,16 @@ const (
 	RefTokenInvalidGrant = "ref_token_invalid_grant"
 )
 
-var ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
+var (
+	ErrorCategories = []string{CategoryRefreshToken, CategoryAuthStatusInactive}
+	ErrTypMap       = map[syscall.Errno]string{
+		syscall.ECONNRESET:   "econnreset",
+		syscall.ECONNREFUSED: "econnrefused",
+		syscall.ECONNABORTED: "econnaborted",
+		syscall.ECANCELED:    "ecanceled",
+	}
+	ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
+)
 
 func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
@@ -89,7 +98,7 @@ func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) 
 }
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
-	transformedJobs := TransformerResponse{}
+	var transformedJobs TransformerResponse
 	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
@@ -98,7 +107,7 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {
-	expirationDate := expirationDate{}
+	var expirationDate expirationDate
 	if err := json.Unmarshal(secret.Secret, &expirationDate); err != nil {
 		stats.errorMessage = "unmarshal failed"
 		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
@@ -131,16 +140,10 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 }
 
 func GetErrorType(err error) string {
-	errTypMap := map[syscall.Errno]string{
-		syscall.ECONNRESET:   "econnreset",
-		syscall.ECONNREFUSED: "econnrefused",
-		syscall.ECONNABORTED: "econnaborted",
-		syscall.ECANCELED:    "ecanceled",
-	}
 	if os.IsTimeout(err) {
 		return "timeout"
 	}
-	for errno, errTyp := range errTypMap {
+	for errno, errTyp := range ErrTypMap {
 		if ok := errors.Is(err, errno); ok {
 			return errTyp
 		}
@@ -153,5 +156,5 @@ func GetErrorType(err error) string {
 }
 
 func IsValidAuthErrorCategory(category string) bool {
-	return lo.Contains([]string{CategoryRefreshToken, CategoryAuthStatusInactive}, category)
+	return lo.Contains(ErrorCategories, category)
 }
