@@ -27,7 +27,7 @@ func (s *CpResponseProducer) GetNext() CpResponseParams {
 	return cpResp
 }
 
-func (cpRespProducer *CpResponseProducer) MockCpRequests() *chi.Mux {
+func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 	srvMux := chi.NewMux()
 	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
 		// iterating over request parameters
@@ -40,7 +40,7 @@ func (cpRespProducer *CpResponseProducer) MockCpRequests() *chi.Mux {
 			}
 		}
 
-		cpResp := cpRespProducer.GetNext()
+		cpResp := cp.GetNext()
 		// sleep is being used to mimic the waiting in actual transformer response
 		if cpResp.Timeout > 0 {
 			time.Sleep(cpResp.Timeout)
@@ -70,7 +70,7 @@ func (cpRespProducer *CpResponseProducer) MockCpRequests() *chi.Mux {
 			}
 		}
 
-		cpResp := cpRespProducer.GetNext()
+		cpResp := cp.GetNext()
 		// sleep is being used to mimic the waiting in actual transformer response
 		if cpResp.Timeout > 0 {
 			time.Sleep(cpResp.Timeout)

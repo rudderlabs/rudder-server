@@ -87,7 +87,7 @@ Return:
 func (h *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
 		id:              fetchTokenParams.AccountId,
-		workspaceId:     fetchTokenParams.WorkspaceId,
+		workspaceID:     fetchTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
@@ -125,7 +125,7 @@ Return:
 func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
 		id:              refTokenParams.AccountId,
-		workspaceId:     refTokenParams.WorkspaceId,
+		workspaceID:     refTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
@@ -143,7 +143,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountId),
-		obskit.DestinationID(refTokenParams.Destination.DestinationId),
+		obskit.DestinationID(refTokenParams.Destination.ID),
 		obskit.WorkspaceID(refTokenParams.WorkspaceId),
 		obskit.DestinationType(refTokenParams.DestDefName))
 	startTime := time.Now()
@@ -163,7 +163,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 				logger.NewStringField("Module name", h.LoggerName),
 				logger.NewStringField("Call Type", logTypeName),
 				logger.NewStringField("AccountId", refTokenParams.AccountId),
-				obskit.DestinationID(refTokenParams.Destination.DestinationId),
+				obskit.DestinationID(refTokenParams.Destination.ID),
 				obskit.WorkspaceID(refTokenParams.WorkspaceId),
 				obskit.DestinationType(refTokenParams.DestDefName))
 			return http.StatusInternalServerError, nil, errors.New("failed to type assert the stored cache")
@@ -192,18 +192,18 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 
 func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
-	destinationId := params.Destination.DestinationId
+	destinationId := params.Destination.ID
 	action := fmt.Sprintf("auth_status_%v", params.StatPrefix)
 
 	authStatusToggleStats := &OAuthStats{
 		id:              destinationId,
-		workspaceId:     params.WorkspaceId,
+		workspaceID:     params.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
 		authErrCategory: params.AuthStatus,
 		errorMessage:    "",
-		destDefName:     params.Destination.DestDefName,
+		destDefName:     params.Destination.DefinitionName,
 		flowType:        h.RudderFlowType,
 		action:          action,
 	}
@@ -212,36 +212,36 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		authStatusToggleStats.isCallToCpApi = false
 		authStatusToggleStats.SendTimerStats(authErrHandlerTimeStart)
 	}()
-	h.CacheMutex.Lock(params.RudderAccountId)
+	h.CacheMutex.Lock(params.RudderAccountID)
 	isAuthStatusUpdateActive, isAuthStatusUpdateReqPresent := h.AuthStatusUpdateActiveMap[destinationId]
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
-		h.CacheMutex.Unlock(params.RudderAccountId)
+		h.CacheMutex.Unlock(params.RudderAccountID)
 		h.Logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!",
 			logger.NewStringField("Module name", h.LoggerName))
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
 	h.AuthStatusUpdateActiveMap[destinationId] = true
-	h.CacheMutex.Unlock(params.RudderAccountId)
+	h.CacheMutex.Unlock(params.RudderAccountID)
 
 	defer func() {
-		h.CacheMutex.Lock(params.RudderAccountId)
+		h.CacheMutex.Lock(params.RudderAccountID)
 		h.AuthStatusUpdateActiveMap[destinationId] = false
 		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!", logger.NewStringField("Module name", h.LoggerName))
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
-		h.Cache.Delete(params.RudderAccountId)
-		h.CacheMutex.Unlock(params.RudderAccountId)
+		h.Cache.Delete(params.RudderAccountID)
+		h.CacheMutex.Unlock(params.RudderAccountID)
 	}()
 
-	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceId, destinationId)
+	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceID, destinationId)
 
 	authStatusInactiveCpReq := &ControlPlaneRequest{
 		Url:           authStatusToggleUrl,
 		Method:        http.MethodPut,
 		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
 		ContentType:   "application/json",
-		destName:      params.Destination.DestDefName,
+		destName:      params.Destination.DefinitionName,
 		RequestType:   action,
 		BasicAuthUser: h.Identity(),
 	}

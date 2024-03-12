@@ -96,13 +96,17 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 
 	// check if OAuth destination
 	dest := &oauthv2.DestinationInfo{
-		WorkspaceID:   job.WorkspaceID,
-		DestDefName:   destination.Name,
-		DestinationId: destination.DestinationID,
-		DestConfig:    destination.Config,
-		DestDefConfig: destination.DestDefConfig,
+		WorkspaceID:      job.WorkspaceID,
+		DefinitionName:   destination.Name,
+		ID:               destination.DestinationID,
+		Config:           destination.Config,
+		DefinitionConfig: destination.DestDefConfig,
 	}
-	isOAuth := dest.IsOAuthDestination()
+	isOAuth, err := dest.IsOAuthDestination()
+	if err != nil {
+		pkgLogger.Error(err)
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	}
 	var oAuthDetail oauthDetail
 	if isOAuth && !api.IsOAuthV2Enabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)

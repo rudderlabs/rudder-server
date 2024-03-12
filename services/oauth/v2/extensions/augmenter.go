@@ -38,13 +38,13 @@ var HeaderAugmenter = &headerAugmenter{
 
 // Overload of Earlier Augment function
 func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
-	totalInputs := gjson.Get(string(body), fmt.Sprintf("%s.#", t.AugmenterPath)).Int()
+	totalInputs := gjson.GetBytes(body, fmt.Sprintf("%s.#", t.AugmenterPath)).Int()
 	augmentedBody := body
 	var err error
 	for i := 0; i < int(totalInputs); i++ {
 		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.metadata.%s", t.AugmenterPath, i, v2.SecretKey), secret)
 		if err != nil {
-			return fmt.Errorf("failed to augment request body: %w", err)
+			return fmt.Errorf("augmenting request body: %w", err)
 		}
 	}
 	r.ContentLength = int64(len(augmentedBody))
@@ -62,7 +62,7 @@ func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawM
 	}
 	secretJson, err := json.Marshal(actSecret)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshalling secret: %w", err)
 	}
 	r.Header.Set(t.HeaderName, string(secretJson))
 	r.Body = io.NopCloser(bytes.NewReader(body))

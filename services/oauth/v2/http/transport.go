@@ -84,9 +84,9 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 		body, err := io.ReadAll(rts.req.Body)
 		if err != nil {
 			t.log.Errorn("failed to read request body",
-				obskit.DestinationID(rts.destination.DestinationId),
+				obskit.DestinationID(rts.destination.ID),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
-				obskit.DestinationType(rts.destination.DestDefName),
+				obskit.DestinationType(rts.destination.DefinitionName),
 				logger.NewStringField("flow", string(t.flow)))
 			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
 		}
@@ -103,8 +103,8 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 		} else if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
-				WorkspaceId:     rts.destination.WorkspaceID,
-				RudderAccountId: rts.accountId,
+				WorkspaceID:     rts.destination.WorkspaceID,
+				RudderAccountID: rts.accountId,
 				StatPrefix:      oauth.AuthStatusInactive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
@@ -160,8 +160,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			interceptorResp.StatusCode = http.StatusBadRequest
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
-				WorkspaceId:     rts.destination.WorkspaceID,
-				RudderAccountId: rts.accountId,
+				WorkspaceID:     rts.destination.WorkspaceID,
+				RudderAccountID: rts.accountId,
 				StatPrefix:      oauth.AuthStatusInactive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
@@ -174,8 +174,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	} else if authErrorCategory == oauth.CategoryAuthStatusInactive {
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
-			WorkspaceId:     rts.destination.WorkspaceID,
-			RudderAccountId: rts.accountId,
+			WorkspaceID:     rts.destination.WorkspaceID,
+			RudderAccountID: rts.accountId,
 			StatPrefix:      oauth.AuthStatusInactive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
@@ -203,28 +203,48 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
-	if !destination.IsOAuthDestination() {
+	isOauthDestination, err := destination.IsOAuthDestination()
+	if err != nil {
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("failed to check if destination is oauth destination: %v", err.Error()))), nil
+	}
+	if !isOauthDestination {
 		return t.Transport.RoundTrip(req)
 	}
 	rts := &roundTripState{}
 	rts.destination = destination
 	if t.flow == oauth.RudderFlow_Delivery {
-		rts.accountId = rts.destination.GetAccountID(oauth.DeliveryAccountIdKey)
+		rts.accountId, err = rts.destination.GetAccountID(oauth.DeliveryAccountIdKey)
+		if err != nil {
+			t.log.Errorn("accountId not found for destination",
+				obskit.DestinationID(rts.destination.ID),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DefinitionName),
+				logger.NewStringField("flow", string(t.flow)))
+			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.ID, t.flow))), nil
+		}
 	} else if t.flow == oauth.RudderFlow_Delete {
-		rts.accountId = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
+		rts.accountId, err = rts.destination.GetAccountID(oauth.DeleteAccountIdKey)
+		if err != nil {
+			t.log.Errorn("accountId not found for destination",
+				obskit.DestinationID(rts.destination.ID),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DefinitionName),
+				logger.NewStringField("flow", string(t.flow)))
+			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.ID, t.flow))), nil
+		}
 	}
 	if rts.accountId == "" {
 		t.log.Errorn("accountId not found for destination",
-			obskit.DestinationID(rts.destination.DestinationId),
+			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestDefName),
+			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)))
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.DestinationId, t.flow))), nil
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("accountId not found for destination(%s) in %s flow", destination.ID, t.flow))), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
 		AccountId:   rts.accountId,
 		WorkspaceId: rts.destination.WorkspaceID,
-		DestDefName: rts.destination.DestDefName,
+		DestDefName: rts.destination.DefinitionName,
 		Destination: rts.destination,
 	}
 	rts.req = req

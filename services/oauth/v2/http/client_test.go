@@ -49,10 +49,14 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
 			destination := &oauth.DestinationInfo{
-				DestDefName:   "CLEVERTAP",
-				DestDefConfig: map[string]interface{}{},
-				DestinationId: "25beoSzcLFmimO8FgiVqTNwBG12",
-				DestConfig:    map[string]interface{}{},
+				DefinitionName: "CLEVERTAP",
+				DefinitionConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "API_KEY",
+					},
+				},
+				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]interface{}{},
 			}
 			req = req.WithContext(context.WithValue(req.Context(), oauth.DestKey, destination))
 			res, err := httpClient.Do(req)
@@ -96,14 +100,14 @@ var _ = Describe("Http/Client", func() {
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
-				DestDefName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DestDefConfig: map[string]interface{}{
+				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
+				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
 						"type": "OAuth",
 					},
 				},
-				DestinationId: "25beoSzcLFmimO8FgiVqTNwBG12",
-				DestConfig: map[string]interface{}{
+				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
 				WorkspaceID: "1234",
@@ -161,14 +165,14 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.OAuthHttpClient(&http.Client{}, oauth.RudderFlow_Delivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
-				DestDefName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DestDefConfig: map[string]interface{}{
+				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
+				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
 						"type": "OAuth",
 					},
 				},
-				DestinationId: "25beoSzcLFmimO8FgiVqTNwBG12",
-				DestConfig: map[string]interface{}{
+				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
 			}
@@ -215,14 +219,14 @@ var _ = Describe("Http/Client", func() {
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &oauth.DestinationInfo{
-				DestDefName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DestDefConfig: map[string]interface{}{
+				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
+				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
 						"type": "OAuth",
 					},
 				},
-				DestinationId: "25beoSzcLFmimO8FgiVqTNwBG12",
-				DestConfig: map[string]interface{}{
+				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
 			}

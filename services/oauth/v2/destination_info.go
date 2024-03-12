@@ -1,41 +1,51 @@
 package v2
 
-import "github.com/rudderlabs/rudder-server/utils/misc"
+import (
+	"fmt"
+
+	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+)
 
 type DestinationInfo struct {
-	WorkspaceID   string
-	DestDefName   string
-	DestDefConfig map[string]interface{}
-	DestinationId string
-	DestConfig    map[string]interface{}
+	WorkspaceID      string
+	DefinitionName   string
+	DefinitionConfig map[string]interface{}
+	ID               string
+	Config           map[string]interface{}
 }
 
-func (d *DestinationInfo) IsOAuthDestination() bool {
-	authValue, err := misc.NestedMapLookup(d.DestDefConfig, "auth", "type")
+func (d *DestinationInfo) IsOAuthDestination() (bool, error) {
+	authValue, err := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
 	if err != nil {
-		return false
+		return false, fmt.Errorf("lookup failed: %v", err)
 	}
-	if authType, ok := authValue.(string); ok {
-		return authType == "OAuth"
+	authType, ok := authValue.(string)
+	if !ok {
+		return false, fmt.Errorf("auth type is not a string")
 	}
-	return false
+	return authType == string(oauth.OAuth), nil
 }
 
 /*
-Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
+GetAccountID Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
 
 Example:
 `GetAccountId(destDetail.Config, "rudderDeleteAccountId")` --> To be used when we make use of OAuth during regulation flow
 `GetAccountId(destDetail.Config, "rudderAccountId")` --> To be used when we make use of OAuth during normal event delivery
 */
-func (d *DestinationInfo) GetAccountID(idKey string) string {
-	rudderAccountIdInterface, found := d.DestConfig[idKey]
-	if !d.IsOAuthDestination() || !found || idKey == "" {
-		return ""
+func (d *DestinationInfo) GetAccountID(idKey string) (string, error) {
+	rudderAccountIdInterface, found := d.Config[idKey]
+	oauthDest, err := d.IsOAuthDestination()
+	if err != nil {
+		return "", fmt.Errorf("failed to check if destination is oauth destination: %v", err)
 	}
-	rudderAccountId, err := rudderAccountIdInterface.(string)
-	if !err {
-		return ""
+	if !oauthDest || !found || idKey == "" {
+		return "", fmt.Errorf("destination is not an oauth destination or accountId not found")
 	}
-	return rudderAccountId
+	rudderAccountId, ok := rudderAccountIdInterface.(string)
+	if !ok {
+		return "", fmt.Errorf("rudderAccountId is not a string")
+	}
+	return rudderAccountId, nil
 }

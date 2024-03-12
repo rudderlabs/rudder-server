@@ -87,9 +87,9 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 
 func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	destination := oauthV2.DestinationInfo{
-		WorkspaceID:   ts.workspaceID,
-		DestDefName:   ts.destinationName,
-		DestinationId: ts.destination.ID,
+		WorkspaceID:    ts.workspaceID,
+		DefinitionName: ts.destinationName,
+		ID:             ts.destination.ID,
 	}
 	refreshTokenParams := oauthV2.RefreshTokenParams{
 		WorkspaceId: ts.workspaceID,

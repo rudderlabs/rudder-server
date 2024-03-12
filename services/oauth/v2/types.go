@@ -83,7 +83,7 @@ type RefreshTokenBodyParams struct {
 
 type OAuthStats struct {
 	id              string
-	workspaceId     string
+	workspaceID     string
 	errorMessage    string
 	rudderCategory  string
 	statName        string
@@ -96,8 +96,8 @@ type OAuthStats struct {
 }
 type AuthStatusToggleParams struct {
 	Destination     *DestinationInfo
-	WorkspaceId     string
-	RudderAccountId string
+	WorkspaceID     string
+	RudderAccountID string
 	AuthStatus      string
 	StatPrefix      string
 }

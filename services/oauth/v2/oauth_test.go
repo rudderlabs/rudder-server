@@ -21,11 +21,11 @@ import (
 )
 
 var Destination = &v2.DestinationInfo{
-	DestDefName:   "testDest",
-	DestinationId: "Destination123",
-	WorkspaceID:   "456",
-	DestDefConfig: map[string]interface{}{},
-	DestConfig:    map[string]interface{}{},
+	DefinitionName:   "testDest",
+	ID:               "Destination123",
+	WorkspaceID:      "456",
+	DefinitionConfig: map[string]interface{}{},
+	Config:           map[string]interface{}{},
 }
 
 var _ = Describe("Oauth", func() {
@@ -543,8 +543,8 @@ var _ = Describe("Oauth", func() {
 			  }`)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination:     Destination,
-				WorkspaceId:     "workspaceID",
-				RudderAccountId: "rudderAccountId",
+				WorkspaceID:     "workspaceID",
+				RudderAccountID: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
@@ -567,8 +567,8 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, ``)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination:     Destination,
-				WorkspaceId:     "workspaceID",
-				RudderAccountId: "rudderAccountId",
+				WorkspaceID:     "workspaceID",
+				RudderAccountID: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
@@ -604,8 +604,8 @@ var _ = Describe("Oauth", func() {
 			}
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination:     Destination,
-				WorkspaceId:     "workspaceID",
-				RudderAccountId: "rudderAccountId",
+				WorkspaceID:     "workspaceID",
+				RudderAccountID: "rudderAccountId",
 				StatPrefix:      "AuthStatusInactive",
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})

@@ -1387,11 +1387,11 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			}
 
 			destinationInfo := &v2.DestinationInfo{
-				DestConfig:    tc.destination.Config,
-				DestDefConfig: tc.destination.DestinationDefinition.Config,
-				WorkspaceID:   tc.reqPayload.Metadata[0].WorkspaceID,
-				DestDefName:   tc.destination.DestinationDefinition.Name,
-				DestinationId: tc.destination.DestinationDefinition.ID,
+				Config:           tc.destination.Config,
+				DefinitionConfig: tc.destination.DestinationDefinition.Config,
+				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
+				DefinitionName:   tc.destination.DestinationDefinition.Name,
+				ID:               tc.destination.DestinationDefinition.ID,
 			}
 			ctx := context.WithValue(context.Background(), v2.DestKey, destinationInfo)
 			proxyResp := tr.ProxyRequest(ctx, reqParams)

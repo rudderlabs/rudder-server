@@ -165,11 +165,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			// TODO: Remove later
 			trans.logger.Infon("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
 			destinationInfo := &oauthv2.DestinationInfo{
-				DestConfig:    transformMessageCopy.Data[0].Destination.Config,
-				DestDefConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-				WorkspaceID:   transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-				DestDefName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-				DestinationId: transformMessageCopy.Data[0].Destination.ID,
+				Config:           transformMessageCopy.Data[0].Destination.Config,
+				DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
+				WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
+				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
+				ID:               transformMessageCopy.Data[0].Destination.ID,
 			}
 			req = req.WithContext(context.WithValue(req.Context(), oauthv2.DestKey, destinationInfo))
 			resp, err = trans.clientOauthV2.Do(req)

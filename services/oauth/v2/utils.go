@@ -24,10 +24,13 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	CategoryRefreshToken = "REFRESH_TOKEN"
-	// Identifier to be sent from destination(during transformation/delivery)
+	// CategoryAuthStatusInactive Identifier to be sent from destination(during transformation/delivery)
 	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
-	// Identifier for invalid_grant or access_denied errors(during refreshing the token)
+	// RefTokenInvalidGrant Identifier for invalid_grant or access_denied errors(during refreshing the token)
 	RefTokenInvalidGrant = "ref_token_invalid_grant"
+	TimeOutError         = "timeout"
+	NetworkError         = "network_error"
+	None                 = "none"
 )
 
 var (
@@ -48,7 +51,7 @@ func GetOAuthActionStatName(stat string) string {
 func (s *OAuthStats) SendTimerStats(startTime time.Time) {
 	statsTags := stats.Tags{
 		"id":              s.id,
-		"workspaceId":     s.workspaceId,
+		"workspaceId":     s.workspaceID,
 		"rudderCategory":  s.rudderCategory,
 		"isCallToCpApi":   strconv.FormatBool(s.isCallToCpApi),
 		"authErrCategory": s.authErrCategory,
@@ -65,7 +68,7 @@ func (s *OAuthStats) SendCountStat() {
 	statsTags := stats.Tags{
 		"oauthVersion":    "v2",
 		"id":              s.id,
-		"workspaceId":     s.workspaceId,
+		"workspaceId":     s.workspaceID,
 		"rudderCategory":  s.rudderCategory,
 		"errorMessage":    s.errorMessage,
 		"isCallToCpApi":   strconv.FormatBool(s.isCallToCpApi),
@@ -108,7 +111,7 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {
 	var expirationDate expirationDate
-	if err := json.Unmarshal(secret.Secret, &expirationDate); err != nil {
+	if err := jsonfast.Unmarshal(secret.Secret, &expirationDate); err != nil {
 		stats.errorMessage = "unmarshal failed"
 		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
 		stats.SendCountStat()
@@ -117,10 +120,11 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, expiryTimeDiff, stats) {
 		return true
 	}
-	if router_utils.IsNotEmptyString(string(oldSecret)) {
-		if bytes.Equal(secret.Secret, oldSecret) {
-			return true
-		}
+	if !router_utils.IsNotEmptyString(string(oldSecret)) {
+		return false
+	}
+	if bytes.Equal(secret.Secret, oldSecret) {
+		return true
 	}
 	return false
 }
@@ -133,15 +137,12 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 		stats.SendCountStat()
 		return false
 	}
-	if date.Before(time.Now().Add(expirationTimeDiff)) {
-		return true
-	}
-	return false
+	return date.Before(time.Now().Add(expirationTimeDiff))
 }
 
 func GetErrorType(err error) string {
 	if os.IsTimeout(err) {
-		return "timeout"
+		return TimeOutError
 	}
 	for errno, errTyp := range ErrTypMap {
 		if ok := errors.Is(err, errno); ok {
@@ -150,9 +151,9 @@ func GetErrorType(err error) string {
 	}
 	var e net.Error
 	if errors.As(err, &e) {
-		return "network_error"
+		return NetworkError
 	}
-	return "none"
+	return None
 }
 
 func IsValidAuthErrorCategory(category string) bool {
