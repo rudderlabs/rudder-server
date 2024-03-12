@@ -20,6 +20,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -42,6 +43,7 @@ const (
 	StatReportingHttpReq                   = "reporting_client_http_request"
 	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
 	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
+	StatReportingVacuumDuration            = "reporting_vacuum_duration"
 )
 
 type DefaultReporter struct {
@@ -358,6 +360,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
 	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	vacuumDuration := r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
@@ -380,10 +383,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
-			currentMs := time.Now().UTC().Unix() / 60
+			currentMin := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
-			reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
+			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
 			getReportsTimer.Since(getReportsStart)
 			getReportsCount.Observe(float64(len(reports)))
 			if len(reports) == 0 {
@@ -408,6 +411,8 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 			errGroup, errCtx := errgroup.WithContext(ctx)
+			// default to -1 to allow unlimited concurrency
+			errGroup.SetLimit(config.GetInt("Reporting.maxConcurrentRequests", -1))
 			for _, metric := range metrics {
 				if r.whActionsOnly && metric.SourceCategory != "warehouse" {
 					// if whActionsOnly is true, we only send reports for wh actions sources
@@ -436,6 +441,27 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				}
+
+				vacuumStart := time.Now()
+				var sizeEstimate int64
+				if err := dbHandle.QueryRowContext(
+					ctx,
+					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
+				).Scan(&sizeEstimate); err != nil {
+					r.log.Errorn(
+						`[ Reporting ]: Error getting table size estimate`,
+						logger.NewErrorField(err),
+					)
+				}
+				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
+					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+						r.log.Errorn(
+							`[ Reporting ]: Error vacuuming reports table`,
+							logger.NewErrorField(err),
+						)
+					}
+					vacuumDuration.Since(vacuumStart)
 				}
 			}
 
