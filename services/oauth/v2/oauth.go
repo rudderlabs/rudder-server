@@ -35,14 +35,17 @@ func WithExpirationTimeDiff(expirationTimeDiff time.Duration) func(*OAuthHandler
 	}
 }
 
+func WithLogger(parentLogger logger.Logger) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.Logger = parentLogger
+	}
+}
+
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
-	pkgLogger := logger.NewLogger().Child("router").Child("OAuthHandler")
 	cpTimeoutDuration := config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)
 	h := &OAuthHandler{
 		TokenProvider: provider,
-		Logger:        pkgLogger,
-		CpConn:        NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger), WithLoggerName("OAuthHandler")),
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 		RudderFlowType:            RudderFlow_Delivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
@@ -52,6 +55,12 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	for _, opt := range options {
 		opt(h)
 	}
+	var pkgLogger logger.Logger
+	if h.Logger == nil {
+		pkgLogger = logger.NewLogger().Child("OAuthHandler")
+	}
+	h.CpConn = NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(pkgLogger), WithLoggerName("OAuthHandler"))
+
 	if h.Cache == nil {
 		cache := NewCache()
 		h.Cache = cache
@@ -74,15 +83,6 @@ Fetch token function is used to fetch the token from the cache or from the contr
 - It returns the status code, token and error
 - It also sends the stats to the statsd
 - It also sends the error to the control plane
-Parameters:
-  - fetchTokenParams: *RefreshTokenParams
-  - logTypeName: string
-  - authStats: *OAuthStats
-
-Return:
-  - int: status code
-  - *AuthResponse: token
-  - error: error
 */
 func (h *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
@@ -114,13 +114,6 @@ Refresh token function is used to refresh the token from the control plane
 - It returns the status code, token and error
 - It also sends the stats to the statsd
 - It also sends the error to the control plane
-Parameters:
-  - refTokenParams: *RefreshTokenParams
-
-Return:
-  - int: status code
-  - *AuthResponse: token
-  - error: error
 */
 func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
@@ -139,13 +132,15 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 }
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
-	h.Logger.Debugn("[request] :: Get Token Info request received",
+	log := h.Logger.Withn(
 		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountId),
 		obskit.DestinationID(refTokenParams.Destination.ID),
 		obskit.WorkspaceID(refTokenParams.WorkspaceId),
-		obskit.DestinationType(refTokenParams.DestDefName))
+		obskit.DestinationType(refTokenParams.DestDefName),
+	)
+	log.Debugn("[request] :: Get Token Info request received")
 	startTime := time.Now()
 	defer func() {
 		authStats.statName = GetOAuthActionStatName("total_latency")
@@ -159,13 +154,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	if ok {
 		cachedSecret, ok := storedCache.(*AuthResponse)
 		if !ok {
-			h.Logger.Debugn("[request] :: Failed to type assert the stored cache",
-				logger.NewStringField("Module name", h.LoggerName),
-				logger.NewStringField("Call Type", logTypeName),
-				logger.NewStringField("AccountId", refTokenParams.AccountId),
-				obskit.DestinationID(refTokenParams.Destination.ID),
-				obskit.WorkspaceID(refTokenParams.WorkspaceId),
-				obskit.DestinationType(refTokenParams.DestDefName))
+			log.Debugn("[request] :: Failed to type assert the stored cache")
 			return http.StatusInternalServerError, nil, errors.New("failed to type assert the stored cache")
 		}
 		// TODO: verify if the storedCache is nil at this point
@@ -342,11 +331,11 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.statName = GetOAuthActionStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	h.Logger.Debugn("[request] :: Response from Control-Plane",
-		logger.NewStringField("Module name", h.LoggerName),
+	log := h.Logger.Withn(logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
 		logger.NewStringField("Call Type", logTypeName))
+	log.Debugn("[request] :: Response from Control-Plane")
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -355,7 +344,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		h.Logger.Debugn("Empty response from Control-Plane",
-			logger.NewStringField("Modue Name", h.LoggerName),
+			logger.NewStringField("Module Name", h.LoggerName),
 			logger.NewStringField("Response", response),
 			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
 			logger.NewStringField("Call Type", logTypeName))
@@ -382,11 +371,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.statName = GetOAuthActionStatName("success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
-	h.Logger.Debugn("[request] :: (Write) Account Secret received",
-		logger.NewStringField("Modue Name", h.LoggerName),
-		logger.NewStringField("Response", response),
-		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
-		logger.NewStringField("Call Type", logTypeName))
+	log.Debugn("[request] :: (Write) Account Secret received")
 	h.Cache.Set(refTokenParams.AccountId, &AuthResponse{
 		Account: accountSecret,
 	})

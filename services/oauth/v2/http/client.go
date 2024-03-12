@@ -35,6 +35,7 @@ func OAuthHttpClient(client *http.Client, flowType oauth.RudderFlow, tokenCache 
 			oauth.WithCache(*tokenCache),
 			oauth.WithLocker(opArgs.Locker),
 			oauth.WithExpirationTimeDiff(opArgs.ExpirationTimeDiff),
+			oauth.WithLogger(opArgs.OAuthHandler.Logger),
 		)
 	}
 	if transportArgs.OriginalTransport == nil {
