@@ -47,7 +47,6 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(cpResp.Code)
-		// Lint error fix
 		_, _ = w.Write([]byte(cpResp.Response))
 	})
 
@@ -69,7 +68,6 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(cpResp.Code)
-		// Lint error fix
 		_, _ = w.Write([]byte(cpResp.Response))
 	})
 	return srvMux
