@@ -461,6 +461,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
 		ExpirationTimeDiff: (*trans.expirationTimeDiff).Load(),
+		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
 	}
 	// This client is used for Router Transformation using oauthV2
 	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauthv2.RudderFlow_Delivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
@@ -468,6 +469,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
 		ExpirationTimeDiff: (*trans.expirationTimeDiff).Load(),
+		Logger:             logger.NewLogger().Child("TransformerProxyHttpClient"),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}

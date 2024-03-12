@@ -157,6 +157,7 @@ func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.D
 	optionalArgs := oauthv2http.HttpClientOptionalArgs{
 		Augmenter: extensions.HeaderAugmenter,
 		Locker:    oauthLock,
+		Logger:    logger.NewLogger().Child("OAuthV2HttpClient"),
 	}
 	return oauthv2http.OAuthHttpClient(
 		cli,
