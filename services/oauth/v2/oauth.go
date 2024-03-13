@@ -67,8 +67,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	)
 
 	if h.Cache == nil {
-		cache := NewCache()
-		h.Cache = cache
+		h.Cache = NewCache()
 	}
 	if h.CacheMutex == nil {
 		h.CacheMutex = kitsync.NewPartitionRWLocker()
