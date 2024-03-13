@@ -531,7 +531,7 @@ var oauthTests = []oauthTestCases{
 		cpResponses:                  []cpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: accountId is empty for destination(%s) in %s flow", "1234", oauthV2.RudderFlow_Delete)},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: accountId is empty for destination(%s) in %s flow", "1234", oauthV2.RudderFlowDelete)},
 		expectedPayload:              "",
 	},
 	{
@@ -578,7 +578,7 @@ var oauthTests = []oauthTestCases{
 		cpResponses:                  []cpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("accountId not found for destination(%s) in %s flow", "1234", oauthV2.RudderFlow_Delete)},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("accountId not found for destination(%s) in %s flow", "1234", oauthV2.RudderFlowDelete)},
 		expectedPayload:              "",
 	},
 	{

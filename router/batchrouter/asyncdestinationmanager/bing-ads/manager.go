@@ -29,7 +29,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		accountID:       destConfig.RudderAccountID,
 		oauthClient:     oauthClient,
 		oauthClientV2:   oauthClientV2,
-		destination:     destination,
+		destinationID:   destination.ID,
 	}
 	secret, err := token.generateToken()
 	if err != nil {

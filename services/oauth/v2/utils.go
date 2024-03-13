@@ -50,12 +50,12 @@ func GetOAuthActionStatName(stat string) string {
 // {input: [{}, {}, {}, {}]}
 // {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
 func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
-	var transformedJobs []TransformerResponse
+	var transformedJobs []transformerResponse
 	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}
-	tfJob, found := lo.Find(transformedJobs, func(item TransformerResponse) bool {
+	tfJob, found := lo.Find(transformedJobs, func(item transformerResponse) bool {
 		return IsValidAuthErrorCategory(item.AuthErrorCategory)
 	})
 	if !found {
@@ -66,7 +66,7 @@ func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) 
 }
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
-	var transformedJobs TransformerResponse
+	var transformedJobs transformerResponse
 	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err

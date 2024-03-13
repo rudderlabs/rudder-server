@@ -8,12 +8,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
+	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
 type HttpClientOptionalArgs struct {
 	Transport          http.RoundTripper
-	Augmenter          oauth_exts.Augmenter
+	Augmenter          oauthexts.Augmenter
 	Locker             *sync.PartitionRWLocker
 	OAuthHandler       *oauth.OAuthHandler
 	ExpirationTimeDiff time.Duration

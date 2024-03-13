@@ -11,10 +11,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -23,7 +23,7 @@ func WithCache(cache Cache) func(*OAuthHandler) {
 	}
 }
 
-func WithLocker(lock *rudderSync.PartitionRWLocker) func(*OAuthHandler) {
+func WithLocker(lock *kitsync.PartitionRWLocker) func(*OAuthHandler) {
 	return func(h *OAuthHandler) {
 		h.CacheMutex = lock
 	}
@@ -47,7 +47,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-		RudderFlowType:            RudderFlow_Delivery,
+		RudderFlowType:            RudderFlowDelivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
 		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
 		LoggerName:                "OAuthHandler",
@@ -69,7 +69,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 		h.Cache = cache
 	}
 	if h.CacheMutex == nil {
-		h.CacheMutex = rudderSync.NewPartitionRWLocker()
+		h.CacheMutex = kitsync.NewPartitionRWLocker()
 	}
 	if h.ExpirationTimeDiff.Seconds() == 0 {
 		h.ExpirationTimeDiff = 1 * time.Minute
@@ -250,9 +250,9 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
 
-	var authStatusToggleRes *AuthStatusToggleResponse
+	var authStatusToggleRes *authStatusToggleResponse
 	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusToggleRes)
-	if router_utils.IsNotEmptyString(respBody) && (unmarshalErr != nil || !router_utils.IsNotEmptyString(authStatusToggleRes.Message) || statusCode != http.StatusOK) {
+	if routerutils.IsNotEmptyString(respBody) && (unmarshalErr != nil || !routerutils.IsNotEmptyString(authStatusToggleRes.Message) || statusCode != http.StatusOK) {
 		var msg string
 		if unmarshalErr != nil {
 			msg = unmarshalErr.Error()
@@ -341,7 +341,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	log.Debugn("[request] :: Response from Control-Plane")
 
 	// Empty Refresh token response
-	if !router_utils.IsNotEmptyString(response) {
+	if !routerutils.IsNotEmptyString(response) {
 		authStats.statName = GetOAuthActionStatName("failure")
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
@@ -355,7 +355,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		return http.StatusInternalServerError, nil, errors.New("empty secret")
 	}
 
-	if errType, refErrMsg := h.GetRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
+	if errType, refErrMsg := h.GetRefreshTokenErrResp(response, &accountSecret); routerutils.IsNotEmptyString(refErrMsg) {
 		// potential oauth secret alert as we are not setting anything in the cache as secret
 		authResponse := &AuthResponse{
 			Err:          errType,

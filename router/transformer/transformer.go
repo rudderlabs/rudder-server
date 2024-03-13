@@ -464,7 +464,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
 	}
 	// This client is used for Router Transformation using oauthV2
-	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauthv2.RudderFlow_Delivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
+	trans.clientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, oauthv2.RudderFlowDelivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
 
 	proxyClientOptionalArgs := &OAuthHttpClient.HttpClientOptionalArgs{
 		Locker:             locker,
@@ -474,7 +474,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
-	trans.proxyClientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, oauthv2.RudderFlow_Delivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
+	trans.proxyClientOauthV2 = OAuthHttpClient.OAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, oauthv2.RudderFlowDelivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	//  &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }

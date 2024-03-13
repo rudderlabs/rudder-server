@@ -3,12 +3,12 @@ package v2
 const (
 	DestKey              ContextKey = "destination"
 	SecretKey            ContextKey = "secret"
-	RudderFlow_Delivery  RudderFlow = "delivery"
-	RudderFlow_Delete    RudderFlow = "delete"
-	DeleteAccountIdKey              = "rudderDeleteAccountId"
-	DeliveryAccountIdKey            = "rudderAccountId"
+	RudderFlowDelivery   RudderFlow = "delivery"
+	RudderFlowDelete     RudderFlow = "delete"
+	DeleteAccountIDKey              = "rudderDeleteAccountId"
+	DeliveryAccountIDKey            = "rudderAccountId"
 
-	AuthStatusInactive = "inactive"
+	AuthStatusInActive = "inactive"
 
 	ErrorType = "errorType"
 )

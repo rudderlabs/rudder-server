@@ -102,10 +102,10 @@ type AuthStatusToggleParams struct {
 	StatPrefix      string
 }
 
-type AuthStatusToggleResponse struct {
+type authStatusToggleResponse struct {
 	Message string `json:"message,omitempty"`
 }
-type TransformerResponse struct {
+type transformerResponse struct {
 	AuthErrorCategory string `json:"authErrorCategory"`
 }
 

@@ -1,6 +1,10 @@
 package v2_test
 
 import (
+	"net"
+	"os"
+	"syscall"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -62,6 +66,31 @@ var _ = Describe("Utils", func() {
 			errType, message := oauthHandler.GetRefreshTokenErrResp(`{"body":{"code":"ref_token_invalid_grant","message":"[criteo_audience] \"invalid_grant\" error, refresh token has expired or revoked"}}`, accountSecret)
 			Expect(errType).To(Equal("ref_token_invalid_grant"))
 			Expect(message).To(Equal("[criteo_audience] \"invalid_grant\" error, refresh token has expired or revoked"))
+		})
+	})
+
+	Describe("Test GetErrorType function", func() {
+		It("Call GetErrorType with invalid_grant response from control-plane", func() {
+			err := &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
+			}
+			errType := v2.GetErrorType(err)
+			Expect(errType).To(Equal("timeout"))
+		})
+		It("Call GetErrorType with invalid_grant response from control-plane", func() {
+			err := &net.OpError{
+				Op:     "mock",
+				Net:    "mock",
+				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
+				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
+			}
+			errType := v2.GetErrorType(err)
+			Expect(errType).To(Equal("econnrefused"))
 		})
 	})
 })

@@ -8,7 +8,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -27,7 +26,7 @@ type tokenSource struct {
 	accountID       string
 	oauthClient     oauth.Authorizer
 	oauthClientV2   oauthV2.Authorizer
-	destination     *backendconfig.DestinationT
+	destinationID   string
 }
 
 // authentication related utils
@@ -89,7 +88,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	destination := oauthV2.DestinationInfo{
 		WorkspaceID:    ts.workspaceID,
 		DefinitionName: ts.destinationName,
-		ID:             ts.destination.ID,
+		ID:             ts.destinationID,
 	}
 	refreshTokenParams := oauthV2.RefreshTokenParams{
 		WorkspaceId: ts.workspaceID,

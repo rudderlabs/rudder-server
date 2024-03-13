@@ -9,11 +9,11 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	oauth_exts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
+	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
 /*
@@ -25,11 +25,11 @@ type TransportArgs struct {
 	// TokenCache is a cache for storing OAuth tokens.
 	TokenCache *oauth.Cache
 	// Locker provides synchronization mechanisms.
-	Locker *rudderSync.PartitionRWLocker
+	Locker *kitsync.PartitionRWLocker
 	// GetAuthErrorCategory is a function to get the auth error category from the response body. It can be REFRESH_TOKEN or AUTH_STATUS_INACTIVE.
 	GetAuthErrorCategory func([]byte) (string, error)
 	// Augmenter is an interface for augmenting requests with OAuth tokens.
-	oauth_exts.Augmenter
+	oauthexts.Augmenter
 	// OAuthHandler handles refreshToken and fetchToken requests.
 	OAuthHandler *oauth.OAuthHandler
 	// OriginalTransport is the underlying HTTP transport.
@@ -42,7 +42,7 @@ Also, it makes the calls to the actual endpoint and handles the response by refr
 */
 type Oauth2Transport struct {
 	oauthHandler oauth.OAuthHandler
-	oauth_exts.Augmenter
+	oauthexts.Augmenter
 	Transport            http.RoundTripper
 	log                  logger.Logger
 	flow                 oauth.RudderFlow
@@ -105,7 +105,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 				Destination:     rts.destination,
 				WorkspaceID:     rts.destination.WorkspaceID,
 				RudderAccountID: rts.accountId,
-				StatPrefix:      oauth.AuthStatusInactive,
+				StatPrefix:      oauth.AuthStatusInActive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
@@ -162,7 +162,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 				Destination:     rts.destination,
 				WorkspaceID:     rts.destination.WorkspaceID,
 				RudderAccountID: rts.accountId,
-				StatPrefix:      oauth.AuthStatusInactive,
+				StatPrefix:      oauth.AuthStatusInActive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			// rts.res.Body = errorInRefToken
@@ -176,7 +176,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			Destination:     rts.destination,
 			WorkspaceID:     rts.destination.WorkspaceID,
 			RudderAccountID: rts.accountId,
-			StatPrefix:      oauth.AuthStatusInactive,
+			StatPrefix:      oauth.AuthStatusInActive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
 		interceptorResp.StatusCode = http.StatusBadRequest
@@ -187,9 +187,9 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 }
 
 func (rts *roundTripState) getAccountId(flow oauth.RudderFlow) (string, error) {
-	accountIdKey := oauth.DeliveryAccountIdKey
-	if flow == oauth.RudderFlow_Delete {
-		accountIdKey = oauth.DeleteAccountIdKey
+	accountIdKey := oauth.DeliveryAccountIDKey
+	if flow == oauth.RudderFlowDelete {
+		accountIdKey = oauth.DeleteAccountIDKey
 	}
 
 	accountId, err := rts.destination.GetAccountID(accountIdKey)
