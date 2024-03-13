@@ -712,7 +712,7 @@ func TestNestedMapLookup(t *testing.T) {
 			require.Equal(t, testCase.expectedValue, val)
 		})
 	}
-	t.Run("key not present -- can be valid use-case", func(t *testing.T) {
+	t.Run("key not present at all(at level-0)", func(t *testing.T) {
 		searchMap1 := map[string]interface{}{}
 		v, searchErr := NestedMapLookup(searchMap1, "key", "key")
 		require.Equal(t, v, nil)
