@@ -18,10 +18,12 @@ type DestinationInfo struct {
 func (d *DestinationInfo) IsOAuthDestination() (bool, error) {
 	authValue, err := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
 	if err != nil {
-		return false, fmt.Errorf("lookup failed: %v", err)
+		// valid use-case for non-OAuth destinations
+		return false, nil
 	}
 	authType, ok := authValue.(string)
 	if !ok {
+		// we should throw error here, as we expect authValue to be a string if present
 		return false, fmt.Errorf("auth type is not a string")
 	}
 	return authType == string(oauth.OAuth), nil
