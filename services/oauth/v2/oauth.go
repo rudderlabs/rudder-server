@@ -15,6 +15,8 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -47,7 +49,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-		RudderFlowType:            RudderFlowDelivery,
+		RudderFlowType:            common.RudderFlowDelivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
 		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
 		LoggerName:                "OAuthHandler",
@@ -58,10 +60,10 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	if h.Logger == nil {
 		h.Logger = logger.NewLogger().Child("OAuthHandler")
 	}
-	h.CpConn = NewControlPlaneConnector(
-		WithCpClientTimeout(cpTimeoutDuration),
-		WithParentLogger(h.Logger),
-		WithLoggerName("OAuthHandler"),
+	h.CpConn = controlplane.NewControlPlaneConnector(
+		controlplane.WithCpClientTimeout(cpTimeoutDuration),
+		controlplane.WithParentLogger(h.Logger),
+		controlplane.WithLoggerName("OAuthHandler"),
 	)
 
 	if h.Cache == nil {
@@ -228,12 +230,12 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceID, destinationId)
 
-	authStatusInactiveCpReq := &ControlPlaneRequest{
+	authStatusInactiveCpReq := &controlplane.ControlPlaneRequest{
 		Url:           authStatusToggleUrl,
 		Method:        http.MethodPut,
 		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
 		ContentType:   "application/json",
-		destName:      params.Destination.DefinitionName,
+		DestName:      params.Destination.DefinitionName,
 		RequestType:   action,
 		BasicAuthUser: h.Identity(),
 	}
@@ -276,9 +278,9 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 }
 
 func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
-	if gjson.Get(response, ErrorType).String() != "" {
+	if gjson.Get(response, common.ErrorType).String() != "" {
 		// Network error
-		errorType = gjson.Get(response, ErrorType).String()
+		errorType = gjson.Get(response, common.ErrorType).String()
 		message = gjson.Get(response, "message").String()
 	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
@@ -313,12 +315,12 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		return http.StatusInternalServerError, nil, err
 	}
-	refreshCpReq := &ControlPlaneRequest{
+	refreshCpReq := &controlplane.ControlPlaneRequest{
 		Method:        http.MethodPost,
 		Url:           refreshUrl,
 		ContentType:   "application/json; charset=utf-8",
 		Body:          string(res),
-		destName:      refTokenParams.DestDefName,
+		DestName:      refTokenParams.DestDefName,
 		RequestType:   authStats.action,
 		BasicAuthUser: h.TokenProvider.Identity(),
 	}

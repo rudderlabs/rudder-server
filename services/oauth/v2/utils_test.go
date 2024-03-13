@@ -1,33 +1,28 @@
-package v2_test
+package v2
 
 import (
-	"net"
-	"os"
-	"syscall"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 var _ = Describe("Utils", func() {
 	Describe("Test GetOAuthActionStatName function", func() {
 		It("returns the correct stat name", func() {
-			Expect(v2.GetOAuthActionStatName("test")).To(Equal("oauth_action_test"))
+			Expect(GetOAuthActionStatName("test")).To(Equal("oauth_action_test"))
 		})
 	})
 
 	Describe("Test GetRefreshTokenErrResp function", func() {
 		It("Call GetRefreshTokenErrResp with empty response", func() {
-			oauthHandler := &v2.OAuthHandler{
+			oauthHandler := &OAuthHandler{
 				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
+				Cache:      NewCache(),
 				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
 			}
-			accountSecret := &v2.AccountSecret{
+			accountSecret := &AccountSecret{
 				ExpirationDate: "",
 				Secret:         nil,
 			}
@@ -37,12 +32,12 @@ var _ = Describe("Utils", func() {
 		})
 
 		It("Call GetRefreshTokenErrResp with marshallable(into AccountSecret) response", func() {
-			oauthHandler := &v2.OAuthHandler{
+			oauthHandler := &OAuthHandler{
 				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
+				Cache:      NewCache(),
 				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
 			}
-			accountSecret := &v2.AccountSecret{
+			accountSecret := &AccountSecret{
 				ExpirationDate: "",
 				Secret:         nil,
 			}
@@ -54,43 +49,18 @@ var _ = Describe("Utils", func() {
 		})
 
 		It("Call GetRefreshTokenErrResp with invalid_grant response from control-plane", func() {
-			oauthHandler := &v2.OAuthHandler{
+			oauthHandler := &OAuthHandler{
 				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
+				Cache:      NewCache(),
 				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
 			}
-			accountSecret := &v2.AccountSecret{
+			accountSecret := &AccountSecret{
 				ExpirationDate: "",
 				Secret:         nil,
 			}
 			errType, message := oauthHandler.GetRefreshTokenErrResp(`{"body":{"code":"ref_token_invalid_grant","message":"[criteo_audience] \"invalid_grant\" error, refresh token has expired or revoked"}}`, accountSecret)
 			Expect(errType).To(Equal("ref_token_invalid_grant"))
 			Expect(message).To(Equal("[criteo_audience] \"invalid_grant\" error, refresh token has expired or revoked"))
-		})
-	})
-
-	Describe("Test GetErrorType function", func() {
-		It("Call GetErrorType with invalid_grant response from control-plane", func() {
-			err := &net.OpError{
-				Op:     "mock",
-				Net:    "mock",
-				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
-				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
-				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
-			}
-			errType := v2.GetErrorType(err)
-			Expect(errType).To(Equal("timeout"))
-		})
-		It("Call GetErrorType with invalid_grant response from control-plane", func() {
-			err := &net.OpError{
-				Op:     "mock",
-				Net:    "mock",
-				Source: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
-				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
-				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
-			}
-			errType := v2.GetErrorType(err)
-			Expect(errType).To(Equal("econnrefused"))
 		})
 	})
 })

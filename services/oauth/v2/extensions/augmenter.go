@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 // Augmenter is an extension point for adding the appropriate authorization information to oauth requests.
@@ -42,7 +43,7 @@ func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.
 	augmentedBody := body
 	var err error
 	for i := 0; i < int(totalInputs); i++ {
-		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.metadata.%s", t.AugmenterPath, i, v2.SecretKey), secret)
+		augmentedBody, err = sjson.SetRawBytes(augmentedBody, fmt.Sprintf("%s.%d.metadata.%s", t.AugmenterPath, i, common.SecretKey), secret)
 		if err != nil {
 			return fmt.Errorf("augmenting request body: %w", err)
 		}

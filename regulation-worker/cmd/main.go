@@ -33,6 +33,7 @@ import (
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
@@ -161,7 +162,7 @@ func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.D
 	}
 	return oauthv2http.OAuthHttpClient(
 		cli,
-		oauthv2.RudderFlow(oauth.RudderFlow_Delete),
+		common.RudderFlow(oauth.RudderFlow_Delete),
 		&cache, backendconfig.DefaultBackendConfig,
 		api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 	)

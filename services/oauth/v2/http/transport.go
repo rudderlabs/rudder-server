@@ -13,6 +13,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
@@ -21,7 +22,7 @@ TransportArgs is a struct that contains the required parameters to create a new 
 */
 type TransportArgs struct {
 	BackendConfig backendconfig.BackendConfig
-	FlowType      oauth.RudderFlow
+	FlowType      common.RudderFlow
 	// TokenCache is a cache for storing OAuth tokens.
 	TokenCache *oauth.Cache
 	// Locker provides synchronization mechanisms.
@@ -45,7 +46,7 @@ type Oauth2Transport struct {
 	oauthexts.Augmenter
 	Transport            http.RoundTripper
 	log                  logger.Logger
-	flow                 oauth.RudderFlow
+	flow                 common.RudderFlow
 	getAuthErrorCategory func([]byte) (string, error)
 }
 
@@ -92,7 +93,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 		}
 		statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 		if statusCode == http.StatusOK {
-			rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), oauth.SecretKey, authResponse.Account.Secret))
+			rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), common.SecretKey, authResponse.Account.Secret))
 			err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 			if err != nil {
 				t.log.Debugn("failed to augment the secret",
@@ -105,7 +106,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 				Destination:     rts.destination,
 				WorkspaceID:     rts.destination.WorkspaceID,
 				RudderAccountID: rts.accountId,
-				StatPrefix:      oauth.AuthStatusInActive,
+				StatPrefix:      common.AuthStatusInActive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
@@ -139,8 +140,8 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	if authErrorCategory == oauth.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
-		if rts.req.Context().Value(oauth.SecretKey) != nil {
-			oldSecret = rts.req.Context().Value(oauth.SecretKey).(json.RawMessage)
+		if rts.req.Context().Value(common.SecretKey) != nil {
+			oldSecret = rts.req.Context().Value(common.SecretKey).(json.RawMessage)
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
@@ -162,7 +163,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 				Destination:     rts.destination,
 				WorkspaceID:     rts.destination.WorkspaceID,
 				RudderAccountID: rts.accountId,
-				StatPrefix:      oauth.AuthStatusInActive,
+				StatPrefix:      common.AuthStatusInActive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
 			// rts.res.Body = errorInRefToken
@@ -176,7 +177,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			Destination:     rts.destination,
 			WorkspaceID:     rts.destination.WorkspaceID,
 			RudderAccountID: rts.accountId,
-			StatPrefix:      oauth.AuthStatusInActive,
+			StatPrefix:      common.AuthStatusInActive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
 		interceptorResp.StatusCode = http.StatusBadRequest
@@ -186,10 +187,10 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	return rts.res, nil
 }
 
-func (rts *roundTripState) getAccountId(flow oauth.RudderFlow) (string, error) {
-	accountIdKey := oauth.DeliveryAccountIDKey
-	if flow == oauth.RudderFlowDelete {
-		accountIdKey = oauth.DeleteAccountIDKey
+func (rts *roundTripState) getAccountId(flow common.RudderFlow) (string, error) {
+	accountIdKey := common.DeliveryAccountIDKey
+	if flow == common.RudderFlowDelete {
+		accountIdKey = common.DeleteAccountIDKey
 	}
 
 	accountId, err := rts.destination.GetAccountID(accountIdKey)
@@ -204,14 +205,14 @@ func (rts *roundTripState) getAccountId(flow oauth.RudderFlow) (string, error) {
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.log.Debugn("Inside RoundTrip")
-	contextData := req.Context().Value(oauth.DestKey)
+	contextData := req.Context().Value(common.DestKey)
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
 	var destination *oauth.DestinationInfo
 	switch contextData.(type) {
 	case *oauth.DestinationInfo:
-		destination = req.Context().Value(oauth.DestKey).(*oauth.DestinationInfo)
+		destination = req.Context().Value(common.DestKey).(*oauth.DestinationInfo)
 	default:
 		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
 	}

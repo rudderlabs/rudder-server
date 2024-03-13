@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
@@ -21,7 +22,7 @@ type HttpClientOptionalArgs struct {
 }
 
 // OAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
-func OAuthHttpClient(client *http.Client, flowType oauth.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
+func OAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
 	transportArgs := &TransportArgs{
 		BackendConfig:        backendConfig,
 		FlowType:             flowType,

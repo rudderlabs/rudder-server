@@ -1,25 +1,35 @@
-package v2
+package controlplane
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
+
+var ErrTypMap = map[syscall.Errno]string{
+	syscall.ECONNRESET:   "econnreset",
+	syscall.ECONNREFUSED: "econnrefused",
+	syscall.ECONNABORTED: "econnaborted",
+	syscall.ECANCELED:    "ecanceled",
+}
 
 type ControlPlaneConnector interface {
 	CpApiCall(cpReq *ControlPlaneRequest) (int, string)
 }
-type HttpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
+
 type controlPlaneConnector struct {
 	client     HttpClient
 	logger     logger.Logger
@@ -107,7 +117,7 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 	cpStatTags := stats.Tags{
 		"url":          cpReq.Url,
 		"requestType":  cpReq.RequestType,
-		"destType":     cpReq.destName,
+		"destType":     cpReq.DestName,
 		"method":       cpReq.Method,
 		"flowType":     string(cpReq.rudderFlowType),
 		"oauthVersion": "v2",
@@ -157,10 +167,26 @@ func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, stri
 			resp = fmt.Sprintf(`{
 				%q: %q,
 				"message": 	%q
-			}`, ErrorType, errorType, doErr.Error())
+			}`, common.ErrorType, errorType, doErr.Error())
 		}
 		return http.StatusInternalServerError, resp
 	}
 	statusCode, resp := processResponse(res)
 	return statusCode, resp
+}
+
+func GetErrorType(err error) string {
+	if os.IsTimeout(err) {
+		return common.TimeOutError
+	}
+	for errno, errTyp := range ErrTypMap {
+		if ok := errors.Is(err, errno); ok {
+			return errTyp
+		}
+	}
+	var e net.Error
+	if errors.As(err, &e) {
+		return common.NetworkError
+	}
+	return common.None
 }

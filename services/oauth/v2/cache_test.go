@@ -1,23 +1,21 @@
-package v2_test
+package v2
 
 import (
 	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 var _ = Describe("Cache", func() {
 	It("Test Cache", func() {
-		cache := v2.NewCache()
+		cache := NewCache()
 		Expect(cache).NotTo(BeNil())
 	})
 	It("Test Get and Set", func() {
-		cache := v2.NewCache()
-		authResponse := &v2.AuthResponse{
-			Account: v2.AccountSecret{
+		cache := NewCache()
+		authResponse := &AuthResponse{
+			Account: AccountSecret{
 				ExpirationDate: "2022-06-29T15:34:47.758Z",
 				Secret:         json.RawMessage([]byte(`{"access_token":"validAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)),
 			},
@@ -28,9 +26,9 @@ var _ = Describe("Cache", func() {
 		Expect(value).To(Equal(authResponse))
 	})
 	It("Test Delete", func() {
-		cache := v2.NewCache()
-		authResponse := &v2.AuthResponse{
-			Account: v2.AccountSecret{
+		cache := NewCache()
+		authResponse := &AuthResponse{
+			Account: AccountSecret{
 				ExpirationDate: "2022-06-29T15:34:47.758Z",
 				Secret:         json.RawMessage([]byte(`{"access_token":"validAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)),
 			},
@@ -45,7 +43,7 @@ var _ = Describe("Cache", func() {
 		Expect(value).To(BeNil())
 	})
 	It("Test for any type of data", func() {
-		cache := v2.NewCache()
+		cache := NewCache()
 		authResponse := map[string]interface{}{
 			"test":  "test",
 			"test2": "test2",

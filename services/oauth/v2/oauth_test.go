@@ -16,8 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mockhttpclient "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	mock_oauthV2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 var Destination = &v2.DestinationInfo{
@@ -51,7 +54,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
@@ -128,7 +131,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"NewDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
@@ -173,7 +176,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusNoContent, ``)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
@@ -201,7 +204,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusNoContent, `{
 				"body":{
 				  "code":"ref_token_invalid_grant",
@@ -235,7 +238,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -243,13 +246,13 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := v2.NewControlPlaneConnector(
-				v2.WithClient(mockHttpClient),
-				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			cpConnector := controlplane.NewControlPlaneConnector(
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    rudderSync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
@@ -275,7 +278,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -283,13 +286,13 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := v2.NewControlPlaneConnector(
-				v2.WithClient(mockHttpClient),
-				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			cpConnector := controlplane.NewControlPlaneConnector(
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    rudderSync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
@@ -319,7 +322,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -400,7 +403,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusBadRequest, `{
 				"body":{
@@ -449,7 +452,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -457,13 +460,13 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := v2.NewControlPlaneConnector(
-				v2.WithClient(mockHttpClient),
-				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			cpConnector := controlplane.NewControlPlaneConnector(
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    rudderSync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
@@ -491,7 +494,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{}, &net.OpError{
 				Op:     "mock",
 				Net:    "mock",
@@ -499,13 +502,13 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := v2.NewControlPlaneConnector(
-				v2.WithClient(mockHttpClient),
-				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			cpConnector := controlplane.NewControlPlaneConnector(
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    rudderSync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
@@ -529,7 +532,7 @@ var _ = Describe("Oauth", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:                rudderSync.NewPartitionRWLocker(),
 				Cache:                     v2.NewCache(),
@@ -555,7 +558,7 @@ var _ = Describe("Oauth", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:                rudderSync.NewPartitionRWLocker(),
 				Cache:                     v2.NewCache(),
@@ -577,7 +580,7 @@ var _ = Describe("Oauth", func() {
 		})
 		It("authStatusToggle function call when config backend api call failed due to config backend service is failed due to timeout", func() {
 			ctrl := gomock.NewController(GinkgoT())
-			mockHttpClient := mock_oauthV2.NewMockHttpClient(ctrl)
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
 			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
 				StatusCode: http.StatusRequestTimeout,
 			}, &net.OpError{
@@ -587,13 +590,13 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := v2.NewControlPlaneConnector(
-				v2.WithClient(mockHttpClient),
-				v2.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
+			cpConnector := controlplane.NewControlPlaneConnector(
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(&mock_oauthV2.BasicAuthMock{})
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
 			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:                rudderSync.NewPartitionRWLocker(),
 				Cache:                     v2.NewCache(),
@@ -631,7 +634,7 @@ var _ = Describe("Oauth", func() {
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Times(0)
 
 			oauthHandler := &v2.OAuthHandler{
@@ -681,7 +684,7 @@ var _ = Describe("Oauth", func() {
 				ErrorMessage: "",
 			}
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
@@ -728,7 +731,7 @@ var _ = Describe("Oauth", func() {
 				ErrorMessage: "",
 			}
 			ctrl := gomock.NewController(GinkgoT())
-			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnectorI(ctrl)
+			mockCpConnector := mock_oauthV2.NewMockControlPlaneConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)

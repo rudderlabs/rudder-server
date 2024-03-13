@@ -29,6 +29,7 @@ import (
 
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2_http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
@@ -531,7 +532,7 @@ var oauthTests = []oauthTestCases{
 		cpResponses:                  []cpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: accountId is empty for destination(%s) in %s flow", "1234", oauthV2.RudderFlowDelete)},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: accountId is empty for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
 		expectedPayload:              "",
 	},
 	{
@@ -578,7 +579,7 @@ var oauthTests = []oauthTestCases{
 		cpResponses:                  []cpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("accountId not found for destination(%s) in %s flow", "1234", oauthV2.RudderFlowDelete)},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("accountId not found for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
 		expectedPayload:              "",
 	},
 	{
@@ -866,7 +867,7 @@ func TestOAuth(t *testing.T) {
 					Locker:    oauthLock,
 				}
 				cli = oauthv2_http.OAuthHttpClient(
-					cli, oauthV2.RudderFlow(oauth.RudderFlow_Delete),
+					cli, common.RudderFlow(oauth.RudderFlow_Delete),
 					&cache, mockBackendConfig,
 					api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 				)

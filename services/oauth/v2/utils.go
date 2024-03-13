@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"os"
-	"syscall"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -32,13 +29,7 @@ const (
 )
 
 var (
-	ErrorCategories = []string{CategoryRefreshToken, CategoryAuthStatusInactive}
-	ErrTypMap       = map[syscall.Errno]string{
-		syscall.ECONNRESET:   "econnreset",
-		syscall.ECONNREFUSED: "econnrefused",
-		syscall.ECONNABORTED: "econnaborted",
-		syscall.ECANCELED:    "ecanceled",
-	}
+	ErrorCategories             = []string{CategoryRefreshToken, CategoryAuthStatusInactive}
 	ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
 )
 
@@ -100,22 +91,6 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 		return false
 	}
 	return date.Before(time.Now().Add(expirationTimeDiff))
-}
-
-func GetErrorType(err error) string {
-	if os.IsTimeout(err) {
-		return TimeOutError
-	}
-	for errno, errTyp := range ErrTypMap {
-		if ok := errors.Is(err, errno); ok {
-			return errTyp
-		}
-	}
-	var e net.Error
-	if errors.As(err, &e) {
-		return NetworkError
-	}
-	return None
 }
 
 func IsValidAuthErrorCategory(category string) bool {

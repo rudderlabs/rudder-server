@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 type CpResponseParams struct {
@@ -71,4 +73,18 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		_, _ = w.Write([]byte(cpResp.Response))
 	})
 	return srvMux
+}
+
+type BasicAuthMock struct{}
+
+func (b *BasicAuthMock) BasicAuth() (string, string) {
+	return "test", "test"
+}
+
+func (b *BasicAuthMock) ID() string {
+	return "test"
+}
+
+func (b *BasicAuthMock) Type() deployment.Type {
+	return "test"
 }

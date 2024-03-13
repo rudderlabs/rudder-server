@@ -7,12 +7,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-)
-
-type (
-	RudderFlow string
-	AuthType   string
-	ContextKey string
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
 type expirationDate struct {
@@ -27,8 +23,8 @@ type AccountSecret struct {
 type OAuthHandler struct {
 	TokenProvider
 	Logger                    logger.Logger
-	RudderFlowType            RudderFlow
-	CpConn                    ControlPlaneConnector
+	RudderFlowType            common.RudderFlow
+	CpConn                    controlplane.ControlPlaneConnector
 	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
 	Cache                     Cache
 	CacheMutex                *rudderSync.PartitionRWLocker
@@ -43,17 +39,6 @@ type CacheKey struct {
 
 type TokenProvider interface {
 	Identity() identity.Identifier
-}
-
-type ControlPlaneRequest struct {
-	Body           string
-	ContentType    string
-	Url            string
-	Method         string
-	destName       string
-	RequestType    string // This is to add more refined stat tags
-	BasicAuthUser  identity.Identifier
-	rudderFlowType RudderFlow
 }
 
 type AuthResponse struct {
@@ -91,7 +76,7 @@ type OAuthStats struct {
 	authErrCategory string
 	destDefName     string
 	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
-	flowType        RudderFlow
+	flowType        common.RudderFlow
 	action          string // refresh_token, fetch_token, auth_status_toggle
 }
 type AuthStatusToggleParams struct {
