@@ -10,7 +10,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
 func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
@@ -52,6 +51,6 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*BingAdsBulkUploader, error) {
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
-	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig, v2.WithLogger(logger.NewLogger().Child("BatchRouter")))
+	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig, oauthv2.WithLogger(logger.NewLogger().Child("BatchRouter")))
 	return newManagerInternal(destination, oauthClient, oauthClientV2)
 }
