@@ -33,8 +33,8 @@ func (d *DestinationInfo) IsOAuthDestination() (bool, error) {
 GetAccountID Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
 
 Example:
-`GetAccountId(destDetail.Config, "rudderDeleteAccountId")` --> To be used when we make use of OAuth during regulation flow
-`GetAccountId(destDetail.Config, "rudderAccountId")` --> To be used when we make use of OAuth during normal event delivery
+`GetAccountID(destDetail.Config, "rudderDeleteAccountId")` --> To be used when we make use of OAuth during regulation flow
+`GetAccountID(destDetail.Config, "rudderAccountId")` --> To be used when we make use of OAuth during normal event delivery
 */
 func (d *DestinationInfo) GetAccountID(idKey string) (string, error) {
 	rudderAccountIdInterface, found := d.Config[idKey]
