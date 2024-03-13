@@ -262,7 +262,7 @@ type oauthTestCases struct {
 	name                         string
 	job                          model.Job
 	dest                         model.Destination
-	cpResponses                  []cpResponseParams
+	cpResponses                  []testutils.CpResponseParams
 	deleteResponses              []deleteResponseParams
 	oauthHttpClientTimeout       time.Duration
 	expectedDeleteStatus         model.JobStatus
@@ -320,10 +320,10 @@ var oauthTests = []oauthTestCases{
 				jobResponse: `[{"status":"successful"}]`,
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
 			},
 		},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
@@ -376,14 +376,14 @@ var oauthTests = []oauthTestCases{
 				jobResponse: `[{"status":"successful"}]`,
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
 			},
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
 			},
 		},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
@@ -426,10 +426,10 @@ var oauthTests = []oauthTestCases{
 				},
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			{
-				code:     500,
-				response: `Internal Server Error`,
+				Code:     500,
+				Response: `Internal Server Error`,
 			},
 		},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -473,11 +473,11 @@ var oauthTests = []oauthTestCases{
 				},
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			{
-				code:     500,
-				response: `Internal Server Error`,
-				timeout:  2 * time.Second,
+				Code:     500,
+				Response: `Internal Server Error`,
+				Timeout:  2 * time.Second,
 			},
 		},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -529,7 +529,7 @@ var oauthTests = []oauthTestCases{
 				},
 			},
 		},
-		cpResponses:                  []cpResponseParams{},
+		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
 		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: accountId is empty for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
@@ -576,7 +576,7 @@ var oauthTests = []oauthTestCases{
 				},
 			},
 		},
-		cpResponses:                  []cpResponseParams{},
+		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
 		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("accountId not found for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
@@ -620,15 +620,15 @@ var oauthTests = []oauthTestCases{
 		},
 
 		oauthHttpClientTimeout: 1 * time.Second,
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
 			},
 			{
-				code:     500,
-				response: `Internal Server Error`,
-				timeout:  2 * time.Second,
+				Code:     500,
+				Response: `Internal Server Error`,
+				Timeout:  2 * time.Second,
 			},
 		},
 		deleteResponses: []deleteResponseParams{
@@ -677,15 +677,15 @@ var oauthTests = []oauthTestCases{
 				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
 			},
 			// authStatus inactive http request
 			{
-				code: 200,
+				Code: 200,
 			},
 		},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
@@ -728,16 +728,16 @@ var oauthTests = []oauthTestCases{
 				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
 			},
 		},
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
 			},
 			// authStatus inactive http request
 			{
-				code:     400,
-				response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
+				Code:     400,
+				Response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
 			},
 		},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("Problem with user permission or access/refresh token have been revoked")},
@@ -781,20 +781,20 @@ var oauthTests = []oauthTestCases{
 			},
 		},
 
-		cpResponses: []cpResponseParams{
+		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
-				code:     200,
-				response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
 			},
 			// refresh token http request
 			{
-				code:     403,
-				response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
 			},
 			// authStatus inactive http request
 			{
-				code: 200,
+				Code: 200,
 			},
 		},
 
@@ -830,13 +830,13 @@ func TestOAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 
-			cpRespProducer := &cpResponseProducer{
-				responses: tt.cpResponses,
+			cpRespProducer := &testutils.CpResponseProducer{
+				Responses: tt.cpResponses,
 			}
 			deleteRespProducer := &deleteResponseProducer{
 				responses: tt.deleteResponses,
 			}
-			cfgBeSrv := httptest.NewServer(cpRespProducer.mockCpRequests())
+			cfgBeSrv := httptest.NewServer(cpRespProducer.MockCpRequests())
 			svr := httptest.NewServer(deleteRespProducer.mockDeleteRequests())
 
 			defer svr.Close()
@@ -897,85 +897,6 @@ func TestOAuth(t *testing.T) {
 			require.Equal(t, tt.expectedPayload, deleteRespProducer.GetCurrent().actualPayload)
 		})
 	}
-}
-
-type cpResponseParams struct {
-	timeout  time.Duration
-	code     int
-	response string
-}
-type cpResponseProducer struct {
-	responses []cpResponseParams
-	callCount int
-}
-
-func (s *cpResponseProducer) GetNext() cpResponseParams {
-	if s.callCount >= len(s.responses) {
-		panic("ran out of responses")
-	}
-	cpResp := s.responses[s.callCount]
-	s.callCount++
-	return cpResp
-}
-
-func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
-	srvMux := chi.NewMux()
-	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
-		// iterating over request parameters
-		for _, reqParam := range []string{"workspaceId", "accountId"} {
-			param := chi.URLParam(req, reqParam)
-			if param == "" {
-				// This case wouldn't occur I guess
-				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusBadRequest)
-				return
-			}
-		}
-
-		cpResp := cpRespProducer.GetNext()
-		// sleep is being used to mimic the waiting in actual transformer response
-		if cpResp.timeout > 0 {
-			time.Sleep(cpResp.timeout)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(cpResp.code)
-		// Lint error fix
-		_, err := w.Write([]byte(cpResp.response))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
-			return
-		}
-	})
-
-	srvMux.HandleFunc("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		// iterating over request parameters
-		for _, reqParam := range []string{"workspaceId", "destinationId"} {
-			param := chi.URLParam(req, reqParam)
-			if param == "" {
-				// This case wouldn't occur I guess
-				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusNotFound)
-				return
-			}
-		}
-
-		cpResp := cpRespProducer.GetNext()
-		// sleep is being used to mimic the waiting in actual transformer response
-		if cpResp.timeout > 0 {
-			time.Sleep(cpResp.timeout)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(cpResp.code)
-		// Lint error fix
-		_, err := w.Write([]byte(cpResp.response))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
-			return
-		}
-	})
-	return srvMux
 }
 
 // This part is to support multiple responses from deleteMockServer as we have retry mechanism embedded for OAuth
