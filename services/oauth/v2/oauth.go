@@ -58,7 +58,11 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	if h.Logger == nil {
 		h.Logger = logger.NewLogger().Child("OAuthHandler")
 	}
-	h.CpConn = NewControlPlaneConnector(WithCpClientTimeout(cpTimeoutDuration), WithParentLogger(h.Logger), WithLoggerName("OAuthHandler"))
+	h.CpConn = NewControlPlaneConnector(
+		WithCpClientTimeout(cpTimeoutDuration),
+		WithParentLogger(h.Logger),
+		WithLoggerName("OAuthHandler"),
+	)
 
 	if h.Cache == nil {
 		cache := NewCache()

@@ -16,15 +16,15 @@ type DestinationInfo struct {
 }
 
 func (d *DestinationInfo) IsOAuthDestination() (bool, error) {
-	authValue, err := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
-	if err != nil {
+	authValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
+	if authValue == nil {
 		// valid use-case for non-OAuth destinations
 		return false, nil
 	}
 	authType, ok := authValue.(string)
 	if !ok {
 		// we should throw error here, as we expect authValue to be a string if present
-		return false, fmt.Errorf("auth type is not a string")
+		return false, fmt.Errorf("auth type is not a string: %v", authValue)
 	}
 	return authType == string(oauth.OAuth), nil
 }
