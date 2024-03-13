@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -46,39 +44,6 @@ var (
 
 func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
-}
-
-func (s *OAuthStats) SendTimerStats(startTime time.Time) {
-	statsTags := stats.Tags{
-		"id":              s.id,
-		"workspaceId":     s.workspaceID,
-		"rudderCategory":  s.rudderCategory,
-		"isCallToCpApi":   strconv.FormatBool(s.isCallToCpApi),
-		"authErrCategory": s.authErrCategory,
-		"destType":        s.destDefName,
-		"flowType":        string(s.flowType),
-		"action":          s.action,
-		"oauthVersion":    "v2",
-	}
-	stats.Default.NewTaggedStat(s.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
-}
-
-// Send count type stats related to OAuth(Destination)
-func (s *OAuthStats) SendCountStat() {
-	statsTags := stats.Tags{
-		"oauthVersion":    "v2",
-		"id":              s.id,
-		"workspaceId":     s.workspaceID,
-		"rudderCategory":  s.rudderCategory,
-		"errorMessage":    s.errorMessage,
-		"isCallToCpApi":   strconv.FormatBool(s.isCallToCpApi),
-		"authErrCategory": s.authErrCategory,
-		"destType":        s.destDefName,
-		"isTokenFetch":    strconv.FormatBool(s.isTokenFetch),
-		"flowType":        string(s.flowType),
-		"action":          s.action,
-	}
-	stats.Default.NewTaggedStat(s.statName, stats.CountType, statsTags).Increment()
 }
 
 // {input: [{}]}
@@ -113,7 +78,7 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	var expirationDate expirationDate
 	if err := jsonfast.Unmarshal(secret.Secret, &expirationDate); err != nil {
 		stats.errorMessage = "unmarshal failed"
-		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
+		stats.statName = GetOAuthActionStatName("proactive_token_refresh")
 		stats.SendCountStat()
 		return false
 	}
@@ -123,17 +88,14 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	if !router_utils.IsNotEmptyString(string(oldSecret)) {
 		return false
 	}
-	if bytes.Equal(secret.Secret, oldSecret) {
-		return true
-	}
-	return false
+	return bytes.Equal(secret.Secret, oldSecret)
 }
 
 func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, stats *OAuthStats) bool {
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
 		stats.errorMessage = "parsing failed"
-		stats.statName = GetOAuthActionStatName("proActive_token_refresh")
+		stats.statName = GetOAuthActionStatName("proactive_token_refresh")
 		stats.SendCountStat()
 		return false
 	}
