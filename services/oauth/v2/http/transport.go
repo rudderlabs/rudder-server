@@ -81,39 +81,39 @@ func NewOauthTransport(args *TransportArgs) *Oauth2Transport {
 }
 
 func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
-	if t.Augmenter != nil {
-		body, err := io.ReadAll(rts.req.Body)
-		if err != nil {
-			t.log.Errorn("failed to read request body",
-				obskit.DestinationID(rts.destination.ID),
-				obskit.WorkspaceID(rts.destination.WorkspaceID),
-				obskit.DestinationType(rts.destination.DefinitionName),
-				logger.NewStringField("flow", string(t.flow)))
-			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
-		}
-		statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
-		if statusCode == http.StatusOK {
-			rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), common.SecretKey, authResponse.Account.Secret))
-			err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
-			if err != nil {
-				t.log.Debugn("failed to augment the secret",
-					logger.NewErrorField(err))
-				return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
-			}
-			return nil
-		} else if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
-			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-				Destination:     rts.destination,
-				WorkspaceID:     rts.destination.WorkspaceID,
-				RudderAccountID: rts.accountId,
-				StatPrefix:      common.AuthStatusInActive,
-				AuthStatus:      oauth.CategoryAuthStatusInactive,
-			})
-			return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
-		}
-		return httpResponseCreator(statusCode, []byte(err.Error()))
+	if t.Augmenter == nil {
+		return nil
 	}
-	return nil
+	body, err := io.ReadAll(rts.req.Body)
+	if err != nil {
+		t.log.Errorn("failed to read request body",
+			obskit.DestinationID(rts.destination.ID),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DefinitionName),
+			logger.NewStringField("flow", string(t.flow)))
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
+	}
+	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
+	if statusCode == http.StatusOK {
+		rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), common.SecretKey, authResponse.Account.Secret))
+		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
+		if err != nil {
+			t.log.Debugn("failed to augment the secret",
+				logger.NewErrorField(err))
+			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
+		}
+		return nil
+	} else if authResponse != nil && authResponse.Err == oauth.RefTokenInvalidGrant {
+		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
+			Destination:     rts.destination,
+			WorkspaceID:     rts.destination.WorkspaceID,
+			RudderAccountID: rts.accountId,
+			StatPrefix:      common.AuthStatusInActive,
+			AuthStatus:      oauth.CategoryAuthStatusInactive,
+		})
+		return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
+	}
+	return httpResponseCreator(statusCode, []byte(err.Error()))
 }
 
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
