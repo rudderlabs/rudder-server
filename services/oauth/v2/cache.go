@@ -1,39 +1,19 @@
 package v2
 
+import "sync"
+
 type Cache interface {
-	// Get retrieves a value for the given key from the cache.
+	// Load retrieves a value for the given key from the cache.
 	// If the value doesn't exist, it returns (nil, false).
-	Get(key string) (interface{}, bool)
+	Load(key any) (any, bool)
 
 	// Set stores a key-value pair in the cache.
-	Set(key string, value interface{})
+	Store(key, value any)
 
 	// Delete removes a key-value pair from the cache.
-	Delete(key string)
+	Delete(key any)
 }
 
 func NewCache() Cache {
-	return &cache{
-		tokenCache: make(map[string]interface{}),
-	}
-}
-
-type cache struct {
-	tokenCache map[string]interface{}
-}
-
-func (c *cache) Get(key string) (interface{}, bool) {
-	value, ok := c.tokenCache[key]
-	if !ok {
-		return nil, false
-	}
-	return value, true
-}
-
-func (c *cache) Set(key string, value interface{}) {
-	c.tokenCache[key] = value
-}
-
-func (c *cache) Delete(key string) {
-	delete(c.tokenCache, key)
+	return &sync.Map{}
 }

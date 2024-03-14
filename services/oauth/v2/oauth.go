@@ -165,7 +165,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	h.CacheMutex.Lock(refTokenParams.AccountId)
 	defer h.CacheMutex.Unlock(refTokenParams.AccountId)
 	refTokenBody := RefreshTokenBodyParams{}
-	storedCache, ok := h.Cache.Get(refTokenParams.AccountId)
+	storedCache, ok := h.Cache.Load(refTokenParams.AccountId)
 	if ok {
 		cachedSecret, ok := storedCache.(*AuthResponse)
 		if !ok {
@@ -387,7 +387,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	log.Debugn("[request] :: (Write) Account Secret received")
-	h.Cache.Set(refTokenParams.AccountId, &AuthResponse{
+	h.Cache.Store(refTokenParams.AccountId, &AuthResponse{
 		Account: accountSecret,
 	})
 	return http.StatusOK, &AuthResponse{

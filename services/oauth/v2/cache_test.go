@@ -20,8 +20,8 @@ var _ = Describe("Cache", func() {
 				Secret:         json.RawMessage([]byte(`{"access_token":"validAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)),
 			},
 		}
-		cache.Set("test", authResponse)
-		value, ok := cache.Get("test")
+		cache.Store("test", authResponse)
+		value, ok := cache.Load("test")
 		Expect(ok).To(BeTrue())
 		Expect(value).To(Equal(authResponse))
 	})
@@ -33,12 +33,12 @@ var _ = Describe("Cache", func() {
 				Secret:         json.RawMessage([]byte(`{"access_token":"validAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`)),
 			},
 		}
-		cache.Set("test", authResponse)
-		value, ok := cache.Get("test")
+		cache.Store("test", authResponse)
+		value, ok := cache.Load("test")
 		Expect(ok).To(BeTrue())
 		Expect(value).To(Equal(authResponse))
 		cache.Delete("test")
-		value, ok = cache.Get("test")
+		value, ok = cache.Load("test")
 		Expect(ok).To(BeFalse())
 		Expect(value).To(BeNil())
 	})
@@ -48,11 +48,11 @@ var _ = Describe("Cache", func() {
 			"test":  "test",
 			"test2": "test2",
 		}
-		cache.Set("test", authResponse)
-		value, ok := cache.Get("test")
+		cache.Store("test", authResponse)
+		value, ok := cache.Load("test")
 		Expect(ok).To(BeTrue())
 		Expect(value).To(Equal(authResponse))
-		value, ok = cache.Get("test")
+		value, ok = cache.Load("test")
 		Expect(ok).To(BeTrue())
 		Expect(value).To(Equal(authResponse))
 	})

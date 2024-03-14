@@ -79,7 +79,7 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Get(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
 			Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 		})
 
@@ -112,13 +112,13 @@ var _ = Describe("Oauth", func() {
 				Err:          "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			// Assertions
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Get(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
 			// We are checking if the token is updated in the cache or not
 			Expect(token.(*v2.AuthResponse)).To(Equal(storedAuthResponse))
 		})
@@ -158,12 +158,12 @@ var _ = Describe("Oauth", func() {
 				Err:          "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Get(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
 			// We are checking if the token is updated in the cache or not
 			Expect(token.(*v2.AuthResponse)).NotTo(Equal(storedAuthResponse))
 		})
@@ -343,12 +343,12 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
 			statusCode, _, err := oauthHandler.RefreshToken(refreshTokenParams)
 			// Assertions
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -379,8 +379,8 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
-			token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
+			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -430,7 +430,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: nil,
@@ -650,7 +650,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
 			wg := sync.WaitGroup{}
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
@@ -661,7 +661,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Get(fetchTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
@@ -706,7 +706,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Get(fetchTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
@@ -750,7 +750,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Set(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
 			wg := sync.WaitGroup{}
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
@@ -761,7 +761,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Get(refreshTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
