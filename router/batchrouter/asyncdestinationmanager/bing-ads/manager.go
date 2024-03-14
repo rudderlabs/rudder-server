@@ -4,8 +4,10 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -51,6 +53,6 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*BingAdsBulkUploader, error) {
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
-	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig, oauthv2.WithLogger(logger.NewLogger().Child("BatchRouter")))
+	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig, oauthv2.WithLogger(logger.NewLogger().Child("BatchRouter")), oauthv2.WithCPConnectorTimeout(config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)))
 	return newManagerInternal(destination, oauthClient, oauthClientV2)
 }

@@ -43,9 +43,14 @@ func WithLogger(parentLogger logger.Logger) func(*OAuthHandler) {
 	}
 }
 
+func WithCPConnectorTimeout(t time.Duration) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.cpConnectorTimeout = t
+	}
+}
+
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
-	cpTimeoutDuration := config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
@@ -60,10 +65,10 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	if h.Logger == nil {
 		h.Logger = logger.NewLogger().Child("OAuthHandler")
 	}
-	h.CpConn = controlplane.NewControlPlaneConnector(
-		controlplane.WithCpClientTimeout(cpTimeoutDuration),
-		controlplane.WithParentLogger(h.Logger),
-		controlplane.WithLoggerName("OAuthHandler"),
+	conf := config.Default
+	h.CpConn = controlplane.NewControlPlaneConnector(conf,
+		controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
+		controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
 	)
 
 	if h.Cache == nil {

@@ -37,11 +37,11 @@ type controlPlaneConnector struct {
 	loggerName string
 }
 
-func NewControlPlaneConnector(options ...func(*controlPlaneConnector)) ControlPlaneConnector {
+func NewControlPlaneConnector(conf *config.Config, options ...func(*controlPlaneConnector)) ControlPlaneConnector {
 	cpConnector := &controlPlaneConnector{
 		client: &http.Client{
 			Transport: http.DefaultTransport,
-			Timeout:   config.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
+			Timeout:   conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
 		},
 		logger: logger.NewLogger().Child("ControlPlaneConnector"),
 	}
@@ -65,7 +65,7 @@ func WithClient(client HttpClient) func(*controlPlaneConnector) {
 /*
 WithParentLogger is a functional option to set the parent logger for the ControlPlaneConnector
 */
-func WithParentLogger(parentLogger logger.Logger) func(*controlPlaneConnector) {
+func WithLogger(parentLogger logger.Logger) func(*controlPlaneConnector) {
 	return func(cpConn *controlPlaneConnector) {
 		cpConn.logger = parentLogger
 	}
@@ -77,12 +77,6 @@ WithCpClientTimeout is a functional option to set the timeout for the ControlPla
 func WithCpClientTimeout(timeout time.Duration) func(*controlPlaneConnector) {
 	return func(h *controlPlaneConnector) {
 		h.timeOut = timeout
-	}
-}
-
-func WithLoggerName(loggerName string) func(*controlPlaneConnector) {
-	return func(h *controlPlaneConnector) {
-		h.loggerName = loggerName
 	}
 }
 

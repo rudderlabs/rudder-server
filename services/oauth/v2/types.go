@@ -31,6 +31,7 @@ type OAuthHandler struct {
 	ExpirationTimeDiff        time.Duration
 	ConfigBEURL               string
 	LoggerName                string
+	cpConnectorTimeout        time.Duration
 }
 type CacheKey struct {
 	WorkspaceID string

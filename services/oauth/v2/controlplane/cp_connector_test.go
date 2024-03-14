@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	mockhttp "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -27,8 +27,8 @@ var _ = Describe("CpConnector", func() {
 		}, nil)
 
 		cpConnector := NewControlPlaneConnector(
+			config.Default,
 			WithClient(mockHttpClient),
-			WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
 			Method:        http.MethodGet,
@@ -52,8 +52,8 @@ var _ = Describe("CpConnector", func() {
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 		})
 		cpConnector := NewControlPlaneConnector(
+			config.Default,
 			WithClient(mockHttpClient),
-			WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
 			Method:        http.MethodGet,
@@ -77,8 +77,8 @@ var _ = Describe("CpConnector", func() {
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
 		})
 		cpConnector := NewControlPlaneConnector(
+			config.Default,
 			WithClient(mockHttpClient),
-			WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
 			Method:        http.MethodGet,

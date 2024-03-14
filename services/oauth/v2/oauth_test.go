@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -247,8 +248,8 @@ var _ = Describe("Oauth", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
 			cpConnector := controlplane.NewControlPlaneConnector(
+				config.Default,
 				controlplane.WithClient(mockHttpClient),
-				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -287,8 +288,8 @@ var _ = Describe("Oauth", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
 			cpConnector := controlplane.NewControlPlaneConnector(
+				config.Default,
 				controlplane.WithClient(mockHttpClient),
-				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -461,8 +462,8 @@ var _ = Describe("Oauth", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
 			cpConnector := controlplane.NewControlPlaneConnector(
+				config.Default,
 				controlplane.WithClient(mockHttpClient),
-				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -503,8 +504,8 @@ var _ = Describe("Oauth", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
 			cpConnector := controlplane.NewControlPlaneConnector(
+				config.Default,
 				controlplane.WithClient(mockHttpClient),
-				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -591,8 +592,8 @@ var _ = Describe("Oauth", func() {
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
 			cpConnector := controlplane.NewControlPlaneConnector(
+				config.Default,
 				controlplane.WithClient(mockHttpClient),
-				controlplane.WithParentLogger(logger.NewLogger().Child("ControlPlaneConnector")),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
