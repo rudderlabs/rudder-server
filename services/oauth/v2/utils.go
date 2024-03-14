@@ -23,9 +23,6 @@ const (
 	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
 	// RefTokenInvalidGrant Identifier for invalid_grant or access_denied errors(during refreshing the token)
 	RefTokenInvalidGrant = "ref_token_invalid_grant"
-	TimeOutError         = "timeout"
-	NetworkError         = "network_error"
-	None                 = "none"
 )
 
 var (

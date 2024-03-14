@@ -19,6 +19,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
+type Authorizer interface {
+	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
+	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
+	AuthStatusToggle(authStatusToggleParams *AuthStatusToggleParams) (statusCode int, respBody string)
+}
+
 func WithCache(cache Cache) func(*OAuthHandler) {
 	return func(h *OAuthHandler) {
 		h.Cache = cache

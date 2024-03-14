@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mockoauthv2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
@@ -25,18 +24,18 @@ import (
 var _ = Describe("Http/Client", func() {
 	Describe("OAuthHttpClient", func() {
 		It("should return an http client", func() {
-			cache := oauth.NewCache()
+			cache := v2.NewCache()
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Augmenter: extensions.RouterBodyAugmenter,
 			}
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, v2.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			Expect(httpClient).ToNot(BeNil())
 		})
 	})
 	Describe("OAuthHttpClient uses", func() {
 		It("Use OAuthHttpClient to transform event for a non oauth destination", func() {
 			// mockRoundTrip := mockRoundTrip{}
-			cache := oauth.NewCache()
+			cache := v2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -47,9 +46,9 @@ var _ = Describe("Http/Client", func() {
 				Transport: mockRoundTrip,
 				Augmenter: extensions.RouterBodyAugmenter,
 			}
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, v2.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
-			destination := &oauth.DestinationInfo{
+			destination := &v2.DestinationInfo{
 				DefinitionName: "CLEVERTAP",
 				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
@@ -70,7 +69,7 @@ var _ = Describe("Http/Client", func() {
 			Expect(respData).To(Equal([]byte(`{"version":"1","type":"REST","method":"POST","endpoint":"https://api.clevertap.com/1/upload","headers":{"X-CleverTap-Account-Id":"476550467","X-CleverTap-Passcode":"sample_passcode","Content-Type":"application/json"},"params":{},"body":{"JSON":{"d":[{"type":"profile","profileData":{"Email":"jamesDoe@gmail.com","Name":"James Doe","Phone":"92374162212","Gender":"M","address":"{\"city\":\"kolkata\",\"country\":\"India\",\"postalCode\":789223,\"state\":\"WB\",\"street\":\"\"}"},"identity":"anon_id"}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}`)))
 		})
 		It("Use OAuthHttpClient to transform event for a oauth destination with success in transforming", func() {
-			cache := oauth.NewCache()
+			cache := v2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -84,7 +83,7 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &oauth.OAuthHandler{
+			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    kitsync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
 				CpConn:        mockCpConnector,
@@ -97,10 +96,10 @@ var _ = Describe("Http/Client", func() {
 				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, v2.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &oauth.DestinationInfo{
+			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
@@ -135,7 +134,7 @@ var _ = Describe("Http/Client", func() {
 			}))
 		})
 		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as REFRESH_TOKEN", func() {
-			cache := oauth.NewCache()
+			cache := v2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -151,7 +150,7 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &oauth.OAuthHandler{
+			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:    kitsync.NewPartitionRWLocker(),
 				Cache:         v2.NewCache(),
 				CpConn:        mockCpConnector,
@@ -163,9 +162,9 @@ var _ = Describe("Http/Client", func() {
 				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, v2.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &oauth.DestinationInfo{
+			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{
@@ -187,7 +186,7 @@ var _ = Describe("Http/Client", func() {
 		})
 
 		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as AUTH_STATUS_INACTIVE", func() {
-			cache := oauth.NewCache()
+			cache := v2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -203,7 +202,7 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &oauth.OAuthHandler{
+			oauthHandler := &v2.OAuthHandler{
 				CacheMutex:                kitsync.NewPartitionRWLocker(),
 				Cache:                     v2.NewCache(),
 				CpConn:                    mockCpConnector,
@@ -216,10 +215,10 @@ var _ = Describe("Http/Client", func() {
 				Augmenter:    extensions.RouterBodyAugmenter,
 				OAuthHandler: oauthHandler,
 			}
-			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, oauth.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+			httpClient := httpClient.OAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, v2.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &oauth.DestinationInfo{
+			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: map[string]interface{}{
 					"auth": map[string]interface{}{

@@ -56,12 +56,6 @@ type RefreshTokenParams struct {
 	Destination *DestinationInfo
 }
 
-type Authorizer interface {
-	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
-	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
-	AuthStatusToggle(authStatusToggleParams *AuthStatusToggleParams) (statusCode int, respBody string)
-}
-
 type RefreshTokenBodyParams struct {
 	HasExpired    bool            `json:"hasExpired"`
 	ExpiredSecret json.RawMessage `json:"expiredSecret"`
