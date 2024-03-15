@@ -9,7 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
-	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -25,7 +25,7 @@ type tokenSource struct {
 	destinationName string
 	accountID       string
 	oauthClient     oauth.Authorizer
-	oauthClientV2   oauthV2.Authorizer
+	oauthClientV2   oauthv2.Authorizer
 	destinationID   string
 }
 
@@ -85,12 +85,12 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 }
 
 func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
-	destination := oauthV2.DestinationInfo{
+	destination := oauthv2.DestinationInfo{
 		WorkspaceID:    ts.workspaceID,
 		DefinitionName: ts.destinationName,
 		ID:             ts.destinationID,
 	}
-	refreshTokenParams := oauthV2.RefreshTokenParams{
+	refreshTokenParams := oauthv2.RefreshTokenParams{
 		WorkspaceID: ts.workspaceID,
 		DestDefName: ts.destinationName,
 		AccountID:   ts.accountID,
