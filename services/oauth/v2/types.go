@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
@@ -27,7 +27,7 @@ type OAuthHandler struct {
 	CpConn                    controlplane.ControlPlaneConnector
 	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
 	Cache                     Cache
-	CacheMutex                *rudderSync.PartitionRWLocker
+	CacheMutex                *kitsync.PartitionRWLocker
 	ExpirationTimeDiff        time.Duration
 	ConfigBEURL               string
 	LoggerName                string
@@ -48,10 +48,10 @@ type AuthResponse struct {
 	ErrorMessage string
 }
 type RefreshTokenParams struct {
-	AccountId   string
-	WorkspaceId string
+	AccountID   string
+	WorkspaceID string
 	DestDefName string
-	WorkerId    int
+	WorkerID    int
 	Secret      json.RawMessage
 	Destination *DestinationInfo
 }

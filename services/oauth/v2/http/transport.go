@@ -238,8 +238,8 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
-		AccountId:   rts.accountId,
-		WorkspaceId: rts.destination.WorkspaceID,
+		AccountID:   rts.accountId,
+		WorkspaceID: rts.destination.WorkspaceID,
 		DestDefName: rts.destination.DefinitionName,
 		Destination: rts.destination,
 	}

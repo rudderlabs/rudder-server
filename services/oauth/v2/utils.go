@@ -11,7 +11,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -26,14 +26,16 @@ const (
 )
 
 var (
-	ErrorCategories             = []string{CategoryRefreshToken, CategoryAuthStatusInactive}
-	ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
+	ErrorCategoriesMap          = map[string]struct{}{CategoryRefreshToken: {}, CategoryAuthStatusInactive: {}}
+	ErrPermissionOrTokenRevoked = errors.New("problem with user permission or access/refresh token have been revoked")
 )
 
 func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
 }
 
+// GetAuthErrorCategoryFromTransformResponse parses the response data from a transformerResponse
+// to extract the authentication error category.
 // {input: [{}]}
 // {input: [{}, {}, {}, {}]}
 // {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
@@ -73,7 +75,7 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, expiryTimeDiff, stats) {
 		return true
 	}
-	if !router_utils.IsNotEmptyString(string(oldSecret)) {
+	if !routerutils.IsNotEmptyString(string(oldSecret)) {
 		return false
 	}
 	return bytes.Equal(secret.Secret, oldSecret)
@@ -90,6 +92,7 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 	return date.Before(time.Now().Add(expirationTimeDiff))
 }
 
-func IsValidAuthErrorCategory(category string) bool {
-	return lo.Contains(ErrorCategories, category)
-}
+func IsValidAuthErrorCategory(category string) bool {  
+	_, ok := ErrorCategoriesMap[category]  
+	return ok  
+} 

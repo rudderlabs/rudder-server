@@ -101,8 +101,8 @@ Fetch token function is used to fetch the token from the cache or from the contr
 */
 func (h *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
-		id:              fetchTokenParams.AccountId,
-		workspaceID:     fetchTokenParams.WorkspaceId,
+		id:              fetchTokenParams.AccountID,
+		workspaceID:     fetchTokenParams.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
@@ -132,8 +132,8 @@ Refresh token function is used to refresh the token from the control plane
 */
 func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
-		id:              refTokenParams.AccountId,
-		workspaceID:     refTokenParams.WorkspaceId,
+		id:              refTokenParams.AccountID,
+		workspaceID:     refTokenParams.WorkspaceID,
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
@@ -150,9 +150,9 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	log := h.Logger.Withn(
 		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
-		logger.NewStringField("AccountId", refTokenParams.AccountId),
+		logger.NewStringField("AccountId", refTokenParams.AccountID),
 		obskit.DestinationID(refTokenParams.Destination.ID),
-		obskit.WorkspaceID(refTokenParams.WorkspaceId),
+		obskit.WorkspaceID(refTokenParams.WorkspaceID),
 		obskit.DestinationType(refTokenParams.DestDefName),
 	)
 	log.Debugn("[request] :: Get Token Info request received")
@@ -162,10 +162,10 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 		authStats.isCallToCpApi = false
 		authStats.SendTimerStats(startTime)
 	}()
-	h.CacheMutex.Lock(refTokenParams.AccountId)
-	defer h.CacheMutex.Unlock(refTokenParams.AccountId)
+	h.CacheMutex.Lock(refTokenParams.AccountID)
+	defer h.CacheMutex.Unlock(refTokenParams.AccountID)
 	refTokenBody := RefreshTokenBodyParams{}
-	storedCache, ok := h.Cache.Load(refTokenParams.AccountId)
+	storedCache, ok := h.Cache.Load(refTokenParams.AccountID)
 	if ok {
 		cachedSecret, ok := storedCache.(*AuthResponse)
 		if !ok {
@@ -317,7 +317,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
 	authStats *OAuthStats, logTypeName string,
 ) (int, *AuthResponse, error) {
-	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
+	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceID, refTokenParams.AccountID)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		authStats.statName = GetOAuthActionStatName("failure")
@@ -348,7 +348,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 
 	log := h.Logger.Withn(logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
-		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
+		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 		logger.NewStringField("Call Type", logTypeName))
 	log.Debugn("[request] :: Response from Control-Plane")
 
@@ -361,7 +361,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		h.Logger.Debugn("Empty response from Control-Plane",
 			logger.NewStringField("Module Name", h.LoggerName),
 			logger.NewStringField("Response", response),
-			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerId)),
+			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 			logger.NewStringField("Call Type", logTypeName))
 
 		return http.StatusInternalServerError, nil, errors.New("empty secret")
@@ -387,7 +387,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	log.Debugn("[request] :: (Write) Account Secret received")
-	h.Cache.Store(refTokenParams.AccountId, &AuthResponse{
+	h.Cache.Store(refTokenParams.AccountID, &AuthResponse{
 		Account: accountSecret,
 	})
 	return http.StatusOK, &AuthResponse{

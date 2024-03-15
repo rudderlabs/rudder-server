@@ -22,7 +22,7 @@ func (s *OAuthStats) SendTimerStats(startTime time.Time) {
 	stats.Default.NewTaggedStat(s.statName, stats.TimerType, statsTags).SendTiming(time.Since(startTime))
 }
 
-// Send count type stats related to OAuth(Destination)
+// SendCountStat Send count type stats related to OAuth(Destination)
 func (s *OAuthStats) SendCountStat() {
 	statsTags := stats.Tags{
 		"oauthVersion":    "v2",

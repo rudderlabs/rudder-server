@@ -48,8 +48,8 @@ var _ = Describe("Oauth", func() {
 	Describe("Test FetchToken function", func() {
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -79,14 +79,14 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 			Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 		})
 
 		It("fetch token function call when cache is not empty and token is not expired", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -112,21 +112,21 @@ var _ = Describe("Oauth", func() {
 				Err:          "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountID, storedAuthResponse)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			// Assertions
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
 			Expect(token.(*v2.AuthResponse)).To(Equal(storedAuthResponse))
 		})
 
 		It("fetch token function call when cache is not empty and token is expired", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -158,20 +158,20 @@ var _ = Describe("Oauth", func() {
 				Err:          "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountID, storedAuthResponse)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
 			Expect(token.(*v2.AuthResponse)).NotTo(Equal(storedAuthResponse))
 		})
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty response", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -198,8 +198,8 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -232,8 +232,8 @@ var _ = Describe("Oauth", func() {
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -272,8 +272,8 @@ var _ = Describe("Oauth", func() {
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -315,8 +315,8 @@ var _ = Describe("Oauth", func() {
 	Describe("Test RefreshToken function", func() {
 		It("refreshToken function call when stored cache is same as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -343,12 +343,12 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
 			statusCode, _, err := oauthHandler.RefreshToken(refreshTokenParams)
 			// Assertions
 			Expect(statusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
-			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
+			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountID)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"newAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -360,8 +360,8 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is different as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -379,8 +379,8 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
-			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
+			token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountID)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -396,8 +396,8 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret but the cpApiCall failed with ref_token_invalid_grant error", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -430,7 +430,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
 			expectedResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: nil,
@@ -445,8 +445,8 @@ var _ = Describe("Oauth", func() {
 		})
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -487,8 +487,8 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -553,7 +553,7 @@ var _ = Describe("Oauth", func() {
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
-			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
+			Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
 		})
 		It("authStatusToggle function call when config backend api call succeeded", func() {
 			ctrl := gomock.NewController(GinkgoT())
@@ -577,7 +577,7 @@ var _ = Describe("Oauth", func() {
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
-			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
+			Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
 		})
 		It("authStatusToggle function call when config backend api call failed due to config backend service is failed due to timeout", func() {
 			ctrl := gomock.NewController(GinkgoT())
@@ -614,15 +614,15 @@ var _ = Describe("Oauth", func() {
 				AuthStatus:      v2.CategoryAuthStatusInactive,
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
-			Expect(response).To(Equal("Problem with user permission or access/refresh token have been revoked"))
+			Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
 		})
 	})
 
 	Describe("Test FetchToken with multiple go routines", func() {
 		It("fetch token function call when cache is not empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -650,7 +650,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(fetchTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(fetchTokenParams.AccountID, storedAuthResponse)
 			wg := sync.WaitGroup{}
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
@@ -661,7 +661,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
@@ -672,8 +672,8 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 			}
@@ -706,7 +706,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
@@ -718,8 +718,8 @@ var _ = Describe("Oauth", func() {
 	Describe("Test RefreshToken with multiple go routines", func() {
 		It("refresh token function call when stored cache is same as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountId:   "123",
-				WorkspaceId: "456",
+				AccountID:   "123",
+				WorkspaceID: "456",
 				DestDefName: "testDest",
 				Destination: Destination,
 				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
@@ -750,7 +750,7 @@ var _ = Describe("Oauth", func() {
 				}, Err: "",
 				ErrorMessage: "",
 			}
-			oauthHandler.Cache.Store(refreshTokenParams.AccountId, storedAuthResponse)
+			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
 			wg := sync.WaitGroup{}
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
@@ -761,7 +761,7 @@ var _ = Describe("Oauth", func() {
 					Expect(statusCode).To(Equal(http.StatusOK))
 					Expect(response).To(Equal(expectedResponse))
 					Expect(err).To(BeNil())
-					token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountId)
+					token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountID)
 					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
 				}()
 			}
