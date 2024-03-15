@@ -188,9 +188,6 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 		// fetching/refreshing through control plane was successful
 		return statusCode, refSecret, nil
 	}
-	// if refErr != nil {
-	// 	refErr = fmt.Errorf("%w", refErr)
-	// }
 	return statusCode, refSecret, refErr
 }
 

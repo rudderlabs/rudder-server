@@ -37,10 +37,8 @@ type TransportArgs struct {
 	OriginalTransport http.RoundTripper
 }
 
-/*
-Oauth2Transport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
-Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
-*/
+// Oauth2Transport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
+// Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
 type Oauth2Transport struct {
 	oauthHandler oauth.OAuthHandler
 	oauthexts.Augmenter
@@ -50,9 +48,7 @@ type Oauth2Transport struct {
 	getAuthErrorCategory func([]byte) (string, error)
 }
 
-/*
-This struct is used to transport common information across the pre and post round trip methods.
-*/
+// This struct is used to transport common information across the pre and post round trip methods.
 type roundTripState struct {
 	destination        *oauth.DestinationInfo
 	accountId          string
@@ -118,7 +114,6 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 
 func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
-	// t.log.Infon("response data", logger.NewStringField("response", string(respData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
 	}
@@ -145,7 +140,6 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
-		t.log.Infon("refreshing token")
 		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
 			interceptorResp.Response = refErr.Error()
@@ -187,7 +181,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 	return rts.res, nil
 }
 
-func (rts *roundTripState) getAccountId(flow common.RudderFlow) (string, error) {
+func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) {
 	accountIdKey := common.DeliveryAccountIDKey
 	if flow == common.RudderFlowDelete {
 		accountIdKey = common.DeleteAccountIDKey
@@ -204,7 +198,6 @@ func (rts *roundTripState) getAccountId(flow common.RudderFlow) (string, error) 
 }
 
 func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	t.log.Debugn("Inside RoundTrip")
 	contextData := req.Context().Value(common.DestKey)
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
@@ -228,7 +221,7 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	rts := &roundTripState{}
 	rts.destination = destination
-	rts.accountId, err = rts.getAccountId(t.flow)
+	rts.accountId, err = rts.getAccountID(t.flow)
 	if rts.accountId == "" {
 		t.log.Errorn("accountId not found or empty for destination",
 			obskit.DestinationID(rts.destination.ID),
