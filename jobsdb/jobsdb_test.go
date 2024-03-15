@@ -221,6 +221,23 @@ func TestJobsdbLifecycle(t *testing.T) {
 			wg.Wait()
 			require.False(t, jd.lifecycle.started)
 		})
+
+		t.Run("can call Start & Stop in parallel without problems", func(t *testing.T) {
+			jd := startTestJobsDB(t)
+			defer jd.TearDown()
+			var wg sync.WaitGroup
+			wg.Add(10)
+			for i := 0; i < 10; i++ {
+				go func() {
+					require.NoError(t, jd.Start())
+					jd.Stop()
+					require.NoError(t, jd.backgroundGroup.Wait())
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			require.False(t, jd.lifecycle.started)
+		})
 	})
 }
 
