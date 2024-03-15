@@ -92,7 +92,7 @@ func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, sta
 	return date.Before(time.Now().Add(expirationTimeDiff))
 }
 
-func IsValidAuthErrorCategory(category string) bool {  
-	_, ok := ErrorCategoriesMap[category]  
-	return ok  
-} 
+func IsValidAuthErrorCategory(category string) bool {
+	_, ok := ErrorCategoriesMap[category]
+	return ok
+}
