@@ -70,7 +70,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.6.1
-	github.com/minio/minio-go/v7 v7.0.67
+	github.com/minio/minio-go/v7 v7.0.69
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.15.0
