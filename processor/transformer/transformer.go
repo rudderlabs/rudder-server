@@ -97,6 +97,11 @@ type TransformerEvent struct {
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
+type TransformerEventBatch struct {
+	Events      []TransformerEvent         `json:"events"`
+	Destination backendconfig.DestinationT `json:"destination"`
+}
+
 func isJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
 		return false
@@ -371,22 +376,27 @@ func (trans *handle) requestTime(s stats.Tags, d time.Duration) {
 }
 
 func (trans *handle) request(ctx context.Context, url, stage string, data []TransformerEvent) []TransformerResponse {
+	if len(data) == 0 {
+		return nil
+	}
 	// Call remote transformation
 	var (
 		rawJSON []byte
 		err     error
 	)
 
+	batch := TransformerEventBatch{}
+	batch.Destination = data[0].Destination
+	batch.Events = lo.Map(data, func(event TransformerEvent, _ int) TransformerEvent {
+		event.Destination = backendconfig.DestinationT{}
+		return event
+	})
 	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
+		rawJSON, err = json.Marshal(batch)
 	})
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
 		panic(err)
-	}
-
-	if len(data) == 0 {
-		return nil
 	}
 
 	var (
