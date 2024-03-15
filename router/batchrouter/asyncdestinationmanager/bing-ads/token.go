@@ -97,13 +97,11 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 		Destination: &destination,
 	}
 	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
-	// TODO: check if the error is not nil working verify during unit test
 	if err != nil {
 		if authResponse != nil {
 			return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
-		} else {
-			return nil, fmt.Errorf("fetching access token resulted in an error: %v,%d", err, statusCode)
 		}
+		return nil, fmt.Errorf("fetching access token resulted in an error: %v,%d", err, statusCode)
 	}
 
 	/*
@@ -123,7 +121,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
 	*/
 
-	secret := secretStruct{}
+	var secret secretStruct
 	err = json.Unmarshal(authResponse.Account.Secret, &secret)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
@@ -133,26 +131,24 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in parsing expirationDate: %w", err)
 	}
-	if currentTime.After(expirationTime) {
-		refreshTokenParams.Secret = authResponse.Account.Secret
-		statusCode, authResponse, err = ts.oauthClientV2.RefreshToken(&refreshTokenParams)
-		// TODO: check if the error is not nil working verify during unit test
-		if err != nil {
-			return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
-		}
-		err = json.Unmarshal(authResponse.Account.Secret, &secret)
-		if err != nil {
-			return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
-		}
+	if currentTime.Before(expirationTime) {
 		return &secret, nil
+	}
+	refreshTokenParams.Secret = authResponse.Account.Secret
+	statusCode, authResponse, err = ts.oauthClientV2.RefreshToken(&refreshTokenParams)
+	// TODO: check if the error is not nil working verify during unit test
+	if err != nil {
+		return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
+	}
+	err = json.Unmarshal(authResponse.Account.Secret, &secret)
+	if err != nil {
+		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	return &secret, nil
 }
 
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	oauthV2Enabled := config.GetReloadableBoolVar(false, "BatchRouter."+ts.destinationName+".oauthV2Enabled", "BatchRouter.oauthV2Enabled")
-	// TODO: Remove later
-	fmt.Println("[batchRouter token()]", oauthV2Enabled.Load())
 	var secret *secretStruct
 	var err error
 	if oauthV2Enabled.Load() {
