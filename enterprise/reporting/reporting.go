@@ -379,7 +379,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return ctx.Err()
+				return nil
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
@@ -387,14 +387,21 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 			getReportsStart := time.Now()
 			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
+			if err != nil {
+				r.log.Errorw("getting reports", "error", err)
+				select {
+				case <-ctx.Done():
+					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return nil
+				case <-time.After(r.mainLoopSleepInterval.Load()):
+				}
+				continue
+			}
+
 			getReportsTimer.Since(getReportsStart)
 			getReportsCount.Observe(float64(len(reports)))
 			if len(reports) == 0 {
-				if err == nil {
-					lastReportedAtTime.Store(loopStart)
-				} else {
-					r.log.Errorw("getting reports", "error", err)
-				}
+				lastReportedAtTime.Store(loopStart)
 				select {
 				case <-ctx.Done():
 					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -433,10 +440,12 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 
 			err = errGroup.Wait()
-			if err == nil {
+			if err != nil {
+				r.log.Errorf(`[ Reporting ]: Error sending metrics to service: %v`, err)
+			} else {
 				dbHandle, err := r.getDBHandle(c.ConnInfo)
 				if err != nil {
-					panic(err)
+					return err
 				}
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 				if err != nil {
@@ -474,7 +483,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		}
 	})
 
-	_ = g.Wait()
+	err := g.Wait()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
