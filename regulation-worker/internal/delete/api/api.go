@@ -312,7 +312,8 @@ type PostResponseParams struct {
 
 func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
 	var jobResp []JobRespSchema
-	if err := json.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
+	err := json.Unmarshal(params.responseBodyBytes, &jobResp)
+	if err != nil {
 		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(params.responseBodyBytes))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: %s", string(params.responseBodyBytes))}
 	}
@@ -320,10 +321,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 	jobStatus := getJobStatus(params.responseStatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
 
-	var (
-		authErrorCategory string
-		err               error
-	)
+	var authErrorCategory string
 	if oauthErrorJob, ok := getOAuthErrorJob(jobResp); ok {
 		authErrorCategory = oauthErrorJob.AuthErrorCategory
 	}
@@ -345,9 +343,6 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 	}
 	// new oauth handling
 	if params.isOAuthEnabled && m.IsOAuthV2Enabled {
-		if err != nil {
-			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-		}
 		if authErrorCategory == common.CategoryRefreshToken {
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
