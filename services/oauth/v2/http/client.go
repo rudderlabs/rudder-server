@@ -24,18 +24,10 @@ type HttpClientOptionalArgs struct {
 
 // NewOAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
 func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
-	transportArgs := &TransportArgs{
-		BackendConfig:        backendConfig,
-		FlowType:             flowType,
-		TokenCache:           tokenCache,
-		Locker:               opArgs.Locker,
-		GetAuthErrorCategory: getAuthErrorCategory,
-		Augmenter:            opArgs.Augmenter,
-		OAuthHandler:         opArgs.OAuthHandler,
-		OriginalTransport:    opArgs.Transport,
-	}
-	if transportArgs.OAuthHandler == nil {
-		transportArgs.OAuthHandler = oauth.NewOAuthHandler(backendConfig,
+	oauthHandler := opArgs.OAuthHandler
+	originalTransport := opArgs.Transport
+	if oauthHandler == nil {
+		oauthHandler = oauth.NewOAuthHandler(backendConfig,
 			oauth.WithCache(*tokenCache),
 			oauth.WithLocker(opArgs.Locker),
 			oauth.WithExpirationTimeDiff(opArgs.ExpirationTimeDiff),
@@ -43,9 +35,18 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 			oauth.WithStats(stats.Default),
 		)
 	}
-	if transportArgs.OriginalTransport == nil {
-		transportArgs.OriginalTransport = client.Transport
+	if originalTransport == nil {
+		originalTransport = client.Transport
 	}
-	client.Transport = NewOAuthTransport(transportArgs)
+	client.Transport = NewOAuthTransport(&TransportArgs{
+		BackendConfig:        backendConfig,
+		FlowType:             flowType,
+		TokenCache:           tokenCache,
+		Locker:               opArgs.Locker,
+		GetAuthErrorCategory: getAuthErrorCategory,
+		Augmenter:            opArgs.Augmenter,
+		OAuthHandler:         oauthHandler,
+		OriginalTransport:    originalTransport,
+	})
 	return client
 }
