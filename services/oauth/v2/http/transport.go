@@ -35,9 +35,9 @@ type TransportArgs struct {
 	OriginalTransport http.RoundTripper
 }
 
-// Oauth2Transport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
+// OAuthTransport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
 // Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
-type Oauth2Transport struct {
+type OAuthTransport struct {
 	oauthHandler oauth.OAuthHandler
 	oauthexts.Augmenter
 	Transport            http.RoundTripper
@@ -63,8 +63,8 @@ func httpResponseCreator(statusCode int, body []byte) *http.Response {
 	}
 }
 
-func NewOauthTransport(args *TransportArgs) *Oauth2Transport {
-	return &Oauth2Transport{
+func NewOAuthTransport(args *TransportArgs) *OAuthTransport {
+	return &OAuthTransport{
 		oauthHandler:         *args.OAuthHandler,
 		Augmenter:            args.Augmenter,
 		Transport:            args.OriginalTransport,
@@ -74,7 +74,7 @@ func NewOauthTransport(args *TransportArgs) *Oauth2Transport {
 	}
 }
 
-func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
+func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	if t.Augmenter == nil {
 		return nil
 	}
@@ -110,7 +110,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 	return httpResponseCreator(statusCode, []byte(err.Error()))
 }
 
-func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
+func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
@@ -195,7 +195,7 @@ func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) 
 	return accountId, nil
 }
 
-func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	contextData := req.Context().Value(common.DestKey)
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil

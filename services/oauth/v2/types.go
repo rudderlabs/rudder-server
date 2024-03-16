@@ -2,13 +2,8 @@ package v2
 
 import (
 	"encoding/json"
-	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
 type expirationDate struct {
@@ -20,19 +15,7 @@ type AccountSecret struct {
 	ExpirationDate string          `json:"expirationDate"`
 	Secret         json.RawMessage `json:"secret"`
 }
-type OAuthHandler struct {
-	TokenProvider
-	Logger                    logger.Logger
-	RudderFlowType            common.RudderFlow
-	CpConn                    controlplane.Connector
-	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
-	Cache                     Cache
-	CacheMutex                *kitsync.PartitionRWLocker
-	ExpirationTimeDiff        time.Duration
-	ConfigBEURL               string
-	LoggerName                string
-	cpConnectorTimeout        time.Duration
-}
+
 type CacheKey struct {
 	WorkspaceID string
 	AccountID   string
@@ -61,19 +44,6 @@ type RefreshTokenBodyParams struct {
 	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }
 
-type OAuthStats struct {
-	id              string
-	workspaceID     string
-	errorMessage    string
-	rudderCategory  string
-	statName        string
-	isCallToCpApi   bool
-	authErrCategory string
-	destDefName     string
-	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
-	flowType        common.RudderFlow
-	action          string // refresh_token, fetch_token, auth_status_toggle
-}
 type AuthStatusToggleParams struct {
 	Destination     *DestinationInfo
 	WorkspaceID     string

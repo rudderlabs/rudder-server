@@ -866,7 +866,7 @@ func TestOAuth(t *testing.T) {
 					Augmenter: extensions.HeaderAugmenter,
 					Locker:    oauthLock,
 				}
-				cli = oauthv2_http.OAuthHttpClient(
+				cli = oauthv2_http.NewOAuthHttpClient(
 					cli, common.RudderFlow(oauth.RudderFlow_Delete),
 					&cache, mockBackendConfig,
 					api.GetAuthErrorCategoryFromResponse, &optionalArgs,

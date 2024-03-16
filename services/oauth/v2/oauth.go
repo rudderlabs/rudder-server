@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -23,6 +24,21 @@ type Authorizer interface {
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 	AuthStatusToggle(authStatusToggleParams *AuthStatusToggleParams) (statusCode int, respBody string)
+}
+
+type OAuthHandler struct {
+	stats stats.Stats
+	TokenProvider
+	Logger                    logger.Logger
+	RudderFlowType            common.RudderFlow
+	CpConn                    controlplane.Connector
+	AuthStatusUpdateActiveMap map[string]bool // Used to check if a authStatusInactive request for a destination is already InProgress
+	Cache                     Cache
+	CacheMutex                *kitsync.PartitionRWLocker
+	ExpirationTimeDiff        time.Duration
+	ConfigBEURL               string
+	LoggerName                string
+	cpConnectorTimeout        time.Duration
 }
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -55,6 +71,12 @@ func WithCPConnectorTimeout(t time.Duration) func(*OAuthHandler) {
 	}
 }
 
+func WithStats(stats stats.Stats) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.stats = stats
+	}
+}
+
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
 	h := &OAuthHandler{
@@ -75,6 +97,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	h.CpConn = controlplane.NewConnector(conf,
 		controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
 		controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
+		controlplane.WithStats(h.stats),
 	)
 
 	if h.Cache == nil {
@@ -101,6 +124,7 @@ Fetch token function is used to fetch the token from the cache or from the contr
 */
 func (h *OAuthHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error) {
 	authStats := &OAuthStats{
+		stats:           h.stats,
 		id:              fetchTokenParams.AccountID,
 		workspaceID:     fetchTokenParams.WorkspaceID,
 		rudderCategory:  "destination",

@@ -159,7 +159,7 @@ func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.D
 		Locker:    oauthLock,
 		Logger:    logger.NewLogger().Child("RegulationWorker"),
 	}
-	return oauthv2http.OAuthHttpClient(
+	return oauthv2http.NewOAuthHttpClient(
 		cli,
 		common.RudderFlow(oauth.RudderFlow_Delete),
 		&cache, backendconfig.DefaultBackendConfig,

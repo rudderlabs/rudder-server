@@ -38,6 +38,7 @@ type connector struct {
 	client  HttpClient
 	logger  logger.Logger
 	timeout time.Duration
+	stats   stats.Stats
 }
 
 func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
@@ -56,24 +57,30 @@ func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
 	return cpConnector
 }
 
+func WithStats(stats stats.Stats) func(*connector) {
+	return func(c *connector) {
+		c.stats = stats
+	}
+}
+
 // WithClient is a functional option to set the client for the Connector
 func WithClient(client HttpClient) func(*connector) {
-	return func(cpConn *connector) {
-		cpConn.client = client
+	return func(c *connector) {
+		c.client = client
 	}
 }
 
 // WithLogger is a functional option to set the parent logger for the Connector
 func WithLogger(parentLogger logger.Logger) func(*connector) {
-	return func(cpConn *connector) {
-		cpConn.logger = parentLogger
+	return func(c *connector) {
+		c.logger = parentLogger
 	}
 }
 
 // WithCpClientTimeout is a functional option to set the timeout for the Connector
 func WithCpClientTimeout(timeout time.Duration) func(*connector) {
-	return func(h *connector) {
-		h.timeout = timeout
+	return func(c *connector) {
+		c.timeout = timeout
 	}
 }
 
