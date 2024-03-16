@@ -30,9 +30,9 @@ var _ = Describe("CpConnector", func() {
 			config.Default,
 			WithClient(mockHttpClient),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
+		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,
-			Url:           "https://www.google.com",
+			URL:           "https://www.google.com",
 			BasicAuthUser: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusOK))
@@ -55,9 +55,9 @@ var _ = Describe("CpConnector", func() {
 			config.Default,
 			WithClient(mockHttpClient),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
+		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,
-			Url:           "https://www.google.com",
+			URL:           "https://www.google.com",
 			BasicAuthUser: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
@@ -80,9 +80,9 @@ var _ = Describe("CpConnector", func() {
 			config.Default,
 			WithClient(mockHttpClient),
 		)
-		statusCode, respBody := cpConnector.CpApiCall(&ControlPlaneRequest{
+		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,
-			Url:           "https://www.google.com",
+			URL:           "https://www.google.com",
 			BasicAuthUser: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))

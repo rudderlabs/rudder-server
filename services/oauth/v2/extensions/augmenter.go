@@ -37,6 +37,7 @@ var RouterBodyAugmenter = &routerBodyAugmenter{
 var HeaderAugmenter = &headerAugmenter{
 	HeaderName: "X-Rudder-Dest-Info",
 }
+
 // Augment adds the secret information to request body
 func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
 	totalInputs := gjson.GetBytes(body, fmt.Sprintf("%s.#", t.AugmenterPath)).Int()

@@ -7,10 +7,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
-type ControlPlaneRequest struct {
+type Request struct {
 	Body           string
 	ContentType    string
-	Url            string
+	URL            string
 	Method         string
 	DestName       string
 	RequestType    string // This is to add more refined stat tags

@@ -7,7 +7,7 @@ type Cache interface {
 	// If the value doesn't exist, it returns (nil, false).
 	Load(key any) (any, bool)
 
-	// Set stores a key-value pair in the cache.
+	// Store stores a key-value pair in the cache.
 	Store(key, value any)
 
 	// Delete removes a key-value pair from the cache.

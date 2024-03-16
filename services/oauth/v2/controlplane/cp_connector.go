@@ -27,7 +27,7 @@ var errTypMap = map[syscall.Errno]string{
 }
 
 type Connector interface {
-	CpApiCall(cpReq *ControlPlaneRequest) (int, string)
+	CpApiCall(cpReq *Request) (int, string)
 }
 
 type connector struct {
@@ -97,9 +97,9 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 }
 
 // CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
-func (c *connector) CpApiCall(cpReq *ControlPlaneRequest) (int, string) {
+func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpStatTags := stats.Tags{
-		"url":          cpReq.Url,
+		"url":          cpReq.URL,
 		"requestType":  cpReq.RequestType,
 		"destType":     cpReq.DestName,
 		"method":       cpReq.Method,
@@ -112,9 +112,9 @@ func (c *connector) CpApiCall(cpReq *ControlPlaneRequest) (int, string) {
 	var err error
 	if cpReq.Body != "" {
 		reqBody = bytes.NewBufferString(cpReq.Body)
-		req, err = http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
+		req, err = http.NewRequest(cpReq.Method, cpReq.URL, reqBody)
 	} else {
-		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
+		req, err = http.NewRequest(cpReq.Method, cpReq.URL, http.NoBody)
 	}
 	if err != nil {
 		c.logger.Errorn("[request] :: destination request failed",

@@ -11,31 +11,31 @@ import (
 	controlplane "github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
-// MockControlPlaneConnector is a mock of ControlPlaneConnector interface.
-type MockControlPlaneConnector struct {
+// MockConnector is a mock of Connector interface.
+type MockConnector struct {
 	ctrl     *gomock.Controller
-	recorder *MockControlPlaneConnectorMockRecorder
+	recorder *MockConnectorMockRecorder
 }
 
-// MockControlPlaneConnectorMockRecorder is the mock recorder for MockControlPlaneConnector.
-type MockControlPlaneConnectorMockRecorder struct {
-	mock *MockControlPlaneConnector
+// MockConnectorMockRecorder is the mock recorder for MockConnector.
+type MockConnectorMockRecorder struct {
+	mock *MockConnector
 }
 
-// NewMockControlPlaneConnector creates a new mock instance.
-func NewMockControlPlaneConnector(ctrl *gomock.Controller) *MockControlPlaneConnector {
-	mock := &MockControlPlaneConnector{ctrl: ctrl}
-	mock.recorder = &MockControlPlaneConnectorMockRecorder{mock}
+// NewMockConnector creates a new mock instance.
+func NewMockConnector(ctrl *gomock.Controller) *MockConnector {
+	mock := &MockConnector{ctrl: ctrl}
+	mock.recorder = &MockConnectorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockControlPlaneConnector) EXPECT() *MockControlPlaneConnectorMockRecorder {
+func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 	return m.recorder
 }
 
 // CpApiCall mocks base method.
-func (m *MockControlPlaneConnector) CpApiCall(cpReq *controlplane.ControlPlaneRequest) (int, string) {
+func (m *MockConnector) CpApiCall(cpReq *controlplane.Request) (int, string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CpApiCall", cpReq)
 	ret0, _ := ret[0].(int)
@@ -44,7 +44,7 @@ func (m *MockControlPlaneConnector) CpApiCall(cpReq *controlplane.ControlPlaneRe
 }
 
 // CpApiCall indicates an expected call of CpApiCall.
-func (mr *MockControlPlaneConnectorMockRecorder) CpApiCall(cpReq interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) CpApiCall(cpReq interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CpApiCall", reflect.TypeOf((*MockControlPlaneConnector)(nil).CpApiCall), cpReq)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CpApiCall", reflect.TypeOf((*MockConnector)(nil).CpApiCall), cpReq)
 }

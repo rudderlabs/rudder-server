@@ -524,15 +524,15 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 		routerTransformResponses: []types.DestinationJobT{
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -561,15 +561,15 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 		routerTransformResponses: []types.DestinationJobT{
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -594,15 +594,15 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 		routerTransformResponses: []types.DestinationJobT{
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: v2.CategoryRefreshToken, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
 		},
 		expected: []types.DestinationJobT{
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: v2.CategoryRefreshToken},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -738,7 +738,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
-			AuthErrorCategory: v2.CategoryRefreshToken,
+			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
 					StatusCode: 401,
@@ -815,7 +815,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				1: 401,
 				2: 401,
 			},
-			OAuthErrorCategory: v2.CategoryRefreshToken,
+			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
 		destination: oauthDests[0],
 	},
@@ -824,7 +824,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
-			AuthErrorCategory: v2.CategoryRefreshToken,
+			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
 					StatusCode: 401,
@@ -901,7 +901,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				1: 401,
 				2: 401,
 			},
-			OAuthErrorCategory: v2.CategoryRefreshToken,
+			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
 		destination: oauthDests[0],
 	},
@@ -910,7 +910,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
-			AuthErrorCategory: v2.CategoryAuthStatusInactive,
+			AuthErrorCategory: common.CategoryAuthStatusInactive,
 			Response: []TPDestResponse{
 				{
 					StatusCode: 403,
@@ -987,7 +987,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				1: 403,
 				2: 403,
 			},
-			OAuthErrorCategory: v2.CategoryAuthStatusInactive,
+			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
 		destination: oauthDests[0],
 	},
@@ -996,7 +996,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		proxyVersion: "v1",
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
-			AuthErrorCategory: v2.CategoryAuthStatusInactive,
+			AuthErrorCategory: common.CategoryAuthStatusInactive,
 			Response: []TPDestResponse{
 				{
 					StatusCode: 403,
@@ -1073,7 +1073,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				1: 403,
 				2: 403,
 			},
-			OAuthErrorCategory: v2.CategoryAuthStatusInactive,
+			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
 		destination: oauthDests[0],
 	},
@@ -1083,7 +1083,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		ioReadError:  true,
 		transformerProxyResponseV1: ProxyResponseV1{
 			Message:           "some message that we got from transformer",
-			AuthErrorCategory: v2.CategoryRefreshToken,
+			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
 					StatusCode: 401,

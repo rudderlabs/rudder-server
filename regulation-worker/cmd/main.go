@@ -87,13 +87,12 @@ func Run(ctx context.Context) error {
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
 	oauthV2Enabled := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
-	// TODO: Remove later
 	pkgLogger.Infon("[regulationApi]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled.Load()))
 	httpTimeout := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
-	cli := createHTTPClient(config.Default, httpTimeout, oauthV2Enabled)
+	apiManagerHttpClient := createHTTPClient(config.Default, httpTimeout, oauthV2Enabled)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -109,7 +108,7 @@ func Run(ctx context.Context) error {
 				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
-				Client:                       cli,
+				Client:                       apiManagerHttpClient,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				OAuth:                        OAuth,
 				IsOAuthV2Enabled:             oauthV2Enabled.Load(),

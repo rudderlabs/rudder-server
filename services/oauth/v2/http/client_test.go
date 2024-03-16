@@ -77,7 +77,7 @@ var _ = Describe("Http/Client", func() {
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"output":[{"version":"1","type":"REST","method":"POST","endpoint":"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs","headers":{"Authorization":"Bearer dummy-access","Content-Type":"application/json","developer-token":"dummy-dev-token"},"params":{"listId":"list111","customerId":"7693729833","consent":{}},"body":{"JSON":{"enablePartialFailure":true,"operations":[{"create":{"userIdentifiers":[{"hashedEmail":"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419"},{"hashedPhoneNumber":"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45"},{"addressInfo":{"hashedFirstName":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","hashedLastName":"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251","countryCode":"US","postalCode":"1245"}}]}}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}]}`))),
 			}, nil)
 
-			mockCpConnector := mockoauthv2.NewMockControlPlaneConnector(ctrl)
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
@@ -142,7 +142,7 @@ var _ = Describe("Http/Client", func() {
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"output":[{"authErrorCategory":"REFRESH_TOKEN"}]}`))),
 			}, nil)
 
-			mockCpConnector := mockoauthv2.NewMockControlPlaneConnector(ctrl)
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"storedaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
@@ -194,7 +194,7 @@ var _ = Describe("Http/Client", func() {
 				Body:       io.NopCloser(bytes.NewReader([]byte(`{"output":[{"authErrorCategory":"AUTH_STATUS_INACTIVE"}]}`))),
 			}, nil)
 
-			mockCpConnector := mockoauthv2.NewMockControlPlaneConnector(ctrl)
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"storedaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, "")
 			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)

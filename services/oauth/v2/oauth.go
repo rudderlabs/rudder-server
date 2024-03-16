@@ -137,7 +137,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 		rudderCategory:  "destination",
 		statName:        "",
 		isCallToCpApi:   false,
-		authErrCategory: CategoryRefreshToken,
+		authErrCategory: common.CategoryRefreshToken,
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
 		flowType:        h.RudderFlowType,
@@ -237,8 +237,8 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceID, destinationId)
 
-	authStatusInactiveCpReq := &controlplane.ControlPlaneRequest{
-		Url:           authStatusToggleUrl,
+	authStatusInactiveCpReq := &controlplane.Request{
+		URL:           authStatusToggleUrl,
 		Method:        http.MethodPut,
 		Body:          fmt.Sprintf(`{"authStatus": "%v"}`, params.AuthStatus),
 		ContentType:   "application/json",
@@ -294,7 +294,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		h.Logger.Debugn("Failed with error response", logger.NewErrorField(err))
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
-	} else if gjson.Get(response, "body.code").String() == RefTokenInvalidGrant {
+	} else if gjson.Get(response, "body.code").String() == common.RefTokenInvalidGrant {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		bodyMsg := gjson.Get(response, "body.message").String()
 		if bodyMsg == "" {
@@ -304,7 +304,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		} else {
 			message = bodyMsg
 		}
-		errorType = RefTokenInvalidGrant
+		errorType = common.RefTokenInvalidGrant
 	}
 	return errorType, message
 }
@@ -322,9 +322,9 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		return http.StatusInternalServerError, nil, err
 	}
-	refreshCpReq := &controlplane.ControlPlaneRequest{
+	refreshCpReq := &controlplane.Request{
 		Method:        http.MethodPost,
-		Url:           refreshUrl,
+		URL:           refreshUrl,
 		ContentType:   "application/json; charset=utf-8",
 		Body:          string(res),
 		DestName:      refTokenParams.DestDefName,
@@ -373,7 +373,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.statName = GetOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
-		if authResponse.Err == RefTokenInvalidGrant {
+		if authResponse.Err == common.RefTokenInvalidGrant {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
 			return http.StatusBadRequest, authResponse, fmt.Errorf("invalid grant")

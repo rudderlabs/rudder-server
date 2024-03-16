@@ -12,21 +12,14 @@ import (
 	"github.com/tidwall/gjson"
 
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-const (
-	CategoryRefreshToken = "REFRESH_TOKEN"
-	// CategoryAuthStatusInactive Identifier to be sent from destination(during transformation/delivery)
-	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
-	// RefTokenInvalidGrant Identifier for invalid_grant or access_denied errors(during refreshing the token)
-	RefTokenInvalidGrant = "ref_token_invalid_grant"
-)
-
 var (
-	ErrorCategoriesMap          = map[string]struct{}{CategoryRefreshToken: {}, CategoryAuthStatusInactive: {}}
+	ErrorCategoriesMap          = map[string]struct{}{common.CategoryRefreshToken: {}, common.CategoryAuthStatusInactive: {}}
 	ErrPermissionOrTokenRevoked = errors.New("problem with user permission or access/refresh token have been revoked")
 )
 
