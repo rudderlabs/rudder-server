@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -19,22 +20,24 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
-var errTypMap = map[syscall.Errno]string{
-	syscall.ECONNRESET:   "econnreset",
-	syscall.ECONNREFUSED: "econnrefused",
-	syscall.ECONNABORTED: "econnaborted",
-	syscall.ECANCELED:    "ecanceled",
-}
+var (
+	errTypMap = map[syscall.Errno]string{
+		syscall.ECONNRESET:   "econnreset",
+		syscall.ECONNREFUSED: "econnrefused",
+		syscall.ECONNABORTED: "econnaborted",
+		syscall.ECANCELED:    "ecanceled",
+	}
+	contentTypePattern = regexp.MustCompile(`text|application/json|application/xml`)
+)
 
 type Connector interface {
 	CpApiCall(cpReq *Request) (int, string)
 }
 
 type connector struct {
-	client     HttpClient
-	logger     logger.Logger
-	timeout    time.Duration
-	loggerName string
+	client  HttpClient
+	logger  logger.Logger
+	timeout time.Duration
 }
 
 func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
@@ -87,9 +90,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	// Detecting content type of the respData
 	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
 	// If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(contentTypeHeader, "text") ||
-		strings.Contains(contentTypeHeader, "application/json") ||
-		strings.Contains(contentTypeHeader, "application/xml")) {
+	if !contentTypePattern.MatchString(contentTypeHeader) {
 		respData = []byte("")
 	}
 
@@ -118,7 +119,6 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	}
 	if err != nil {
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewStringField("Module Name", c.loggerName),
 			logger.NewErrorField(err))
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
@@ -135,12 +135,10 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	res, doErr := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
-	c.logger.Debugn("[request] :: destination request sent",
-		logger.NewStringField("Module Name", c.loggerName))
+	c.logger.Debugn("[request] :: destination request sent")
 	if doErr != nil {
 		// Abort on receiving an error
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewStringField("Module Name", c.loggerName),
 			logger.NewErrorField(doErr))
 		errorType := GetErrorType(doErr)
 		cpStatTags["errorType"] = errorType
