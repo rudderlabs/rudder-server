@@ -189,11 +189,7 @@ func (m *APIManager) Delete(ctx context.Context, job model.Job, destination mode
 	return m.deleteWithRetry(ctx, job, destination, 0)
 }
 
-func getJobStatus(statusCode int, bodyBytes []byte) model.JobStatus {
-	var jobResp []JobRespSchema
-	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
-		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-	}
+func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
 	switch statusCode {
 	case http.StatusOK:
 		return model.JobStatus{Status: model.JobStatusComplete}
@@ -315,20 +311,28 @@ type PostResponseParams struct {
 }
 
 func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
-	authErrCategory, err := GetAuthErrorCategoryFromResponse(params.responseBodyBytes)
-	if err != nil {
-		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+	var jobResp []JobRespSchema
+	if err := json.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
+		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(params.responseBodyBytes))
+		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: %s", string(params.responseBodyBytes))}
 	}
 
-	jobStatus := getJobStatus(params.responseStatusCode, params.responseBodyBytes)
+	jobStatus := getJobStatus(params.responseStatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
 
+	var (
+		authErrorCategory string
+		err               error
+	)
+	if oauthErrorJob, ok := getOAuthErrorJob(jobResp); ok {
+		authErrorCategory = oauthErrorJob.AuthErrorCategory
+	}
 	// old oauth handling
-	if authErrCategory != "" && params.isOAuthEnabled && !m.IsOAuthV2Enabled {
-		if authErrCategory == oauth.AUTH_STATUS_INACTIVE {
+	if authErrorCategory != "" && params.isOAuthEnabled && !m.IsOAuthV2Enabled {
+		if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
 			return m.inactivateAuthStatus(&params.destination, params.job, params.oAuthDetail)
 		}
-		if authErrCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < m.MaxOAuthRefreshRetryAttempts {
+		if authErrorCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < m.MaxOAuthRefreshRetryAttempts {
 			err = m.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail)
 			if err != nil {
 				pkgLogger.Error(err)
@@ -341,13 +345,16 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 	}
 	// new oauth handling
 	if params.isOAuthEnabled && m.IsOAuthV2Enabled {
-		if authErrCategory == common.CategoryRefreshToken {
+		if err != nil {
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
+		}
+		if authErrorCategory == common.CategoryRefreshToken {
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
 			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
 			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
 		}
-		if authErrCategory == common.CategoryAuthStatusInactive {
+		if authErrorCategory == common.CategoryAuthStatusInactive {
 			// Abort the regulation request
 			return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(string(params.responseBodyBytes))}
 		}
