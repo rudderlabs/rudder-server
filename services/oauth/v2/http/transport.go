@@ -17,9 +17,7 @@ import (
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
-/*
-TransportArgs is a struct that contains the required parameters to create a new Oauth2Transport.
-*/
+// TransportArgs is a struct that contains the required parameters to create a new Oauth2Transport.
 type TransportArgs struct {
 	BackendConfig backendconfig.BackendConfig
 	FlowType      common.RudderFlow
@@ -51,7 +49,7 @@ type Oauth2Transport struct {
 // This struct is used to transport common information across the pre and post round trip methods.
 type roundTripState struct {
 	destination        *oauth.DestinationInfo
-	accountId          string
+	accountID          string
 	refreshTokenParams *oauth.RefreshTokenParams
 	res                *http.Response
 	req                *http.Request
@@ -103,7 +101,7 @@ func (t *Oauth2Transport) preRoundTrip(rts *roundTripState) *http.Response {
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
 			WorkspaceID:     rts.destination.WorkspaceID,
-			RudderAccountID: rts.accountId,
+			RudderAccountID: rts.accountID,
 			StatPrefix:      common.AuthStatusInActive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
@@ -156,7 +154,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 				Destination:     rts.destination,
 				WorkspaceID:     rts.destination.WorkspaceID,
-				RudderAccountID: rts.accountId,
+				RudderAccountID: rts.accountID,
 				StatPrefix:      common.AuthStatusInActive,
 				AuthStatus:      oauth.CategoryAuthStatusInactive,
 			})
@@ -170,7 +168,7 @@ func (t *Oauth2Transport) postRoundTrip(rts *roundTripState) (*http.Response, er
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
 			WorkspaceID:     rts.destination.WorkspaceID,
-			RudderAccountID: rts.accountId,
+			RudderAccountID: rts.accountID,
 			StatPrefix:      common.AuthStatusInActive,
 			AuthStatus:      oauth.CategoryAuthStatusInactive,
 		})
@@ -221,8 +219,8 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	rts := &roundTripState{}
 	rts.destination = destination
-	rts.accountId, err = rts.getAccountID(t.flow)
-	if rts.accountId == "" {
+	rts.accountID, err = rts.getAccountID(t.flow)
+	if rts.accountID == "" {
 		t.log.Errorn("accountId not found or empty for destination",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
@@ -231,7 +229,7 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
-		AccountID:   rts.accountId,
+		AccountID:   rts.accountID,
 		WorkspaceID: rts.destination.WorkspaceID,
 		DestDefName: rts.destination.DefinitionName,
 		Destination: rts.destination,
@@ -243,7 +241,7 @@ func (t *Oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("transport round trip: %w", err)
 	}
 	rts.res = res
 	return t.postRoundTrip(rts)

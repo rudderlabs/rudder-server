@@ -152,7 +152,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	respBodyBytes := bodyBytes
 	// Post response work to be done for OAuthV2
 	if isOAuth && api.IsOAuthV2Enabled {
-		transportResponse := oauthv2.TransportResponse{} // initing to prevent panic
+		var transportResponse oauthv2.TransportResponse
 		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 		// It's acceptable if the structure of bodyBytes doesn't match the oauthv2.TransportResponse struct.
 		err = json.Unmarshal(bodyBytes, &transportResponse)

@@ -247,7 +247,7 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := controlplane.NewControlPlaneConnector(
+			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
 			)
@@ -287,7 +287,7 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := controlplane.NewControlPlaneConnector(
+			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
 			)
@@ -461,7 +461,7 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNREFUSED},
 			})
-			cpConnector := controlplane.NewControlPlaneConnector(
+			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
 			)
@@ -503,7 +503,7 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := controlplane.NewControlPlaneConnector(
+			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
 			)
@@ -591,7 +591,7 @@ var _ = Describe("Oauth", func() {
 				Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 				Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 			})
-			cpConnector := controlplane.NewControlPlaneConnector(
+			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
 			)

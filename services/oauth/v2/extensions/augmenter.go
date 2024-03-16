@@ -3,6 +3,7 @@ package extensions
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,8 +37,7 @@ var RouterBodyAugmenter = &routerBodyAugmenter{
 var HeaderAugmenter = &headerAugmenter{
 	HeaderName: "X-Rudder-Dest-Info",
 }
-
-// Overload of Earlier Augment function
+// Augment adds the secret information to request body
 func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
 	totalInputs := gjson.GetBytes(body, fmt.Sprintf("%s.#", t.AugmenterPath)).Int()
 	augmentedBody := body
@@ -53,10 +53,10 @@ func (t *routerBodyAugmenter) Augment(r *http.Request, body []byte, secret json.
 	return nil
 }
 
-// Augment adds the Authorization header to the request and sets the request body.
+// Augment adds secret to request header to the request and sets the request body.
 func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
 	if secret == nil {
-		return fmt.Errorf("secret is nil")
+		return errors.New("secret is nil")
 	}
 	actSecret := v2.AccountSecret{
 		Secret: secret,

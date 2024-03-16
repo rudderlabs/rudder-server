@@ -26,7 +26,7 @@ var _ = Describe("CpConnector", func() {
 			Body:       io.NopCloser(bytes.NewReader([]byte("test"))),
 		}, nil)
 
-		cpConnector := NewControlPlaneConnector(
+		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
 		)
@@ -51,7 +51,7 @@ var _ = Describe("CpConnector", func() {
 			Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ETIMEDOUT},
 		})
-		cpConnector := NewControlPlaneConnector(
+		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
 		)
@@ -76,7 +76,7 @@ var _ = Describe("CpConnector", func() {
 			Addr:   &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12340},
 			Err:    &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
 		})
-		cpConnector := NewControlPlaneConnector(
+		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
 		)

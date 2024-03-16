@@ -19,26 +19,26 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
-var ErrTypMap = map[syscall.Errno]string{
+var errTypMap = map[syscall.Errno]string{
 	syscall.ECONNRESET:   "econnreset",
 	syscall.ECONNREFUSED: "econnrefused",
 	syscall.ECONNABORTED: "econnaborted",
 	syscall.ECANCELED:    "ecanceled",
 }
 
-type ControlPlaneConnector interface {
+type Connector interface {
 	CpApiCall(cpReq *ControlPlaneRequest) (int, string)
 }
 
-type controlPlaneConnector struct {
+type connector struct {
 	client     HttpClient
 	logger     logger.Logger
-	timeOut    time.Duration
+	timeout    time.Duration
 	loggerName string
 }
 
-func NewControlPlaneConnector(conf *config.Config, options ...func(*controlPlaneConnector)) ControlPlaneConnector {
-	cpConnector := &controlPlaneConnector{
+func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
+	cpConnector := &connector{
 		client: &http.Client{
 			Transport: http.DefaultTransport,
 			Timeout:   conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
@@ -53,36 +53,28 @@ func NewControlPlaneConnector(conf *config.Config, options ...func(*controlPlane
 	return cpConnector
 }
 
-/*
-WithClient is a functional option to set the client for the ControlPlaneConnector
-*/
-func WithClient(client HttpClient) func(*controlPlaneConnector) {
-	return func(cpConn *controlPlaneConnector) {
+// WithClient is a functional option to set the client for the Connector
+func WithClient(client HttpClient) func(*connector) {
+	return func(cpConn *connector) {
 		cpConn.client = client
 	}
 }
 
-/*
-WithParentLogger is a functional option to set the parent logger for the ControlPlaneConnector
-*/
-func WithLogger(parentLogger logger.Logger) func(*controlPlaneConnector) {
-	return func(cpConn *controlPlaneConnector) {
+// WithLogger is a functional option to set the parent logger for the Connector
+func WithLogger(parentLogger logger.Logger) func(*connector) {
+	return func(cpConn *connector) {
 		cpConn.logger = parentLogger
 	}
 }
 
-/*
-WithCpClientTimeout is a functional option to set the timeout for the ControlPlaneConnector
-*/
-func WithCpClientTimeout(timeout time.Duration) func(*controlPlaneConnector) {
-	return func(h *controlPlaneConnector) {
-		h.timeOut = timeout
+// WithCpClientTimeout is a functional option to set the timeout for the Connector
+func WithCpClientTimeout(timeout time.Duration) func(*connector) {
+	return func(h *connector) {
+		h.timeout = timeout
 	}
 }
 
-/*
-processResponse is a helper function to process the response from the control plane
-*/
+// processResponse is a helper function to process the response from the control plane
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
@@ -104,10 +96,8 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	return resp.StatusCode, string(respData)
 }
 
-/*
-CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
-*/
-func (c *controlPlaneConnector) CpApiCall(cpReq *ControlPlaneRequest) (int, string) {
+// CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
+func (c *connector) CpApiCall(cpReq *ControlPlaneRequest) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":          cpReq.Url,
 		"requestType":  cpReq.RequestType,
@@ -173,7 +163,7 @@ func GetErrorType(err error) string {
 	if os.IsTimeout(err) {
 		return common.TimeOutError
 	}
-	for errno, errTyp := range ErrTypMap {
+	for errno, errTyp := range errTypMap {
 		if ok := errors.Is(err, errno); ok {
 			return errTyp
 		}

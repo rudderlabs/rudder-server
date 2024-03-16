@@ -72,7 +72,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 		h.Logger = logger.NewLogger().Child("OAuthHandler")
 	}
 	conf := config.Default
-	h.CpConn = controlplane.NewControlPlaneConnector(conf,
+	h.CpConn = controlplane.NewConnector(conf,
 		controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
 		controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
 	)
