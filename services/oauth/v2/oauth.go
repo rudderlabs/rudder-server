@@ -77,6 +77,12 @@ func WithStats(stats stats.Stats) func(*OAuthHandler) {
 	}
 }
 
+func WithCpConnector(cpConn controlplane.Connector) func(*OAuthHandler) {
+	return func(h *OAuthHandler) {
+		h.CpConn = cpConn
+	}
+}
+
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
 	h := &OAuthHandler{
@@ -93,13 +99,16 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	if h.Logger == nil {
 		h.Logger = logger.NewLogger().Child("OAuthHandler")
 	}
-	conf := config.Default
-	h.CpConn = controlplane.NewConnector(conf,
-		controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
-		controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
-		controlplane.WithStats(h.stats),
-	)
-
+	if h.stats == nil {
+		h.stats = stats.Default
+	}
+	if h.CpConn == nil {
+		h.CpConn = controlplane.NewConnector(config.Default,
+			controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
+			controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
+			controlplane.WithStats(h.stats),
+		)
+	}
 	if h.Cache == nil {
 		h.Cache = NewCache()
 	}

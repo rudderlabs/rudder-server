@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mockhttpclient "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	mock_oauthV2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
@@ -69,13 +69,13 @@ var _ = Describe("Oauth", func() {
 			}
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			// Assertions
 			Expect(statusCode).To(Equal(http.StatusOK))
@@ -102,11 +102,12 @@ var _ = Describe("Oauth", func() {
 			}
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
-				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(nil,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithStats(stats.Default),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"StoredDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -145,13 +146,13 @@ var _ = Describe("Oauth", func() {
 				Err:          "",
 				ErrorMessage: "",
 			}
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret:         []byte(`{"access_token":"StoredDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T15:34:47.758Z"}`),
@@ -183,13 +184,13 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusNoContent, ``)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			var expectedResponse *v2.AuthResponse
@@ -216,13 +217,13 @@ var _ = Describe("Oauth", func() {
 			  }`)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
 			expectedResponse := &v2.AuthResponse{
@@ -257,13 +258,13 @@ var _ = Describe("Oauth", func() {
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        cpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
@@ -298,13 +299,13 @@ var _ = Describe("Oauth", func() {
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        cpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
 			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
@@ -334,13 +335,13 @@ var _ = Describe("Oauth", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -372,11 +373,12 @@ var _ = Describe("Oauth", func() {
 			}
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
-				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(nil,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -421,13 +423,13 @@ var _ = Describe("Oauth", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
@@ -473,13 +475,13 @@ var _ = Describe("Oauth", func() {
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        cpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
 			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
@@ -516,13 +518,13 @@ var _ = Describe("Oauth", func() {
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        cpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
 			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
@@ -540,14 +542,13 @@ var _ = Describe("Oauth", func() {
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:                rudderSync.NewPartitionRWLocker(),
-				Cache:                     v2.NewCache(),
-				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
-				AuthStatusUpdateActiveMap: make(map[string]bool),
-				TokenProvider:             mockTokenProvider,
-				CpConn:                    mockCpConnector,
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusBadRequest, `{
 				  "message":"unable to update the auth status for the destination"
 			  }`)
@@ -566,14 +567,13 @@ var _ = Describe("Oauth", func() {
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:                rudderSync.NewPartitionRWLocker(),
-				Cache:                     v2.NewCache(),
-				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
-				AuthStatusUpdateActiveMap: make(map[string]bool),
-				TokenProvider:             mockTokenProvider,
-				CpConn:                    mockCpConnector,
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, ``)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination:     Destination,
@@ -605,14 +605,13 @@ var _ = Describe("Oauth", func() {
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:                rudderSync.NewPartitionRWLocker(),
-				Cache:                     v2.NewCache(),
-				CpConn:                    cpConnector,
-				TokenProvider:             mockTokenProvider,
-				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
-				AuthStatusUpdateActiveMap: make(map[string]bool),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
 			statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
 				Destination:     Destination,
 				WorkspaceID:     "workspaceID",
@@ -645,12 +644,12 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Times(0)
 
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex: rudderSync.NewPartitionRWLocker(),
-				Cache:      v2.NewCache(),
-				Logger:     logger.NewLogger().Child("MockOAuthHandler"),
-				CpConn:     mockCpConnector,
-			}
+			oauthHandler := v2.NewOAuthHandler(nil,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret: []byte(`{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`),
@@ -696,13 +695,13 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new 1234 acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			wg := sync.WaitGroup{}
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
@@ -743,13 +742,13 @@ var _ = Describe("Oauth", func() {
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    rudderSync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{

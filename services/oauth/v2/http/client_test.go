@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -83,13 +84,13 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    kitsync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
@@ -150,13 +151,13 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:    kitsync.NewPartitionRWLocker(),
-				Cache:         v2.NewCache(),
-				CpConn:        mockCpConnector,
-				TokenProvider: mockTokenProvider,
-				Logger:        logger.NewLogger().Child("MockOAuthHandler"),
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
 				Augmenter:    extensions.RouterBodyAugmenter,
@@ -202,14 +203,13 @@ var _ = Describe("Http/Client", func() {
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := &v2.OAuthHandler{
-				CacheMutex:                kitsync.NewPartitionRWLocker(),
-				Cache:                     v2.NewCache(),
-				CpConn:                    mockCpConnector,
-				TokenProvider:             mockTokenProvider,
-				Logger:                    logger.NewLogger().Child("MockOAuthHandler"),
-				AuthStatusUpdateActiveMap: map[string]bool{},
-			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
 				Augmenter:    extensions.RouterBodyAugmenter,
