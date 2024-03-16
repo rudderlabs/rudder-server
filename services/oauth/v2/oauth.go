@@ -166,6 +166,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 		destDefName:     refTokenParams.DestDefName,
 		flowType:        h.RudderFlowType,
 		action:          "refresh_token",
+		stats: h.stats,
 	}
 	return h.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
@@ -231,6 +232,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		destDefName:     params.Destination.DefinitionName,
 		flowType:        h.RudderFlowType,
 		action:          action,
+		stats: h.stats,
 	}
 	defer func() {
 		authStatusToggleStats.statName = GetOAuthActionStatName("total_latency")
