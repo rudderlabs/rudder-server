@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	mockhttp "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -29,6 +30,7 @@ var _ = Describe("CpConnector", func() {
 		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
+			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,
@@ -54,6 +56,7 @@ var _ = Describe("CpConnector", func() {
 		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
+			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,
@@ -79,6 +82,7 @@ var _ = Describe("CpConnector", func() {
 		cpConnector := NewConnector(
 			config.Default,
 			WithClient(mockHttpClient),
+			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
 			Method:        http.MethodGet,

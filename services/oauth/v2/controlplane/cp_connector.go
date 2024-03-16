@@ -141,7 +141,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpApiDoTimeStart := time.Now()
 	res, doErr := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
-	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
+	c.stats.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	c.logger.Debugn("[request] :: destination request sent")
 	if doErr != nil {
 		// Abort on receiving an error
@@ -149,10 +149,10 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 			logger.NewErrorField(doErr))
 		errorType := GetErrorType(doErr)
 		cpStatTags["errorType"] = errorType
-		stats.Default.NewTaggedStat("oauth_v2_cp_request_error", stats.CountType, cpStatTags).Count(1)
+		c.stats.NewTaggedStat("oauth_v2_cp_request_error", stats.CountType, cpStatTags).Count(1)
 
 		resp := doErr.Error()
-		if errorType != "none" {
+		if errorType != common.None {
 			resp = fmt.Sprintf(`{
 				%q: %q,
 				"message": 	%q

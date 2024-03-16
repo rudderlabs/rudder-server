@@ -15,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mockhttpclient "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
@@ -251,6 +252,7 @@ var _ = Describe("Oauth", func() {
 			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -291,6 +293,7 @@ var _ = Describe("Oauth", func() {
 			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -465,6 +468,7 @@ var _ = Describe("Oauth", func() {
 			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -507,6 +511,7 @@ var _ = Describe("Oauth", func() {
 			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
@@ -595,6 +600,7 @@ var _ = Describe("Oauth", func() {
 			cpConnector := controlplane.NewConnector(
 				config.Default,
 				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
 			)
 
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
