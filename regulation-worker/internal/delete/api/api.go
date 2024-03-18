@@ -345,6 +345,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
 			pkgLogger.Infon("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", logger.NewStringField("destinationName", params.destination.Name), logger.NewIntField("jobId", int64(params.job.ID)), logger.NewIntField("retryAttempt", int64(params.currentOAuthRetryAttempt+1)))
+			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
 		}
 		if authErrorCategory == common.CategoryAuthStatusInactive {
 			// Abort the regulation request
