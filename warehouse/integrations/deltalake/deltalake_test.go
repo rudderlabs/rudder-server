@@ -624,12 +624,61 @@ func TestIntegration(t *testing.T) {
 				records = whth.RetrieveRecordsFromWarehouse(t, d.DB.DB, retrieveRecordsSQL)
 				require.Equal(t, records, whth.DedupTestRecords())
 			})
-			t.Run("with no overlapping partition", func(t *testing.T) {
+			t.Run("with no overlapping partition with preferAppend false", func(t *testing.T) {
 				tableName := "merge_with_no_overlapping_partition_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-11-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
+
+				appendWarehouse := th.Clone(t, warehouse)
+				appendWarehouse.Destination.Config["preferAppend"] = false
+
+				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+				err := d.Setup(ctx, appendWarehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = d.CreateSchema(ctx)
+				require.NoError(t, err)
+				t.Cleanup(cleanupSchema)
+
+				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := d.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(14))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+				loadTableStat, err = d.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
+					fmt.Sprintf(
+						`SELECT
+							id,
+							received_at,
+							test_bool,
+							test_datetime,
+							test_float,
+							test_int,
+							test_string
+						FROM %s.%s
+						ORDER BY id;`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, whth.DedupTestRecords())
+			})
+			t.Run("with no overlapping partition with preferAppend true", func(t *testing.T) {
+				tableName := "merge_with_no_overlapping_partition_test_table"
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = true
