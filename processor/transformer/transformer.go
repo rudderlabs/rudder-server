@@ -412,6 +412,10 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
 				return fmt.Errorf("control plane not reachable")
+
+			}
+			if statusCode == http.StatusBadRequest {
+				trans.logger.Errorf("Payload of %s ", string(rawJSON))
 			}
 			trans.cpDownGauge.Gauge(0)
 			return nil
