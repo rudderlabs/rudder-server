@@ -187,17 +187,27 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if err != nil {
 			trans.transformRequestTimerStat.SendTiming(time.Since(s))
 			reqFailed = true
-			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
+			trans.logger.Errorn(
+				"JS HTTP connection error",
+				logger.NewErrorField(err),
+				logger.NewStringField("URL", url),
+			)
 			if retryCount > config.GetInt("Processor.maxRetry", 30) {
 				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
 			}
 			retryCount++
 			time.Sleep(config.GetDurationVar(100, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS"))
 			// Refresh the connection
+			httputil.CloseResponse(resp)
 			continue
 		}
+
 		if reqFailed {
-			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+			trans.logger.Errorn(
+				"Failed request succeeded",
+				logger.NewStringField("URL", url),
+				logger.NewIntField("RetryCount", int64(retryCount)),
+			)
 		}
 
 		trans.transformRequestTimerStat.SendTiming(time.Since(s))
