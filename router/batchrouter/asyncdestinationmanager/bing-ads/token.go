@@ -97,10 +97,10 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 		Destination: &destination,
 	}
 	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
+	if err != nil && authResponse != nil {
+		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
+	}
 	if err != nil {
-		if authResponse != nil {
-			return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
-		}
 		return nil, fmt.Errorf("fetching access token resulted in an error: %v,%d", err, statusCode)
 	}
 
@@ -122,8 +122,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	*/
 
 	var secret secretStruct
-	err = json.Unmarshal(authResponse.Account.Secret, &secret)
-	if err != nil {
+	if err = json.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	currentTime := time.Now()
@@ -140,8 +139,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
 	}
-	err = json.Unmarshal(authResponse.Account.Secret, &secret)
-	if err != nil {
+	if err = json.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	return &secret, nil
