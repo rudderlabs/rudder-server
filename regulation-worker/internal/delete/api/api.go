@@ -20,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -54,8 +55,7 @@ func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
 		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(bodyBytes))
 		return "", fmt.Errorf("failed to parse authErrorCategory from response: %s", string(bodyBytes))
 	}
-	oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp)
-	if oauthErrJobFound {
+	if oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp); oauthErrJobFound {
 		return oauthErrJob.AuthErrorCategory, nil
 	}
 	return "", nil
@@ -312,8 +312,7 @@ type PostResponseParams struct {
 
 func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
 	var jobResp []JobRespSchema
-	err := json.Unmarshal(params.responseBodyBytes, &jobResp)
-	if err != nil {
+	if err := json.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
 		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(params.responseBodyBytes))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: %s", string(params.responseBodyBytes))}
 	}
@@ -331,13 +330,12 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 			return m.inactivateAuthStatus(&params.destination, params.job, params.oAuthDetail)
 		}
 		if authErrorCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < m.MaxOAuthRefreshRetryAttempts {
-			err = m.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail)
-			if err != nil {
-				pkgLogger.Error(err)
+			if err := m.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail); err != nil {
+				pkgLogger.Errorn("Error while refreshing authToken", obskit.Error(err))
 				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 			}
 			// retry the request
-			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
+			pkgLogger.Infon("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", logger.NewStringField("destinationName", params.destination.Name), logger.NewIntField("jobId", int64(params.job.ID)), logger.NewIntField("retryAttempt", int64(params.currentOAuthRetryAttempt+1)))
 			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
 		}
 	}
@@ -346,8 +344,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 		if authErrorCategory == common.CategoryRefreshToken {
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
-			pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", params.destination.Name, params.job.ID, params.currentOAuthRetryAttempt+1)
-			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
+			pkgLogger.Infon("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", logger.NewStringField("destinationName", params.destination.Name), logger.NewIntField("jobId", int64(params.job.ID)), logger.NewIntField("retryAttempt", int64(params.currentOAuthRetryAttempt+1)))
 		}
 		if authErrorCategory == common.CategoryAuthStatusInactive {
 			// Abort the regulation request
