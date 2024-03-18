@@ -86,9 +86,9 @@ func Run(ctx context.Context) error {
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
-	oauthV2Enabled := config.GetReloadableBoolVar(false, "RegulationWorker.oauthV2Enabled")
-	pkgLogger.Infon("[regulationApi]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled.Load()))
-	httpTimeout := config.GetReloadableDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
+	oauthV2Enabled := config.GetBoolVar(false, "RegulationWorker.oauthV2Enabled")
+	pkgLogger.Infon("[regulationApi]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled))
+	httpTimeout := config.GetDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
@@ -96,7 +96,7 @@ func Run(ctx context.Context) error {
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:    &http.Client{Timeout: httpTimeout.Load()},
+			Client:    &http.Client{Timeout: httpTimeout},
 			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
 			Identity:  identity,
 		},
@@ -111,7 +111,7 @@ func Run(ctx context.Context) error {
 				Client:                       apiManagerHttpClient,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
 				OAuth:                        OAuth,
-				IsOAuthV2Enabled:             oauthV2Enabled.Load(),
+				IsOAuthV2Enabled:             oauthV2Enabled,
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
 					PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
@@ -139,9 +139,9 @@ func withLoop(svc service.JobSvc) *service.Looper {
 	}
 }
 
-func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.Duration], oauthV2Enabled *config.Reloadable[bool]) *http.Client {
+func createHTTPClient(conf *config.Config, httpTimeout time.Duration, oauthV2Enabled bool) *http.Client {
 	cli := &http.Client{
-		Timeout: httpTimeout.Load(),
+		Timeout: httpTimeout,
 		Transport: &http.Transport{
 			DisableKeepAlives:   conf.GetBool("HttpClient.regulationWorker.regulationManager.disableKeepAlives", true),
 			MaxConnsPerHost:     conf.GetInt("HttpClient.regulationWorker.regulationManager.maxHTTPConnections", 100),
@@ -149,7 +149,7 @@ func createHTTPClient(conf *config.Config, httpTimeout *config.Reloadable[time.D
 			IdleConnTimeout:     300 * time.Second,
 		},
 	}
-	if !oauthV2Enabled.Load() {
+	if !oauthV2Enabled {
 		return cli
 	}
 	cache := oauthv2.NewCache()
