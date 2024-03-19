@@ -14,6 +14,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
@@ -89,7 +90,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 	if statusCode == http.StatusOK {
-		rts.req = rts.req.WithContext(context.WithValue(rts.req.Context(), common.SecretKey, authResponse.Account.Secret))
+		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
 		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
 			t.log.Debugn("failed to augment the secret",
@@ -133,8 +134,9 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 	if authErrorCategory == common.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
-		if rts.req.Context().Value(common.SecretKey) != nil {
-			oldSecret = rts.req.Context().Value(common.SecretKey).(json.RawMessage)
+		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
+		if !ok {
+			return nil, fmt.Errorf("failed to get secret from context")
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
@@ -196,17 +198,14 @@ func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) 
 }
 
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	contextData := req.Context().Value(common.DestKey)
+	contextData, ok := cntx.DestInfoFromCtx(req.Context()) // ().Value(common.DestKey)
+	if !ok {
+		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
+	}
 	if contextData == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
-	var destination *oauth.DestinationInfo
-	switch contextData.(type) {
-	case *oauth.DestinationInfo:
-		destination = req.Context().Value(common.DestKey).(*oauth.DestinationInfo)
-	default:
-		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
-	}
+	destination := contextData
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
@@ -245,4 +244,27 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	rts.res = res
 	return t.postRoundTrip(rts)
+}
+
+type (
+	destIDContextKey struct{}
+	secretContextKey struct{}
+)
+
+func CtxWithDestInfo(ctx context.Context, info *oauth.DestinationInfo) context.Context {
+	return context.WithValue(ctx, destIDContextKey{}, info)
+}
+
+func DestInfoFromCtx(ctx context.Context) (*oauth.DestinationInfo, bool) {
+	info, ok := ctx.Value(destIDContextKey{}).(*oauth.DestinationInfo)
+	return info, ok
+}
+
+func CtxWithSecret(ctx context.Context, secret json.RawMessage) context.Context {
+	return context.WithValue(ctx, secretContextKey{}, secret)
+}
+
+func SecretFromCtx(ctx context.Context) (json.RawMessage, bool) {
+	secret, ok := ctx.Value(secretContextKey{}).(json.RawMessage)
+	return secret, ok
 }

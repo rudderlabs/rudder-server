@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -172,7 +173,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
 				ID:               transformMessageCopy.Data[0].Destination.ID,
 			}
-			req = req.WithContext(context.WithValue(req.Context(), common.DestKey, destinationInfo))
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)
 		} else {
 			resp, err = trans.client.Do(req)
@@ -517,8 +518,16 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	var resp *http.Response
 	if trans.oAuthV2EnabledLoader.Load() {
 		trans.logger.Infon("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
-		req = req.WithContext(context.WithValue(req.Context(), common.DestKey, ctx.Value(common.DestKey)))
-		req = req.WithContext(context.WithValue(req.Context(), common.SecretKey, proxyReqParams.ResponseData.Metadata[0].Secret))
+		contextData, ok := cntx.DestInfoFromCtx(req.Context())
+		if !ok {
+			return httpProxyResponse{
+				respData:   []byte{},
+				statusCode: http.StatusInternalServerError,
+				err:        fmt.Errorf("destination info not found in context"),
+			}
+		}
+		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), contextData))
+		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
 	} else {
 		resp, err = trans.proxyClient.Do(req)

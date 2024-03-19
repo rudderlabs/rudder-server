@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -124,7 +125,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	}
 
 	if isOAuth && m.IsOAuthV2Enabled {
-		req = req.WithContext(context.WithValue(req.Context(), common.DestKey, dest))
+		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), dest))
 	}
 
 	defer stats.Default.NewTaggedStat(

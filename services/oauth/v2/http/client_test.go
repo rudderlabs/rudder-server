@@ -2,7 +2,6 @@ package v2_test
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 
@@ -18,6 +17,7 @@ import (
 	mockoauthv2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
@@ -59,7 +59,7 @@ var _ = Describe("Http/Client", func() {
 				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]interface{}{},
 			}
-			req = req.WithContext(context.WithValue(req.Context(), common.DestKey, destination))
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(200))
 			Expect(err).To(BeNil())
@@ -113,7 +113,7 @@ var _ = Describe("Http/Client", func() {
 				},
 				WorkspaceID: "1234",
 			}
-			req = req.WithContext(context.WithValue(req.Context(), common.DestKey, destination))
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(200))
 			Expect(err).To(BeNil())
@@ -177,7 +177,7 @@ var _ = Describe("Http/Client", func() {
 					"rudderAccountId": "7693729833",
 				},
 			}
-			req = req.WithContext(context.WithValue(req.Context(), common.DestKey, destination))
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
@@ -230,7 +230,7 @@ var _ = Describe("Http/Client", func() {
 					"rudderAccountId": "7693729833",
 				},
 			}
-			req = req.WithContext(context.WithValue(req.Context(), common.DestKey, destination))
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())

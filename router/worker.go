@@ -28,7 +28,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -786,7 +786,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		DefinitionName:   destination.DestinationDefinition.Name,
 		ID:               destination.ID,
 	}
-	ctx = context.WithValue(ctx, common.DestKey, destinationInfo)
+	ctx = cntx.CtxWithDestInfo(ctx, destinationInfo)
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
