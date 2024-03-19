@@ -2,6 +2,7 @@ package v2_test
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -662,6 +663,7 @@ var _ = Describe("Oauth", func() {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 					statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
 					// Assertions
 					Expect(statusCode).To(Equal(http.StatusOK))
@@ -703,7 +705,7 @@ var _ = Describe("Oauth", func() {
 				v2.WithCpConnector(mockCpConnector),
 			)
 			wg := sync.WaitGroup{}
-			for i := 0; i < 20; i++ {
+			for i := 0; i < 200; i++ {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
@@ -758,6 +760,69 @@ var _ = Describe("Oauth", func() {
 			}
 			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
 			wg := sync.WaitGroup{}
+			for i := 0; i < 20; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+					// Assertions
+					Expect(statusCode).To(Equal(http.StatusOK))
+					Expect(response).To(Equal(expectedResponse))
+					Expect(err).To(BeNil())
+					token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountID)
+					Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
+				}()
+			}
+			wg.Wait()
+		})
+
+		It("refresh token function call when stored cache is same as provided secret with sequential and concurrent access", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
+			}
+			// Invoke code under test
+			expectedResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":""},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"new acceess token","refresh_token":"dummyAccessToken","developer_token":"dummydeveloperToken"}}`).Times(1)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			storedAuthResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret: []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
+				}, Err: "",
+				ErrorMessage: "",
+			}
+			oauthHandler.Cache.Store(refreshTokenParams.AccountID, storedAuthResponse)
+			wg := sync.WaitGroup{}
+
+			for i := 0; i < 20; i++ {
+				statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+				// Assertions
+				Expect(statusCode).To(Equal(http.StatusOK))
+				Expect(response).To(Equal(expectedResponse))
+				Expect(err).To(BeNil())
+				token, _ := oauthHandler.Cache.Load(refreshTokenParams.AccountID)
+				Expect(token.(*v2.AuthResponse)).To(Equal(expectedResponse))
+			}
+
 			for i := 0; i < 20; i++ {
 				wg.Add(1)
 				go func() {
