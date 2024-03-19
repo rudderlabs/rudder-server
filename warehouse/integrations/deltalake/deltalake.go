@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,7 +42,6 @@ const (
 	tableNameLimit = 127
 
 	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
-	partitionNotFound    = "SHOW PARTITIONS is not allowed on a table that is not partitioned"
 	columnsAlreadyExists = "already exists in root"
 
 	rudderStagingTableRegex    = "^rudder_staging_.*$"       // matches rudder_staging_* tables
@@ -787,12 +785,6 @@ func (d *Deltalake) mergeIntoLoadTable(
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
 		tableSchemaInUpload,
 	)
-
-	partitionQuery, err := d.partitionQuery(ctx, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("getting partition query: %w", err)
-	}
-
 	pk := primaryKey(tableName)
 
 	mergeStmt := fmt.Sprintf(`
@@ -814,7 +806,7 @@ func (d *Deltalake) mergeIntoLoadTable(
 			  WHERE
 				_rudder_staging_row_number = 1
 			)
-			AS STAGING ON %[8]s MAIN.%[4]s = STAGING.%[4]s
+			AS STAGING ON MAIN.%[4]s = STAGING.%[4]s
 			WHEN MATCHED THEN
 			UPDATE
 			SET
@@ -831,11 +823,10 @@ func (d *Deltalake) mergeIntoLoadTable(
 		columnsWithValues(sortedColumnKeys),
 		columnNames(sortedColumnKeys),
 		stagingColumnNames(sortedColumnKeys),
-		partitionQuery,
 	)
 
 	var rowsAffected, rowsUpdated, rowsDeleted, rowsInserted int64
-	err = d.DB.QueryRowContext(ctx, mergeStmt).Scan(
+	err := d.DB.QueryRowContext(ctx, mergeStmt).Scan(
 		&rowsAffected,
 		&rowsUpdated,
 		&rowsDeleted,
@@ -968,55 +959,6 @@ func (d *Deltalake) hasAWSCredentials() bool {
 	return awsAccessKey != "" && awsSecretKey != ""
 }
 
-// partitionQuery returns a query to fetch partitions for a table
-func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
-	if !d.config.enablePartitionPruning || d.Uploader.ShouldOnDedupUseNewRecord() {
-		return "", nil
-	}
-	if d.Uploader.ShouldOnDedupUseNewRecord() {
-		return "", nil
-	}
-
-	query := fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
-	rows, err := d.DB.QueryContext(ctx, query)
-	if err != nil {
-		if strings.Contains(err.Error(), partitionNotFound) {
-			return "", nil
-		}
-		return "", fmt.Errorf("executing fetching partitions: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	_ = rows.Err() // ignore error
-
-	partitionColumns, err := rows.Columns()
-	if err != nil {
-		return "", fmt.Errorf("scanning partition columns: %w", err)
-	}
-
-	if !partitionedByEventDate(partitionColumns) {
-		return "", nil
-	}
-
-	firstEvent, lastEvent := d.Uploader.GetFirstLastEvent()
-	dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
-	if len(dateRange) == 0 {
-		return "", nil
-	}
-
-	dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(_ int, str string) string {
-		return fmt.Sprintf(`'%s'`, str)
-	}, ",")
-	partitionQuery := fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s) AND`, dateRangeString)
-
-	return partitionQuery, nil
-}
-
-// partitionedByEventDate returns true if the table is partitioned by event_date
-func partitionedByEventDate(columns []string) bool {
-	return slices.Contains(columns, "event_date")
-}
-
 // LoadUserTables loads user tables
 func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
@@ -1064,10 +1006,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	var (
-		partitionQuery string
-		row            *sqlmiddleware.Row
-	)
+	var row *sqlmiddleware.Row
 
 	userColNames, firstValProps := getColumnProperties(usersSchemaInWarehouse)
 	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
@@ -1168,13 +1107,6 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 			columnNames(columnKeys),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(ctx, warehouseutils.UsersTable); err != nil {
-			return map[string]error{
-				warehouseutils.IdentifiesTable: nil,
-				warehouseutils.UsersTable:      fmt.Errorf("getting partition query: %w", err),
-			}
-		}
-
 		pk := primaryKey(warehouseutils.UsersTable)
 
 		query = fmt.Sprintf(`
@@ -1183,7 +1115,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 				%[6]s
 			  FROM
 				%[1]s.%[3]s
-			) AS STAGING ON %[8]s MAIN.%[4]s = STAGING.%[4]s
+			) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s
 			WHEN MATCHED THEN
 			UPDATE
 			SET
@@ -1198,7 +1130,6 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 			columnsWithValues(columnKeys),
 			columnNames(columnKeys),
 			stagingColumnNames(columnKeys),
-			partitionQuery,
 		)
 	}
 
