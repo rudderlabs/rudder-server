@@ -17,7 +17,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 
 	"golang.org/x/sync/errgroup"
 
@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	transformationVerId = "regular-transformation-id"
+	transformationVerID = "regular-transformation-id"
 	writeKey            = "writekey-1"
 )
 
@@ -48,7 +48,7 @@ type testConfig struct {
 	postgresResource          *postgres.Resource
 	gwPort                    int
 	transformerConfigBEServer *httptest.Server
-	webhook                   *whUtil.Recorder
+	webhook                   *webhookutil.Recorder
 	configBEServer            *nethttptest.Server
 }
 
@@ -84,7 +84,7 @@ func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {
 	tc.transformerConfigBEServer.Start()
 
 	require.Eventuallyf(t, func() bool {
-		return tc.webhook.RequestsCount() == 12
+		return tc.webhook.RequestsCount() == eventsCount
 	}, time.Minute, time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
 
 	lo.ForEach(tc.webhook.Requests(), func(req *http.Request, _ int) {
@@ -111,7 +111,7 @@ func setup(t testing.TB) testConfig {
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
-	webhook := whUtil.NewRecorder()
+	webhook := webhookutil.NewRecorder()
 	t.Cleanup(webhook.Close)
 	webhookURL := webhook.Server.URL
 
@@ -125,7 +125,7 @@ func setup(t testing.TB) testConfig {
 						WithConnection(
 							backendconfigtest.NewDestinationBuilder("WEBHOOK").
 								WithID("destination-1").
-								WithUserTransformation("transform-id", transformationVerId).
+								WithUserTransformation("transform-id", transformationVerID).
 								WithConfigOption("webhookMethod", "POST").
 								WithConfigOption("webhookUrl", webhookURL).
 								Build()).
@@ -135,7 +135,7 @@ func setup(t testing.TB) testConfig {
 	t.Cleanup(bcServer.Close)
 
 	transformerBEConfigHandler := transformer.NewTransformerBackendConfigHandler(map[string]string{
-		transformationVerId: `export function transformEvent(event, metadata) {
+		transformationVerID: `export function transformEvent(event, metadata) {
 													event.transformed=true
 													return event;
 												}`,
@@ -202,7 +202,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"rudder-tracing"})
+	c := r.Run(ctx, []string{"rudder-backend-config-unavailability"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
