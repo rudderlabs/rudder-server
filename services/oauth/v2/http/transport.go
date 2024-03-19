@@ -197,14 +197,10 @@ func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) 
 }
 
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	contextData, ok := cntx.DestInfoFromCtx(req.Context()) // ().Value(common.DestKey)
+	destination, ok := cntx.DestInfoFromCtx(req.Context())
 	if !ok {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
 	}
-	if contextData == nil {
-		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
-	}
-	destination := contextData
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
