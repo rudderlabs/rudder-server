@@ -2,7 +2,6 @@ package v2
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -244,27 +243,4 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	rts.res = res
 	return t.postRoundTrip(rts)
-}
-
-type (
-	destIDContextKey struct{}
-	secretContextKey struct{}
-)
-
-func CtxWithDestInfo(ctx context.Context, info *oauth.DestinationInfo) context.Context {
-	return context.WithValue(ctx, destIDContextKey{}, info)
-}
-
-func DestInfoFromCtx(ctx context.Context) (*oauth.DestinationInfo, bool) {
-	info, ok := ctx.Value(destIDContextKey{}).(*oauth.DestinationInfo)
-	return info, ok
-}
-
-func CtxWithSecret(ctx context.Context, secret json.RawMessage) context.Context {
-	return context.WithValue(ctx, secretContextKey{}, secret)
-}
-
-func SecretFromCtx(ctx context.Context) (json.RawMessage, bool) {
-	secret, ok := ctx.Value(secretContextKey{}).(json.RawMessage)
-	return secret, ok
 }
