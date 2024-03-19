@@ -9,9 +9,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	kitconfig "github.com/rudderlabs/rudder-go-kit/config"
 
@@ -35,6 +36,7 @@ import (
 
 const (
 	gatewayJobsFilePrefix = "gw_jobs_"
+	localDumpDirName      = "/rudder-s3-dumps/"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -53,8 +55,12 @@ type config struct {
 }
 
 // list all the files that needs to be migrated
-func (m *fileMigrator) listFilePathToMigrate(ctx context.Context) []string {
-	listOfFiles := make([]string, 0)
+func (m *fileMigrator) listFilePathToMigrate(ctx context.Context) []*backupFileInfo {
+	listOfFiles := make([]*backupFileInfo, 0)
+
+	startTimeMilli := m.conf.startTime.UnixNano() / int64(time.Millisecond)
+	endTimeMilli := m.conf.endTime.UnixNano() / int64(time.Millisecond)
+
 	iterator := filemanager.IterateFilesWithPrefix(ctx,
 		m.conf.backupFileNamePrefix,
 		"",
@@ -68,34 +74,25 @@ func (m *fileMigrator) listFilePathToMigrate(ctx context.Context) []string {
 			continue
 		}
 
-		startTimeMilli := m.conf.startTime.UnixNano() / int64(time.Millisecond)
-		endTimeMilli := m.conf.endTime.UnixNano() / int64(time.Millisecond)
-
 		// file name should be of format gw_jobs_9710.974705928.974806056.1604871241214.1604872598504.gz
-		tokens := strings.Split(filePath, gatewayJobsFilePrefix)
-		if len(tokens) < 2 {
-			m.logger.Warnn("invalid file name format", kitlogger.NewStringField("filePath", filePath))
-			continue
-		}
-		tokens = strings.Split(tokens[1], ".")
-		if _, err := strconv.Atoi(tokens[0]); err != nil {
-			m.logger.Warnn("invalid table name in filename", kitlogger.NewStringField("filePath", filePath))
+		fileInfo, err := newBackupFileInfo(filePath)
+		if err != nil {
+			m.logger.Warnn("unable to parse file name", kitlogger.NewStringField("filePath", filePath), obskit.Error(err))
 			continue
 		}
 
 		// gw dump file name format gw_jobs_<table_index>.<start_job_id>.<end_job_id>.<min_created_at>_<max_created_at>.gz
 		// ex: gw_jobs_9710.974705928.974806056.1604871241214.1604872598504.gz
-		minJobCreatedAt, maxJobCreatedAt, err := utils.GetMinMaxCreatedAt(object.Key)
+		minJobCreatedAt, maxJobCreatedAt, err := utils.GetMinMaxCreatedAt(filePath)
 		var pass bool
 		if err == nil {
 			pass = maxJobCreatedAt >= startTimeMilli && minJobCreatedAt <= endTimeMilli
 		} else {
-			m.logger.Infof("gw dump name(%s) is not of the expected format. Parse failed with error %w", object.Key, err)
-			m.logger.Info("Falling back to comparing start and end time stamps with gw dump last modified.")
+			m.logger.Warnn("parsing failed, fallback to comparing start and end time stamps with gw dump last modified.", kitlogger.NewStringField("filePath", filePath), obskit.Error(err))
 			pass = object.LastModified.After(m.conf.startTime) && object.LastModified.Before(m.conf.endTime)
 		}
 		if pass {
-			listOfFiles = append(listOfFiles, object.Key)
+			listOfFiles = append(listOfFiles, fileInfo)
 		}
 	}
 	return listOfFiles
@@ -156,7 +153,7 @@ func (m *fileMigrator) uploadFile(ctx context.Context, jobs []*newFileFormat, so
 
 	localFile, err := os.Open(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open local file: %w", err)
+		return fmt.Errorf("opening local file: %w", err)
 	}
 	defer func() { _ = localFile.Close() }()
 	prefixes := []string{
@@ -177,13 +174,11 @@ func (m *fileMigrator) uploadFile(ctx context.Context, jobs []*newFileFormat, so
 func (m *fileMigrator) downloadFile(ctx context.Context, filePath string) (string, error) {
 	filePathTokens := strings.Split(filePath, "/")
 	// e.g. rudder-saas/dummy/dummy-v0-rudderstack-10/gw_jobs_11796.317963152.317994396.1703547948443.1703548519552.dummy-workspace-id.gz
-	var err error
-	dumpDownloadPathDirName := "/rudder-s3-dumps/"
 	tmpdirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return "", fmt.Errorf("failed to create tmp directory: %w", err)
 	}
-	tempPath := path.Join(tmpdirPath, dumpDownloadPathDirName, filePathTokens[len(filePathTokens)-1])
+	tempPath := path.Join(tmpdirPath, localDumpDirName, filePathTokens[len(filePathTokens)-1])
 
 	err = os.MkdirAll(filepath.Dir(tempPath), os.ModePerm)
 	if err != nil {
@@ -192,29 +187,28 @@ func (m *fileMigrator) downloadFile(ctx context.Context, filePath string) (strin
 
 	file, err := os.Create(tempPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to make local file: %w", err)
+		return "", fmt.Errorf("make local file: %w", err)
 	}
+	defer func() {
+		err = file.Close()
+		if err != nil {
+			m.logger.Errorn("closing local file", kitlogger.NewStringField("tempFilePath", tempPath), obskit.Error(err))
+		}
+	}()
 
 	err = m.fileManager.Download(ctx, file, filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to download file: %w", err)
+		return "", fmt.Errorf("downloading file: %w", err)
 	}
 	m.logger.Debugf("file downloaded at %s", tempPath)
-	defer func() { _ = file.Close() }()
 	return tempPath, nil
 }
 
-func (m *fileMigrator) processFile(ctx context.Context, filePath string) error {
-	filePathTokens := strings.Split(filePath, "/")
-	// file path should be in format like {prefix}/{instance_id}/gw_jobs_<table_index>.<start_job_id>.<end_job_id>.<min_created_at>_<max_created_at>.gz
-	// e.g. dummy/dummy-v0-rudderstack-10/gw_jobs_11796.317963152.317994396.1703547948443.1703548519552.workspace.gz
-	if len(filePathTokens) < 3 {
-		return fmt.Errorf("file path is in invalid format")
-	}
-	instanceID := filePathTokens[len(filePathTokens)-2]
-	workspaceID := strings.Split(filePathTokens[len(filePathTokens)-1], ".")[len(strings.Split(filePathTokens[len(filePathTokens)-1], "."))-2]
+func (m *fileMigrator) processFile(ctx context.Context, fileInfo *backupFileInfo) error {
+	instanceID := fileInfo.instance
+	workspaceID := fileInfo.workspaceID
 
-	localFilePath, err := m.downloadFile(ctx, filePath)
+	localFilePath, err := m.downloadFile(ctx, fileInfo.filePath)
 	if err != nil {
 		return fmt.Errorf("failed to download file locally, err: %w", err)
 	}
@@ -222,7 +216,7 @@ func (m *fileMigrator) processFile(ctx context.Context, filePath string) error {
 
 	rawFile, err := os.Open(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file, err: %w", err)
+		return fmt.Errorf("creating gzip reader, err: %w", err)
 	}
 
 	reader, err := gzip.NewReader(rawFile)

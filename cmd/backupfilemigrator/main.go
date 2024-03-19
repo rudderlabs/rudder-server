@@ -84,8 +84,8 @@ func migrate(c *cli.Context) error {
 	endTime := c.Timestamp("endTime")
 	uploadBatchSize := c.Int("uploadBatchSize")
 	backupFileNamePrefix := c.String("backupFileNamePrefix")
-	logger := kitlogger.NewLogger().Child("backup-file-migrator")
-	conf := kitconfig.Default
+	conf := kitconfig.New()
+	logger := kitlogger.NewFactory(conf).NewLogger().Child("backup-file-migrator")
 
 	return run(ctx, conf, logger, *startTime, *endTime, uploadBatchSize, backupFileNamePrefix)
 }
@@ -104,7 +104,6 @@ func run(
 
 	backupFileNamePrefix = strings.TrimSpace(backupFileNamePrefix)
 	if backupFileNamePrefix == "" {
-		logger.Errorn("backupFileNamePrefix should not be empty")
 		return fmt.Errorf("backupFileNamePrefix should not be empty")
 	}
 
@@ -136,10 +135,10 @@ func run(
 	listOfFiles := migrator.listFilePathToMigrate(ctx)
 
 	// step 2: download data from file
-	for _, filePath := range listOfFiles {
-		err := migrator.processFile(ctx, filePath)
+	for _, fileInfo := range listOfFiles {
+		err := migrator.processFile(ctx, fileInfo)
 		if err != nil {
-			logger.Errorn("fail to process file", obskit.Error(err), kitlogger.NewStringField("filePath", filePath))
+			logger.Errorn("fail to process file", kitlogger.NewStringField("filePath", fileInfo.filePath), obskit.Error(err))
 			return err
 		}
 	}
