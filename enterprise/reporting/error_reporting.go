@@ -173,44 +173,46 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		if metric.StatusDetail.StatusCode >= http.StatusBadRequest || lo.Contains([]int{types.FilterEventCode, types.SuppressEventCode}, metric.StatusDetail.StatusCode) {
-			workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
-			metric := *metric
-			destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
-			edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
+		if (metric.StatusDetail.StatusCode < http.StatusBadRequest && !lo.Contains([]int{types.FilterEventCode, types.SuppressEventCode}, metric.StatusDetail.StatusCode)) {
+            continue
+        }
 
-			// extract error-message & error-code
-			errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
+		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
+		metric := *metric
+		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
+		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
-			stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
-				"errorCode":     errDets.ErrorCode,
-				"workspaceId":   workspaceID,
-				"destType":      destinationDetail.destType,
-				"sourceId":      metric.ConnectionDetails.SourceID,
-				"destinationId": metric.ConnectionDetails.DestinationID,
-			}).Count(int(metric.StatusDetail.Count))
+		// extract error-message & error-code
+		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
 
-			_, err = stmt.Exec(
-				workspaceID,
-				edr.namespace,
-				edr.instanceID,
-				metric.ConnectionDetails.SourceDefinitionId,
-				metric.ConnectionDetails.SourceID,
-				destinationDetail.destinationDefinitionID,
-				metric.ConnectionDetails.DestinationID,
-				destinationDetail.destType,
-				metric.PUDetails.PU,
-				reportedAt,
-				metric.StatusDetail.Count,
-				metric.StatusDetail.StatusCode,
-				metric.StatusDetail.EventType,
-				errDets.ErrorCode,
-				errDets.ErrorMessage,
-			)
-			if err != nil {
-				edr.log.Errorf("Failed during statement execution(each metric): %v", err)
-				return fmt.Errorf("executing statement: %v", err)
-			}
+		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
+			"errorCode":     errDets.ErrorCode,
+			"workspaceId":   workspaceID,
+			"destType":      destinationDetail.destType,
+			"sourceId":      metric.ConnectionDetails.SourceID,
+			"destinationId": metric.ConnectionDetails.DestinationID,
+		}).Count(int(metric.StatusDetail.Count))
+
+		_, err = stmt.Exec(
+			workspaceID,
+			edr.namespace,
+			edr.instanceID,
+			metric.ConnectionDetails.SourceDefinitionId,
+			metric.ConnectionDetails.SourceID,
+			destinationDetail.destinationDefinitionID,
+			metric.ConnectionDetails.DestinationID,
+			destinationDetail.destType,
+			metric.PUDetails.PU,
+			reportedAt,
+			metric.StatusDetail.Count,
+			metric.StatusDetail.StatusCode,
+			metric.StatusDetail.EventType,
+			errDets.ErrorCode,
+			errDets.ErrorMessage,
+		)
+		if err != nil {
+			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
+			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
 
