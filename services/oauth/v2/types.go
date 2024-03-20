@@ -6,10 +6,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
-type expirationDate struct {
-	ExpirationDate string `json:"expirationDate"`
-}
-
 // AccountSecret is the access token returned by the oauth server
 type AccountSecret struct {
 	ExpirationDate string          `json:"expirationDate"`

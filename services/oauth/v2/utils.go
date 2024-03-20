@@ -7,14 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	ErrorCategoriesMap          = map[string]struct{}{common.CategoryRefreshToken: {}, common.CategoryAuthStatusInactive: {}}
