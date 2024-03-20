@@ -174,6 +174,7 @@ type RetryOptions struct {
 type SyncUploadOptions struct {
 	SourceIDs       []string
 	DestinationID   string
+	WorkspaceID     string
 	DestinationType string
 	Status          string
 	UploadID        int64
