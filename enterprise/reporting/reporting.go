@@ -430,8 +430,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 			errGroup, errCtx := errgroup.WithContext(ctx)
-			// default to -1 to allow unlimited concurrency
-			errGroup.SetLimit(config.GetInt("Reporting.maxConcurrentRequests", -1))
 			for _, metric := range metrics {
 				if r.whActionsOnly && metric.SourceCategory != "warehouse" {
 					// if whActionsOnly is true, we only send reports for wh actions sources
