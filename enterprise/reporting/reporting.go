@@ -181,7 +181,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 }
 
 func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < %d`, ReportsTable, currentMs)
+	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
 	if err != nil {
@@ -191,7 +191,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	queryStart := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
 	defer cancel()
-	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+	err = dbHandle.QueryRowContext(ctx, sqlStatement, currentMs).Scan(&queryMin)
 
 	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
@@ -206,10 +206,10 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = %d GROUP BY %s`, groupByColumns, ReportsTable, queryMin.Int64, groupByColumns)
+	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement)
+	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)
 	if err != nil {
 		panic(err)
 	}
