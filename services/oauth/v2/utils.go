@@ -8,8 +8,6 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
@@ -25,36 +23,6 @@ var (
 
 func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
-}
-
-// GetAuthErrorCategoryFromTransformResponse parses the response data from a transformerResponse
-// to extract the authentication error category.
-// {input: [{}]}
-// {input: [{}, {}, {}, {}]}
-// {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
-func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
-	var transformedJobs []transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
-	if err != nil {
-		return "", err
-	}
-	tfJob, found := lo.Find(transformedJobs, func(item transformerResponse) bool {
-		return IsValidAuthErrorCategory(item.AuthErrorCategory)
-	})
-	if !found {
-		// can be a valid scenario
-		return "", nil
-	}
-	return tfJob.AuthErrorCategory, nil
-}
-
-func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
-	var transformedJobs transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
-	if err != nil {
-		return "", err
-	}
-	return transformedJobs.AuthErrorCategory, nil
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {

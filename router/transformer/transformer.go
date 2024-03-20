@@ -15,6 +15,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -476,7 +477,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
 	}
 	// This client is used for Router Transformation using oauthV2
-	trans.clientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformResponse, optionalArgs)
+	trans.clientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformResponse, optionalArgs)
 
 	proxyClientOptionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
@@ -486,7 +487,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
-	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, oauthv2.GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
+	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
 
@@ -605,4 +606,38 @@ func getBatchURL() string {
 
 func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
+}
+
+type transformerResponse struct {
+	AuthErrorCategory string `json:"authErrorCategory"`
+}
+
+// GetAuthErrorCategoryFromTransformResponse parses the response data from a transformerResponse
+// to extract the authentication error category.
+// {input: [{}]}
+// {input: [{}, {}, {}, {}]}
+// {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
+func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
+	var transformedJobs []transformerResponse
+	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	if err != nil {
+		return "", err
+	}
+	tfJob, found := lo.Find(transformedJobs, func(item transformerResponse) bool {
+		return oauthv2.IsValidAuthErrorCategory(item.AuthErrorCategory)
+	})
+	if !found {
+		// can be a valid scenario
+		return "", nil
+	}
+	return tfJob.AuthErrorCategory, nil
+}
+
+func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
+	var transformedJobs transformerResponse
+	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	if err != nil {
+		return "", err
+	}
+	return transformedJobs.AuthErrorCategory, nil
 }

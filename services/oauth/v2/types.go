@@ -55,9 +55,6 @@ type AuthStatusToggleParams struct {
 type authStatusToggleResponse struct {
 	Message string `json:"message,omitempty"`
 }
-type transformerResponse struct {
-	AuthErrorCategory string `json:"authErrorCategory"`
-}
 
 type OAuthInterceptorResponse struct {
 	StatusCode int    `json:"statusCode"`         // This is non-zero when the OAuth interceptor, upon completing its functions, intends to pass on the status code to the caller.
