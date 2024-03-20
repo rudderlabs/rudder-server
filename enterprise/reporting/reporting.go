@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -355,7 +356,7 @@ func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfi
 		reportingLag.Gauge(lag.Seconds())
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case <-time.After(2 * time.Minute):
 		}
 	}
@@ -391,7 +392,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return nil
+				return ctx.Err()
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
@@ -404,7 +405,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				select {
 				case <-ctx.Done():
 					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-					return nil
+					return ctx.Err()
 				case <-time.After(r.mainLoopSleepInterval.Load()):
 				}
 				continue
@@ -417,7 +418,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				select {
 				case <-ctx.Done():
 					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-					return nil
+					return ctx.Err()
 				case <-time.After(r.sleepInterval.Load()):
 				}
 				continue
@@ -487,14 +488,14 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			mainLoopTimer.Since(loopStart)
 			select {
 			case <-ctx.Done():
-				return nil
+				return ctx.Err()
 			case <-time.After(r.mainLoopSleepInterval.Load()):
 			}
 		}
 	})
 
 	err := g.Wait()
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err)
 	}
 }
