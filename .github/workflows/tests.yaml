@@ -120,6 +120,7 @@ jobs:
           - integration_test/reporting_error_index
           - integration_test/warehouse
           - integration_test/tracing
+          - integration_test/backendconfigunavailability
           - processor
           - regulation-worker
           - router

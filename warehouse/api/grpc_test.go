@@ -32,6 +32,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -342,7 +343,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, firstEventAt.UTC(), res.GetFirstEventAt().AsTime().UTC())
 					require.EqualValues(t, lastEventAt.UTC(), res.GetLastEventAt().AsTime().UTC())
 					require.EqualValues(t, now.UTC(), res.GetNextRetryTime().AsTime().UTC())
-					require.EqualValues(t, now.Sub(time.Time{})/time.Second, res.GetDuration())
+					require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), res.GetDuration())
 					require.NotEmpty(t, res.GetTables())
 					require.False(t, res.GetIsArchivedUpload())
 					require.EqualValues(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
@@ -355,7 +356,7 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, "{}", table.GetError())
 						require.Empty(t, table.GetLastExecAt().AsTime().UTC())
 						require.Zero(t, table.GetCount())
-						require.EqualValues(t, now.Sub(time.Time{})/time.Second, table.GetDuration())
+						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), table.GetDuration())
 					}
 				})
 			})
@@ -420,7 +421,7 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, firstEventAt.UTC(), upload.GetFirstEventAt().AsTime().UTC())
 						require.EqualValues(t, lastEventAt.UTC(), upload.GetLastEventAt().AsTime().UTC())
 						require.EqualValues(t, now.UTC(), upload.GetNextRetryTime().AsTime().UTC())
-						require.EqualValues(t, now.Sub(time.Time{})/time.Second, upload.GetDuration())
+						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), upload.GetDuration())
 						require.Empty(t, upload.GetTables())
 						require.False(t, upload.GetIsArchivedUpload())
 					}
