@@ -173,9 +173,9 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		if (metric.StatusDetail.StatusCode < http.StatusBadRequest && !lo.Contains([]int{types.FilterEventCode, types.SuppressEventCode}, metric.StatusDetail.StatusCode)) {
-            continue
-        }
+		if metric.StatusDetail.StatusCode < http.StatusBadRequest && !lo.Contains([]int{types.FilterEventCode, types.SuppressEventCode}, metric.StatusDetail.StatusCode) {
+			continue
+		}
 
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
