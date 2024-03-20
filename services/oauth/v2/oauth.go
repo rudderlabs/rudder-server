@@ -20,6 +20,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
+/*
+Alert for:
+Continuous refresh token calls being made
+
+*/
+
 type Authorizer interface {
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
@@ -37,7 +43,6 @@ type OAuthHandler struct {
 	CacheMutex                *kitsync.PartitionRWLocker
 	ExpirationTimeDiff        time.Duration
 	ConfigBEURL               string
-	LoggerName                string
 	cpConnectorTimeout        time.Duration
 }
 
@@ -91,21 +96,21 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 		RudderFlowType:            common.RudderFlowDelivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
 		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
-		LoggerName:                "OAuthHandler",
 	}
 	for _, opt := range options {
 		opt(h)
 	}
 	if h.Logger == nil {
-		h.Logger = logger.NewLogger().Child("OAuthHandler")
+		h.Logger = logger.NewLogger()
 	}
+	h.Logger = h.Logger.Child("OAuthHandler")
 	if h.stats == nil {
 		h.stats = stats.Default
 	}
 	if h.CpConn == nil {
 		h.CpConn = controlplane.NewConnector(config.Default,
 			controlplane.WithCpClientTimeout(h.cpConnectorTimeout),
-			controlplane.WithLogger(h.Logger.Child("ControlPlaneConnector")),
+			controlplane.WithLogger(h.Logger),
 			controlplane.WithStats(h.stats),
 		)
 	}
@@ -182,7 +187,6 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse, error) {
 	log := h.Logger.Withn(
-		logger.NewStringField("Module name:", h.LoggerName),
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountID),
 		obskit.DestinationID(refTokenParams.Destination.ID),
@@ -252,8 +256,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	isAuthStatusUpdateActive, isAuthStatusUpdateReqPresent := h.AuthStatusUpdateActiveMap[destinationId]
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
 		h.CacheMutex.Unlock(params.RudderAccountID)
-		h.Logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!",
-			logger.NewStringField("Module name", h.LoggerName))
+		h.Logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!")
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
@@ -263,7 +266,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	defer func() {
 		h.CacheMutex.Lock(params.RudderAccountID)
 		h.AuthStatusUpdateActiveMap[destinationId] = false
-		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!", logger.NewStringField("Module name", h.LoggerName))
+		h.Logger.Debugn("[request] :: AuthStatusInactive request is inactive!")
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
 		h.Cache.Delete(params.RudderAccountID)
@@ -288,9 +291,8 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = h.CpConn.CpApiCall(authStatusInactiveCpReq)
 	authStatusToggleStats.statName = GetOAuthActionStatName("request_latency")
-	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
+	authStatusToggleStats.SendTimerStats(cpiCallStartTime)
 	h.Logger.Debugn("[request] :: Response from CP for auth status inactive req",
-		logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
 
@@ -309,7 +311,6 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 	h.Logger.Debugn("[request] :: (Write) auth status inactive Response received",
-		logger.NewStringField("Module name", h.LoggerName),
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
 	authStatusToggleStats.statName = GetOAuthActionStatName("success")
@@ -368,18 +369,17 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
-	authStats.statName = GetOAuthActionStatName(`request_sent`)
+	authStats.statName = GetOAuthActionStatName("request_sent")
 	authStats.isCallToCpApi = true
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
 	statusCode, response := h.CpConn.CpApiCall(refreshCpReq)
-	authStats.statName = GetOAuthActionStatName(`request_latency`)
+	authStats.statName = GetOAuthActionStatName("request_latency")
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	log := h.Logger.Withn(logger.NewStringField("Module name", h.LoggerName),
-		logger.NewIntField("StatusCode", int64(statusCode)),
+	log := h.Logger.Withn(logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 		logger.NewStringField("Call Type", logTypeName))
 	log.Debugn("[request] :: Response from Control-Plane")
@@ -391,7 +391,6 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		h.Logger.Debugn("Empty response from Control-Plane",
-			logger.NewStringField("Module Name", h.LoggerName),
 			logger.NewStringField("Response", response),
 			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 			logger.NewStringField("Call Type", logTypeName))
@@ -406,7 +405,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 			ErrorMessage: refErrMsg,
 		}
 		authStats.statName = GetOAuthActionStatName("failure")
-		authStats.errorMessage = refErrMsg
+		authStats.errorMessage = errType
 		authStats.SendCountStat()
 		if authResponse.Err == common.RefTokenInvalidGrant {
 			// Should abort the event as refresh is not going to work

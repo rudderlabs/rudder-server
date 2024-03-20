@@ -10,17 +10,17 @@ import (
 
 type OAuthStats struct {
 	stats           stats.Stats
-	id              string
+	id              string // destinationId -> for action == auth_status_inactive, accountId -> for action == refresh_token/fetch_token
 	workspaceID     string
 	errorMessage    string
-	rudderCategory  string
+	rudderCategory  string // destination
 	statName        string
-	isCallToCpApi   bool
-	authErrCategory string
+	isCallToCpApi   bool   // is a call being made to control-plane APIs
+	authErrCategory string // for action=refresh_token -> REFRESH_TOKEN, for action=fetch_token -> "", for action=auth_status_inactive -> auth_status_inactive
 	destDefName     string
-	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
-	flowType        common.RudderFlow
-	action          string // refresh_token, fetch_token, auth_status_toggle
+	isTokenFetch    bool              // This stats field is used to identify if a request to get token is arising from processor
+	flowType        common.RudderFlow // delivery, delete
+	action          string            // refresh_token, fetch_token, auth_status_inactive
 }
 
 func (s *OAuthStats) SendTimerStats(startTime time.Time) {

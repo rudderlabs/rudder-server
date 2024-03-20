@@ -47,6 +47,7 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 		Augmenter:            opArgs.Augmenter,
 		OAuthHandler:         oauthHandler,
 		OriginalTransport:    originalTransport,
+		logger:               opArgs.Logger,
 	})
 	return client
 }

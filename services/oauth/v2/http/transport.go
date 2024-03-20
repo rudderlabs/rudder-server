@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -33,6 +35,8 @@ type TransportArgs struct {
 	OAuthHandler *oauth.OAuthHandler
 	// OriginalTransport is the underlying HTTP transport.
 	OriginalTransport http.RoundTripper
+	logger            logger.Logger
+	stats             stats.Stats
 }
 
 // OAuthTransport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
@@ -44,6 +48,7 @@ type OAuthTransport struct {
 	log                  logger.Logger
 	flow                 common.RudderFlow
 	getAuthErrorCategory func([]byte) (string, error)
+	stats                stats.Stats
 }
 
 // This struct is used to transport common information across the pre and post round trip methods.
@@ -64,14 +69,23 @@ func httpResponseCreator(statusCode int, body []byte) *http.Response {
 }
 
 func NewOAuthTransport(args *TransportArgs) *OAuthTransport {
-	return &OAuthTransport{
+	t := &OAuthTransport{
 		oauthHandler:         *args.OAuthHandler,
 		Augmenter:            args.Augmenter,
 		Transport:            args.OriginalTransport,
-		log:                  logger.NewLogger().Child("OAuthHttpClient"),
+		log:                  args.logger,
 		flow:                 args.FlowType,
 		getAuthErrorCategory: args.GetAuthErrorCategory,
+		stats:                args.stats,
 	}
+	if t.log == nil {
+		t.log = logger.NewLogger()
+	}
+	if t.stats == nil {
+		t.stats = stats.Default
+	}
+	t.log = t.log.Child("OAuthHttpTransport")
+	return t
 }
 
 func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
@@ -196,6 +210,10 @@ func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) 
 	return accountId, nil
 }
 
+func (t *OAuthTransport) fireTimerStats(statName string, tags stats.Tags, startTime time.Time) {
+	t.stats.NewTaggedStat(statName, stats.TimerType, tags).SendTiming(time.Since(startTime))
+}
+
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	destination, ok := cntx.DestInfoFromCtx(req.Context())
 	if !ok {
@@ -204,6 +222,16 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if destination == nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
+
+	tags := stats.Tags{
+		"flow":           string(t.flow),
+		"destinationId":  destination.ID,
+		"workspaceId":    destination.WorkspaceID,
+		"destType":       destination.DefinitionName,
+		"origRequestURL": req.URL.Path,
+	}
+	startTime := time.Now()
+	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
 	isOauthDestination, err := destination.IsOAuthDestination()
 	if err != nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("failed to check if destination is oauth destination: %v", err.Error()))), nil
@@ -229,14 +257,20 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		Destination: rts.destination,
 	}
 	rts.req = req
+	preRoundTripStartTime := time.Now()
 	errorHttpResponse := t.preRoundTrip(rts)
+	t.fireTimerStats("oauth_v2_http_pre_roundtrip_latency", tags, preRoundTripStartTime)
 	if errorHttpResponse != nil {
 		return errorHttpResponse, nil
 	}
+	roundTripStartTime := time.Now()
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {
 		return res, fmt.Errorf("transport round trip: %w", err)
 	}
+	t.fireTimerStats("oauth_v2_http_roundtrip_latency", tags, roundTripStartTime)
 	rts.res = res
+	postRoundTripStartTime := time.Now()
+	defer t.fireTimerStats("oauth_v2_http_post_roundtrip_latency", tags, postRoundTripStartTime)
 	return t.postRoundTrip(rts)
 }

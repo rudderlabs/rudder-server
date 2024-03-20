@@ -47,13 +47,15 @@ func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
 			Transport: http.DefaultTransport,
 			Timeout:   conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
 		},
-		logger: logger.NewLogger().Child("ControlPlaneConnector"),
 	}
 
 	for _, opt := range options {
 		opt(cpConnector)
 	}
-
+	if cpConnector.logger == nil {
+		cpConnector.logger = logger.NewLogger()
+	}
+	cpConnector.logger = cpConnector.logger.Child("ControlPlaneConnector")
 	return cpConnector
 }
 
