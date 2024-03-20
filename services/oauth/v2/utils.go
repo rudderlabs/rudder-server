@@ -26,14 +26,7 @@ func GetOAuthActionStatName(stat string) string {
 }
 
 func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {
-	var expirationDate expirationDate
-	if err := jsonfast.Unmarshal(secret.Secret, &expirationDate); err != nil {
-		stats.errorMessage = "unmarshal failed"
-		stats.statName = GetOAuthActionStatName("proactive_token_refresh")
-		stats.SendCountStat()
-		return false
-	}
-	if expirationDate.ExpirationDate != "" && isTokenExpired(expirationDate.ExpirationDate, expiryTimeDiff, stats) {
+	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, stats) {
 		return true
 	}
 	if !routerutils.IsNotEmptyString(string(oldSecret)) {

@@ -418,6 +418,8 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	log.Debugn("[request] :: (Write) Account Secret received")
+	// Store expirationDate information
+	accountSecret.ExpirationDate = gjson.Get(response, "secret.expirationDate").String()
 	h.Cache.Store(refTokenParams.AccountID, &AuthResponse{
 		Account: accountSecret,
 	})

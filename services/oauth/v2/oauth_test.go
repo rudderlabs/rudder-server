@@ -157,7 +157,7 @@ var _ = Describe("Oauth", func() {
 			storedAuthResponse := &v2.AuthResponse{
 				Account: v2.AccountSecret{
 					Secret:         []byte(`{"access_token":"StoredDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T15:34:47.758Z"}`),
-					ExpirationDate: "",
+					ExpirationDate: "2022-06-29T15:34:47.758Z",
 				},
 				Err:          "",
 				ErrorMessage: "",
@@ -170,6 +170,47 @@ var _ = Describe("Oauth", func() {
 			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
 			// We are checking if the token is updated in the cache or not
 			Expect(token.(*v2.AuthResponse)).NotTo(Equal(storedAuthResponse))
+		})
+
+		It("fetch token function call is successful and token is returned with 'expirationDate', should contain ExpirationDate information in AccountSecret{}", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"NewDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T16:34:47.758Z"}}`)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			expectedResponse := &v2.AuthResponse{
+				Account: v2.AccountSecret{
+					Secret:         []byte(`{"access_token":"NewDummyaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken","expirationDate":"2022-06-29T16:34:47.758Z"}`),
+					ExpirationDate: "2022-06-29T16:34:47.758Z",
+				},
+				Err:          "",
+				ErrorMessage: "",
+			}
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			statusCode, _, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusOK))
+			Expect(err).To(BeNil())
+			token, _ := oauthHandler.Cache.Load(fetchTokenParams.AccountID)
+			// We are checking if the token is updated in the cache or not
+			Expect(token).To(BeAssignableToTypeOf(&v2.AuthResponse{}))
+			accountInfo, ok := token.(*v2.AuthResponse)
+			Expect(ok).To(BeTrue())
+			Expect(accountInfo.Account.ExpirationDate).To(Equal(expectedResponse.Account.ExpirationDate))
+			Expect(accountInfo.Account.Secret).To(Equal(expectedResponse.Account.Secret))
 		})
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty response", func() {
