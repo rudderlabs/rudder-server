@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -187,7 +188,10 @@ func (w *worker) workLoop() {
 			destination := batchDestination.Destination
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 			// TODO: Remove later
-			w.logger.Infon("[router worker]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled))
+			w.logger.Debugn("[router worker]",
+				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
+				obskit.DestinationType(destination.DestinationDefinition.Name),
+			)
 			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 

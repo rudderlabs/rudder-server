@@ -94,21 +94,21 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	body, err := io.ReadAll(rts.req.Body)
 	if err != nil {
-		t.log.Errorn("failed to read request body",
+		t.log.Errorn("reading request body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)))
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to read request body pre roundTrip: %w", err).Error()))
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("reading request body pre roundTrip: %w", err).Error()))
 	}
 	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 	if statusCode == http.StatusOK {
 		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
 		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
-			t.log.Debugn("failed to augment the secret",
+			t.log.Debugn("augmenting the secret",
 				logger.NewErrorField(err))
-			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("failed to augment the secret pre roundTrip: %w", err).Error()))
+			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
 		}
 		return nil
 	} else if authResponse != nil && authResponse.Err == common.RefTokenInvalidGrant {
@@ -127,7 +127,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body post RoundTrip: %w", err)
+		return nil, fmt.Errorf("reading response body post RoundTrip: %w", err)
 	}
 	interceptorResp := oauth.OAuthInterceptorResponse{}
 	// internal function
@@ -142,14 +142,14 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get auth error category: %s", string(respData))
+		return nil, fmt.Errorf("getting auth error category: %s", string(respData))
 	}
 	if authErrorCategory == common.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
 		if !ok {
-			return nil, fmt.Errorf("failed to get secret from context")
+			return nil, fmt.Errorf("getting secret from context")
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
@@ -234,7 +234,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
 	isOauthDestination, err := destination.IsOAuthDestination()
 	if err != nil {
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("failed to check if destination is oauth destination: %v", err.Error()))), nil
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("checking if destination is oauth destination: %v", err.Error()))), nil
 	}
 	if !isOauthDestination {
 		return t.Transport.RoundTrip(req)
