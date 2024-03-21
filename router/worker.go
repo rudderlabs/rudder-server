@@ -28,7 +28,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -775,18 +774,16 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Metadata:          m,
 			DestinationConfig: destinationJob.Destination.Config,
 		},
+		DestInfo: &oauthv2.DestinationInfo{
+			Config:           destinationJob.Destination.Config,
+			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
+			WorkspaceID:      destinationJob.Destination.WorkspaceID,
+			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
+			ID:               destinationJob.Destination.ID,
+		},
 		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
-	destination := destinationJob.Destination
-	destinationInfo := &oauthv2.DestinationInfo{
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestinationDefinition.Config,
-		WorkspaceID:      destination.WorkspaceID,
-		DefinitionName:   destination.DestinationDefinition.Name,
-		ID:               destination.ID,
-	}
-	ctx = cntx.CtxWithDestInfo(ctx, destinationInfo)
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))

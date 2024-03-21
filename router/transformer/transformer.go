@@ -91,6 +91,7 @@ type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
 	DestName     string
 	Adapter      transformerProxyAdapter
+	DestInfo     *oauthv2.DestinationInfo
 }
 
 type ProxyRequestResponse struct {
@@ -519,15 +520,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	var resp *http.Response
 	if trans.oAuthV2EnabledLoader.Load() {
 		trans.logger.Infon("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
-		contextData, ok := cntx.DestInfoFromCtx(req.Context())
-		if !ok {
-			return httpProxyResponse{
-				respData:   []byte{},
-				statusCode: http.StatusInternalServerError,
-				err:        fmt.Errorf("destination info not found in context"),
-			}
-		}
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), contextData))
+		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
 		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
 	} else {
