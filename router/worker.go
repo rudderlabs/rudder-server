@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -27,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -184,7 +186,13 @@ func (w *worker) workLoop() {
 				continue
 			}
 			destination := batchDestination.Destination
-			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth {
+			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
+			// TODO: Remove later
+			w.logger.Debugn("[router worker]",
+				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
+				obskit.DestinationType(destination.DestinationDefinition.Name),
+			)
+			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -284,7 +292,6 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
@@ -771,15 +778,26 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Metadata:          m,
 			DestinationConfig: destinationJob.Destination.Config,
 		},
+		DestInfo: &oauthv2.DestinationInfo{
+			Config:           destinationJob.Destination.Config,
+			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
+			WorkspaceID:      destinationJob.Destination.WorkspaceID,
+			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
+			ID:               destinationJob.Destination.ID,
+		},
 		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
+	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
 	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
-		w.logger.Debugf(`Sending for OAuth destination`)
+	if authType != oauth.OAuth {
+		return proxyRequestResponse
+	}
+	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
+		w.logger.Debugn(`Sending for OAuth destination`)
 		// Token from header of the request
 		respStatusCode, respBodyTemp, contentType := w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
 			ctx:            ctx,
@@ -793,8 +811,10 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 
 		proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
 		proxyRequestResponse.RespContentType = contentType
+	} else if oauthV2Enabled {
+		proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, proxyRequestResponse.ProxyRequestStatusCode, proxyRequestResponse.ProxyRequestResponseBody)
+		proxyRequestResponse.RespContentType = http.DetectContentType([]byte(proxyRequestResponse.ProxyRequestResponseBody))
 	}
-
 	return proxyRequestResponse
 }
 

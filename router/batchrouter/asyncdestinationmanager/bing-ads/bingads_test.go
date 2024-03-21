@@ -581,7 +581,7 @@ var _ = Describe("Bing ads", func() {
 				},
 			})
 
-			bingAdsUploader, err := newManagerInternal(&destination, oauthService)
+			bingAdsUploader, err := newManagerInternal(&destination, oauthService, nil)
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
