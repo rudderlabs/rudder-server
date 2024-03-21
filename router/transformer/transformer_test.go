@@ -33,7 +33,6 @@ import (
 
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 )
 
 type mockAdapter struct {
@@ -1382,12 +1381,6 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
 			}
 
-			reqParams := &ProxyRequestParams{
-				ResponseData: tc.reqPayload,
-				DestName:     tc.destType,
-				Adapter:      adapter,
-			}
-
 			destinationInfo := &v2.DestinationInfo{
 				Config:           tc.destination.Config,
 				DefinitionConfig: tc.destination.DestinationDefinition.Config,
@@ -1395,8 +1388,14 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				DefinitionName:   tc.destination.DestinationDefinition.Name,
 				ID:               tc.destination.DestinationDefinition.ID,
 			}
-			ctx := cntx.CtxWithDestInfo(context.Background(), destinationInfo)
-			proxyResp := tr.ProxyRequest(ctx, reqParams)
+			reqParams := &ProxyRequestParams{
+				ResponseData: tc.reqPayload,
+				DestName:     tc.destType,
+				Adapter:      adapter,
+				DestInfo:     destinationInfo,
+			}
+
+			proxyResp := tr.ProxyRequest(context.Background(), reqParams)
 
 			require.NotNil(t, proxyResp)
 			require.Equal(t, tc.expected.DontBatchDirectives, proxyResp.DontBatchDirectives)
