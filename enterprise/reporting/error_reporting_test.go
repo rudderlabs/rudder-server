@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -28,7 +28,7 @@ func TestShouldReport(t *testing.T) {
 	}
 	Expect(shouldReport(metric2)).To(BeTrue())
 
-	// Test case 3: Supress event case
+	// Test case 3: Suppress event case
 	metric3 := &types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
 			StatusCode: types.SuppressEventCode,
