@@ -15,7 +15,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
@@ -58,6 +57,7 @@ type roundTripState struct {
 	refreshTokenParams *oauth.RefreshTokenParams
 	res                *http.Response
 	req                *http.Request
+	secret             json.RawMessage
 }
 
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
@@ -103,7 +103,8 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 	if statusCode == http.StatusOK {
-		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
+		// rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
+		rts.secret = authResponse.Account.Secret
 		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
 			t.log.Debugn("failed to augment the secret",
@@ -146,11 +147,14 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 	}
 	if authErrorCategory == common.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
-		var oldSecret json.RawMessage
-		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
-		if !ok {
-			return nil, fmt.Errorf("failed to get secret from context")
-		}
+		// var oldSecret json.RawMessage
+		// oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
+		// if !ok {
+		// 	return nil, fmt.Errorf("failed to get secret from context")
+		// }
+
+		// we are using the secret that was fetched in the preRoundTrip method or provided with the request header
+		oldSecret := rts.secret
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
 		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
@@ -215,13 +219,20 @@ func (t *OAuthTransport) fireTimerStats(statName string, tags stats.Tags, startT
 }
 
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	destination, ok := cntx.DestInfoFromCtx(req.Context())
-	if !ok {
-		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
+	marshalledDestinationInfo := req.Header.Get("destInfo")
+	destination := &oauth.DestinationInfo{}
+	err := json.Unmarshal([]byte(marshalledDestinationInfo), destination)
+	if err != nil {
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("failed to unmarshal destinationInfo: %v", err.Error()))), nil
 	}
-	if destination == nil {
-		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
-	}
+
+	// destination, ok := cntx.DestInfoFromCtx(req.Context())
+	// if !ok {
+	// 	return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
+	// }
+	// if destination == nil {
+	// 	return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
+	// }
 
 	tags := stats.Tags{
 		"flow":           string(t.flow),
@@ -240,6 +251,10 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.Transport.RoundTrip(req)
 	}
 	rts := &roundTripState{}
+	//  we are fetching the secret from the header and deleting it from the header
+	rts.secret = []byte(req.Header.Get("oauthSecret"))
+	req.Header.Del("oauthSecret")
+
 	rts.destination = destination
 	rts.accountID, err = rts.getAccountID(t.flow)
 	if rts.accountID == "" {
