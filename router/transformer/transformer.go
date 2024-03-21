@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -175,7 +174,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
 				ID:               transformMessageCopy.Data[0].Destination.ID,
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+			// req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+
+			// we are marshalling the destinationInfo and setting it in the header
+			marshalledDestinationInfo, _ := json.Marshal(destinationInfo)
+			req.Header.Set("destInfo", string(marshalledDestinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)
 		} else {
 			resp, err = trans.client.Do(req)
@@ -520,8 +523,15 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	var resp *http.Response
 	if trans.oAuthV2EnabledLoader.Load() {
 		trans.logger.Infon("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
-		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
+		// req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
+		// req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
+
+		// setting the header for oauthSecret apart from setting in the context
+		req.Header.Set("oauthSecret", string(proxyReqParams.ResponseData.Metadata[0].Secret))
+
+		// marshalling the destinationInfo and setting it in the header
+		marshalledDestinationInfo, _ := json.Marshal(proxyReqParams.DestInfo)
+		req.Header.Set("destInfo", string(marshalledDestinationInfo))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
 	} else {
 		resp, err = trans.proxyClient.Do(req)
