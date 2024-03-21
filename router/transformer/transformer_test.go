@@ -1151,7 +1151,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `failed to read response body post RoundTrip: unexpected EOF`, // not full error message
+			ProxyRequestResponseBody: `reading response body post RoundTrip: unexpected EOF`, // not full error message
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
