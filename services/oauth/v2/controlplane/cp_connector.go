@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -143,15 +144,15 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpApiDoTimeStart := time.Now()
 	res, doErr := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
-	c.stats.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
+	c.stats.NewTaggedStat("oauth_v2_cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	c.logger.Debugn("[request] :: destination request sent")
 	if doErr != nil {
 		// Abort on receiving an error
 		c.logger.Errorn("[request] :: destination request failed",
 			logger.NewErrorField(doErr))
 		errorType := GetErrorType(doErr)
-		cpStatTags["errorType"] = errorType
-		c.stats.NewTaggedStat("oauth_v2_cp_request_error", stats.CountType, cpStatTags).Count(1)
+		cpStatTags["error"] = errorType
+		c.stats.NewTaggedStat("oauth_v2_cp_requests", stats.CountType, cpStatTags).Count(1)
 
 		resp := doErr.Error()
 		if errorType != common.None {
@@ -162,6 +163,9 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 		}
 		return http.StatusInternalServerError, resp
 	}
+	cpStatTags["statusCode"] = strconv.Itoa(res.StatusCode)
+	cpStatTags["error"] = "" // got some valid response from cp
+	c.stats.NewTaggedStat("oauth_v2_cp_requests", stats.CountType, cpStatTags).Count(1)
 	statusCode, resp := processResponse(res)
 	return statusCode, resp
 }

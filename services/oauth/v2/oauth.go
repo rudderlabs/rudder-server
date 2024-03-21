@@ -20,12 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
 )
 
-/*
-Alert for:
-Continuous refresh token calls being made
-
-*/
-
 type Authorizer interface {
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse, error)
@@ -305,7 +299,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		} else {
 			msg = fmt.Sprintf("Could not update authStatus to inactive for destination: %v", authStatusToggleRes.Message)
 		}
-		authStatusToggleStats.statName = GetOAuthActionStatName("failure")
+		authStatusToggleStats.statName = GetOAuthActionStatName("request")
 		authStatusToggleStats.errorMessage = msg
 		authStatusToggleStats.SendCountStat()
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
@@ -313,7 +307,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	h.Logger.Debugn("[request] :: (Write) auth status inactive Response received",
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
-	authStatusToggleStats.statName = GetOAuthActionStatName("success")
+	authStatusToggleStats.statName = GetOAuthActionStatName("request")
 	authStatusToggleStats.errorMessage = ""
 	authStatusToggleStats.SendCountStat()
 
@@ -353,7 +347,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceID, refTokenParams.AccountID)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
-		authStats.statName = GetOAuthActionStatName("failure")
+		authStats.statName = GetOAuthActionStatName("request")
 		authStats.errorMessage = "error in marshalling refresh token body"
 		authStats.SendCountStat()
 		return http.StatusInternalServerError, nil, err
@@ -386,7 +380,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 
 	// Empty Refresh token response
 	if !routerutils.IsNotEmptyString(response) {
-		authStats.statName = GetOAuthActionStatName("failure")
+		authStats.statName = GetOAuthActionStatName("request")
 		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
@@ -404,7 +398,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 			Err:          errType,
 			ErrorMessage: refErrMsg,
 		}
-		authStats.statName = GetOAuthActionStatName("failure")
+		authStats.statName = GetOAuthActionStatName("request")
 		authStats.errorMessage = errType
 		authStats.SendCountStat()
 		if authResponse.Err == common.RefTokenInvalidGrant {
@@ -414,7 +408,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		}
 		return http.StatusInternalServerError, authResponse, fmt.Errorf("error occurred while fetching/refreshing account info from CP: %s", refErrMsg)
 	}
-	authStats.statName = GetOAuthActionStatName("success")
+	authStats.statName = GetOAuthActionStatName("request")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	log.Debugn("[request] :: (Write) Account Secret received")
