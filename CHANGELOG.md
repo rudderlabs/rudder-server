@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.1](https://github.com/rudderlabs/rudder-server/compare/v1.22.0...v1.22.1) (2024-03-20)
+
+
+### Bug Fixes
+
+* optimise WH Syncs page query ([#4507](https://github.com/rudderlabs/rudder-server/issues/4507)) ([e0de4b3](https://github.com/rudderlabs/rudder-server/commit/e0de4b3e8390a6541d3f2c5d8eac8144349ce766))
+
 ## [1.22.0](https://github.com/rudderlabs/rudder-server/compare/v1.21.1...v1.22.0) (2024-03-19)
 
 
