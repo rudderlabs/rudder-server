@@ -68,6 +68,7 @@ type DefaultReporter struct {
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 	maxConcurrentRequests                misc.ValueLoader[int]
+	maxConcurrentRequestsWithDelay       misc.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -85,6 +86,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
+	maxConcurrentRequestsWithDelay := config.GetReloadableIntVar(maxConcurrentRequests.Load()*2, 1, "Reporting.maxConcurrentRequestsWithDelay")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	// only send reports for wh actions sources if whActionsOnly is configured
@@ -111,6 +113,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
 		maxConcurrentRequests:                maxConcurrentRequests,
+		maxConcurrentRequestsWithDelay:       maxConcurrentRequestsWithDelay,
 		dbQueryTimeout:                       dbQueryTimeout,
 		stats:                                stats,
 	}
@@ -394,7 +397,13 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
 				return ctx.Err()
 			}
-			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
+
+			concurrentRequests := r.maxConcurrentRequests.Load()
+			if time.Since(lastReportedAtTime.Load()).Minutes() > 10 {
+				concurrentRequests = r.maxConcurrentRequestsWithDelay.Load()
+			}
+
+			requestChan := make(chan struct{}, concurrentRequests)
 			loopStart := time.Now()
 			currentMin := time.Now().UTC().Unix() / 60
 
