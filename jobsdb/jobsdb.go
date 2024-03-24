@@ -51,6 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/google/uuid"
@@ -287,7 +288,7 @@ type JobsDB interface {
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
+	GetPileUpCounts(ctx context.Context) (err error)
 
 	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
 	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
@@ -1863,66 +1864,73 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
+func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
 	defer jd.dsMigrationLock.RUnlock()
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
-	statMap := make(map[string]map[string]int)
 
+	queryString := `with joined as (
+		select
+		  j.job_id as jobID,
+		  j.custom_val as customVal,
+		  s.id as statusID,
+		  s.job_state as jobState,
+		  j.workspace_id as workspace
+		from
+		  %[1]q j
+		  left join "v_last_%[2]s" s on j.job_id = s.job_id
+		where (
+		  s.job_state not in ('aborted', 'succeeded', 'migrated')
+		  or s.job_id is null
+		)
+	  )
+	  select
+		count(*),
+		customVal,
+		workspace
+	  from
+		joined
+	  group by
+		customVal,
+		workspace;`
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(jd.config.GetInt("jobsdb.pileupcount.parallelism", 10))
 	for _, ds := range dsList {
-		queryString := fmt.Sprintf(`with joined as (
-			select
-			  j.job_id as jobID,
-			  j.custom_val as customVal,
-			  s.id as statusID,
-			  s.job_state as jobState,
-			  j.workspace_id as workspace
-			from
-			  %[1]q j
-			  left join "v_last_%[2]s" s on j.job_id = s.job_id
-			where (
-			  s.job_state not in ('aborted', 'succeeded', 'migrated')
-			  or s.job_id is null
-			)
-		  )
-		  select
-			count(*),
-			customVal,
-			workspace
-		  from
-			joined
-		  group by
-			customVal,
-			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
-		if err != nil {
-			return nil, err
-		}
-
-		for rows.Next() {
-			var count sql.NullInt64
-			var customVal string
-			var workspace string
-			err := rows.Scan(&count, &customVal, &workspace)
+		ds := ds
+		g.Go(func() error {
+			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable))
 			if err != nil {
-				return statMap, err
+				return fmt.Errorf("query: %w", err)
 			}
-			if _, ok := statMap[workspace]; !ok {
-				statMap[workspace] = make(map[string]int)
+			for rows.Next() {
+				var count sql.NullInt64
+				var customVal string
+				var workspace string
+				err := rows.Scan(&count, &customVal, &workspace)
+				if err != nil {
+					return fmt.Errorf("rows.Scan(...): %w", err)
+				}
+				if count.Valid {
+					rmetrics.IncreasePendingEvents(jd.tablePrefix, workspace, customVal, float64(count.Int64))
+				}
 			}
-			statMap[workspace][customVal] += int(count.Int64)
-		}
-		if err = rows.Err(); err != nil {
-			return statMap, err
-		}
+			if err = rows.Err(); err != nil {
+				return fmt.Errorf("rows.Err(): %w", err)
+			}
+			if err = rows.Close(); err != nil {
+				return fmt.Errorf("rows.Close(): %w", err)
+			}
+			return nil
+		})
 	}
-	return statMap, nil
+	return g.Wait()
 }
 
 func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]string, error) {
