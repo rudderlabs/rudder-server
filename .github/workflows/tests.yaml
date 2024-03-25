@@ -92,6 +92,10 @@ jobs:
     name: Unit
     runs-on: 'ubuntu-20.04'
     steps:
+      - name: disable ipv6
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Install Latest Docker
         run: |
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
@@ -153,6 +157,10 @@ jobs:
             exclude: services/rsources
 
     steps:
+      - name: disable ipv6
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Install Latest Docker
         run: |
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
