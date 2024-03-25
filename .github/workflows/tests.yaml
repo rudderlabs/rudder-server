@@ -106,6 +106,7 @@ jobs:
           name: unit
           path: coverage.txt
       - name: docker debug
+        if: always()
         run: |
           docker system events --until $(date +%s)
           docker system info
@@ -113,7 +114,7 @@ jobs:
           docker network inspect bridge
           docker network inspect host
           journalctl -xu docker.service
-  
+          cat /proc/sys/net/ipv4/ip_local_port_range
   package-unit:
     name: Package Unit
     runs-on: 'ubuntu-20.04'
@@ -165,6 +166,7 @@ jobs:
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
           echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
       - name: docker debug
+        if: always()
         run: |
           docker system events --until $(date +%s)
           docker system info
@@ -172,6 +174,7 @@ jobs:
           docker network inspect bridge
           docker network inspect host
           journalctl -xu docker.service
+          cat /proc/sys/net/ipv4/ip_local_port_range
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
