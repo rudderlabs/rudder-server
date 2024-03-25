@@ -1001,12 +1001,11 @@ func TestIntegration(t *testing.T) {
 		})
 
 		t.Run("crashRecover", func(t *testing.T) {
-
 			ctx := context.Background()
 			tableName := "crash_recovery_test_table"
 			stgTableName := warehouseutils.StagingTableName(warehouseutils.RS, tableName, 64)
 			mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
-		
+
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 			err := rs.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -1021,7 +1020,7 @@ func TestIntegration(t *testing.T) {
 				t.Helper()
 				var count int
 				err = rs.DB.DB.QueryRow(`
-					SELECT count()
+					SELECT count(*)
 					FROM information_schema.tables
 					WHERE table_schema = $1 AND table_name = $2;
 						`,
@@ -1039,9 +1038,7 @@ func TestIntegration(t *testing.T) {
 
 			require.False(t, tableExists(t))
 		})
-
 	})
-
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
