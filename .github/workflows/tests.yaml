@@ -92,6 +92,12 @@ jobs:
     name: Unit
     runs-on: 'ubuntu-20.04'
     steps:
+      - name: Install Latest Docker
+        run: |
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+          sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu  $(lsb_release -cs)  stable"
+          sudo apt-get update
+          sudo apt-get install docker-ce
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -143,6 +149,12 @@ jobs:
             exclude: services/rsources
 
     steps:
+      - name: Install Latest Docker
+        run: |
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+          sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu  $(lsb_release -cs)  stable"
+          sudo apt-get update
+          sudo apt-get install docker-ce
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
