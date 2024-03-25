@@ -105,6 +105,15 @@ jobs:
         with:
           name: unit
           path: coverage.txt
+      - name: docker debug
+        run: |
+          docker system events --until $(date +%s)
+          docker system info
+          docker ps
+          docker network inspect bridge
+          docker network inspect host
+          journalctl -xu docker.service
+  
   package-unit:
     name: Package Unit
     runs-on: 'ubuntu-20.04'
@@ -155,6 +164,14 @@ jobs:
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
           echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
+      - name: docker debug
+        run: |
+          docker system events --until $(date +%s)
+          docker system info
+          docker ps
+          docker network inspect bridge
+          docker network inspect host
+          journalctl -xu docker.service
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
