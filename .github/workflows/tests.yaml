@@ -106,6 +106,9 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - run: make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
+      - name: Setup tmate session
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -121,6 +124,7 @@ jobs:
           docker network inspect host
           journalctl -xu docker.service
           cat /proc/sys/net/ipv4/ip_local_port_range
+          docker ps -a
   package-unit:
     name: Package Unit
     runs-on: 'ubuntu-20.04'
@@ -173,6 +177,9 @@ jobs:
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
         run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
+      - name: Setup tmate session
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
       - name: Sanitize name for Artifact
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
@@ -182,7 +189,7 @@ jobs:
         run: |
           docker system events --until $(date +%s)
           docker system info
-          docker ps
+          docker ps -a
           docker network inspect bridge
           docker network inspect host
           journalctl -xu docker.service
