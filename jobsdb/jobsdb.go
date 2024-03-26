@@ -1877,10 +1877,7 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 
 	queryString := `with joined as (
 		select
-		  j.job_id as jobID,
 		  j.custom_val as customVal,
-		  s.id as statusID,
-		  s.job_state as jobState,
 		  j.workspace_id as workspace
 		from
 		  %[1]q j
@@ -1901,13 +1898,26 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 		workspace;`
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(jd.config.GetInt("jobsdb.pileupcount.parallelism", 10))
+	defaultConcurrency := 10
+	conc := jd.config.GetInt("jobsdb.pileupcount.parallelism", 10)
+	if conc <= 1 || conc > defaultConcurrency {
+		jd.logger.Warnn(
+			"parallelism out of safe bounds. Using default value",
+			logger.NewIntField("parallelism", int64(conc)),
+			logger.NewIntField("default", int64(defaultConcurrency)),
+		)
+		conc = defaultConcurrency
+	}
+	g.SetLimit(conc)
 	for _, ds := range dsList {
 		ds := ds
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable))
+			rows, err := jd.dbHandle.QueryContext(
+				ctx,
+				fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+			)
 			if err != nil {
-				return fmt.Errorf("query: %w", err)
+				return fmt.Errorf("query on %s: %w", ds.JobTable, err)
 			}
 			for rows.Next() {
 				var count sql.NullInt64
@@ -1915,17 +1925,22 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 				var workspace string
 				err := rows.Scan(&count, &customVal, &workspace)
 				if err != nil {
-					return fmt.Errorf("rows.Scan(...): %w", err)
+					return fmt.Errorf("rows.Scan(...) on %s: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					rmetrics.IncreasePendingEvents(jd.tablePrefix, workspace, customVal, float64(count.Int64))
+					rmetrics.IncreasePendingEvents(
+						jd.tablePrefix,
+						workspace,
+						customVal,
+						float64(count.Int64),
+					)
 				}
 			}
 			if err = rows.Err(); err != nil {
-				return fmt.Errorf("rows.Err(): %w", err)
+				return fmt.Errorf("rows.Err() on %s: %w", ds.JobTable, err)
 			}
 			if err = rows.Close(); err != nil {
-				return fmt.Errorf("rows.Close(): %w", err)
+				return fmt.Errorf("rows.Close() on %s: %w", ds.JobTable, err)
 			}
 			return nil
 		})

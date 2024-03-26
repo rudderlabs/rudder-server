@@ -3188,6 +3188,6 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			return nil
 		}, func(attempt int) {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
-			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Count(1)
+			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Increment()
 		})
 }
