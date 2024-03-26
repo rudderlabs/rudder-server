@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.23.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.22.0...v1.23.0-rc.1) (2024-03-21)
+
+
+### Features
+
+* update oauth module in server to interceptor pattern ([#4329](https://github.com/rudderlabs/rudder-server/issues/4329)) ([e154286](https://github.com/rudderlabs/rudder-server/commit/e1542864341b2e9819c64f72399ce1ca4e31364b))
+
+
+### Bug Fixes
+
+* filter success events before sending it to error reporting table ([6b2e957](https://github.com/rudderlabs/rudder-server/commit/6b2e957bce60283a7c36bf808160a7edd9cc719f))
+* filter success events before sending it to error reporting table ([#4505](https://github.com/rudderlabs/rudder-server/issues/4505)) ([1961019](https://github.com/rudderlabs/rudder-server/commit/19610195bc1f026b2ac4cb54d79fc7cbfb3dc746))
+* lint issues ([559d701](https://github.com/rudderlabs/rudder-server/commit/559d701a931c83e6750fc0692c8619addbdfa363))
+* optimise WH Syncs page query ([#4507](https://github.com/rudderlabs/rudder-server/issues/4507)) ([edf8624](https://github.com/rudderlabs/rudder-server/commit/edf8624052c275dca67d221e37b3dc08e21bcc17))
+* terminate goroutines if reporting mainLoop panics ([#4457](https://github.com/rudderlabs/rudder-server/issues/4457)) ([2c46967](https://github.com/rudderlabs/rudder-server/commit/2c469676b70415a598cf7909fcab3d0b05f7977c))
+
+
+### Miscellaneous
+
+* added integration test for config BE un-availability ([#4473](https://github.com/rudderlabs/rudder-server/issues/4473)) ([b88fdf2](https://github.com/rudderlabs/rudder-server/commit/b88fdf27068356eb2ace5c0bf3ab52ab83b4c493))
+* addressing minor comment ([1bf68b4](https://github.com/rudderlabs/rudder-server/commit/1bf68b4cd96edf8cb3dcb31a273835dbb4a90818))
+* code review changes ([d757132](https://github.com/rudderlabs/rudder-server/commit/d757132ecad5b92335683b2661d1e643df99266d))
+* code review changes ([cd9a37f](https://github.com/rudderlabs/rudder-server/commit/cd9a37f30457f1091da86ca6d968c47d34c0ab5c))
+* code review changes ([915a697](https://github.com/rudderlabs/rudder-server/commit/915a69795f70fb71750fb12ce4ed1975c58ce664))
+* lint fixes ([c934ee7](https://github.com/rudderlabs/rudder-server/commit/c934ee70fdeec6b1bfa2e463d2ecedb5100ab523))
+* lint issues fix ([37686c6](https://github.com/rudderlabs/rudder-server/commit/37686c6ee2fb3fe787a417db644a26b677409f63))
+* merge 1.22.0 release to master ([#4503](https://github.com/rudderlabs/rudder-server/issues/4503)) ([ee993e3](https://github.com/rudderlabs/rudder-server/commit/ee993e3fef5191e0c2137eec4f6986afd8bed777))
+
 ## [1.22.1](https://github.com/rudderlabs/rudder-server/compare/v1.22.0...v1.22.1) (2024-03-20)
 
 
