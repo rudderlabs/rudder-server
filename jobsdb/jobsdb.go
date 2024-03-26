@@ -1900,7 +1900,7 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	defaultConcurrency := 10
 	conc := jd.config.GetInt("jobsdb.pileupcount.parallelism", 10)
-	if conc <= 1 || conc > defaultConcurrency {
+	if conc < 1 || conc > defaultConcurrency {
 		jd.logger.Warnn(
 			"parallelism out of safe bounds. Using default value",
 			logger.NewIntField("parallelism", int64(conc)),
