@@ -1,8 +1,5 @@
 run:
   timeout: 7m
-  go: '1.21'
-  skip-dirs:
-    - event-schema
 
 linters:
   enable:
