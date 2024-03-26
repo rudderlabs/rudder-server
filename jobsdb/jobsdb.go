@@ -1910,7 +1910,6 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	}
 	g.SetLimit(conc)
 	for _, ds := range dsList {
-		ds := ds
 		g.Go(func() error {
 			rows, err := jd.dbHandle.QueryContext(
 				ctx,
