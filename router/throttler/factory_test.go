@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 )
 
 func TestFactory(t *testing.T) {
@@ -70,6 +72,46 @@ func TestFactory(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return ta.getLimit() == int64(0)
 		}, 2*time.Second, 100*time.Millisecond)
+	})
+
+	t.Run("check stats when adaptive is enabled", func(t *testing.T) {
+		maxLimit := int64(300)
+		window := 2 * time.Second
+
+		c := config.New()
+		c.Set("Router.throttler.adaptive.enabled", true)
+		c.Set("Router.throttler.adaptive.maxLimit", maxLimit)
+		c.Set("Router.throttler.adaptive.minLimit", int64(100))
+		c.Set("Router.throttler.adaptive.timeWindow", window)
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		f, err := NewFactory(c, statsStore)
+		require.NoError(t, err)
+		defer f.Shutdown()
+
+		_ = f.Get("destName", "destID")
+
+		require.EqualValues(t, maxLimit/getWindowInSecs(window), statsStore.Get("throttling_rate_limit", stats.Tags{
+			"destinationId": "destID",
+			"destType":      "destName",
+			"adaptive":      "true",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("adaptive_throttler_limit_factor", stats.Tags{
+			"destinationId": "destID",
+			"destType":      "destName",
+		}).LastValue())
+	})
+
+	t.Run("when no limit is set", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Router.throttler.adaptive.enabled", true)
+		f, err := NewFactory(conf, nil)
+		require.NoError(t, err)
+		defer f.Shutdown()
+		ta := f.Get("destName", "destID")
+		require.EqualValues(t, adaptiveDefaultMaxLimit, ta.getLimit())
 	})
 }
 

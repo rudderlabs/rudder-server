@@ -75,7 +75,6 @@ type Handle struct {
 	tracer        stats.Tracer
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
-	lastJobID     int64
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -126,7 +125,6 @@ type Handle struct {
 		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
 		sourceIdSourceMap               map[string]backendconfig.SourceT
 		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap          map[string]string
 		oneTrustConsentCategoriesMap    map[string][]string
 		ketchConsentCategoriesMap       map[string][]string
 		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
@@ -203,6 +201,7 @@ type DestStatT struct {
 
 type ParametersT struct {
 	SourceID                string      `json:"source_id"`
+	SourceName              string      `json:"source_name"`
 	DestinationID           string      `json:"destination_id"`
 	ReceivedAt              string      `json:"received_at"`
 	TransformAt             string      `json:"transform_at"`
@@ -794,7 +793,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap          = make(map[string]string)
 			eventAuditEnabled               = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
@@ -805,7 +803,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					sourceIdDestinationMap[source.ID] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
-						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
@@ -827,7 +824,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
-		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
@@ -914,6 +910,7 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
+	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = misc.GetInstanceID()
@@ -945,6 +942,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
 	metadata.InstanceID = commonMetadata.InstanceID
@@ -1458,7 +1456,12 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}
 }
 
-func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64) []*types.PUReportedMetric {
+func getDiffMetrics(
+	inPU, pu string,
+	inCountMetadataMap map[string]MetricMetadata,
+	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
+	statFactory stats.Stats,
+) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
@@ -1484,6 +1487,15 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
 			diffMetrics = append(diffMetrics, metric)
+			statFactory.NewTaggedStat(
+				"processor_diff_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         metric.PU,
+					"sourceId":      metric.ConnectionDetails.SourceID,
+					"destinationId": metric.ConnectionDetails.DestinationID,
+				},
+			).Count(int(-diff))
 		}
 	}
 
@@ -1849,6 +1861,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			outCountMap,
 			map[string]int64{},
 			map[string]int64{},
+			proc.statsFactory,
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
 	}
@@ -2390,17 +2403,20 @@ func (proc *Handle) transformSrcDest(
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
+	sourceName := eventList[0].Metadata.SourceName
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
+	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
+		SourceName:           sourceName,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
 		Namespace:            config.GetKubeNamespace(),
 		InstanceID:           misc.GetInstanceID(),
 		DestinationID:        destID,
-		DestinationType:      destination.DestinationDefinition.Name,
+		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
 	}
 
@@ -2412,7 +2428,6 @@ func (proc *Handle) transformSrcDest(
 	droppedJobs := make([]*jobsdb.JobT, 0)
 
 	proc.config.configSubscriberLock.RLock()
-	destType := proc.config.destinationIDtoTypeMap[destID]
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
 
@@ -2507,6 +2522,7 @@ func (proc *Handle) transformSrcDest(
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2583,7 +2599,16 @@ func (proc *Handle) transformSrcDest(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+		diffMetrics := getDiffMetrics(
+			inPU,
+			types.EVENT_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			successCountMap,
+			nonSuccessMetrics.failedCountMap,
+			nonSuccessMetrics.filteredCountMap,
+			proc.statsFactory,
+		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2671,7 +2696,16 @@ func (proc *Handle) transformSrcDest(
 					}
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+				diffMetrics := getDiffMetrics(
+					types.EVENT_FILTER,
+					types.DEST_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					nonSuccessMetrics.failedCountMap,
+					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
+				)
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2722,6 +2756,7 @@ func (proc *Handle) transformSrcDest(
 
 			params := ParametersT{
 				SourceID:                sourceID,
+				SourceName:              sourceName,
 				DestinationID:           destID,
 				ReceivedAt:              receivedAt,
 				TransformAt:             transformAt,
@@ -2922,15 +2957,6 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)
-
-		if job.JobID <= proc.lastJobID {
-			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfOrder(partition).Count(1)
-		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
-			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfSequence(partition).Count(1)
-		}
-		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)

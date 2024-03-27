@@ -1,6 +1,7 @@
 package bingads
 
 import (
+	"archive/zip"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -506,6 +507,51 @@ var _ = Describe("Bing ads", func() {
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
+		It("TestBingAdsGetUploadStats for wrong audience Id", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			csvPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.csv"
+			zipPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip"
+			err := ZipCSVFile(csvPath, zipPath)
+			Expect(err).To(BeNil())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip") // Path of the source file
+			// Create a test server with a custom handler function
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Set the appropriate headers for a zip file response
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Disposition", "attachment; filename='status-wrong-audience.zip'")
+				http.ServeFile(w, r, errorsTemplateFilePath)
+			}))
+			defer ts.Close()
+			client := ts.Client()
+			modifiedURL := ts.URL // Use the test server URL
+			clientI := Client{client: client, URL: modifiedURL}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			UploadStatsInput := common.GetUploadStatsInput{
+				FailedJobURLs: modifiedURL,
+				ImportingList: []*jobsdb.JobT{
+					{
+						JobID: 1,
+					},
+				},
+			}
+			expectedResp := common.GetUploadStatsResponse{
+				StatusCode: 200,
+				Metadata: common.EventStatMeta{
+					FailedKeys: []int64{1},
+					FailedReasons: map[int64]string{
+						1: "InvalidCustomerListId",
+					},
+					SucceededKeys: []int64{},
+				},
+			}
+			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
+			os.Remove(zipPath)
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
 		It("TestNewManagerInternal", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
@@ -535,7 +581,7 @@ var _ = Describe("Bing ads", func() {
 				},
 			})
 
-			bingAdsUploader, err := newManagerInternal(&destination, oauthService)
+			bingAdsUploader, err := newManagerInternal(&destination, oauthService, nil)
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
@@ -626,4 +672,41 @@ func DuplicateFile(sourcePath, destinationPath string) error {
 	}
 
 	return nil
+}
+
+func ZipCSVFile(csvFilePath, zipFilePath string) error {
+	// Create a new ZIP file
+	zipFile, err := os.Create(zipFilePath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	// Create a new zip writer
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	// Extract the base name (file name) of the CSV file for the zip entry
+	csvFileName := filepath.Base(csvFilePath)
+
+	// Create a new zip entry for the CSV file
+	zipEntryWriter, err := zipWriter.Create(csvFileName)
+	if err != nil {
+		return err
+	}
+
+	// Open the CSV file to read its contents
+	csvFile, err := os.Open(csvFilePath)
+	if err != nil {
+		return err
+	}
+	defer csvFile.Close()
+
+	// Copy the contents of the CSV file into the zip entry
+	if _, err := io.Copy(zipEntryWriter, csvFile); err != nil {
+		return err
+	}
+
+	// Closing the zip writer ensures all data is flushed to zipFile
+	return zipWriter.Close()
 }

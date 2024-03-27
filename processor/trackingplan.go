@@ -146,6 +146,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.Transf
 	metadata := transformerEvent.Metadata
 	commonMetaData := transformer.Metadata{
 		SourceID:        metadata.SourceID,
+		SourceName:      metadata.SourceName,
 		SourceType:      metadata.SourceType,
 		SourceCategory:  metadata.SourceCategory,
 		WorkspaceID:     metadata.WorkspaceID,

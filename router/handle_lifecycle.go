@@ -118,8 +118,10 @@ func (rt *Handle) Setup(
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
-
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout)
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
+		backendConfig, rt.reloadableConfig.oauthV2Enabled,
+		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
+	)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
@@ -307,6 +309,8 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, "Router.pickupFlushInterval")
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, "Router.failingJobsPenaltySleep")
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, "Router.failingJobsPenaltyThreshold")
+	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, "Router."+rt.destType+".oauthV2Enabled", "Router.oauthV2Enabled")
+	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, "Router."+rt.destType+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff")
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",

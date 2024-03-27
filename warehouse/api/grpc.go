@@ -208,6 +208,7 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 		DestinationID:   request.DestinationId,
 		DestinationType: request.DestinationType,
 		Status:          request.Status,
+		WorkspaceID:     request.WorkspaceId,
 	}
 
 	var uploadInfos []model.UploadInfo
@@ -281,7 +282,8 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 	}
 
 	uploadInfos, _, err := g.uploadRepo.SyncsInfoForMultiTenant(ctx, 1, 0, model.SyncUploadOptions{
-		UploadID: request.UploadId,
+		UploadID:    request.UploadId,
+		WorkspaceID: request.WorkspaceId,
 	})
 	if err != nil {
 		return &proto.WHUploadResponse{},

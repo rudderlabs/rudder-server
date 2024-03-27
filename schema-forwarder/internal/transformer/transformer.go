@@ -78,7 +78,7 @@ func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, e
 	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
 		return nil, fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
 	}
-	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
+	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, []byte("{}"), job.WorkspaceId, job.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

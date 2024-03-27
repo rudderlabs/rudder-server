@@ -12,10 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +21,11 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/golang/mock/gomock"
+	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -32,6 +33,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -309,21 +311,6 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, codes.NotFound, statusError.Code())
 					require.Equal(t, "no sync found for id 1001", statusError.Message())
 				})
-
-				t.Run("unauthorized", func(t *testing.T) {
-					res, err := grpcClient.GetWHUpload(ctx, &proto.WHUploadRequest{
-						UploadId:    1,
-						WorkspaceId: unusedWorkspaceID,
-					})
-					require.Error(t, err)
-					require.Empty(t, res)
-
-					statusError, ok := status.FromError(err)
-					require.True(t, ok)
-					require.Equal(t, codes.Unauthenticated, statusError.Code())
-					require.Equal(t, "unauthorized request", statusError.Message())
-				})
-
 				t.Run("success", func(t *testing.T) {
 					res, err := grpcClient.GetWHUpload(ctx, &proto.WHUploadRequest{
 						UploadId:    1,
@@ -342,7 +329,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, firstEventAt.UTC(), res.GetFirstEventAt().AsTime().UTC())
 					require.EqualValues(t, lastEventAt.UTC(), res.GetLastEventAt().AsTime().UTC())
 					require.EqualValues(t, now.UTC(), res.GetNextRetryTime().AsTime().UTC())
-					require.EqualValues(t, now.Sub(time.Time{})/time.Second, res.GetDuration())
+					require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), res.GetDuration())
 					require.NotEmpty(t, res.GetTables())
 					require.False(t, res.GetIsArchivedUpload())
 					require.EqualValues(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
@@ -355,7 +342,7 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, "{}", table.GetError())
 						require.Empty(t, table.GetLastExecAt().AsTime().UTC())
 						require.Zero(t, table.GetCount())
-						require.EqualValues(t, now.Sub(time.Time{})/time.Second, table.GetDuration())
+						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), table.GetDuration())
 					}
 				})
 			})
@@ -420,7 +407,7 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, firstEventAt.UTC(), upload.GetFirstEventAt().AsTime().UTC())
 						require.EqualValues(t, lastEventAt.UTC(), upload.GetLastEventAt().AsTime().UTC())
 						require.EqualValues(t, now.UTC(), upload.GetNextRetryTime().AsTime().UTC())
-						require.EqualValues(t, now.Sub(time.Time{})/time.Second, upload.GetDuration())
+						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), upload.GetDuration())
 						require.Empty(t, upload.GetTables())
 						require.False(t, upload.GetIsArchivedUpload())
 					}

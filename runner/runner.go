@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
@@ -59,13 +60,9 @@ var (
 // ReleaseInfo holds the release information
 type ReleaseInfo struct {
 	Version         string
-	Major           string
-	Minor           string
-	Patch           string
 	Commit          string
 	BuildDate       string
 	BuiltBy         string
-	GitURL          string
 	EnterpriseToken string
 }
 
@@ -79,36 +76,18 @@ type Runner struct {
 	enableSuppressUserFeature bool
 	logger                    logger.Logger
 	appHandler                apphandlers.AppHandler
-	readTimeout               time.Duration
-	readHeaderTimeout         time.Duration
-	writeTimeout              time.Duration
-	idleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
-	maxHeaderBytes            int
 }
 
 // New creates and initializes a new Runner
 func New(releaseInfo ReleaseInfo) *Runner {
-	getConfigDuration := func(defaultValueInTimescaleUnits int64, timeScale time.Duration, keys ...string) time.Duration {
-		for i, key := range keys {
-			if config.IsSet(key) || i == len(keys)-1 {
-				return config.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
-			}
-		}
-		return 0
-	}
 	return &Runner{
 		appType:                   strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED)),
 		releaseInfo:               releaseInfo,
 		logger:                    logger.NewLogger().Child("runner"),
 		warehouseMode:             config.GetString("Warehouse.mode", "embedded"),
 		enableSuppressUserFeature: config.GetBool("Gateway.enableSuppressUserFeature", true),
-		readTimeout:               getConfigDuration(0, time.Second, "ReadTimeOut", "ReadTimeOutInSec"),
-		readHeaderTimeout:         getConfigDuration(0, time.Second, "ReadHeaderTimeout", "ReadHeaderTimeoutInSec"),
-		writeTimeout:              getConfigDuration(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"),
-		idleTimeout:               getConfigDuration(720, time.Second, "IdleTimeout", "IdleTimeoutInSec"),
 		gracefulShutdownTimeout:   config.GetDuration("GracefulShutdownTimeout", 15, time.Second),
-		maxHeaderBytes:            config.GetInt("MaxHeaderBytes", 524288),
 	}
 }
 
@@ -183,13 +162,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		stats.GaugeType,
 		stats.Tags{
 			"version":            r.releaseInfo.Version,
-			"major":              r.releaseInfo.Major,
-			"minor":              r.releaseInfo.Minor,
-			"patch":              r.releaseInfo.Patch,
 			"commit":             r.releaseInfo.Commit,
 			"buildDate":          r.releaseInfo.BuildDate,
 			"builtBy":            r.releaseInfo.BuiltBy,
-			"gitUrl":             r.releaseInfo.GitURL,
 			"TransformerVersion": transformer.GetVersion(),
 		}).Gauge(1)
 
@@ -345,13 +320,9 @@ func runAllInit() {
 func (r *Runner) versionInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"Version":            r.releaseInfo.Version,
-		"Major":              r.releaseInfo.Major,
-		"Minor":              r.releaseInfo.Minor,
-		"Patch":              r.releaseInfo.Patch,
 		"Commit":             r.releaseInfo.Commit,
 		"BuildDate":          r.releaseInfo.BuildDate,
 		"BuiltBy":            r.releaseInfo.BuiltBy,
-		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
 		"Features":           info.ServerComponent.Features,
 	}
