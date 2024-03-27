@@ -1,0 +1,21 @@
+on: pull_request
+
+name: bump-versions
+jobs:
+  bump-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+      - name: Checkout
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+      - name: Edit file
+        run: sed -i -E "s,(version += \")[^\"]*(\"),\1${{ steps.extract_branch.outputs.branch }}\2," main.go
+      - name: Commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git add . && git commit --amend --no-edit

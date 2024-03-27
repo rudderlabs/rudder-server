@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	version                                     = "Not an official release. Get the latest release from the github repo."
-	commit, buildDate, builtBy, enterpriseToken string
+	version                  = ""
+	commit                   = ""
+	buildDate                = ""
+	builtBy, enterpriseToken string
 )
 
 func main() {
