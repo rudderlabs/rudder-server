@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.22.1](https://github.com/rudderlabs/rudder-server/compare/v1.22.0...v1.22.1) (2024-03-20)
+
+
+### Bug Fixes
+
+* optimise WH Syncs page query ([#4507](https://github.com/rudderlabs/rudder-server/issues/4507)) ([e0de4b3](https://github.com/rudderlabs/rudder-server/commit/e0de4b3e8390a6541d3f2c5d8eac8144349ce766))
+
+## [1.22.0](https://github.com/rudderlabs/rudder-server/compare/v1.21.1...v1.22.0) (2024-03-19)
+
+
+### Bug Fixes
+
+* decrease async destination pending events ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* destType issue in eloqua stats ([#4475](https://github.com/rudderlabs/rudder-server/issues/4475)) ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **eloqua:** destType issue ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* too many connections in router transform ([#4492](https://github.com/rudderlabs/rudder-server/issues/4492)) ([3da9179](https://github.com/rudderlabs/rudder-server/commit/3da917936c77316f24c335f8f4d5d26810d44b73))
+
+
+### Miscellaneous
+
+* **deps:** bump github.com/bugsnag/bugsnag-go/v2 from 2.2.1 to 2.3.0 ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump github.com/marcboeker/go-duckdb from 1.5.6 to 1.6.1 ([#4469](https://github.com/rudderlabs/rudder-server/issues/4469)) ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump github.com/marcboeker/go-duckdb from 1.5.6 to 1.6.1 ([#4469](https://github.com/rudderlabs/rudder-server/issues/4469)) ([5438a85](https://github.com/rudderlabs/rudder-server/commit/5438a857e1868fce728dcab5ed3bc11614dcfef7))
+* **deps:** bump github.com/prometheus/client_model from 0.5.0 to 0.6.0 ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump github.com/prometheus/client_model from 0.5.0 to 0.6.0 ([#4448](https://github.com/rudderlabs/rudder-server/issues/4448)) ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump github.com/tidwall/gjson from 1.17.0 to 1.17.1 ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump github.com/tidwall/gjson from 1.17.0 to 1.17.1 ([#4449](https://github.com/rudderlabs/rudder-server/issues/4449)) ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump google.golang.org/grpc from 1.61.0 to 1.62.1 ([#4454](https://github.com/rudderlabs/rudder-server/issues/4454)) ([6baa913](https://github.com/rudderlabs/rudder-server/commit/6baa913423408cd90e37367dda1458d474330704))
+* **deps:** bump google.golang.org/protobuf from 1.32.0 to 1.33.0 ([#4474](https://github.com/rudderlabs/rudder-server/issues/4474)) ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+* **deps:** bump google.golang.org/protobuf from 1.32.0 to 1.33.0 ([#4474](https://github.com/rudderlabs/rudder-server/issues/4474)) ([66dcdb6](https://github.com/rudderlabs/rudder-server/commit/66dcdb6556882ce95b75b56c08380b2ef24eed91))
+* fix databricks merge query ([#4471](https://github.com/rudderlabs/rudder-server/issues/4471)) ([b17cd48](https://github.com/rudderlabs/rudder-server/commit/b17cd48c6f3eb8956e1f4b7539f6d933789dfb8b))
+* forcing major release  1.22.0 ([2065907](https://github.com/rudderlabs/rudder-server/commit/20659072faf67e8a526d4a7abda75f5ab0a736fc))
+* go-kit bump 0.20.2 -&gt; 0.23.2 ([#4459](https://github.com/rudderlabs/rudder-server/issues/4459)) ([f4185e2](https://github.com/rudderlabs/rudder-server/commit/f4185e29d03aeaf4353d06b78fa39b5f2ba98a19))
+* sending blank event to event schemas ([#4484](https://github.com/rudderlabs/rudder-server/issues/4484)) ([858c251](https://github.com/rudderlabs/rudder-server/commit/858c251aaf0b8ea313beaa6f351b1b2c59e6c1dc))
+* vacuum reports table when size &gt; 5GB ([229e9d3](https://github.com/rudderlabs/rudder-server/commit/229e9d3bd4670051822effccb67337defc270daf))
+
 ## [1.21.1](https://github.com/rudderlabs/rudder-server/compare/v1.21.0...v1.21.1) (2024-03-14)
 
 

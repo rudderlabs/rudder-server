@@ -158,6 +158,15 @@ func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	return edr.syncers[syncerKey]
 }
 
+func shouldReport(metric *types.PUReportedMetric) bool {
+	switch {
+	case metric.StatusDetail.StatusCode >= http.StatusBadRequest, metric.StatusDetail.StatusCode == types.FilterEventCode, metric.StatusDetail.StatusCode == types.SuppressEventCode:
+		return true
+	default:
+		return false
+	}
+}
+
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	edr.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
@@ -173,6 +182,10 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
+		if !shouldReport(metric) {
+			continue
+		}
+
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)

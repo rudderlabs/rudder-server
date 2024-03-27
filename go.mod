@@ -1,8 +1,8 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.21
+go 1.22
 
-toolchain go1.21.3
+toolchain go1.22.1
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -40,7 +40,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.12.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.50.38
+	github.com/aws/aws-sdk-go v1.51.6
 	github.com/bugsnag/bugsnag-go/v2 v2.3.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
