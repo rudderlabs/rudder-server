@@ -3180,12 +3180,16 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		jobdDBMaxRetries.Load(),
 		func(ctx context.Context) error {
 			metric.Instance.Reset()
+			g, ctx := errgroup.WithContext(ctx)
 			for tablePrefix, db := range dbs {
-				if err := db.GetPileUpCounts(ctx); err != nil {
-					return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
-				}
+				g.Go(func() error {
+					if err := db.GetPileUpCounts(ctx); err != nil {
+						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
+					}
+					return nil
+				})
 			}
-			return nil
+			return g.Wait()
 		}, func(attempt int) {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Increment()
