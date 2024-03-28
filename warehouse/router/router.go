@@ -11,36 +11,31 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/lib/pq"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
 	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -248,7 +243,6 @@ func New(
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
-
 	return r, nil
 }
 
