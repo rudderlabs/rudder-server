@@ -11,7 +11,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -30,10 +29,10 @@ func (r *Router) CronTracker(ctx context.Context) error {
 		r.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {
-			b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-			err := backoff.RetryNotify(func() error {
+			b := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 5), ctx)
+			err := backoff.Retry(func() error {
 				return r.Track(ctx, &warehouse, r.conf)
-			}, b, func(err error, t time.Duration) {})
+			}, b)
 			if err != nil {
 				r.logger.Errorn(
 					"cron tracker failed for",
@@ -41,6 +40,7 @@ func (r *Router) CronTracker(ctx context.Context) error {
 					obskit.DestinationID(warehouse.Destination.ID),
 					obskit.Error(err),
 				)
+				break
 			}
 		}
 
@@ -181,9 +181,9 @@ func (r *Router) Track(
 	if !exists {
 		r.logger.Warnn("pending staging files not picked",
 			obskit.SourceID(source.ID),
-			logger.NewField("sourceType", source.SourceDefinition.Name),
+			obskit.SourceType(source.SourceDefinition.Name),
 			obskit.DestinationID(destination.ID),
-			logger.NewField("destinationType", destination.DestinationDefinition.Name),
+			obskit.DestinationType(destination.DestinationDefinition.Name),
 			obskit.WorkspaceID(warehouse.WorkspaceID),
 		)
 
