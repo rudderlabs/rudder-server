@@ -108,6 +108,7 @@ type Router struct {
 		mainLoopSleep                     misc.ValueLoader[time.Duration]
 		stagingFilesBatchSize             misc.ValueLoader[int]
 		warehouseSyncFreqIgnore           misc.ValueLoader[bool]
+		cronTrackerRetries                misc.ValueLoader[int64]
 	}
 
 	stats struct {
@@ -201,6 +202,7 @@ func New(
 	r.config.stagingFilesBatchSize = r.conf.GetReloadableIntVar(960, 1, "Warehouse.stagingFilesBatchSize")
 	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
 	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
+	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 
 	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 		"destType": r.destType,
