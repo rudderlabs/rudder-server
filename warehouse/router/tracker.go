@@ -8,18 +8,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouses
+// CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouse
 // we pick the staging file which is oldest within the range NOW() - 2 * syncFrequency and NOW() - 3 * syncFrequency
 func (r *Router) CronTracker(ctx context.Context) error {
 	for {
@@ -28,15 +30,16 @@ func (r *Router) CronTracker(ctx context.Context) error {
 		r.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {
-			if err := r.Track(ctx, &warehouse, r.conf); err != nil {
-				if ctx.Err() != nil {
-					return nil //nolint:nilerr
-				}
-				return fmt.Errorf(
-					"cron tracker failed for source: %s, destination: %s with error: %w",
-					warehouse.Source.ID,
-					warehouse.Destination.ID,
-					err,
+			b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+			err := backoff.RetryNotify(func() error {
+				return r.Track(ctx, &warehouse, r.conf)
+			}, b, func(err error, t time.Duration) {})
+			if err != nil {
+				r.logger.Errorn(
+					"cron tracker failed for",
+					obskit.SourceID(warehouse.Source.ID),
+					obskit.DestinationID(warehouse.Destination.ID),
+					obskit.Error(err),
 				)
 			}
 		}
@@ -117,7 +120,7 @@ func (r *Router) Track(
 				  created_at > %[2]s - $3 * INTERVAL '1 MIN' AND
 				  created_at < %[2]s - $4 * INTERVAL '1 MIN'
 				ORDER BY
-				  created_at DESC
+				  id DESC
 				LIMIT
 				  1;
 				`,
@@ -176,12 +179,12 @@ func (r *Router) Track(
 	}
 
 	if !exists {
-		r.logger.Warnw("pending staging files not picked",
-			logfield.SourceID, source.ID,
-			logfield.SourceType, source.SourceDefinition.Name,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, warehouse.WorkspaceID,
+		r.logger.Warnn("pending staging files not picked",
+			obskit.SourceID(source.ID),
+			logger.NewField("sourceType", source.SourceDefinition.Name),
+			obskit.DestinationID(destination.ID),
+			logger.NewField("destinationType", destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(warehouse.WorkspaceID),
 		)
 
 		trackUploadMissingStat.Gauge(1)
