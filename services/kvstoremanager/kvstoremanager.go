@@ -11,6 +11,7 @@ type KVStoreManager interface {
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	HSet(key, field string, value interface{}) error
+	HDel(key string, fields ...string) error
 	StatusCode(err error) int
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
@@ -26,6 +27,7 @@ const (
 	hashPath  = "message.hash"
 	keyPath   = "message.key"
 	valuePath = "message.value"
+	actionPath = "message.action"
 )
 
 func New(provider string, config map[string]interface{}) (m KVStoreManager) {
@@ -67,10 +69,12 @@ func IsHSETCompatibleEvent(jsonData json.RawMessage) bool {
 	return gjson.GetBytes(jsonData, hashPath).Exists() && gjson.GetBytes(jsonData, keyPath).Exists() && gjson.GetBytes(jsonData, valuePath).Exists()
 }
 
-func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string) {
+func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string, action string) {
 	hash = gjson.GetBytes(jsonData, hashPath).String()
 	key = gjson.GetBytes(jsonData, keyPath).String()
 	value = gjson.GetBytes(jsonData, valuePath).String()
+	action = gjson.GetBytes(jsonData, actionPath).String()
 
-	return hash, key, value
+	return hash, key, value, action
 }
+
