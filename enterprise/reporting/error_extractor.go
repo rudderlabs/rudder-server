@@ -32,49 +32,68 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", errorKey, "error_message"}
-	deprecationKeywords     = map[string]int{
-		"deprecated":               2,
-		"deprecation":              2,
-		"version":                  1,
-		"obsolete":                 1,
-		"outdated":                 1,
-		"end of life":              4,
-		"legacy":                   1,
-		"discontinued":             1,
-		"retired":                  2,
-		"no longer supported":      3,
-		"old version":              1,
-		"deprecated software":      2,
-		"upgrade required":         2,
-		"obsolete version":         1,
-		"unsupported version":      2,
-		"deprecated feature":       2,
-		"version no longer valid":  2,
-		"deprecated library":       2,
-		"version upgrade":          2,
-		"deprecated component":     2,
-		"upgrade recommended":      2,
-		"end-of-support":           3,
-		"discontinued product":     1,
-		"deprecated functionality": 2,
-		"version obsolescence":     1,
-		"deprecated module":        2,
+
+	deprecationKeywords = map[string]float64{
+		"end-of-life":                 3,
+		"end of life":                 3,
+		"no longer supported":         3,
+		"end-of-support":              3,
+		"deprecated functionality":    3,
+		"unsupported version":         3,
+		"version upgrade recommended": 3,
+		"retired":                     2,
+		"API retirement":              2,
+		"feature removal":             2,
+		"migration required":          2,
+		"upgrade mandatory":           2,
+		"security vulnerability":      2,
+		"deprecated":                  2,
+		"deprecation":                 2,
+		"deprecated software":         2,
+		"upgrade required":            2,
+		"deprecated feature":          2,
+		"version no longer valid":     2,
+		"deprecated library":          2,
+		"version upgrade":             2,
+		"deprecated component":        2,
+		"upgrade recommended":         2,
+		"discontinued":                1,
+		"obsolete":                    1,
+		"outdated":                    1,
+		"old version":                 1,
+		"discontinued product":        1,
+		"version obsolescence":        1,
+		"deprecated module":           1,
+		"incompatible version":        1,
+		"version":                     0.5,
+		"upgrade":                     0.5,
+		"update":                      0.5,
+		"new version":                 0.5,
+		"latest version":              0.5,
+		"improved version":            0.5,
+		// Negation terms
+		"not deprecated":           -1,
+		"still supported":          -1,
+		"actively maintained":      -1,
+		"compatible version":       -1,
+		"no migration required":    -1,
+		"security patch available": -1,
 	}
 )
 
-var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ int, key string) string {
+var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ float64, key string) string {
 	return strings.ToLower(key)
 })
 
 type ExtractorHandle struct {
 	log                              logger.Logger
 	ErrorMessageKeys                 []string // the keys where in we may have error message
-	versionDeprecationThresholdScore misc.ValueLoader[int]
+	versionDeprecationThresholdScore misc.ValueLoader[float64]
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	versionDepThreshold := config.GetReloadableIntVar(1, 1, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
+	versionDepThreshold := config.GetReloadableFloat64Var(1.0, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
@@ -294,7 +313,7 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 
 func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
 	// version deprecation logic
-	var score int
+	var score float64
 	var errorCode string
 
 	errorMessage = strings.ToLower(errorMessage)
