@@ -2,30 +2,58 @@ name: builds
 
 on:
   release:
-    types: [created]
+    types: [ created ]
   push:
     branches:
       - master
       - main
   pull_request:
 
+env:
+  docker_oss_images: |
+    name=rudderlabs/develop-rudder-server
+    name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+  docker_oss_tags: |
+    type=ref,event=branch
+    type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+    type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+    type=raw,value=${{ github.head_ref }}
+    type=semver,pattern={{version}}
+    type=semver,pattern={{major}}.{{minor}}
+    type=semver,pattern={{major}}
+
 jobs:
-  docker-oss:
+  echo-env:
     runs-on: ubuntu-latest
-    outputs:
-      tags: ${{ steps.meta.outputs.tags }}
     steps:
-      -
-        name: Checkout
+      - name: Echo
+        run: |
+          echo ${docker_oss_tags}
+          echo ${docker_oss_images}
+  docker-oss:
+    needs: [ echo-env ]
+    strategy:
+      matrix:
+        build-config:
+          - os: [ self-hosted, Linux, ARM64 ]
+            arch: arm64
+          - os: ubuntu-latest
+            arch: arm64
+    outputs:
+      ${{ matrix.build-config.arch }}_tags: ${{ steps.meta.outputs.tags }}
+    runs-on: ${{matrix.build-config.os}}
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
-      -
-        name: Docker meta
+      - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             name=rudderlabs/develop-rudder-server
             name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+          flavor: |
+            suffix=${{matrix.build-config.arch}},onlatest=true
           tags: |
             type=ref,event=branch
             type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
@@ -34,18 +62,15 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-      -
-        name: Login to DockerHub
+      - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
-          # platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -54,58 +79,14 @@ jobs:
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
-  docker-oss-arm64:
-    runs-on: [self-hosted, Linux, ARM64]
-    outputs:
-      tags: ${{ steps.meta.outputs.tags }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: rudderlabs
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            name=rudderlabs/develop-rudder-server
-            name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
-          tags: |
-            type=ref,event=branch
-            type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-            type=raw,value=${{ github.head_ref }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}-arm64
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
-            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}-arm64
-            COMMIT_HASH=${{ github.sha }}
-            REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
   docker-ent:
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
     steps:
-      -
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v4
-      -
-        name: Docker meta
+      - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -119,14 +100,12 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-      -
-        name: Login to DockerHub
+      - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -157,7 +136,7 @@ jobs:
   docker-ent-arm64:
     outputs:
       tags: ${{ steps.meta.outputs.tags }}-arm64
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [ self-hosted, Linux, ARM64 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -201,11 +180,9 @@ jobs:
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
     steps:
-      -
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v4
-      -
-        name: Docker meta
+      - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -219,14 +196,12 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-      -
-        name: Login to DockerHub
+      - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -240,7 +215,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
   docker-suppression-backup-service-arm64:
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [ self-hosted, Linux, ARM64 ]
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
     steps:
@@ -282,8 +257,11 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
   create-manifest:
+    strategy:
+      matrix:
+        needs: [ docker-oss ]
     runs-on: ubuntu-latest
-    needs: [ docker-ent-arm64, docker-ent ]
+    needs: [ docker-oss ]
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.0.0
@@ -292,6 +270,12 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.docker_oss_images }}
+          tags: ${{ env.docker_oss_tags }}
       - name: Create multi-arch manifest for enterprise
         run: |
-          docker buildx imagetools create -t ${{ needs.docker-ent.outputs.tags }} ${{ needs.docker-ent-arm64.outputs.tags }} ${{ needs.docker-ent.outputs.tags }}-amd64
+          docker buildx imagetools create -t ${{ env.docker_oss_tags }} ${{ needs.${{matrix.needs}}.outputs.arm64_tags }} ${{ needs.${{matrix.needs}}.outputs.amd64_tags }}
