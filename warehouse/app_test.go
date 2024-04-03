@@ -8,14 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/hashicorp/yamux"
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/golang/mock/gomock"
+	"github.com/hashicorp/yamux"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -86,8 +87,6 @@ func TestApp(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			subTestCases := []struct {
 				name        string
 				runningMode string
@@ -103,8 +102,6 @@ func TestApp(t *testing.T) {
 			}
 
 			for _, subTC := range subTestCases {
-				subTC := subTC
-
 				t.Run(tc.name+" with "+subTC.name, func(t *testing.T) {
 					pgResource, err := postgres.Setup(pool, t)
 					require.NoError(t, err)
@@ -293,7 +290,7 @@ func TestApp(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		ctx := context.Background()
+		ctx, cancel := context.WithCancel(context.Background())
 
 		c := config.New()
 		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
@@ -365,7 +362,8 @@ func TestApp(t *testing.T) {
 
 		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
-		require.NoError(t, a.monitorDestRouters(ctx))
+		cancel()
+		require.Contains(t, a.monitorDestRouters(ctx).Error(), "reset in progress: context canceled")
 	})
 	t.Run("rudder core recovery mode", func(t *testing.T) {
 		db.CurrentMode = "degraded"

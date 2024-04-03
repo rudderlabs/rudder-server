@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -105,13 +107,11 @@ func TestRouter(t *testing.T) {
 		)
 		backendConfigManager := bcm.New(config.New(), db, tenantManager, logger.NOP, stats.NOP)
 
-		ctx, cancel := context.WithCancel(ctx)
+		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
-
 		ef := encoding.NewFactory(config.New())
 
-		r, err := New(
-			ctx,
+		r := New(
 			&reporting.NOOP{},
 			destinationType,
 			config.New(),
@@ -126,10 +126,7 @@ func TestRouter(t *testing.T) {
 			triggerStore,
 			createUploadAlways,
 		)
-		require.NoError(t, err)
-
-		cancel()
-		require.NoError(t, r.Shutdown())
+		_ = r.Start(ctx)
 	})
 
 	t.Run("CreateJobs", func(t *testing.T) {
@@ -500,7 +497,6 @@ func TestRouter(t *testing.T) {
 		r.triggerStore = &sync.Map{}
 		r.createUploadAlways = &atomic.Bool{}
 		r.scheduledTimesCache = make(map[string][]int)
-		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
 
@@ -784,7 +780,7 @@ func TestRouter(t *testing.T) {
 		require.Empty(t, r.getInProgressNamespaces())
 
 		go func() {
-			r.runUploadJobAllocator(ctx)
+			_ = r.runUploadJobAllocator(ctx)
 		}()
 
 		t.Run("upload job allocator", func(t *testing.T) {
@@ -917,7 +913,7 @@ func TestRouter(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			go func() {
-				r.runUploadJobAllocator(ctx)
+				_ = r.runUploadJobAllocator(ctx)
 
 				close(closeCh)
 			}()
@@ -1112,6 +1108,7 @@ func TestRouter(t *testing.T) {
 		}))
 
 		ctx, cancel := context.WithCancel(context.Background())
+		g, _ := errgroup.WithContext(ctx)
 		defer cancel()
 
 		warehouse := model.Warehouse{
@@ -1197,6 +1194,7 @@ func TestRouter(t *testing.T) {
 		r.triggerStore = &sync.Map{}
 		r.createUploadAlways = &atomic.Bool{}
 		r.scheduledTimesCache = make(map[string][]int)
+		r.backgroundGroup = g
 
 		go func() {
 			r.bcManager.Start(ctx)

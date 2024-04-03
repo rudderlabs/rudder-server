@@ -58,8 +58,6 @@ type Router struct {
 	triggerStore       *sync.Map
 	createUploadAlways createUploadAlwaysLoader
 
-	isEnabled atomic.Bool
-
 	logger       logger.Logger
 	conf         *config.Config
 	statsFactory stats.Stats
@@ -84,10 +82,7 @@ type Router struct {
 	now               func() time.Time
 	nowSQL            string
 
-	stopService func()
-
-	backgroundGroup errgroup.Group
-	backgroundWait  func() error
+	backgroundGroup *errgroup.Group
 
 	tenantManager    *multitenant.Manager
 	bcManager        *bcm.BackendConfigManager
@@ -123,7 +118,6 @@ type Router struct {
 }
 
 func New(
-	ctx context.Context,
 	reporting types.Reporting,
 	destType string,
 	conf *config.Config,
@@ -137,7 +131,7 @@ func New(
 	encodingFactory *encoding.Factory,
 	triggerStore *sync.Map,
 	createUploadAlways createUploadAlwaysLoader,
-) (*Router, error) {
+) *Router {
 	r := &Router{}
 
 	r.conf = conf
@@ -160,12 +154,6 @@ func New(
 	r.createJobMarkerMap = make(map[string]time.Time)
 	r.createUploadAlways = createUploadAlways
 	r.scheduledTimesCache = make(map[string][]int)
-
-	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
-		return nil, err
-	}
-
-	r.Enable()
 	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
 	r.uploadJobFactory = UploadJobFactory{
@@ -187,65 +175,32 @@ func New(
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 
-	whName := warehouseutils.WHDestNameMap[destType]
+	r.loadReloadableConfig(warehouseutils.WHDestNameMap[destType])
+	r.loadStats()
+	return r
+}
 
-	r.config.maxConcurrentUploadJobs = r.conf.GetIntVar(1, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
-	r.config.waitForWorkerSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
-	r.config.uploadAllocatorSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
-	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
-	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
-	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
-	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")
-	r.config.noOfWorkers = r.conf.GetReloadableIntVar(8, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
-	r.config.maxParallelJobCreation = r.conf.GetReloadableIntVar(8, 1, "Warehouse.maxParallelJobCreation")
-	r.config.mainLoopSleep = r.conf.GetReloadableDurationVar(5, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
-	r.config.stagingFilesBatchSize = r.conf.GetReloadableIntVar(960, 1, "Warehouse.stagingFilesBatchSize")
-	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
-	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
-	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
-
-	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
-		"destType": r.destType,
-	})
-	r.stats.processingAvailableWorkersStat = r.statsFactory.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
-		"destType": r.destType,
-	})
-	r.stats.processingPickupLagStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
-		"destType": r.destType,
-	})
-	r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
-		"destType": r.destType,
-	})
-
-	r.stats.schedulerWarehouseLengthStat = r.statsFactory.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
-		"destinationType": r.destType,
-	})
-	r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
-		"destinationType": r.destType,
-	})
-
-	ctx, cancel := context.WithCancel(ctx)
-	g, gCtx := errgroup.WithContext(ctx)
-
-	r.stopService = cancel
-	r.backgroundWait = g.Wait
-
+func (r *Router) Start(ctx context.Context) error {
+	g, _ := errgroup.WithContext(ctx)
+	r.backgroundGroup = g
+	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
+		return err
+	}
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.backendConfigSubscriber(gCtx)
+		r.backendConfigSubscriber(ctx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.runUploadJobAllocator(gCtx)
+		return r.runUploadJobAllocator(ctx)
+	}))
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		r.mainLoop(ctx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.mainLoop(gCtx)
-		return nil
+		return r.CronTracker(ctx)
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.CronTracker(gCtx)
-	}))
-	return r, nil
+	return g.Wait()
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
@@ -388,7 +343,7 @@ func (r *Router) checkInProgressMap(jobID int64, identifier string) (int, bool) 
 	return 0, false
 }
 
-func (r *Router) runUploadJobAllocator(ctx context.Context) {
+func (r *Router) runUploadJobAllocator(ctx context.Context) error {
 loop:
 	for {
 		select {
@@ -422,8 +377,7 @@ loop:
 				break loop
 			default:
 				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
-
-				panic(err)
+				return err
 			}
 		}
 
@@ -449,6 +403,7 @@ loop:
 		close(workerChannel)
 	}
 	r.workerChannelMapLock.RUnlock()
+	return nil
 }
 
 func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
@@ -534,15 +489,6 @@ func (r *Router) processingStats(availableWorkers int, jobStats model.UploadJobs
 
 func (r *Router) mainLoop(ctx context.Context) {
 	for {
-		if !r.isEnabled.Load() {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(r.config.mainLoopSleep.Load()):
-			}
-			continue
-		}
-
 		jobCreationChan := make(chan struct{}, r.config.maxParallelJobCreation.Load())
 
 		r.configSubscriberLock.RLock()
@@ -748,17 +694,41 @@ func (r *Router) updateCreateJobMarker(warehouse model.Warehouse, lastProcessedT
 	r.createJobMarkerMap[warehouse.Identifier] = lastProcessedTime
 }
 
-// Enable enables a router :)
-func (r *Router) Enable() {
-	r.isEnabled.Store(true)
+func (r *Router) loadReloadableConfig(whName string) {
+	r.config.maxConcurrentUploadJobs = r.conf.GetIntVar(1, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
+	r.config.waitForWorkerSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
+	r.config.uploadAllocatorSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
+	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
+	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
+	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")
+	r.config.noOfWorkers = r.conf.GetReloadableIntVar(8, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	r.config.maxParallelJobCreation = r.conf.GetReloadableIntVar(8, 1, "Warehouse.maxParallelJobCreation")
+	r.config.mainLoopSleep = r.conf.GetReloadableDurationVar(5, time.Second, "Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS")
+	r.config.stagingFilesBatchSize = r.conf.GetReloadableIntVar(960, 1, "Warehouse.stagingFilesBatchSize")
+	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
+	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
+	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 }
 
-// Disable disables a router:)
-func (r *Router) Disable() {
-	r.isEnabled.Store(false)
-}
+func (r *Router) loadStats() {
+	r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
+		"destType": r.destType,
+	})
+	r.stats.processingAvailableWorkersStat = r.statsFactory.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+		"destType": r.destType,
+	})
+	r.stats.processingPickupLagStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+		"destType": r.destType,
+	})
+	r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+		"destType": r.destType,
+	})
 
-func (r *Router) Shutdown() error {
-	r.stopService()
-	return r.backgroundWait()
+	r.stats.schedulerWarehouseLengthStat = r.statsFactory.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
+		"destinationType": r.destType,
+	})
+	r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
+		"destinationType": r.destType,
+	})
 }
