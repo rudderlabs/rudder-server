@@ -280,7 +280,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create multi-arch manifest for Docker OSS
         run: |
-          docker buildx imagetools create -t ${{ needs.docker-oss-meta.outputs.tags }} ${{ needs.docker-oss-meta.outputs.arm64_tags }} ${{ needs.docker-oss-meta.outputs.amd64_tags }}
+          while read -r tag; do
+            echo "$tag"
+
+            arm_tag=$(echo "${{ needs.docker-oss-meta.outputs.arm64_tags }}" | grep "$tag")
+
+            amd_tag=$(echo "${{ needs.docker-oss-meta.outputs.amd64_tags }}" | grep "$tag")
+
+            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+
+          done <<< "${{ needs.docker-oss-meta.outputs.tags }}"
   create-manifest-docker-ent:
     runs-on: ubuntu-latest
     needs: [ docker-ent, docker-ent-meta ]
@@ -294,7 +303,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create multi-arch manifest for Docker ENT
         run: |
-          docker buildx imagetools create -t ${{ needs.docker-ent-meta.outputs.tags }} ${{ needs.docker-ent-meta.outputs.arm64_tags }} ${{ needs.docker-ent-meta.outputs.amd64_tags }}
+          while read -r tag; do
+            echo "$tag"
+
+            arm_tag=$(echo "${{ needs.docker-ent-meta.outputs.arm64_tags }}" | grep "$tag")
+
+            amd_tag=$(echo "${{ needs.docker-ent-meta.outputs.amd64_tags }}" | grep "$tag")
+
+            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+
+          done <<< "${{ needs.docker-ent-meta.outputs.tags }}"
   create-manifest-docker-sbsvc:
     runs-on: ubuntu-latest
     needs: [ docker-suppression-backup-service, docker-sbsvc-meta ]
@@ -308,4 +326,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create multi-arch manifest for Docker Suppression Backup Service
         run: |
-          docker buildx imagetools create -t ${{ needs.docker-sbsvc-meta.outputs.tags }} ${{ needs.docker-sbsvc-meta.outputs.arm64_tags }} ${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}
+          while read -r tag; do
+            echo "$tag"
+
+            arm_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.arm64_tags }}" | grep "$tag")
+
+            amd_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}" | grep "$tag")
+
+            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+
+          done <<< "${{ needs.docker-sbsvc-meta.outputs.tags }}"
