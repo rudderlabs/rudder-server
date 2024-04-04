@@ -16,14 +16,23 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 type mockAdapter struct {
@@ -371,7 +380,9 @@ func TestProxyRequest(t *testing.T) {
 				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 				defer srv.Close()
 
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout)
+				isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+				expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
@@ -393,12 +404,14 @@ func TestProxyRequest(t *testing.T) {
 			srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 			defer srv.Close()
 			var tr Transformer
+			isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -468,6 +481,943 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *chi.Mux
 	return srvMux
 }
 
+type oauthV2TestCase struct {
+	description              string
+	cpResponses              []testutils.CpResponseParams
+	routerTransformResponses []types.DestinationJobT
+	inputEvents              []types.RouterJobT
+	expected                 []types.DestinationJobT
+}
+
+var oauthDests = []backendconfig.DestinationT{
+	{
+		ID:          "d1",
+		WorkspaceID: "wsp",
+		Config: map[string]interface{}{
+			"rudderAccountId": "actId",
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "SALESFORCE_OAUTH",
+			Config: map[string]interface{}{
+				"auth": map[string]interface{}{
+					"type": "OAuth",
+				},
+			},
+		},
+	},
+}
+
+var oauthV2RtTcs = []oauthV2TestCase{
+	{
+		description: "should only set the jobs with '500' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_token","refresh_token":"refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+	{
+		description: "should only set the jobs with '400' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+			},
+			// authStatus inactive http request
+			{
+				Code: 200,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+	{
+		description: "when refreshToken response is not unmarshallable(CP is not responding correctly), should only set the jobs with '500' where AuthErrorCategory is defined",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "expired_token","refresh_token":"refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     503,
+				Response: `Bad Gateway`,
+			},
+		},
+		routerTransformResponses: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 3, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 4, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+	{
+		// panic test-case
+		description: "when transformer response is not unmarshallable for quite sometime, after exhaustion of maxRetries(1) panic should happen",
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		inputEvents: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+	},
+}
+
+type mockIdentifier struct {
+	key   string
+	token string
+}
+
+func (m *mockIdentifier) ID() string                  { return m.key }
+func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
+func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
+
+func TestRouterTransformationWithOAuthV2(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+	loggerOverride = logger.NOP
+
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
+
+	for _, tc := range oauthV2RtTcs {
+		t.Run(tc.description, func(t *testing.T) {
+			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+				var err error
+				outputJson := []byte("Reset Content")
+				statusCode := http.StatusResetContent
+				if tc.routerTransformResponses != nil {
+					var b []byte
+					b, err = json.Marshal(tc.routerTransformResponses)
+					outputJson, _ = sjson.SetRawBytes([]byte(`{}`), "output", b)
+					statusCode = http.StatusOK
+				}
+				require.NoError(t, err)
+				w.WriteHeader(statusCode)
+				_, err = w.Write(outputJson)
+				require.NoError(t, err)
+			}))
+
+			cpRespProducer := &testutils.CpResponseProducer{
+				Responses: tc.cpResponses,
+			}
+
+			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
+
+			isOAuthV2EnabledLoader := misc.SingleValueLoader(true)
+			defer svr.Close()
+			defer cfgBeSvr.Close()
+			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+			config.Set("Processor.maxRetry", 1) // no retries
+
+			backendconfig.Init()
+			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
+
+			transformMsg := types.TransformMessageT{
+				Data: tc.inputEvents,
+			}
+
+			if tc.expected != nil {
+				transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMsg)
+				require.NotNil(t, transformerResponse)
+
+				for i, ex := range tc.expected {
+					require.Equalf(t, ex.Batched, transformerResponse[i].Batched, "[%i] Batched assertion failed", i)
+					require.Equalf(t, ex.Message, transformerResponse[i].Message, "[%i] Message assertion failed", i)
+					require.Equalf(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "[%i] AuthErrorCategory assertion failed", i)
+					require.Equalf(t, ex.JobMetadataArray, transformerResponse[i].JobMetadataArray, "[%i] JobMetadataArray assertion failed", i)
+					require.Equalf(t, ex.Error, transformerResponse[i].Error, "[%i] Error field assertion failed", i)
+					require.Equalf(t, ex.StatusCode, transformerResponse[i].StatusCode, "[%i] StatusCode assertion failed", i)
+				}
+				return
+			}
+			assert.Panics(t, func() { tr.Transform(ROUTER_TRANSFORM, &transformMsg) })
+		})
+	}
+}
+
+type oauthv2ProxyTcs struct {
+	description string
+	// input
+	reqPayload ProxyRequestPayload
+	destType   string
+	// should be either v0 or v1 & depending on it you need to fill up transformerProxyResponse{V0 or V1}
+	proxyVersion               string
+	transformerProxyResponseV1 ProxyResponseV1
+	transformerProxyResponseV0 ProxyResponseV0
+
+	// When to use this field: we made proxy v1 call but got proxyv0 response in such cases this field can be used
+	transformerResponse string
+	// oauth calls
+	cpResponses []testutils.CpResponseParams
+	// output
+	expected ProxyRequestResponse
+	// destination Object for preparing context
+	destination backendconfig.DestinationT
+
+	ioReadError bool
+	// load-balancer erroring out
+	lbError bool
+}
+
+var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
+	{
+		description:  "[v1proxy] when refreshToken succeeds, should have respStatus as 500, respBody should have transformer sent response",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "some message that we got from transformer",
+			AuthErrorCategory: common.CategoryRefreshToken,
+			Response: []TPDestResponse{
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         2,
+					},
+					Error: "token has expired",
+				},
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "token has expired",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys: map[int64]string{
+				1: "token has expired",
+				2: "token has expired",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"REFRESH_TOKEN","response":[{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}},{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes: map[int64]int{
+				1: 401,
+				2: 401,
+			},
+			OAuthErrorCategory: common.CategoryRefreshToken,
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when refreshToken fails with a string response body, should have respStatus as 500, respBody should have the error thrown",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "some message that we got from transformer",
+			AuthErrorCategory: common.CategoryRefreshToken,
+			Response: []TPDestResponse{
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         2,
+					},
+					Error: "token has expired",
+				},
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "token has expired",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID + "1",
+					DestinationID: oauthDests[0].ID + "1",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID + "1",
+					DestinationID: oauthDests[0].ID + "1",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     500,
+				Response: `Error occurred in downstream rudder service`, // only sample
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys: map[int64]string{
+				1: "token has expired",
+				2: "token has expired",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes: map[int64]int{
+				1: 401,
+				2: 401,
+			},
+			OAuthErrorCategory: common.CategoryRefreshToken,
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when authStatusInactive succeeds, should have respStatus as 400, respBody should have the error thrown from transformer",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "some message that we got from transformer",
+			AuthErrorCategory: common.CategoryAuthStatusInactive,
+			Response: []TPDestResponse{
+				{
+					StatusCode: 403,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   oauthDests[0].WorkspaceID,
+						DestinationID: oauthDests[0].ID,
+						JobID:         2,
+					},
+					Error: "permission is not present",
+				},
+				{
+					StatusCode: 403,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   oauthDests[0].WorkspaceID,
+						DestinationID: oauthDests[0].ID,
+						JobID:         1,
+					},
+					Error: "permission is not present",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID,
+					DestinationID: oauthDests[0].ID,
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID,
+					DestinationID: oauthDests[0].ID,
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// auth status inactive http request
+			{
+				Code:     400,
+				Response: `{"body":{"code":"ref_token_invalid_grant"}}`, // only sample
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys: map[int64]string{
+				1: "permission is not present",
+				2: "permission is not present",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
+			ProxyRequestStatusCode:   400,
+			RespStatusCodes: map[int64]int{
+				1: 403,
+				2: 403,
+			},
+			OAuthErrorCategory: common.CategoryAuthStatusInactive,
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when authStatusInactive fails, should have respStatus as 400, respBody should have the error thrown from transformer",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "some message that we got from transformer",
+			AuthErrorCategory: common.CategoryAuthStatusInactive,
+			Response: []TPDestResponse{
+				{
+					StatusCode: 403,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   oauthDests[0].WorkspaceID,
+						DestinationID: oauthDests[0].ID,
+						JobID:         2,
+					},
+					Error: "permission is not present",
+				},
+				{
+					StatusCode: 403,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   oauthDests[0].WorkspaceID,
+						DestinationID: oauthDests[0].ID,
+						JobID:         1,
+					},
+					Error: "permission is not present",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID,
+					DestinationID: oauthDests[0].ID,
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   oauthDests[0].WorkspaceID,
+					DestinationID: oauthDests[0].ID,
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// auth status inactive http request
+			{
+				Code:     500,
+				Response: `{"body":"could not complete update"}`, // only sample
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys: map[int64]string{
+				1: "permission is not present",
+				2: "permission is not present",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
+			ProxyRequestStatusCode:   400,
+			RespStatusCodes: map[int64]int{
+				1: 403,
+				2: 403,
+			},
+			OAuthErrorCategory: common.CategoryAuthStatusInactive,
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when transformer response body cannot be read, should have respStatus as 500, respBody should have transformer sent response",
+		proxyVersion: "v1",
+		ioReadError:  true,
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "some message that we got from transformer",
+			AuthErrorCategory: common.CategoryRefreshToken,
+			Response: []TPDestResponse{
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         2,
+					},
+					Error: "token has expired",
+				},
+				{
+					StatusCode: 401,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "token has expired",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `reading response body post RoundTrip: unexpected EOF`, // not full error message
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when transformer does not respond properly",
+		proxyVersion: "v1",
+		lbError:      true,
+		destType:     "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+			},
+			RespBodys:       map[int64]string{},
+			RespContentType: "text/plain; charset=utf-8",
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v0proxy] when transformer does not respond properly",
+		proxyVersion: "v0",
+		lbError:      true,
+		destType:     "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				2: false,
+			},
+			RespBodys:       map[int64]string{},
+			RespContentType: "text/plain; charset=utf-8",
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			ProxyRequestStatusCode:   500,
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:         "[v1proxy] when v1Proxy endpoint sending v0Proxy response, unmarshal should happen at proxyAdapter.getResponse level",
+		transformerResponse: `{"message": ["some other error"]}`,
+		destType:            "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "wsp",
+					DestinationID: "d1",
+					JobID:         2,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			// refresh token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
+			},
+		},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				2: false,
+			},
+			RespBodys:                map[int64]string{},
+			RespContentType:          "text/plain; charset=utf-8",
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
+			ProxyRequestStatusCode:   200, // transformer returned response
+			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+}
+
+func TestProxyRequestWithOAuthV2(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+	loggerOverride = logger.NOP
+
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
+
+	for _, tc := range oauthv2ProxyTestCases {
+		t.Run(tc.description, func(t *testing.T) {
+			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+				b := []byte("LB cannot send to transformer")
+				statusCode := http.StatusBadGateway
+				var err error
+				if tc.lbError {
+					w.WriteHeader(statusCode)
+					_, _ = w.Write(b)
+					return
+				}
+				if tc.proxyVersion == "v1" {
+					b, _ = json.Marshal(tc.transformerProxyResponseV1)
+				} else if tc.proxyVersion == "v0" {
+					b, _ = json.Marshal(tc.transformerProxyResponseV0)
+				} else {
+					b = []byte(tc.transformerResponse)
+				}
+				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)
+				if tc.ioReadError {
+					w.Header().Add("Content-Length", strconv.Itoa(len(string(outputJson))+10))
+					// return less bytes, which will result in an "unexpected EOF" from ioutil.ReadAll()
+					_, err = w.Write([]byte("a"))
+				} else {
+					_, err = w.Write(outputJson)
+				}
+
+				require.NoError(t, err)
+			}))
+
+			cpRespProducer := &testutils.CpResponseProducer{
+				Responses: tc.cpResponses,
+			}
+
+			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
+
+			isOAuthV2EnabledLoader := misc.SingleValueLoader(true)
+			defer svr.Close()
+			defer cfgBeSvr.Close()
+			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+
+			backendconfig.Init()
+			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
+
+			var adapter transformerProxyAdapter
+			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
+			if tc.proxyVersion == "v0" {
+				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
+			}
+
+			destinationInfo := &v2.DestinationInfo{
+				Config:           tc.destination.Config,
+				DefinitionConfig: tc.destination.DestinationDefinition.Config,
+				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
+				DefinitionName:   tc.destination.DestinationDefinition.Name,
+				ID:               tc.destination.DestinationDefinition.ID,
+			}
+			reqParams := &ProxyRequestParams{
+				ResponseData: tc.reqPayload,
+				DestName:     tc.destType,
+				Adapter:      adapter,
+				DestInfo:     destinationInfo,
+			}
+
+			proxyResp := tr.ProxyRequest(context.Background(), reqParams)
+
+			require.NotNil(t, proxyResp)
+			require.Equal(t, tc.expected.DontBatchDirectives, proxyResp.DontBatchDirectives)
+			require.Equal(t, tc.expected.OAuthErrorCategory, proxyResp.OAuthErrorCategory)
+			require.Equal(t, tc.expected.RespBodys, proxyResp.RespBodys)
+			require.Equal(t, tc.expected.RespStatusCodes, proxyResp.RespStatusCodes)
+			require.Equal(t, tc.expected.RespContentType, proxyResp.RespContentType)
+
+			require.Equal(t, tc.expected.ProxyRequestStatusCode, proxyResp.ProxyRequestStatusCode)
+			// Assert of ProxyRequestPayload
+			var expectedPrxResp, actualPrxResp ProxyRequestPayload
+			e1 := json.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
+			e2 := json.Unmarshal([]byte(proxyResp.ProxyRequestResponseBody), &actualPrxResp)
+			if e1 == nil && e2 == nil {
+				require.Equal(t, actualPrxResp, expectedPrxResp)
+			} else {
+				require.Contains(t, proxyResp.ProxyRequestResponseBody, tc.expected.ProxyRequestResponseBody)
+			}
+		})
+	}
+}
+
 func TestTransformNoValidationErrors(t *testing.T) {
 	initMocks(t)
 	config.Reset()
@@ -484,9 +1434,11 @@ func TestTransformNoValidationErrors(t *testing.T) {
 		_, err = w.Write(b)
 		require.NoError(t, err)
 	}))
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -517,7 +1469,9 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -557,7 +1511,9 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -596,7 +1552,9 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	tr := NewTransformer(time.Minute, time.Minute)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -643,8 +1601,9 @@ func TestDehydrateHydrate(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
-
-	tr := NewTransformer(time.Minute, time.Minute)
+	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)
 

@@ -167,12 +167,11 @@ func (mr *MockJobsDBMockRecorder) GetJournalEntries(arg0 interface{}) *gomock.Ca
 }
 
 // GetPileUpCounts mocks base method.
-func (m *MockJobsDB) GetPileUpCounts(arg0 context.Context) (map[string]map[string]int, error) {
+func (m *MockJobsDB) GetPileUpCounts(arg0 context.Context) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPileUpCounts", arg0)
-	ret0, _ := ret[0].(map[string]map[string]int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // GetPileUpCounts indicates an expected call of GetPileUpCounts.
