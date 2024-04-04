@@ -6,10 +6,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandex-metrica-offline-events/augmenter"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
@@ -34,23 +37,28 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 const bufferSize = 5000 * 1024
 
 type YandexMetricaBulkUploader struct {
-	destName          string
-	destinationConfig map[string]interface{}
-	transformUrl      string
-	pollUrl           string
-	logger            logger.Logger
-	timeout           time.Duration
-	client            *http.Client
+	transformUrl    string
+	pollUrl         string
+	logger          logger.Logger
+	timeout         time.Duration
+	client          *http.Client
+	destinationInfo *oauthv2.DestinationInfo
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
+	destinationInfo := &oauthv2.DestinationInfo{
+		Config:           destination.Config,
+		DefinitionConfig: destination.DestinationDefinition.Config,
+		WorkspaceID:      destination.WorkspaceID,
+		DefinitionName:   destination.DestinationDefinition.Name,
+		ID:               destination.ID,
+	}
 	yandexUploadManager := &YandexMetricaBulkUploader{
-		destName:          destination.DestinationDefinition.Name,
-		destinationConfig: destination.Config,
-		pollUrl:           "",
-		transformUrl:      config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
-		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
-		timeout:           config.GetDuration("HttpClient.yandexMetricaBulkUpload.timeout", 30, time.Second),
+		destinationInfo: destinationInfo,
+		pollUrl:         "",
+		transformUrl:    config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		logger:          logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
+		timeout:         config.GetDuration("HttpClient.yandexMetricaBulkUpload.timeout", 30, time.Second),
 	}
 	cache := oauthv2.NewCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
@@ -242,7 +250,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	// println("user ID: ", userId)
 	var uploadURL string
 	if userId == "ClientId" {
-		uploadURL, err = url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload?client_id_type=CLIENT_ID")
+		uploadURL, err = url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload")
 	} else if userId == "Yclid" {
 		uploadURL, err = url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload?client_id_type=YCLID")
 	} else if userId == "UserId" {
@@ -280,14 +288,38 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	payloadSizeStat.Observe(float64(len(ympayload)))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
 
-	req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(ympayload))
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+	file, errFile1 := os.Open(csvFilePath)
+	defer file.Close()
+	part1, errFile1 := writer.CreateFormFile("file", filepath.Base(csvFilePath))
+	_, errFile1 = io.Copy(part1, file)
+	if errFile1 != nil {
+		fmt.Println(errFile1)
+	}
+	err = writer.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	req, err := http.NewRequest("POST", uploadURL, payload)
 	if err != nil {
 		// TODO: handle this condition
 	}
-	resp, err := ym.client.Do(req) // We did this
+	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), ym.destinationInfo))
+	// req.Header.Set("Content-Type", "text/csv")
+	// resp, err := ym.client.Do(req) // We did this
+
+	q := req.URL.Query()
+	q.Add("client_id_type", "CLIENT_ID")
+	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := ym.client.Do(req)
 	if err != nil {
 		// TODO: handle this condition
 	}
+
 	var bodyBytes []byte
 	if err == nil {
 		// If no err returned by client.Post, reading body.
