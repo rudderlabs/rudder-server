@@ -31,7 +31,7 @@ replace (
 
 require (
 	cloud.google.com/go/bigquery v1.60.0
-	cloud.google.com/go/pubsub v1.36.1
+	cloud.google.com/go/pubsub v1.37.0
 	cloud.google.com/go/storage v1.39.1
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
