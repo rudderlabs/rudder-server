@@ -32,7 +32,7 @@ replace (
 require (
 	cloud.google.com/go/bigquery v1.60.0
 	cloud.google.com/go/pubsub v1.36.1
-	cloud.google.com/go/storage v1.39.1
+	cloud.google.com/go/storage v1.40.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -40,7 +40,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.12.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.51.6
+	github.com/aws/aws-sdk-go v1.51.12
 	github.com/bugsnag/bugsnag-go/v2 v2.3.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -84,7 +84,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.1
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.23.3
+	github.com/rudderlabs/rudder-go-kit v0.23.4-0.20240403132211-8416504f7319
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/sql-tunnels v0.1.6
 	github.com/samber/lo v1.39.0
