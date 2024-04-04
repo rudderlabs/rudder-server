@@ -40,7 +40,7 @@ type YandexMetricaBulkUploader struct {
 	pollUrl           string
 	logger            logger.Logger
 	timeout           time.Duration
-	client *http.Client
+	client            *http.Client
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
@@ -52,22 +52,22 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
 		timeout:           config.GetDuration("HttpClient.yandexMetricaBulkUpload.timeout", 30, time.Second),
 	}
+	cache := oauthv2.NewCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Logger:             logger.NewLogger().Child("YandexMetricOfflineEvents"),
+		Logger:    logger.NewLogger().Child("YandexMetricOfflineEvents"),
 		Augmenter: augmenter.YandexReqAugmenter,
 	}
 	// TODO: Add http related timeout values
 	originalHttpClient := &http.Client{Transport: &http.Transport{}}
 	// This client is used for Router Transformation using oauthV2
-	yandexUploadManager.client  = oauthv2httpclient.NewOAuthHttpClient(
+	yandexUploadManager.client = oauthv2httpclient.NewOAuthHttpClient(
 		originalHttpClient,
-		oauthv2common.RudderFlowDelivery, 
-		nil,
+		oauthv2common.RudderFlowDelivery,
+		&cache,
 		backendConfig,
 		augmenter.GetAuthErrorCategoryForYandex,
 		optionalArgs,
 	)
-	
 	return yandexUploadManager, nil
 }
 
@@ -282,9 +282,12 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 
 	req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(ympayload))
 	if err != nil {
-		// handle this condition
+		// TODO: handle this condition
 	}
-	resp , err := ym.client.Do(req)
+	resp, err := ym.client.Do(req) // We did this
+	if err != nil {
+		// TODO: handle this condition
+	}
 	var bodyBytes []byte
 	if err == nil {
 		// If no err returned by client.Post, reading body.
@@ -301,9 +304,8 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	// ymresponseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(uploadURL, ympayload, config.GetDuration("HttpClient.yandexmetricaofflineevents.timeout", 10, time.Minute))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
-	
-	var statusCode string
-	if resp.StatusCode != http.StatusOK {
+
+	if resp.StatusCode != http.StatusOK { // error scenario
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, resp.StatusCode),
@@ -312,36 +314,8 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		}
 	}
 
-	statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
-	// fmt.Println("StatusCode", statusCode)
-
-	var uploadResponse common.AsyncUploadOutput
-
-	switch statusCode {
-	case "200":
-
-	case "400":
-	default:
-		uploadResponse = common.AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  string(bodyBytes),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
-			DestinationID: destinationID,
-		}
-
+	return common.AsyncUploadOutput{
+		SuccessResponse: string(bodyBytes),
+		DestinationID:   destination.ID,
 	}
-
-	// uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
-	// 	"module":   "batch_router",
-	// 	"destType": ym.destName,
-	// })
-	// read from txt file
-	// convert it to csv
-	// a/c to yanddex format schema
-	// upload it to yandex like postman call
-	// using metadata from txt file, we need to track success job id
-	// success and importing jobids will be same for AsyncUploadOutput, poll already handled
-	return uploadResponse
-
-	// return common.AsyncUploadOutput{}
 }
