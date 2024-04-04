@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -753,8 +754,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 			continue
 		}
 
-		rudderID, _ := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-		toSet["rudderId"] = rudderID
 		userID := buildUserID("", anonIDFromReq, userIDFromReq)
 		receivedAt, _ := toSet["receivedAt"].(string)
 		if receivedAt == "" {
