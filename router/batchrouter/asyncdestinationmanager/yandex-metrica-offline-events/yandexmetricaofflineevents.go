@@ -2,8 +2,11 @@ package yandexmetricaofflineevents
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/csv"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -18,6 +21,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandex-metrica-offline-events/augmenter"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
@@ -33,10 +40,11 @@ type YandexMetricaBulkUploader struct {
 	pollUrl           string
 	logger            logger.Logger
 	timeout           time.Duration
+	client *http.Client
 }
 
-func NewManager(destination *backendconfig.DestinationT) (*YandexMetricaBulkUploader, error) {
-	YandexMetricaBulkUpload := &YandexMetricaBulkUploader{
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
+	yandexUploadManager := &YandexMetricaBulkUploader{
 		destName:          destination.DestinationDefinition.Name,
 		destinationConfig: destination.Config,
 		pollUrl:           "",
@@ -44,7 +52,23 @@ func NewManager(destination *backendconfig.DestinationT) (*YandexMetricaBulkUplo
 		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
 		timeout:           config.GetDuration("HttpClient.yandexMetricaBulkUpload.timeout", 30, time.Second),
 	}
-	return YandexMetricaBulkUpload, nil
+	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
+		Logger:             logger.NewLogger().Child("YandexMetricOfflineEvents"),
+		Augmenter: augmenter.YandexReqAugmenter,
+	}
+	// TODO: Add http related timeout values
+	originalHttpClient := &http.Client{Transport: &http.Transport{}}
+	// This client is used for Router Transformation using oauthV2
+	yandexUploadManager.client  = oauthv2httpclient.NewOAuthHttpClient(
+		originalHttpClient,
+		oauthv2common.RudderFlowDelivery, 
+		nil,
+		backendConfig,
+		augmenter.GetAuthErrorCategoryForYandex,
+		optionalArgs,
+	)
+	
+	return yandexUploadManager, nil
 }
 
 // return a success response for the poll request every time by default
@@ -256,23 +280,38 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	payloadSizeStat.Observe(float64(len(ympayload)))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
 
-	// http.NewRequest("POST", uploadURL, bytes.NewBuffer(ympayload))
+	req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(ympayload))
+	if err != nil {
+		// handle this condition
+	}
+	resp , err := ym.client.Do(req)
+	var bodyBytes []byte
+	if err == nil {
+		// If no err returned by client.Post, reading body.
+		// If reading body fails, retrying.
+		bodyBytes, err = io.ReadAll(resp.Body)
+	}
+	var transResp oauthv2.TransportResponse
+	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
+	// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
+	err = json.Unmarshal(bodyBytes, &transResp)
+	if err == nil && transResp.OriginalResponse != "" {
+		bodyBytes = []byte(transResp.OriginalResponse) // re-assign originalResponse
+	}
 	// ymresponseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(uploadURL, ympayload, config.GetDuration("HttpClient.yandexmetricaofflineevents.timeout", 10, time.Minute))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
-	var bodyBytes []byte
+	
 	var statusCode string
-	if statusCodeHTTP != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
+			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, resp.StatusCode),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
 	}
 
-	bodyBytes = ymresponseBody
-	// fmt.Println("BodyBytes", string(bodyBytes))
 	statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	// fmt.Println("StatusCode", statusCode)
 
