@@ -136,7 +136,7 @@ const (
 	REF_TOKEN_INVALID_GRANT = "ref_token_invalid_grant"
 )
 
-var ErrPermissionOrTokenRevoked = errors.New("Problem with user permission or access/refresh token have been revoked")
+var ErrPermissionOrTokenRevoked = errors.New("problem with user permission or access/refresh token have been revoked")
 
 // This struct only exists for marshalling and sending payload to control-plane
 type RefreshTokenBodyParams struct {

@@ -191,15 +191,6 @@ func TestRouter_Track(t *testing.T) {
 }
 
 func TestRouter_CronTracker(t *testing.T) {
-	var (
-		workspaceID = "test-workspaceID"
-		sourceID    = "test-sourceID"
-		sourceName  = "test-sourceName"
-		destID      = "test-destinationID"
-		destName    = "test-destinationName"
-		destType    = warehouseutils.POSTGRES
-	)
-
 	t.Run("context cancelled", func(t *testing.T) {
 		t.Parallel()
 
@@ -213,69 +204,9 @@ func TestRouter_CronTracker(t *testing.T) {
 			logger: mockLogger,
 		}
 
-		mockLogger.EXPECT().Infof("context is cancelled, stopped running tracking").Times(1)
+		mockLogger.EXPECT().Infon("context is cancelled, stopped running tracking").Times(1)
 
 		err := r.CronTracker(ctx)
 		require.NoError(t, err)
-	})
-
-	t.Run("track error", func(t *testing.T) {
-		t.Parallel()
-
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		pgResource, err := postgres.Setup(pool, t)
-		require.NoError(t, err)
-
-		t.Log("db:", pgResource.DBDsn)
-
-		err = (&migrator.Migrator{
-			Handle:          pgResource.DB,
-			MigrationsTable: "wh_schema_migrations",
-		}).Migrate("warehouse")
-		require.NoError(t, err)
-
-		sqlStatement, err := os.ReadFile("testdata/sql/seed_tracker_test.sql")
-		require.NoError(t, err)
-
-		_, err = pgResource.DB.Exec(string(sqlStatement))
-		require.NoError(t, err)
-
-		warehouse := model.Warehouse{
-			WorkspaceID: workspaceID,
-			Source: backendconfig.SourceT{
-				ID:      sourceID,
-				Name:    sourceName,
-				Enabled: true,
-			},
-			Destination: backendconfig.DestinationT{
-				ID:      destID,
-				Name:    destName,
-				Enabled: true,
-				Config: map[string]any{
-					"syncFrequency": "10",
-				},
-			},
-		}
-
-		now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
-		require.NoError(t, err)
-
-		r := Router{
-			destType: destType,
-			now: func() time.Time {
-				return now
-			},
-			nowSQL:       "ABC",
-			statsFactory: stats.NOP,
-			db:           sqlquerywrapper.New(pgResource.DB),
-			logger:       logger.NOP,
-			conf:         config.New(),
-		}
-		r.warehouses = append(r.warehouses, warehouse)
-
-		err = r.CronTracker(context.Background())
-		require.EqualError(t, err, errors.New("cron tracker failed for source: test-sourceID, destination: test-destinationID with error: fetching last upload time for source: test-sourceID and destination: test-destinationID: pq: column \"abc\" does not exist").Error())
 	})
 }

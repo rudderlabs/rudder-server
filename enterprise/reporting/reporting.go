@@ -20,7 +20,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -183,7 +182,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 }
 
 func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
+	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
 	if err != nil {
@@ -193,7 +192,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	queryStart := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
 	defer cancel()
-	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+	err = dbHandle.QueryRowContext(ctx, sqlStatement, currentMs).Scan(&queryMin)
 
 	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
@@ -207,10 +206,11 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		return nil, 0, nil
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
+	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
+	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement)
+	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)
 	if err != nil {
 		panic(err)
 	}
@@ -238,12 +238,12 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
 			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.Status,
-			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
 			&metricReport.StatusDetail.StatusCode,
-			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
+			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
+			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 		)
 		if err != nil {
 			panic(err)
@@ -260,6 +260,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 
 func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
+	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
 		groupingIdentifiers := []string{
@@ -314,35 +315,22 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
 				},
 			}
+			values = append(values, metricsByGroup[identifier])
 		}
-		statusDetailInterface, found := lo.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
-			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode && i.ErrorType == report.StatusDetail.ErrorType
+
+		metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
+			Status:         report.StatusDetail.Status,
+			StatusCode:     report.StatusDetail.StatusCode,
+			Count:          report.StatusDetail.Count,
+			ViolationCount: report.StatusDetail.ViolationCount,
+			SampleResponse: report.StatusDetail.SampleResponse,
+			SampleEvent:    report.StatusDetail.SampleEvent,
+			EventName:      report.StatusDetail.EventName,
+			EventType:      report.StatusDetail.EventType,
+			ErrorType:      report.StatusDetail.ErrorType,
 		})
-		if !found {
-			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
-				Status:         report.StatusDetail.Status,
-				StatusCode:     report.StatusDetail.StatusCode,
-				Count:          report.StatusDetail.Count,
-				ViolationCount: report.StatusDetail.ViolationCount,
-				SampleResponse: report.StatusDetail.SampleResponse,
-				SampleEvent:    report.StatusDetail.SampleEvent,
-				EventName:      report.StatusDetail.EventName,
-				EventType:      report.StatusDetail.EventType,
-				ErrorType:      report.StatusDetail.ErrorType,
-			})
-			continue
-		}
-		statusDetail := statusDetailInterface
-		statusDetail.Count += report.StatusDetail.Count
-		statusDetail.ViolationCount += report.StatusDetail.ViolationCount
-		statusDetail.SampleResponse = report.StatusDetail.SampleResponse
-		statusDetail.SampleEvent = report.StatusDetail.SampleEvent
 	}
 
-	var values []*types.Metric
-	for _, val := range metricsByGroup {
-		values = append(values, val)
-	}
 	return values
 }
 

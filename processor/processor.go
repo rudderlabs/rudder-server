@@ -3175,20 +3175,23 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
-	for tablePrefix, db := range dbs {
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
-			jobdDBQueryRequestTimeout,
-			jobdDBMaxRetries.Load(),
-			func(ctx context.Context) (map[string]map[string]int, error) {
-				return db.GetPileUpCounts(ctx)
-			}, func(attempt int) {
-				proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
-				stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Count(1)
-			})
-		if err != nil {
-			return err
-		}
-		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
-	}
-	return nil
+	return misc.RetryWithNotify(ctx,
+		jobdDBQueryRequestTimeout,
+		jobdDBMaxRetries.Load(),
+		func(ctx context.Context) error {
+			metric.Instance.Reset()
+			g, ctx := errgroup.WithContext(ctx)
+			for tablePrefix, db := range dbs {
+				g.Go(func() error {
+					if err := db.GetPileUpCounts(ctx); err != nil {
+						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
+					}
+					return nil
+				})
+			}
+			return g.Wait()
+		}, func(attempt int) {
+			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
+			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
+		})
 }
