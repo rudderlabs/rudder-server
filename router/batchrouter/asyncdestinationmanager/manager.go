@@ -39,7 +39,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	case "ELOQUA":
 		return eloqua.NewManager(destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
-		return yandexmetricaofflineevents.NewManager(destination)
+		return yandexmetricaofflineevents.NewManager(destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }
