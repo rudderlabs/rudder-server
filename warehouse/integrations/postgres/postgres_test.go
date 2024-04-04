@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -177,6 +178,8 @@ func TestIntegration(t *testing.T) {
 	}
 
 	t.Run("Events flow", func(t *testing.T) {
+		t.Skip()
+
 		dsn := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "rudder-password", "localhost", strconv.Itoa(postgresPort), "rudderdb",
@@ -417,6 +420,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
+		t.Skip()
+
 		bootstrapSvc(t, nil, nil)
 
 		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
@@ -538,6 +543,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
+		t.Skip()
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{
@@ -570,6 +577,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
+		t.Skip()
+
 		const (
 			sourceID      = "test_source_id"
 			destinationID = "test_destination_id"

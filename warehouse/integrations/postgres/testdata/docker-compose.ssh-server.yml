@@ -15,7 +15,7 @@ services:
         target: /test_key.pub
         read_only: true
     healthcheck:
-      test: [ "CMD", "grep", "Server listening on :: port 2222", "/config/logs/openssh/current" ]
+      test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
       interval: 1s
       timeout: 1s
       retries: 60
