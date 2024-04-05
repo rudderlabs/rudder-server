@@ -24,6 +24,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -295,9 +296,12 @@ func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID string) 
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	}`
-	batchedEvent := fmt.Sprintf(`{"batch": [%s]}`, event)
+
 	payload1 := strings.NewReader(event)
 	sendEvent(t, httpPort, payload1, "identify", writeKey)
+
+	parameters := `{"ip":"14.5.67.21", "receivedAt":"2020-02-02T00:23:09.544Z", "userId":"identified_user_id", "routingKey":"anonymousId_header<<>>anonymousId_1<<>>identified_user_id"}`
+	batchedEvent := fmt.Sprintf(`{"batch": [{"payload": %s, "parameters": %s}]}`, event, parameters)
 	payload2 := strings.NewReader(batchedEvent)
 	sendInternalBatch(t, httpPort, payload2, sourceID)
 }
