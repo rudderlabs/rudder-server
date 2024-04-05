@@ -705,6 +705,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 		userID     string
 		events     []map[string]interface{}
 		receivedAt string
+		ip         string
 	}
 	var (
 		sourcesJobRunID  = arctx.SourceJobRunID
@@ -716,29 +717,31 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 		out              = make([]jobObject, 0, len(eventsBatch))
 	)
 
-	for idx, v := range eventsBatch {
-		toSet, ok := v.Value().(map[string]interface{})
+	for _, v := range eventsBatch {
+		payload := v.Get("payload")
+		parameters := v.Get("parameters")
+		if !payload.Exists() || !parameters.Exists() {
+			panic("payload or parameters not found in batch")
+		}
+
+		routingKey := parameters.Get("routingKey")
+		receivedAt := parameters.Get("receivedAt")
+		if !routingKey.Exists() || !receivedAt.Exists() {
+			panic("routingKey or receivedAt not found in parameters")
+		}
+
+		eventPayload, ok := payload.Value().(map[string]interface{})
 		if !ok {
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_failed_events",
 				stats.CountType,
 				gw.newSourceStatTagsWithReason(arctx, reqType, response.NotRudderEvent),
 			).Increment()
-			return nil, fmt.Errorf("%s", response.NotRudderEvent)
+			return nil, errors.New(response.NotRudderEvent)
 		}
-		anonIDFromReq, _ := toSet["anonymousId"].(string)
-		userIDFromReq, _ := toSet["userId"].(string)
-		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
-		if ok {
-			if idx == 0 {
-				if v, _ := misc.MapLookup(eventContext, "sources", "job_run_id").(string); v != "" {
-					sourcesJobRunID = v
-				}
-				if v, _ := misc.MapLookup(eventContext, "sources", "task_run_id").(string); v != "" {
-					sourcesTaskRunID = v
-				}
-			}
-		}
+
+		userIDFromReq := parameters.Get("userId").String()
+		ip := parameters.Get("ip").String()
 
 		if isUserSuppressed(workspaceID, userIDFromReq, sourceID) {
 			gw.logger.Infon("suppressed event",
@@ -753,14 +756,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 			).Increment()
 			continue
 		}
-
-		userID := buildUserID("", anonIDFromReq, userIDFromReq)
-		receivedAt, _ := toSet["receivedAt"].(string)
-		if receivedAt == "" {
-			receivedAt = time.Now().Format(misc.RFC3339Milli)
-		}
 		out = append(out, jobObject{
-			userID: userID, events: []map[string]interface{}{toSet}, receivedAt: receivedAt,
+			userID:     routingKey.String(),
+			events:     []map[string]interface{}{eventPayload},
+			receivedAt: receivedAt.String(),
+			ip:         ip,
 		})
 	}
 	if len(out) == 0 { // events suppressed - but return success
@@ -802,6 +802,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 			Batch:      userEvent.events,
 			WriteKey:   arctx.WriteKey,
 			ReceivedAt: userEvent.receivedAt,
+			RequestIP:  userEvent.ip,
 		}
 		payload, err = json.Marshal(eventBatch)
 		if err != nil {
