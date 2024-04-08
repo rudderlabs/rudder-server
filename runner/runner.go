@@ -113,9 +113,8 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
 	} else {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
-		customBuckets["event_delivery_time"] = []float64{
-			0.5, 1, 2.5, 5, 10, 30, 60, 300 /* 5 minutes */, 600 /* 10 minutes */, 1800, /* 30 minutes */
-			3600 /* 1 hour */, 10800 /* 3 hours */, 21600 /* 6 hours */, 86400, /* 1 day */
+		for histogramName, buckets := range customBucketsServer {
+			statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
 		}
 	}
 	for histogramName, buckets := range customBuckets {
