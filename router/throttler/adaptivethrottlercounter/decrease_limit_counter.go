@@ -6,15 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type decreaseLimitCounter struct {
 	window                      func() time.Duration
 	waitWindow                  func() time.Duration
-	decreasePercentage          config.ValueLoader[int64]
+	decreasePercentage          misc.ValueLoader[int64]
 	throttleTolerancePercentage func() int64
 	limitFactor                 *limitFactor
 

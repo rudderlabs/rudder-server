@@ -69,10 +69,10 @@ type Handle struct {
 	transformerTimeout                 time.Duration
 	enableBatching                     bool
 	noOfWorkers                        int
-	eventOrderKeyThreshold             config.ValueLoader[int]
-	eventOrderDisabledStateDuration    config.ValueLoader[time.Duration]
-	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
-	drainConcurrencyLimit              config.ValueLoader[int]
+	eventOrderKeyThreshold             misc.ValueLoader[int]
+	eventOrderDisabledStateDuration    misc.ValueLoader[time.Duration]
+	eventOrderHalfEnabledStateDuration misc.ValueLoader[time.Duration]
+	drainConcurrencyLimit              misc.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
 

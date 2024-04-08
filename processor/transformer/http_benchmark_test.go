@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -41,7 +41,7 @@ func BenchmarkHTTP(b *testing.B) {
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
-		tr.config.maxRetry = config.SingleValueLoader(1)
+		tr.config.maxRetry = misc.SingleValueLoader(1)
 		rawJSON, _ := json.Marshal([]TransformerEvent{
 			{
 				Metadata: Metadata{
@@ -77,7 +77,7 @@ func BenchmarkHTTP(b *testing.B) {
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
-		tr.config.maxRetry = config.SingleValueLoader(1)
+		tr.config.maxRetry = misc.SingleValueLoader(1)
 		rawJSON, _ := json.Marshal([]TransformerEvent{
 			{
 				Metadata: Metadata{

@@ -3,12 +3,11 @@ package processor
 import (
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // workerHandle is the interface trying to abstract processor's [Handle] implememtation from the worker
@@ -30,12 +29,12 @@ type workerHandle interface {
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers
 type workerHandleConfig struct {
-	maxEventsToProcess config.ValueLoader[int]
+	maxEventsToProcess misc.ValueLoader[int]
 
 	enablePipelining      bool
 	pipelineBufferedItems int
 	subJobSize            int
 
-	readLoopSleep config.ValueLoader[time.Duration]
-	maxLoopSleep  config.ValueLoader[time.Duration]
+	readLoopSleep misc.ValueLoader[time.Duration]
+	maxLoopSleep  misc.ValueLoader[time.Duration]
 }

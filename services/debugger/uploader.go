@@ -14,9 +14,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
@@ -45,8 +45,8 @@ type uploaderImpl[E any] struct {
 	eventBufferLock                        sync.RWMutex
 	eventBuffer                            []E
 	Client                                 sysUtils.HTTPClientI
-	maxBatchSize, maxRetry, maxESQueueSize config.ValueLoader[int]
-	batchTimeout, retrySleep               config.ValueLoader[time.Duration]
+	maxBatchSize, maxRetry, maxESQueueSize misc.ValueLoader[int]
+	batchTimeout, retrySleep               misc.ValueLoader[time.Duration]
 	region                                 string
 
 	bgWaitGroup sync.WaitGroup
