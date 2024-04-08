@@ -206,8 +206,8 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 			event := map[string]interface{}{
 				"payload":       ev,
 				"receivedAt":    receivedAtStr,
-				"eventName":     stringify.Data(ev["event"]),
-				"eventType":     stringify.Data(ev["type"]),
+				"eventName":     stringify.Any(ev["event"]),
+				"eventType":     stringify.Any(ev["type"]),
 				"errorResponse": make(map[string]interface{}),
 				"errorCode":     200,
 			}

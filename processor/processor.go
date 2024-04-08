@@ -919,7 +919,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = misc.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = stringify.Data(singularEvent["messageId"])
+	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
@@ -1010,8 +1010,8 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 					continue
 				}
 
-				eventName := stringify.Data(gjson.GetBytes(eventPayload, "event").String())
-				eventType := stringify.Data(gjson.GetBytes(eventPayload, "type").String())
+				eventName := stringify.Any(gjson.GetBytes(eventPayload, "event").String())
+				eventType := stringify.Any(gjson.GetBytes(eventPayload, "type").String())
 				deliveryStatus := destinationdebugger.DeliveryStatusT{
 					EventName:     eventName,
 					EventType:     eventType,
@@ -1638,7 +1638,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
-			messageId := stringify.Data(singularEvent["messageId"])
+			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)

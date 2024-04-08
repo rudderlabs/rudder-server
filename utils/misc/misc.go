@@ -350,17 +350,6 @@ func Copy(dst, src interface{}) {
 	}
 }
 
-// GetIPFromReq gets ip address from request
-func GetIPFromReq(req *http.Request) string {
-	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
-	if addresses[0] == "" {
-		splits := strings.Split(req.RemoteAddr, ":")
-		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
-	}
-
-	return strings.ReplaceAll(addresses[0], " ", "")
-}
-
 //  Returns chronological timestamp of the event using the formula
 //  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {

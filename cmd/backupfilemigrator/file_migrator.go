@@ -118,7 +118,7 @@ func (m *fileMigrator) convertToNewFormat(lineBytes []byte, createdAt time.Time)
 		j.UserID = userID
 		j.EventPayload = payloadBytes
 		j.CreatedAt = createdAt
-		j.MessageID = stringify.Data(singleEvent["messageId"])
+		j.MessageID = stringify.Any(singleEvent["messageId"])
 		listOfNewEvents = append(listOfNewEvents, j)
 	}
 	return listOfNewEvents, nil

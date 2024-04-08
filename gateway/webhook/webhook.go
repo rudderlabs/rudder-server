@@ -19,13 +19,15 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
+	kitip "github.com/rudderlabs/rudder-go-kit/ip"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type webhookT struct {
@@ -98,7 +100,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	if code != 0 {
 		statusCode = code
 	}
-	webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
+	webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kitip.FromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
 }
 
@@ -209,7 +211,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode != 0 {
 			code = resp.StatusCode
 		}
-		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
+		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kitip.FromReq(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
 		ss.RequestFailed("error")
 		ss.Report(webhook.stats)
@@ -221,7 +223,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		payload = resp.OutputToSource.Body
 		w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
 	}
-	webhook.logger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
+	webhook.logger.Debugf("IP: %s -- %s -- Response: 200, %s", kitip.FromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 	_, _ = w.Write(payload)
 	ss.RequestSucceeded()
 	ss.Report(webhook.stats)
