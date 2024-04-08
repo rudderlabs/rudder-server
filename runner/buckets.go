@@ -21,3 +21,10 @@ var customBuckets = map[string][]float64{
 		86400, 432000, 864000, 2592000, 5184000, 7776000, 15552000, 31104000, // 1 day, 5 days, 10 days, 30 days, 60 days, 90 days, 180 days, 360 days
 	},
 }
+
+var customBucketsServer = map[string][]float64{
+	"event_delivery_time": {
+		0.5, 1, 2.5, 5, 10, 30, 60, 300 /* 5 minutes */, 600 /* 10 minutes */, 1800, /* 30 minutes */
+		3600 /* 1 hour */, 10800 /* 3 hours */, 21600 /* 6 hours */, 86400, /* 1 day */
+	},
+}
