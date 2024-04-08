@@ -130,8 +130,8 @@ func NewDrainer(
 }
 
 type drainer struct {
-	destinationIDs config.ValueLoader[[]string]
-	jobRunIDs      config.ValueLoader[[]string]
+	destinationIDs misc.ValueLoader[[]string]
+	jobRunIDs      misc.ValueLoader[[]string]
 
 	destinationResolver func(string) (*DestinationWithSources, bool)
 }

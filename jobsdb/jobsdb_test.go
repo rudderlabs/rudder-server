@@ -761,7 +761,7 @@ func TestCacheScenarios(t *testing.T) {
 		if limit > 0 {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
-				WithDSLimit(config.SingleValueLoader(limit)),
+				WithDSLimit(misc.SingleValueLoader(limit)),
 				WithConfig(c),
 			)
 		} else {

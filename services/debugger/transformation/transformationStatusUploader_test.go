@@ -15,10 +15,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -240,7 +240,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableTransformationUploads = config.SingleValueLoader(true)
+			h.(*Handle).disableTransformationUploads = misc.SingleValueLoader(true)
 			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
 		})
 
@@ -288,7 +288,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableTransformationUploads = config.SingleValueLoader(true)
+			h.(*Handle).disableTransformationUploads = misc.SingleValueLoader(true)
 			Expect(h.UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
 		})
 

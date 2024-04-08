@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type cacheItem[E any] struct {
@@ -37,9 +37,9 @@ key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
 	lock        sync.RWMutex
-	keyTTL      config.ValueLoader[time.Duration] // Time after which the data will be expired and removed from the cache
-	cleanupFreq config.ValueLoader[time.Duration] // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
-	size        config.ValueLoader[int]           // This is the size upto which this cache can store a value corresponding to any key
+	keyTTL      misc.ValueLoader[time.Duration] // Time after which the data will be expired and removed from the cache
+	cleanupFreq misc.ValueLoader[time.Duration] // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
+	size        misc.ValueLoader[int]           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem[E]
 
 	done   chan struct{}

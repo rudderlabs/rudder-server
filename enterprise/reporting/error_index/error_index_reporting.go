@@ -16,8 +16,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
@@ -43,7 +43,7 @@ type ErrorIndexReporter struct {
 		update kitsync.Limiter
 	}
 
-	concurrency config.ValueLoader[int]
+	concurrency misc.ValueLoader[int]
 
 	statsFactory stats.Stats
 	stats        struct {

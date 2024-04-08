@@ -7,11 +7,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type adaptiveThrottleConfig struct {
-	window   config.ValueLoader[time.Duration]
-	minLimit config.ValueLoader[int64]
+	window   misc.ValueLoader[time.Duration]
+	minLimit misc.ValueLoader[int64]
 	maxLimit func() int64
 }
 

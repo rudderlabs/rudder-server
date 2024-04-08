@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -33,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -64,9 +64,9 @@ type handle struct {
 	// proxyClientOAuthV2 is the mockable HTTP client for transformer proxy requests using OAuth V2.
 	proxyClientOAuthV2 sysUtils.HTTPClientI
 	// oAuthV2EnabledLoader dynamically loads the OAuth V2 enabled status.
-	oAuthV2EnabledLoader config.ValueLoader[bool]
+	oAuthV2EnabledLoader misc.ValueLoader[bool]
 	// expirationTimeDiff holds the configured time difference for token expiration.
-	expirationTimeDiff config.ValueLoader[time.Duration]
+	expirationTimeDiff misc.ValueLoader[time.Duration]
 }
 
 type ProxyRequestMetadata struct {
@@ -111,7 +111,7 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled misc.ValueLoader[bool], expirationTimeDiff misc.ValueLoader[time.Duration]) Transformer {
 	cache := oauthv2.NewCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	handle := &handle{

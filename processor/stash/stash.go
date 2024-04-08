@@ -43,15 +43,15 @@ type HandleT struct {
 
 	adaptiveLimit func(int64) int64
 	config        struct {
-		jobsDBCommandTimeout      config.ValueLoader[time.Duration]
-		jobdDBQueryRequestTimeout config.ValueLoader[time.Duration]
-		jobdDBMaxRetries          config.ValueLoader[int]
-		errorStashEnabled         config.ValueLoader[bool]
-		errDBReadBatchSize        config.ValueLoader[int]
-		noOfErrStashWorkers       config.ValueLoader[int]
-		maxFailedCountForErrJob   config.ValueLoader[int]
+		jobsDBCommandTimeout      misc.ValueLoader[time.Duration]
+		jobdDBQueryRequestTimeout misc.ValueLoader[time.Duration]
+		jobdDBMaxRetries          misc.ValueLoader[int]
+		errorStashEnabled         misc.ValueLoader[bool]
+		errDBReadBatchSize        misc.ValueLoader[int]
+		noOfErrStashWorkers       misc.ValueLoader[int]
+		maxFailedCountForErrJob   misc.ValueLoader[int]
 		pkgLogger                 logger.Logger
-		payloadLimit              config.ValueLoader[int64]
+		payloadLimit              misc.ValueLoader[int64]
 	}
 }
 

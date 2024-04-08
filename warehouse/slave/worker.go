@@ -15,13 +15,14 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -61,7 +62,7 @@ type worker struct {
 	workerIdx          int
 
 	config struct {
-		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
+		maxStagingFileReadBufferCapacityInK misc.ValueLoader[int]
 	}
 	stats struct {
 		workerIdleTime                 stats.Measurement

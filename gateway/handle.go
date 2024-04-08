@@ -17,10 +17,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-go-kit/sanitize"
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -101,18 +97,18 @@ type Handle struct {
 	conf struct { // configuration parameters
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
 		maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
+		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   misc.ValueLoader[time.Duration]
 
-		maxReqSize                           config.ValueLoader[int]
-		enableRateLimit                      config.ValueLoader[bool]
+		maxReqSize                           misc.ValueLoader[int]
+		enableRateLimit                      misc.ValueLoader[bool]
 		enableSuppressUserFeature            bool
 		diagnosisTickerTime                  time.Duration
 		ReadTimeout                          time.Duration
 		ReadHeaderTimeout                    time.Duration
 		WriteTimeout                         time.Duration
 		IdleTimeout                          time.Duration
-		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
+		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
+		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -284,7 +280,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	fillMessageID := func(event map[string]interface{}) {
 		messageID, _ := event["messageId"].(string)
-		messageID = strings.TrimSpace(sanitize.Unicode(messageID))
+		messageID = strings.TrimSpace(misc.SanitizeUnicode(messageID))
 		if messageID == "" {
 			event["messageId"] = uuid.New().String()
 		} else {
@@ -334,8 +330,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 
-		anonIDFromReq := strings.TrimSpace(sanitize.Unicode(stringify.Data(toSet["anonymousId"])))
-		userIDFromReq := strings.TrimSpace(sanitize.Unicode(stringify.Data(toSet["userId"])))
+		anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
+		userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
 		eventTypeFromReq, _ := misc.MapLookup(
 			toSet,
 			"type",
@@ -392,7 +388,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 		var rudderId uuid.UUID
-		rudderId, err = kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		rudderId, err = misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			err = errors.New(response.NonIdentifiableRequest)
 			return

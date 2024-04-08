@@ -48,10 +48,10 @@ type embeddedApp struct {
 	log            logger.Logger
 	config         struct {
 		enableReplay       bool
-		processorDSLimit   config.ValueLoader[int]
-		routerDSLimit      config.ValueLoader[int]
-		batchRouterDSLimit config.ValueLoader[int]
-		gatewayDSLimit     config.ValueLoader[int]
+		processorDSLimit   misc.ValueLoader[int]
+		routerDSLimit      misc.ValueLoader[int]
+		batchRouterDSLimit misc.ValueLoader[int]
+		gatewayDSLimit     misc.ValueLoader[int]
 	}
 }
 

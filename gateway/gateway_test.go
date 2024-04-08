@@ -17,7 +17,6 @@ import (
 	"time"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -31,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -221,7 +219,7 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 		                {"anonymousId":"anon_id_1","event":"event_1_3"}
 		            ]}`
 			response, payloadError := getUsersPayload([]byte(testValidBody))
-			key, err := kituuid.GetMD5UUID(inputKey)
+			key, err := misc.GetMD5UUID(inputKey)
 			Expect(string(response[key.String()])).To(Equal(value))
 			Expect(err).To(BeNil())
 			Expect(payloadError).To(BeNil())

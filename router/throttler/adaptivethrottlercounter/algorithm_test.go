@@ -9,13 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const float64EqualityThreshold = 1e-9
 
 func TestAdaptiveRateLimit(t *testing.T) {
 	cfg := config.New()
-	al := New(cfg, config.SingleValueLoader(500*time.Millisecond))
+	al := New(cfg, misc.SingleValueLoader(500*time.Millisecond))
 	defer al.Shutdown()
 	t.Run("when there is a 429s in the last decrease limit counter window", func(t *testing.T) {
 		al.ResponseCodeReceived(429)
@@ -51,7 +52,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 	t.Run("should delay for few windows before decreasing again", func(t *testing.T) {
 		cfg := config.New()
 		cfg.Set("Router.throttler.adaptive.decreaseRateDelay", 2)
-		al := New(cfg, config.SingleValueLoader(500*time.Millisecond))
+		al := New(cfg, misc.SingleValueLoader(500*time.Millisecond))
 		defer al.Shutdown()
 		al.ResponseCodeReceived(429)
 		require.Eventually(t, func() bool {

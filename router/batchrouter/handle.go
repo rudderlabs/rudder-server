@@ -70,26 +70,26 @@ type Handle struct {
 
 	maxEventsInABatch            int
 	maxPayloadSizeInBytes        int
-	maxFailedCountForJob         config.ValueLoader[int]
-	maxFailedCountForSourcesJob  config.ValueLoader[int]
-	asyncUploadTimeout           config.ValueLoader[time.Duration]
-	retryTimeWindow              config.ValueLoader[time.Duration]
-	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
+	maxFailedCountForJob         misc.ValueLoader[int]
+	maxFailedCountForSourcesJob  misc.ValueLoader[int]
+	asyncUploadTimeout           misc.ValueLoader[time.Duration]
+	retryTimeWindow              misc.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow       misc.ValueLoader[time.Duration]
 	reportingEnabled             bool
-	jobQueryBatchSize            config.ValueLoader[int]
-	pollStatusLoopSleep          config.ValueLoader[time.Duration]
-	payloadLimit                 config.ValueLoader[int64]
-	jobsDBCommandTimeout         config.ValueLoader[time.Duration]
-	jobdDBQueryRequestTimeout    config.ValueLoader[time.Duration]
-	jobdDBMaxRetries             config.ValueLoader[int]
-	minIdleSleep                 config.ValueLoader[time.Duration]
-	uploadFreq                   config.ValueLoader[time.Duration]
-	mainLoopFreq                 config.ValueLoader[time.Duration]
+	jobQueryBatchSize            misc.ValueLoader[int]
+	pollStatusLoopSleep          misc.ValueLoader[time.Duration]
+	payloadLimit                 misc.ValueLoader[int64]
+	jobsDBCommandTimeout         misc.ValueLoader[time.Duration]
+	jobdDBQueryRequestTimeout    misc.ValueLoader[time.Duration]
+	jobdDBMaxRetries             misc.ValueLoader[int]
+	minIdleSleep                 misc.ValueLoader[time.Duration]
+	uploadFreq                   misc.ValueLoader[time.Duration]
+	mainLoopFreq                 misc.ValueLoader[time.Duration]
 	disableEgress                bool
-	warehouseServiceMaxRetryTime config.ValueLoader[time.Duration]
+	warehouseServiceMaxRetryTime misc.ValueLoader[time.Duration]
 	transformerURL               string
-	datePrefixOverride           config.ValueLoader[string]
-	customDatePrefix             config.ValueLoader[string]
+	datePrefixOverride           misc.ValueLoader[string]
+	customDatePrefix             misc.ValueLoader[string]
 
 	drainer routerutils.Drainer
 

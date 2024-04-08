@@ -15,7 +15,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -35,7 +34,7 @@ type Slave struct {
 	encodingFactory    *encoding.Factory
 
 	config struct {
-		noOfSlaveWorkerRoutines config.ValueLoader[int]
+		noOfSlaveWorkerRoutines misc.ValueLoader[int]
 	}
 }
 

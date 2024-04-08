@@ -285,9 +285,9 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.mainLoopFreq = misc.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -414,9 +414,9 @@ var _ = Describe("BatchRouter", func() {
 			)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.minIdleSleep = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = misc.SingleValueLoader(time.Microsecond)
+			batchrouter.mainLoopFreq = misc.SingleValueLoader(time.Microsecond)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)

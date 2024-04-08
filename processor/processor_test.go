@@ -1086,7 +1086,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		proc.archivalDB = c.mockArchivalDB
-		proc.config.archivalEnabled = config.SingleValueLoader(true)
+		proc.config.archivalEnabled = misc.SingleValueLoader(true)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -2702,7 +2702,7 @@ var _ = Describe("Processor", Ordered, func() {
 			)
 			defer processor.Shutdown()
 
-			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
+			processor.config.readLoopSleep = misc.SingleValueLoader(time.Millisecond)
 
 			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
 			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()

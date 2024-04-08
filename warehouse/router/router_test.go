@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -29,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -183,10 +183,10 @@ func TestRouter(t *testing.T) {
 		r.stagingRepo = repoStaging
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
-		r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
-		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-		r.config.enableJitterForSyncs = config.SingleValueLoader(true)
+		r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+		r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
 		r.destType = destinationType
 		r.logger = logger.NOP
 		r.triggerStore = &sync.Map{}
@@ -341,9 +341,9 @@ func TestRouter(t *testing.T) {
 		r.stagingRepo = repoStaging
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
-		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-		r.config.enableJitterForSyncs = config.SingleValueLoader(true)
+		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+		r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
 		r.destType = destinationType
 		r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 		r.triggerStore = &sync.Map{}
@@ -477,13 +477,13 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.conf = config.New()
-		r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
-		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-		r.config.enableJitterForSyncs = config.SingleValueLoader(true)
-		r.config.enableJitterForSyncs = config.SingleValueLoader(true)
-		r.config.mainLoopSleep = config.SingleValueLoader(time.Millisecond * 100)
-		r.config.maxParallelJobCreation = config.SingleValueLoader(100)
+		r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+		r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
+		r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
+		r.config.mainLoopSleep = misc.SingleValueLoader(time.Millisecond * 100)
+		r.config.maxParallelJobCreation = misc.SingleValueLoader(100)
 		r.destType = destinationType
 		r.logger = logger.NOP
 		r.now = func() time.Time {
@@ -586,8 +586,8 @@ func TestRouter(t *testing.T) {
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
-		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
+		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
 		r.destType = destinationType
 		r.logger = logger.NOP
 		r.tenantManager = multitenant.New(config.New(), mocksBackendConfig.NewMockBackendConfig(ctrl))
@@ -721,9 +721,9 @@ func TestRouter(t *testing.T) {
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
-		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-		r.config.noOfWorkers = config.SingleValueLoader(10)
+		r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+		r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+		r.config.noOfWorkers = misc.SingleValueLoader(10)
 		r.config.waitForWorkerSleep = time.Millisecond * 100
 		r.config.uploadAllocatorSleep = time.Millisecond * 100
 		r.destType = warehouseutils.RS
@@ -872,9 +872,9 @@ func TestRouter(t *testing.T) {
 			r.statsFactory = stats.NOP
 			r.conf = config.New()
 			r.config.allowMultipleSourcesForJobsPickup = true
-			r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-			r.config.noOfWorkers = config.SingleValueLoader(0)
+			r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+			r.config.noOfWorkers = misc.SingleValueLoader(0)
 			r.config.waitForWorkerSleep = time.Second * 5
 			r.config.uploadAllocatorSleep = time.Millisecond * 100
 			r.destType = warehouseutils.RS
@@ -961,11 +961,11 @@ func TestRouter(t *testing.T) {
 			r.stagingRepo = repoStaging
 			r.conf = config.New()
 
-			r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
-			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
-			r.config.enableJitterForSyncs = config.SingleValueLoader(true)
-			r.config.mainLoopSleep = config.SingleValueLoader(time.Second * 5)
-			r.config.maxParallelJobCreation = config.SingleValueLoader(100)
+			r.config.stagingFilesBatchSize = misc.SingleValueLoader(100)
+			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+			r.config.enableJitterForSyncs = misc.SingleValueLoader(true)
+			r.config.mainLoopSleep = misc.SingleValueLoader(time.Second * 5)
+			r.config.maxParallelJobCreation = misc.SingleValueLoader(100)
 			r.destType = destinationType
 			r.logger = logger.NOP
 			r.now = func() time.Time {

@@ -97,7 +97,7 @@ var _ = Describe("eventUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableEventUploads = config.SingleValueLoader(true)
+			h.(*Handle).disableEventUploads = misc.SingleValueLoader(true)
 			Expect(h.RecordEvent(sampleWriteKey, []byte(recordingEvent))).To(BeFalse())
 		})
 
@@ -155,7 +155,7 @@ var _ = Describe("eventUploader", func() {
 			h.Stop()
 			h, err := NewHandle(c.mockBackendConfig)
 			Expect(err).To(BeNil())
-			h.(*Handle).disableEventUploads = config.SingleValueLoader(true)
+			h.(*Handle).disableEventUploads = misc.SingleValueLoader(true)
 			Expect(h.RecordEvent(sampleWriteKey, []byte(recordingEvent))).To(BeFalse())
 		})
 

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stringify"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	kitconfig "github.com/rudderlabs/rudder-go-kit/config"
@@ -32,7 +31,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kitlogger "github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-server/enterprise/replay/utils"
 )
 
@@ -118,7 +116,7 @@ func (m *fileMigrator) convertToNewFormat(lineBytes []byte, createdAt time.Time)
 		j.UserID = userID
 		j.EventPayload = payloadBytes
 		j.CreatedAt = createdAt
-		j.MessageID = stringify.Data(singleEvent["messageId"])
+		j.MessageID = misc.GetStringifiedData(singleEvent["messageId"])
 		listOfNewEvents = append(listOfNewEvents, j)
 	}
 	return listOfNewEvents, nil
