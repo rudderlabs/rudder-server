@@ -192,7 +192,7 @@ func (brt *Handle) recordUploadStats(destination Connection, output UploadResult
 			"destType":    brt.destType,
 			"destination": destinationTag,
 			"workspaceId": destination.Source.WorkspaceID,
-			"sourceId":      destination.Source.ID,
+			"sourceId":    destination.Source.ID,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
