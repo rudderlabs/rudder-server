@@ -27,10 +27,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -193,9 +193,9 @@ type handle struct {
 
 		timeoutDuration time.Duration
 
-		maxRetry                   misc.ValueLoader[int]
-		failOnUserTransformTimeout misc.ValueLoader[bool]
-		failOnError                misc.ValueLoader[bool]
+		maxRetry                   config.ValueLoader[int]
+		failOnUserTransformTimeout config.ValueLoader[bool]
+		failOnError                config.ValueLoader[bool]
 
 		destTransformationURL string
 		userTransformationURL string

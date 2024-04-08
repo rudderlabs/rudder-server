@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -33,7 +34,7 @@ type gatewayApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		gatewayDSLimit misc.ValueLoader[int]
+		gatewayDSLimit config.ValueLoader[int]
 	}
 }
 

@@ -42,14 +42,14 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	limiter                 misc.ValueLoader[int]
+	limiter                 config.ValueLoader[int]
 	path                    string
 	origin                  string
 	done                    chan struct{}
 	closed                  chan struct{}
 	ticker                  time.Duration
 	queryTimeout            time.Duration
-	ttl                     misc.ValueLoader[time.Duration]
+	ttl                     config.ValueLoader[time.Duration]
 	gcDiscardRatio          float64
 	numMemtables            int
 	numLevelZeroTables      int

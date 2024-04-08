@@ -13,10 +13,12 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -211,8 +213,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 
 				r := Router{}
-				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
-				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+				r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 				r.triggerStore = &sync.Map{}
 				r.createUploadAlways = &atomic.Bool{}
 				r.scheduledTimesCache = make(map[string][]int)
@@ -233,8 +235,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.now = func() time.Time {
 					return now
 				}
-				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
-				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+				r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
 				r.createUploadAlways = &atomic.Bool{}
@@ -258,8 +260,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				r.now = func() time.Time {
 					return now
 				}
-				r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
-				r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(true)
+				r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
+				r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 				r.createJobMarkerMap = make(map[string]time.Time)
 				r.triggerStore = &sync.Map{}
 				r.createUploadAlways = &atomic.Bool{}
@@ -290,7 +292,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.triggerStore = &sync.Map{}
 			r.createUploadAlways = &atomic.Bool{}
 			r.scheduledTimesCache = make(map[string][]int)
-			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
+			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(false)
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 			}
@@ -314,8 +316,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.now = func() time.Time {
 				return now
 			}
-			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
-			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(false)
+			r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
 			r.createJobMarkerMap = make(map[string]time.Time)
 			r.triggerStore = &sync.Map{}
 			r.createUploadAlways = &atomic.Bool{}
@@ -342,8 +344,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			r.now = func() time.Time {
 				return now
 			}
-			r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
-			r.config.uploadFreqInS = misc.SingleValueLoader(int64(1800))
+			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(false)
+			r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
 			r.triggerStore = &sync.Map{}
 			r.createUploadAlways = &atomic.Bool{}
 			r.scheduledTimesCache = make(map[string][]int)
@@ -435,7 +437,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 
 					r := Router{}
 					r.triggerStore = &sync.Map{}
-					r.config.warehouseSyncFreqIgnore = misc.SingleValueLoader(false)
+					r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(false)
 					r.createJobMarkerMap = make(map[string]time.Time)
 					r.createUploadAlways = &atomic.Bool{}
 					r.scheduledTimesCache = make(map[string][]int)

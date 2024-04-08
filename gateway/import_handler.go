@@ -9,9 +9,10 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // ImportRequestHandler is an empty struct to capture import specific request handling functionality
@@ -55,7 +56,7 @@ func getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	result.ForEach(func(_, value gjson.Result) bool {
 		anonIDFromReq := value.Get("anonymousId").String()
 		userIDFromReq := value.Get("userId").String()
-		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		rudderID, err := kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			return false
 		}

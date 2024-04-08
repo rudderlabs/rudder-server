@@ -55,11 +55,11 @@ type worker struct {
 	lastUploadTime time.Time
 
 	config struct {
-		parquetParallelWriters, parquetRowGroupSize, parquetPageSize misc.ValueLoader[int64]
+		parquetParallelWriters, parquetRowGroupSize, parquetPageSize config.ValueLoader[int64]
 		bucketName, instanceID                                       string
-		payloadLimit, eventsLimit                                    misc.ValueLoader[int64]
+		payloadLimit, eventsLimit                                    config.ValueLoader[int64]
 		minWorkerSleep, uploadFrequency, jobsDBCommandTimeout        time.Duration
-		jobsDBMaxRetries                                             misc.ValueLoader[int]
+		jobsDBMaxRetries                                             config.ValueLoader[int]
 	}
 }
 

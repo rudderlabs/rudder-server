@@ -6,9 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type workerJobStatus struct {
@@ -54,30 +55,30 @@ type JobResponse struct {
 }
 
 type reloadableConfig struct {
-	jobQueryBatchSize                 misc.ValueLoader[int]
-	updateStatusBatchSize             misc.ValueLoader[int]
-	readSleep                         misc.ValueLoader[time.Duration]
-	maxStatusUpdateWait               misc.ValueLoader[time.Duration]
-	minRetryBackoff                   misc.ValueLoader[time.Duration]
-	maxRetryBackoff                   misc.ValueLoader[time.Duration]
-	jobsBatchTimeout                  misc.ValueLoader[time.Duration]
-	failingJobsPenaltyThreshold       misc.ValueLoader[float64]
-	failingJobsPenaltySleep           misc.ValueLoader[time.Duration]
-	noOfJobsToBatchInAWorker          misc.ValueLoader[int]
-	jobsDBCommandTimeout              misc.ValueLoader[time.Duration]
-	jobdDBMaxRetries                  misc.ValueLoader[int]
-	maxFailedCountForJob              misc.ValueLoader[int]
-	maxFailedCountForSourcesJob       misc.ValueLoader[int]
-	payloadLimit                      misc.ValueLoader[int64]
-	routerTimeout                     misc.ValueLoader[time.Duration]
-	retryTimeWindow                   misc.ValueLoader[time.Duration]
-	sourcesRetryTimeWindow            misc.ValueLoader[time.Duration]
-	pickupFlushInterval               misc.ValueLoader[time.Duration]
-	maxDSQuerySize                    misc.ValueLoader[int]
-	savePayloadOnError                misc.ValueLoader[bool]
-	transformerProxy                  misc.ValueLoader[bool]
-	skipRtAbortAlertForTransformation misc.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
-	skipRtAbortAlertForDelivery       misc.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
-	oauthV2Enabled                    misc.ValueLoader[bool]
-	oauthV2ExpirationTimeDiff         misc.ValueLoader[time.Duration]
+	jobQueryBatchSize                 config.ValueLoader[int]
+	updateStatusBatchSize             config.ValueLoader[int]
+	readSleep                         config.ValueLoader[time.Duration]
+	maxStatusUpdateWait               config.ValueLoader[time.Duration]
+	minRetryBackoff                   config.ValueLoader[time.Duration]
+	maxRetryBackoff                   config.ValueLoader[time.Duration]
+	jobsBatchTimeout                  config.ValueLoader[time.Duration]
+	failingJobsPenaltyThreshold       config.ValueLoader[float64]
+	failingJobsPenaltySleep           config.ValueLoader[time.Duration]
+	noOfJobsToBatchInAWorker          config.ValueLoader[int]
+	jobsDBCommandTimeout              config.ValueLoader[time.Duration]
+	jobdDBMaxRetries                  config.ValueLoader[int]
+	maxFailedCountForJob              config.ValueLoader[int]
+	maxFailedCountForSourcesJob       config.ValueLoader[int]
+	payloadLimit                      config.ValueLoader[int64]
+	routerTimeout                     config.ValueLoader[time.Duration]
+	retryTimeWindow                   config.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow            config.ValueLoader[time.Duration]
+	pickupFlushInterval               config.ValueLoader[time.Duration]
+	maxDSQuerySize                    config.ValueLoader[int]
+	savePayloadOnError                config.ValueLoader[bool]
+	transformerProxy                  config.ValueLoader[bool]
+	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	oauthV2Enabled                    config.ValueLoader[bool]
+	oauthV2ExpirationTimeDiff         config.ValueLoader[time.Duration]
 }
