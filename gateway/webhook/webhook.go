@@ -64,8 +64,8 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 
 	config struct {
-		webhookBatchTimeout        misc.ValueLoader[time.Duration]
-		maxWebhookBatchSize        misc.ValueLoader[int]
+		webhookBatchTimeout        config.ValueLoader[time.Duration]
+		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
 	}
 }

@@ -7,8 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func Test_Job_Failed_Scenario(t *testing.T) {
@@ -58,7 +59,7 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 }
 
 func Test_Job_Aborted_Scenario(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(config.SingleValueLoader(1)))
 
 	// Fail job 1 then enter again
 	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
@@ -125,7 +126,7 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 }
 
 func Test_Job_Abort_then_Fail(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(config.SingleValueLoader(2)))
 
 	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -163,7 +164,7 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 }
 
 func Test_Job_Fail_then_Abort(t *testing.T) {
-	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(2)))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(config.SingleValueLoader(2)))
 
 	enter, previousFailedJobID := barrier.Enter(BarrierKey{UserID: "user1"}, 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -241,7 +242,7 @@ func Test_Panic_Scenarios(t *testing.T) {
 
 func TestBarrier_Leave(t *testing.T) {
 	orderKey := BarrierKey{UserID: "user1"}
-	barrier := NewBarrier(WithDrainConcurrencyLimit(misc.SingleValueLoader(1)))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(config.SingleValueLoader(1)))
 
 	enter, _ := barrier.Enter(orderKey, 1)
 	require.Truef(t, enter, "job 1 for %s should be accepted since no barrier exists", orderKey)
@@ -269,9 +270,9 @@ func TestEventOrderKeyThreshold(t *testing.T) {
 	disabledStateDuration := 100 * time.Millisecond
 	halfEnabledStateDuration := 100 * time.Millisecond
 	barrier := NewBarrier(
-		WithEventOrderKeyThreshold(misc.SingleValueLoader(2)),
-		WithDisabledStateDuration(misc.SingleValueLoader(disabledStateDuration)),
-		WithHalfEnabledStateDuration(misc.SingleValueLoader(halfEnabledStateDuration)))
+		WithEventOrderKeyThreshold(config.SingleValueLoader(2)),
+		WithDisabledStateDuration(config.SingleValueLoader(disabledStateDuration)),
+		WithHalfEnabledStateDuration(config.SingleValueLoader(halfEnabledStateDuration)))
 
 	enter, previous := barrier.Enter(orderKey, 1)
 	require.True(t, enter, "job 1 for %s should be accepted since no barrier exists and concurrency limiter should be 1", orderKey)
@@ -327,7 +328,7 @@ func TestOrderingDisable(t *testing.T) {
 		WithOrderingDisabledCheckForBarrierKey(func(orderKey BarrierKey) bool {
 			return orderKey.UserID == "user1" // disable ordering for a particular userID only
 		}),
-		WithEventOrderKeyThreshold(misc.SingleValueLoader(200)),
+		WithEventOrderKeyThreshold(config.SingleValueLoader(200)),
 	)
 
 	enter, previous := barrier.Enter(orderKey1, 1)

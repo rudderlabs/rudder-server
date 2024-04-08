@@ -20,11 +20,11 @@ import (
 	client "github.com/rudderlabs/rudder-go-kit/kafkaclient"
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // schema is the AVRO schema required to convert the data to AVRO
@@ -200,7 +200,7 @@ var (
 	kafkaBatchSize                       = defaultBatchSize
 	kafkaBatchingEnabled                 bool
 	kafkaCompression                     client.Compression
-	allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
+	allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 
 	kafkaStats managerStats
 	pkgLogger  logger

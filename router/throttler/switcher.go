@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 type switchingThrottler struct {
-	adaptiveEnabled misc.ValueLoader[bool]
+	adaptiveEnabled config.ValueLoader[bool]
 	static          Throttler
 	adaptive        Throttler
 }

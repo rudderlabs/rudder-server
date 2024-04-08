@@ -6,7 +6,10 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -15,7 +18,7 @@ type badgerDB struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
-	window   misc.ValueLoader[time.Duration]
+	window   config.ValueLoader[time.Duration]
 	close    chan struct{}
 	gcDone   chan struct{}
 	path     string

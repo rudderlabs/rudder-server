@@ -470,14 +470,14 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
-		maxTableSize                   misc.ValueLoader[int64]
-		cacheExpiration                misc.ValueLoader[time.Duration]
-		addNewDSLoopSleepDuration      misc.ValueLoader[time.Duration]
-		refreshDSListLoopSleepDuration misc.ValueLoader[time.Duration]
-		jobCleanupFrequency            misc.ValueLoader[time.Duration]
-		minDSRetentionPeriod           misc.ValueLoader[time.Duration]
-		maxDSRetentionPeriod           misc.ValueLoader[time.Duration]
-		refreshDSTimeout               misc.ValueLoader[time.Duration]
+		maxTableSize                   config.ValueLoader[int64]
+		cacheExpiration                config.ValueLoader[time.Duration]
+		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
+		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
+		jobCleanupFrequency            config.ValueLoader[time.Duration]
+		minDSRetentionPeriod           config.ValueLoader[time.Duration]
+		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
+		refreshDSTimeout               config.ValueLoader[time.Duration]
 		jobMaxAge                      func() time.Duration
 		writeCapacity                  chan struct{}
 		readCapacity                   chan struct{}
@@ -485,32 +485,32 @@ type Handle struct {
 		enableReaderQueue              bool
 		clearAll                       bool
 		skipMaintenanceError           bool
-		dsLimit                        misc.ValueLoader[int]
+		dsLimit                        config.ValueLoader[int]
 		maxReaders                     int
 		maxWriters                     int
 		maxOpenConnections             int
-		analyzeThreshold               misc.ValueLoader[int]
-		MaxDSSize                      misc.ValueLoader[int]
+		analyzeThreshold               config.ValueLoader[int]
+		MaxDSSize                      config.ValueLoader[int]
 		migration                      struct {
-			maxMigrateOnce, maxMigrateDSProbe          misc.ValueLoader[int]
+			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
 			vacuumFullStatusTableThreshold             func() int64
 			vacuumAnalyzeStatusTableThreshold          func() int64
 			jobDoneMigrateThres, jobStatusMigrateThres func() float64
 			jobMinRowsMigrateThres                     func() float64
-			migrateDSLoopSleepDuration                 misc.ValueLoader[time.Duration]
-			migrateDSTimeout                           misc.ValueLoader[time.Duration]
+			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
+			migrateDSTimeout                           config.ValueLoader[time.Duration]
 		}
 		backup struct {
-			masterBackupEnabled       misc.ValueLoader[bool]
-			maxBackupRetryTime        misc.ValueLoader[time.Duration]
-			backupCheckSleepDuration  misc.ValueLoader[time.Duration]
+			masterBackupEnabled       config.ValueLoader[bool]
+			maxBackupRetryTime        config.ValueLoader[time.Duration]
+			backupCheckSleepDuration  config.ValueLoader[time.Duration]
 			preBackupHandlers         []prebackup.Handler
 			fileUploaderProvider      fileuploader.Provider
-			instanceBackupEnabled     misc.ValueLoader[bool]
+			instanceBackupEnabled     config.ValueLoader[bool]
 			FailedOnly                bool
 			PathPrefix                string
-			backupRowsBatchSize       misc.ValueLoader[int64]
-			backupMaxTotalPayloadSize misc.ValueLoader[int64]
+			backupRowsBatchSize       config.ValueLoader[int64]
+			backupMaxTotalPayloadSize config.ValueLoader[int64]
 		}
 	}
 }
@@ -647,7 +647,7 @@ func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	}
 }
 
-func WithDSLimit(limit misc.ValueLoader[int]) OptsFunc {
+func WithDSLimit(limit config.ValueLoader[int]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.dsLimit = limit
 	}

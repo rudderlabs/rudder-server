@@ -10,6 +10,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
@@ -42,7 +44,7 @@ type Handle struct {
 	started             bool
 	uploader            debugger.Uploader[*GatewayEventBatchT]
 	configBackendURL    string
-	disableEventUploads misc.ValueLoader[bool]
+	disableEventUploads config.ValueLoader[bool]
 	log                 logger.Logger
 	eventsCache         cache.Cache[[]byte]
 
@@ -204,8 +206,8 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 			event := map[string]interface{}{
 				"payload":       ev,
 				"receivedAt":    receivedAtStr,
-				"eventName":     misc.GetStringifiedData(ev["event"]),
-				"eventType":     misc.GetStringifiedData(ev["type"]),
+				"eventName":     stringify.Data(ev["event"]),
+				"eventType":     stringify.Data(ev["type"]),
 				"errorResponse": make(map[string]interface{}),
 				"errorCode":     200,
 			}
