@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
-	yandexmetricaofflineevents "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandex-metrica-offline-events"
+	yandexmetrica "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -39,7 +39,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	case "ELOQUA":
 		return eloqua.NewManager(destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
-		return yandexmetricaofflineevents.NewManager(destination, backendConfig)
+		return yandexmetrica.NewManager(destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }
