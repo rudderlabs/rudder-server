@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	kitip "github.com/rudderlabs/rudder-go-kit/ip"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -105,7 +105,7 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 			status := response.GetErrorStatusCode(errorMessage)
 			responseBody := response.GetStatus(errorMessage)
 			gw.logger.Infow("response",
-				"ip", kitip.FromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"status", status,
 				"body", responseBody)
@@ -126,7 +126,7 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 
 	responseBody := response.GetStatus(response.Ok)
 	gw.logger.Debugw("response",
-		"ip", kitip.FromReq(r),
+		"ip", kithttputil.GetRequestIP(r),
 		"path", r.URL.Path,
 		"status", http.StatusOK,
 		"body", responseBody)

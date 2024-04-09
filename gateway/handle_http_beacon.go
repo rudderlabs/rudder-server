@@ -3,7 +3,7 @@ package gateway
 import (
 	"net/http"
 
-	kitip "github.com/rudderlabs/rudder-go-kit/ip"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -36,7 +36,7 @@ func (gw *Handle) beaconInterceptor(delegate http.HandlerFunc) http.HandlerFunc 
 			stat.RequestFailed("invalidWriteKey")
 			stat.Report(gw.stats)
 			gw.logger.Infow("response",
-				"ip", kitip.FromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"status", status,
 				"body", responseBody)

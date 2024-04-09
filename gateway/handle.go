@@ -17,8 +17,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	kitip "github.com/rudderlabs/rudder-go-kit/ip"
-
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
@@ -602,7 +601,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 		gw.emptyAnonIdHeaderStat.Increment()
 	}
 	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
-	ipAddr := kitip.FromReq(req)
+	ipAddr := kithttputil.GetRequestIP(req)
 
 	traceParent := stats.GetTraceParentFromContext(req.Context())
 	if traceParent == "" {
@@ -670,7 +669,7 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
 		).Increment()
 		gw.logger.Debugn("response",
-			logger.NewStringField("ip", kitip.FromReq(r)),
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),
@@ -688,7 +687,7 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
 		).Increment()
 		gw.logger.Infon("response",
-			logger.NewStringField("ip", kitip.FromReq(r)),
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),

@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	bcConfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -216,7 +217,7 @@ func TestApp(t *testing.T) {
 				_ = session.Close()
 			})
 
-			grpcConn, err := grpc.Dial("", grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpcConn, err := grpc.NewClient("localhost:"+strconv.Itoa(tcpPort), grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
 					return session.Open()
 				}),

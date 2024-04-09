@@ -6,7 +6,7 @@ import (
 
 	"github.com/samber/lo"
 
-	kitip "github.com/rudderlabs/rudder-go-kit/ip"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 
 	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
 
@@ -248,7 +248,7 @@ func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorM
 		status := response.GetErrorStatusCode(errorMessage)
 		responseBody := response.GetStatus(errorMessage)
 		gw.logger.Infow("response",
-			"ip", kitip.FromReq(r),
+			"ip", kithttputil.GetRequestIP(r),
 			"path", r.URL.Path,
 			"status", status,
 			"body", responseBody)

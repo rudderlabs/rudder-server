@@ -10,7 +10,7 @@ import (
 
 	"github.com/tidwall/sjson"
 
-	kitip "github.com/rudderlabs/rudder-go-kit/ip"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 
@@ -63,7 +63,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 				next(pw, pr)
 				if pw.status != http.StatusOK {
 					gw.logger.Infow("Error while handling request",
-						"ip", kitip.FromReq(r),
+						"ip", kithttputil.GetRequestIP(r),
 						"path", r.URL.Path,
 						"status", pw.status,
 						"body", string(pw.body))
@@ -79,7 +79,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 			stat.RequestFailed("NoWriteKeyInQueryParams")
 			stat.Report(gw.stats)
 			gw.logger.Infow("Error while handling request",
-				"ip", kitip.FromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"body", response.NoWriteKeyInQueryParams)
 		}
