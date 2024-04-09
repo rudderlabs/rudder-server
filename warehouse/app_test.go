@@ -216,7 +216,7 @@ func TestApp(t *testing.T) {
 				_ = session.Close()
 			})
 
-			grpcConn, err := grpc.Dial("", grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpcConn, err := grpc.NewClient("", grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
 					return session.Open()
 				}),
