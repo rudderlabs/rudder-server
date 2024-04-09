@@ -177,7 +177,7 @@ func TestGRPC(t *testing.T) {
 			return server.Serve(listener)
 		})
 
-		grpcClientConn, err := grpc.Dial("localhost:"+strconv.Itoa(tcpPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpcClientConn, err := grpc.NewClient("localhost:"+strconv.Itoa(tcpPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, grpcClientConn.Close())
