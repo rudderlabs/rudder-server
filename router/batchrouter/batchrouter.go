@@ -1,11 +1,12 @@
 package batchrouter
 
-import jsoniter "github.com/json-iterator/go"
+import (
+	jsoniter "github.com/json-iterator/go"
+)
 
 var (
 	json                    = jsoniter.ConfigCompatibleWithStandardLibrary
 	objectStoreDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations       = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "ELOQUA"}
 	dateFormatLayouts       = map[string]string{
 		"01-02-2006": "MM-DD-YYYY",
 		"2006-01-02": "YYYY-MM-DD",

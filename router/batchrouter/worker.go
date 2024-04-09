@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	async_common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -208,7 +209,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			rruntime.Go(func() {
 				defer brt.limiter.upload.Begin(w.partition)()
 				switch {
-				case slices.Contains(objectStoreDestinations, brt.destType):
+				case IsObjectStorageDestination(brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStart := time.Now()
 					output := brt.upload(brt.destType, &batchedJobs, false)
@@ -223,7 +224,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					}
 
 					destUploadStat.Since(destUploadStart)
-				case slices.Contains(warehouseutils.WarehouseDestinations, brt.destType):
+				case IsWarehouseDestination(brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -245,7 +246,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
 					destUploadStat.Since(destUploadStart)
-				case slices.Contains(asyncDestinations, brt.destType):
+				case async_common.IsAsyncDestination(brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchedJobs)

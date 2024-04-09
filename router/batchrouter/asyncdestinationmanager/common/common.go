@@ -13,13 +13,36 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-type AsyncDestinationManager interface {
+type AsyncUploadDestinationManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
+}
+
+type AsyncDestinationManager interface {
+	AsyncUploadDestinationManager
 	Poll(pollInput AsyncPoll) PollStatusResponse
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
-var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS", "ELOQUA"}
+type SimpleAsyncDestinationManager struct {
+	Uploader AsyncUploadDestinationManager
+}
+
+func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+	return m.Uploader.Upload(asyncDestStruct)
+}
+
+func (m SimpleAsyncDestinationManager) Poll(pollInput AsyncPoll) PollStatusResponse {
+	return PollStatusResponse{
+		StatusCode: 200,
+		Complete:   true,
+	}
+}
+
+func (m SimpleAsyncDestinationManager) GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse {
+	return GetUploadStatsResponse{
+		StatusCode: 200,
+	}
+}
 
 type PollStatusResponse struct {
 	Complete       bool

@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/sftp"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -29,7 +30,7 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
+func NewRegularManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
 		return bingads.NewManager(destination, backendConfig)
@@ -37,6 +38,17 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return marketobulkupload.NewManager(destination)
 	case "ELOQUA":
 		return eloqua.NewManager(destination)
+
+	}
+	return nil, errors.New("invalid destination type")
+}
+
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
+	switch {
+	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
+		return NewRegularManager(destination, backendConfig)
+	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
+		return sftp.NewManager(destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }
