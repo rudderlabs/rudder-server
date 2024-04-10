@@ -8,7 +8,9 @@ on:
       - master
       - main
   pull_request:
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
 env:
   arch_amd64: amd64
   arch_arm64: arm64
