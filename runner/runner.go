@@ -126,6 +126,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
 	} else {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
+		for histogramName, buckets := range customBucketsServer {
+			statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
+		}
 	}
 	for histogramName, buckets := range customBuckets {
 		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
