@@ -166,6 +166,7 @@ func (w *worker) workLoop() {
 				UserID:             userID,
 				JobID:              job.JobID,
 				SourceID:           parameters.SourceID,
+				SourceCategory:     parameters.SourceCategory,
 				DestinationID:      parameters.DestinationID,
 				AttemptNum:         job.LastJobStatus.AttemptNum,
 				ReceivedAt:         parameters.ReceivedAt,
@@ -1075,15 +1076,21 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
+			// event.Metadata.SourceCategory,
 			if err == nil {
+				sourceCategory := destinationJobMetadata.SourceCategory
+				if sourceCategory == "" {
+					sourceCategory = "event-stream"
+				}
 				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":      "router",
-						"destType":    w.rt.destType,
-						"destID":      destination.ID,
-						"destination": destinationTag,
-						"workspaceId": status.WorkspaceId,
-						"sourceId":    destinationJobMetadata.SourceID,
+						"module":         "router",
+						"destType":       w.rt.destType,
+						"destID":         destination.ID,
+						"destination":    destinationTag,
+						"workspaceId":    status.WorkspaceId,
+						"sourceId":       destinationJobMetadata.SourceID,
+						"sourceCategory": sourceCategory,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))

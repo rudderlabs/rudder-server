@@ -187,13 +187,18 @@ func (brt *Handle) recordUploadStats(destination Connection, output UploadResult
 	eventDeliveryStat.Count(output.TotalEvents)
 
 	if receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt); err == nil {
+		sourceCategory := destination.Source.SourceDefinition.Category
+		if sourceCategory == "" {
+			sourceCategory = "event-stream"
+		}
 		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
-			"module":        "batch_router",
-			"destType":      brt.destType,
-			"destination":   destinationTag,
-			"workspaceId":   destination.Source.WorkspaceID,
-			"sourceId":      destination.Source.ID,
-			"destinationId": destination.Destination.ID,
+			"module":         "batch_router",
+			"destType":       brt.destType,
+			"destination":    destinationTag,
+			"workspaceId":    destination.Source.WorkspaceID,
+			"sourceId":       destination.Source.ID,
+			"destinationId":  destination.Destination.ID,
+			"sourceCategory": sourceCategory,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
