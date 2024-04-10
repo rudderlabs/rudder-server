@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -132,7 +133,7 @@ const (
 var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
-	awsCredsExpiryInS  misc.ValueLoader[int64]
+	awsCredsExpiryInS  config.ValueLoader[int64]
 
 	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}

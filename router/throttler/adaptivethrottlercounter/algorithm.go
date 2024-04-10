@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type Adaptive struct {
@@ -17,7 +16,7 @@ type Adaptive struct {
 	wg                   *sync.WaitGroup
 }
 
-func New(config *config.Config, window misc.ValueLoader[time.Duration]) *Adaptive {
+func New(config *config.Config, window config.ValueLoader[time.Duration]) *Adaptive {
 	lf := &limitFactor{value: 1}
 
 	increaseWindowMultiplier := config.GetReloadableIntVar(2, 1, "Router.throttler.adaptive.increaseWindowMultiplier")

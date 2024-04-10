@@ -59,10 +59,10 @@ type Archiver struct {
 	tenantManager *multitenant.Manager
 
 	config struct {
-		archiveUploadRelatedRecords misc.ValueLoader[bool]
-		uploadsArchivalTimeInDays   misc.ValueLoader[int]
-		archiverTickerTime          misc.ValueLoader[time.Duration]
-		backupRowsBatchSize         misc.ValueLoader[int]
+		archiveUploadRelatedRecords config.ValueLoader[bool]
+		uploadsArchivalTimeInDays   config.ValueLoader[int]
+		archiverTickerTime          config.ValueLoader[time.Duration]
+		backupRowsBatchSize         config.ValueLoader[int]
 	}
 
 	archiveFailedStat stats.Measurement

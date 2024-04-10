@@ -101,14 +101,14 @@ type Router struct {
 		uploadAllocatorSleep              time.Duration
 		uploadStatusTrackFrequency        time.Duration
 		shouldPopulateHistoricIdentities  bool
-		uploadFreqInS                     misc.ValueLoader[int64]
-		noOfWorkers                       misc.ValueLoader[int]
-		enableJitterForSyncs              misc.ValueLoader[bool]
-		maxParallelJobCreation            misc.ValueLoader[int]
-		mainLoopSleep                     misc.ValueLoader[time.Duration]
-		stagingFilesBatchSize             misc.ValueLoader[int]
-		warehouseSyncFreqIgnore           misc.ValueLoader[bool]
-		cronTrackerRetries                misc.ValueLoader[int64]
+		uploadFreqInS                     config.ValueLoader[int64]
+		noOfWorkers                       config.ValueLoader[int]
+		enableJitterForSyncs              config.ValueLoader[bool]
+		maxParallelJobCreation            config.ValueLoader[int]
+		mainLoopSleep                     config.ValueLoader[time.Duration]
+		stagingFilesBatchSize             config.ValueLoader[int]
+		warehouseSyncFreqIgnore           config.ValueLoader[bool]
+		cronTrackerRetries                config.ValueLoader[int64]
 	}
 
 	stats struct {
