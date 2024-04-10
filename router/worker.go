@@ -1077,10 +1077,6 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
-				sourceCategory := destinationJobMetadata.SourceCategory
-				if sourceCategory == "" {
-					sourceCategory = EventStreamSourceCategory
-				}
 				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
 						"module":         "router",
@@ -1089,7 +1085,7 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 						"destination":    destinationTag,
 						"workspaceId":    status.WorkspaceId,
 						"sourceId":       destinationJobMetadata.SourceID,
-						"sourceCategory": sourceCategory,
+						"sourceCategory": destinationJobMetadata.SourceCategory,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))

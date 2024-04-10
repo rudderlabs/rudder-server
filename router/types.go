@@ -12,10 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 )
 
-const (
-	EventStreamSourceCategory = "eventStream"
-)
-
 type workerJobStatus struct {
 	userID string
 	worker *worker
