@@ -11,6 +11,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const (
+	EventStreamSourceCategory = "eventStream"
+)
+
 type workerJobStatus struct {
 	userID string
 	worker *worker

@@ -1076,11 +1076,10 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
-			// event.Metadata.SourceCategory,
 			if err == nil {
 				sourceCategory := destinationJobMetadata.SourceCategory
 				if sourceCategory == "" {
-					sourceCategory = "event-stream"
+					sourceCategory = EventStreamSourceCategory
 				}
 				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{

@@ -8,6 +8,10 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
+const (
+	EventStreamSourceCategory = "eventStream"
+)
+
 type Connection struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
