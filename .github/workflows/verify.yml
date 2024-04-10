@@ -7,6 +7,9 @@ on:
       - master
       - main
   pull_request:
+concurrency:
+  group: ${{ github.head_ref }}
+  cancel-in-progress: true
 jobs:
   generate:
     name: Correct generated files
