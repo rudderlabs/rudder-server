@@ -464,12 +464,9 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	var overFlow bool
 	var overFlownJobs []*jobsdb.JobT
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
-	allowedSize := brt.maxPayloadSizeInBytes
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
-		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch &&
-			!brt.asyncDestinationStruct[destinationID].UploadInProgress &&
-			brt.asyncDestinationStruct[destinationID].Size < allowedSize {
+		if IsAsyncDestinationLimitNotReached(brt, destinationID) {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			_, err := file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
