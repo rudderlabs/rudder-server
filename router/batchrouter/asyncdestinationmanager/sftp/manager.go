@@ -11,8 +11,9 @@ import (
 // TODO: Implement this
 type DefaultManager struct{}
 
+// Upload uploads the data to the destination and marks all jobs to be completed
+// TODO: Implement this
 func (m *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	// TODO: Implement this
 	return common.AsyncUploadOutput{}
 }
 

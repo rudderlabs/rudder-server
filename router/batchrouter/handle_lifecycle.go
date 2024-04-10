@@ -228,10 +228,12 @@ func (brt *Handle) startAsyncDestinationManager() {
 
 	brt.asyncDestinationStruct = make(map[string]*async_common.AsyncDestinationStruct)
 
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		brt.pollAsyncStatus(brt.backgroundCtx)
-		return nil
-	}))
+	if async_common.IsAsyncRegularDestination(brt.destType) {
+		brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+			brt.pollAsyncStatus(brt.backgroundCtx)
+			return nil
+		}))
+	}
 
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		brt.asyncUploadWorker(brt.backgroundCtx)
