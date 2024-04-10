@@ -216,7 +216,9 @@ func TestApp(t *testing.T) {
 				_ = session.Close()
 			})
 
-			grpcConn, err := grpc.Dial("", grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpcConn, err := grpc.NewClient(
+				fmt.Sprintf("localhost:%d", tcpPort),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
 					return session.Open()
 				}),
@@ -230,6 +232,7 @@ func TestApp(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				if healthResponse, err := grpcClient.GetHealth(ctx, &emptypb.Empty{}); err != nil {
+					t.Log(err)
 					return false
 				} else if healthResponse == nil {
 					return false
