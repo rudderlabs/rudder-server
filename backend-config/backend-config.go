@@ -19,11 +19,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -34,7 +34,7 @@ var (
 	// environment variables
 	configBackendURL            string
 	cpRouterURL                 string
-	pollInterval                misc.ValueLoader[time.Duration]
+	pollInterval                config.ValueLoader[time.Duration]
 	configJSONPath              string
 	configFromFile              bool
 	configEnvReplacementEnabled bool

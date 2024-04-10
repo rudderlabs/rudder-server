@@ -590,7 +590,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		missingMessage:   mockSkippedDueToMessage,
 		prepareBatchTime: mockPrepareBatchTime,
 	}
-	allowReqsWithoutUserIDAndAnonymousID = misc.SingleValueLoader(false)
+	allowReqsWithoutUserIDAndAnonymousID = config.SingleValueLoader(false)
 
 	t.Run("nil", func(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
@@ -652,7 +652,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		now := time.Now()
-		allowReqsWithoutUserIDAndAnonymousID = misc.SingleValueLoader(true)
+		allowReqsWithoutUserIDAndAnonymousID = config.SingleValueLoader(true)
 		data := []map[string]interface{}{
 			{"not-interesting": "some value", "topic": "some-topic"},
 			{"message": "msg01", "topic": "some-topic"},
