@@ -4,11 +4,32 @@ updates:
     directory: "/" 
     schedule:
       interval: "daily"
+    groups:
+      go-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: "github-actions"
     directory: "/" 
     schedule:
       interval: "daily"
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: "docker"
     directory: "/" 
     schedule:
       interval: "daily"
+    groups:
+      docker-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
