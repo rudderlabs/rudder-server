@@ -10,8 +10,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
-	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -291,7 +292,6 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.maxFailedCountForJob = config.GetReloadableIntVar(3, 1, "Router."+rt.destType+".maxFailedCountForJob", "Router.maxFailedCountForJob")
 	rt.reloadableConfig.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "Router.RSources"+rt.destType+".maxFailedCountForJob", "Router.RSources.maxFailedCountForJob")
 	rt.reloadableConfig.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Router."+rt.destType+".PayloadLimit", "Router.PayloadLimit")
-	rt.reloadableConfig.routerTimeout = config.GetReloadableDurationVar(3600, time.Second, "Router."+rt.destType+".routerTimeout", "Router.routerTimeout")
 	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router.retryTimeWindow")
 	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "Router.RSources"+rt.destType+".retryTimeWindow", "Router.RSources.retryTimeWindow")
 	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")

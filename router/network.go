@@ -34,7 +34,7 @@ type netHandle struct {
 	logger        logger.Logger
 }
 
-// Network interface
+// NetHandle interface
 type NetHandle interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
 }
@@ -137,7 +137,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				}
 				var buf bytes.Buffer
 				zw := gzip.NewWriter(&buf)
-				defer zw.Close()
+				defer func() { _ = zw.Close() }()
 
 				if _, err := zw.Write([]byte(strValue)); err != nil {
 					return &utils.SendPostResponse{
