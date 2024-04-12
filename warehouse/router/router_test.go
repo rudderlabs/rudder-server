@@ -1108,7 +1108,7 @@ func TestRouter(t *testing.T) {
 		}))
 
 		ctx, cancel := context.WithCancel(context.Background())
-		g, _ := errgroup.WithContext(ctx)
+		g := &errgroup.Group{}
 		defer cancel()
 
 		warehouse := model.Warehouse{
