@@ -3,9 +3,10 @@ package gateway
 import (
 	"net/http"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // beaconBatchHandler can handle beacon batch requests where writeKey is passed as a query param
@@ -35,7 +36,7 @@ func (gw *Handle) beaconInterceptor(delegate http.HandlerFunc) http.HandlerFunc 
 			stat.RequestFailed("invalidWriteKey")
 			stat.Report(gw.stats)
 			gw.logger.Infow("response",
-				"ip", misc.GetIPFromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"status", status,
 				"body", responseBody)

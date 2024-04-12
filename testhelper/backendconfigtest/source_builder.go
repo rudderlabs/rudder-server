@@ -2,6 +2,7 @@ package backendconfigtest
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 

@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // webAudienceListHandler - handler for audience list requests
@@ -104,7 +105,7 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 			status := response.GetErrorStatusCode(errorMessage)
 			responseBody := response.GetStatus(errorMessage)
 			gw.logger.Infow("response",
-				"ip", misc.GetIPFromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"status", status,
 				"body", responseBody)
@@ -125,7 +126,7 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 
 	responseBody := response.GetStatus(response.Ok)
 	gw.logger.Debugw("response",
-		"ip", misc.GetIPFromReq(r),
+		"ip", kithttputil.GetRequestIP(r),
 		"path", r.URL.Path,
 		"status", http.StatusOK,
 		"body", responseBody)

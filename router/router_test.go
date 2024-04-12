@@ -244,8 +244,8 @@ func TestBackoff(t *testing.T) {
 			workerInputBufferSize: 3,
 			barrier:               barrier,
 			reloadableConfig: &reloadableConfig{
-				maxFailedCountForJob: misc.SingleValueLoader(3),
-				retryTimeWindow:      misc.SingleValueLoader(180 * time.Minute),
+				maxFailedCountForJob: config.SingleValueLoader(3),
+				retryTimeWindow:      config.SingleValueLoader(180 * time.Minute),
 			},
 			drainer:          &drainer{},
 			throttlerFactory: &mockThrottlerFactory{count: new(atomic.Int64)},
@@ -1070,8 +1070,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(0))
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(0))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1201,8 +1201,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(60 * time.Second)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(60 * time.Second)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, nonexistentDestinationID) // skipcq: GO-R4002
@@ -1302,9 +1302,9 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 
 			router.enableBatching = true
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.noOfWorkers = 1
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(math.MaxInt64))
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1447,8 +1447,8 @@ var _ = Describe("router", func() {
 			// we have a job that has failed once(toRetryJobsList), it should abort when picked up next
 			// Because we only allow one failure per job with this
 			router.transformer = mockTransformer
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
-			router.reloadableConfig.maxFailedCountForJob = misc.SingleValueLoader(5)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
+			router.reloadableConfig.maxFailedCountForJob = config.SingleValueLoader(5)
 			router.enableBatching = true
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -1622,8 +1622,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(math.MaxInt64))
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1832,8 +1832,8 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(math.MaxInt64))
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
@@ -2001,7 +2001,7 @@ var _ = Describe("router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -2160,9 +2160,9 @@ var _ = Describe("router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(math.MaxInt64))
-			router.reloadableConfig.transformerProxy = misc.SingleValueLoader(true)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
+			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -2307,9 +2307,9 @@ var _ = Describe("router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
-			router.reloadableConfig.noOfJobsToBatchInAWorker = misc.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = misc.SingleValueLoader(time.Duration(math.MaxInt64))
-			router.reloadableConfig.transformerProxy = misc.SingleValueLoader(true)
+			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
+			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
+			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -2596,9 +2596,9 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			logger: logger.NOP,
 			rt: &Handle{
 				reloadableConfig: &reloadableConfig{
-					transformerProxy:                  misc.SingleValueLoader(tc.transformerProxy),
-					skipRtAbortAlertForDelivery:       misc.SingleValueLoader(tc.skip.deliveryAlert),
-					skipRtAbortAlertForTransformation: misc.SingleValueLoader(tc.skip.transformationAlert),
+					transformerProxy:                  config.SingleValueLoader(tc.transformerProxy),
+					skipRtAbortAlertForDelivery:       config.SingleValueLoader(tc.skip.deliveryAlert),
+					skipRtAbortAlertForTransformation: config.SingleValueLoader(tc.skip.transformationAlert),
 				},
 			},
 		}

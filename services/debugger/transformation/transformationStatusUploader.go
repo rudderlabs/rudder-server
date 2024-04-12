@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -70,8 +71,8 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 type Handle struct {
 	configBackendURL               string
 	started                        bool
-	disableTransformationUploads   misc.ValueLoader[bool]
-	limitEventsInMemory            misc.ValueLoader[int]
+	disableTransformationUploads   config.ValueLoader[bool]
+	limitEventsInMemory            config.ValueLoader[int]
 	uploader                       debugger.Uploader[*TransformStatusT]
 	log                            logger.Logger
 	transformationCacheMap         cache.Cache[TransformationStatusT]

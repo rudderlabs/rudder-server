@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var ErrUnsupportedState = errors.New("unsupported state")
@@ -23,28 +24,28 @@ func WithMetadata(metadata map[string]string) OptFn {
 }
 
 // WithEventOrderKeyThreshold sets the maximum number of concurrent jobs for a given key. After this limit is reached, the barrier will be disabled for this key.
-func WithEventOrderKeyThreshold(eventOrderKeyThreshold misc.ValueLoader[int]) OptFn {
+func WithEventOrderKeyThreshold(eventOrderKeyThreshold config.ValueLoader[int]) OptFn {
 	return func(b *Barrier) {
 		b.eventOrderKeyThreshold = eventOrderKeyThreshold
 	}
 }
 
 // WithDisabledStateDuration sets the duration for which the barrier will remain in the disabled state after the concurrency limit has been reached
-func WithDisabledStateDuration(disabledStateDuration misc.ValueLoader[time.Duration]) OptFn {
+func WithDisabledStateDuration(disabledStateDuration config.ValueLoader[time.Duration]) OptFn {
 	return func(b *Barrier) {
 		b.disabledStateDuration = disabledStateDuration
 	}
 }
 
 // WithHalfEnabledStateDuration sets the duration for which the barrier will remain in the half-enabled state
-func WithHalfEnabledStateDuration(halfEnabledStateDuration misc.ValueLoader[time.Duration]) OptFn {
+func WithHalfEnabledStateDuration(halfEnabledStateDuration config.ValueLoader[time.Duration]) OptFn {
 	return func(b *Barrier) {
 		b.halfEnabledStateDuration = halfEnabledStateDuration
 	}
 }
 
 // WithDrainConcurrencyLimit sets the maximum number of concurrent jobs for a given key when the limiter is enabled (after a failed job has been drained, i.e. aborted)
-func WithDrainConcurrencyLimit(drainLimit misc.ValueLoader[int]) OptFn {
+func WithDrainConcurrencyLimit(drainLimit config.ValueLoader[int]) OptFn {
 	return func(b *Barrier) {
 		b.drainLimit = drainLimit
 	}
@@ -68,10 +69,10 @@ func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
 		barriers:                 make(map[BarrierKey]*barrierInfo),
 		metadata:                 make(map[string]string),
-		eventOrderKeyThreshold:   misc.SingleValueLoader(0),
-		disabledStateDuration:    misc.SingleValueLoader(10 * time.Minute),
-		halfEnabledStateDuration: misc.SingleValueLoader(5 * time.Minute),
-		drainLimit:               misc.SingleValueLoader(0),
+		eventOrderKeyThreshold:   config.SingleValueLoader(0),
+		disabledStateDuration:    config.SingleValueLoader(10 * time.Minute),
+		halfEnabledStateDuration: config.SingleValueLoader(5 * time.Minute),
+		drainLimit:               config.SingleValueLoader(0),
 	}
 	for _, fn := range fns {
 		fn(b)
@@ -97,11 +98,11 @@ type Barrier struct {
 	barriers map[BarrierKey]*barrierInfo
 	metadata map[string]string
 
-	eventOrderKeyThreshold   misc.ValueLoader[int] // maximum number of concurrent jobs for a given key (0 means no threshold)
-	disabledStateDuration    misc.ValueLoader[time.Duration]
-	halfEnabledStateDuration misc.ValueLoader[time.Duration]
+	eventOrderKeyThreshold   config.ValueLoader[int] // maximum number of concurrent jobs for a given key (0 means no threshold)
+	disabledStateDuration    config.ValueLoader[time.Duration]
+	halfEnabledStateDuration config.ValueLoader[time.Duration]
 
-	drainLimit misc.ValueLoader[int] // maximum number of concurrent jobs to accept after a previously failed job has been aborted
+	drainLimit config.ValueLoader[int] // maximum number of concurrent jobs to accept after a previously failed job has been aborted
 
 	debugInfo func(key BarrierKey) string
 

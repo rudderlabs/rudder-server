@@ -6,13 +6,14 @@ import (
 
 	"github.com/samber/lo"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+
 	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // writeKeyAuth middleware to authenticate writeKey in the Authorization header.
@@ -247,7 +248,7 @@ func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorM
 		status := response.GetErrorStatusCode(errorMessage)
 		responseBody := response.GetStatus(errorMessage)
 		gw.logger.Infow("response",
-			"ip", misc.GetIPFromReq(r),
+			"ip", kithttputil.GetRequestIP(r),
 			"path", r.URL.Path,
 			"status", status,
 			"body", responseBody)

@@ -1083,6 +1083,7 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 						"destID":      destination.ID,
 						"destination": destinationTag,
 						"workspaceId": status.WorkspaceId,
+						"sourceId":    destinationJobMetadata.SourceID,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
