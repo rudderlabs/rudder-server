@@ -100,6 +100,19 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return 1
 	}
 
+	path, err := config.Default.ConfigFileUsed()
+	if err != nil {
+		r.logger.Warnf("Config: Failed to parse config file from path %q, using default values: %v", path, err)
+	} else {
+		r.logger.Infof("Config: Using config file: %s", path)
+	}
+
+	if err := config.Default.DotEnvLoaded(); err != nil {
+		r.logger.Infof("Config: No .env file loaded: %v", err)
+	} else {
+		r.logger.Infof("Config: Loaded .env file")
+	}
+
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
 		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {

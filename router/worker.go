@@ -470,20 +470,7 @@ func (w *worker) processDestinationJobs() {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := w.trackStuckDelivery()
 
-				// Assuming twice the overhead - defensive: 30% was just fine though
-				// In fact, the timeout should be more than the maximum latency allowed by these workers.
-				// Assuming 10s maximum latency
-				elapsed := time.Since(w.processingStartTime)
-				threshold := w.rt.reloadableConfig.routerTimeout.Load()
-				if elapsed > threshold {
-					respStatusCode := types.RouterTimedOutStatusCode
-					respBody := fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
-					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
-					w.logger.Debugf(
-						"Will drop with %d because of time expiry %v",
-						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
-					)
-				} else if w.rt.customDestinationManager != nil {
+				if w.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if destinationID != destinationJobMetadata.DestinationID {
 							panic(fmt.Errorf("different destinations are grouped together"))
@@ -1094,7 +1081,7 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 
 func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	// Sending destination response to config backend
-	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) && status.ErrorCode != fmt.Sprint(types.RouterTimedOutStatusCode) {
+	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
 			SourceID:      strings.Join(sourceIDs, ","),

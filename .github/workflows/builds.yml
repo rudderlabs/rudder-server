@@ -9,7 +9,7 @@ on:
       - main
   pull_request:
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: true
 env:
   arch_amd64: amd64

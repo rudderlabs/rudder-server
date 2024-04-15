@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -159,7 +158,7 @@ type drainer struct {
 	reason string
 }
 
-func (d *drainer) Drain(job *jobsdb.JobT) (bool, string) {
+func (d *drainer) Drain(_ *jobsdb.JobT) (bool, string) {
 	return d.drain, d.reason
 }
 
@@ -176,15 +175,15 @@ func (m *mockThrottlerFactory) Shutdown() {}
 
 func TestBackoff(t *testing.T) {
 	t.Run("nextAttemptAfter", func(t *testing.T) {
-		min := 10 * time.Second
-		max := 300 * time.Second
-		require.Equal(t, 10*time.Second, nextAttemptAfter(0, min, max))
-		require.Equal(t, 10*time.Second, nextAttemptAfter(1, min, max))
-		require.Equal(t, 20*time.Second, nextAttemptAfter(2, min, max))
-		require.Equal(t, 40*time.Second, nextAttemptAfter(3, min, max))
-		require.Equal(t, 80*time.Second, nextAttemptAfter(4, min, max))
-		require.Equal(t, 160*time.Second, nextAttemptAfter(5, min, max))
-		require.Equal(t, 300*time.Second, nextAttemptAfter(6, min, max))
+		minBackoff := 10 * time.Second
+		maxBackoff := 300 * time.Second
+		require.Equal(t, 10*time.Second, nextAttemptAfter(0, minBackoff, maxBackoff))
+		require.Equal(t, 10*time.Second, nextAttemptAfter(1, minBackoff, maxBackoff))
+		require.Equal(t, 20*time.Second, nextAttemptAfter(2, minBackoff, maxBackoff))
+		require.Equal(t, 40*time.Second, nextAttemptAfter(3, minBackoff, maxBackoff))
+		require.Equal(t, 80*time.Second, nextAttemptAfter(4, minBackoff, maxBackoff))
+		require.Equal(t, 160*time.Second, nextAttemptAfter(5, minBackoff, maxBackoff))
+		require.Equal(t, 300*time.Second, nextAttemptAfter(6, minBackoff, maxBackoff))
 	})
 
 	t.Run("findWorker", func(t *testing.T) {
@@ -1058,138 +1057,6 @@ var _ = Describe("router", func() {
 			}, 60*time.Second, 10*time.Millisecond).
 				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
 		})
-
-		It("can fail jobs if time is more than router timeout", func() {
-			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
-				Reporting: &reporting.NOOP{},
-				netHandle: mockNetHandle,
-			}
-			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
-			router.transformer = mockTransformer
-			router.noOfWorkers = 1
-			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(0))
-
-			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
-
-			toRetryJobsList := []*jobsdb.JobT{
-				{
-					UUID:         uuid.New(),
-					UserID:       "u1",
-					JobID:        2009,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum:    1,
-						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
-					},
-					Parameters: []byte(parameters),
-				},
-			}
-
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:         uuid.New(),
-					UserID:       "u1",
-					JobID:        2010,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-				{
-					UUID:         uuid.New(),
-					UserID:       "u2",
-					JobID:        2011,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-				{
-					UUID:         uuid.New(),
-					UserID:       "u2",
-					JobID:        2012,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-				{
-					UUID:         uuid.New(),
-					UserID:       "u3",
-					JobID:        2013,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-			}
-
-			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-
-			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParams{
-					CustomValFilters: []string{customVal["GA"]},
-					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
-					PayloadSizeLimit: payloadLimit.Load(),
-					JobsLimit:        10000,
-				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
-
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[2], statuses[3], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[3], statuses[4], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil).After(callAllJobs)
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0)
-			done := make(chan struct{})
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-				_ = f(jobsdb.EmptyUpdateSafeTx())
-				close(done)
-			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			<-router.backendConfigInitialized
-			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
-			defer worker.Stop()
-			Expect(worker.Work()).To(BeTrue())
-			Expect(worker.pickupCount).To(Equal(5))
-			Eventually(func() bool {
-				select {
-				case <-done:
-					return true
-				default:
-					return false
-				}
-			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
-		})
-
 		It("aborts jobs if destination is not found in config", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -1202,7 +1069,6 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(60 * time.Second)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, nonexistentDestinationID) // skipcq: GO-R4002
@@ -1304,7 +1170,6 @@ var _ = Describe("router", func() {
 			router.enableBatching = true
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.noOfWorkers = 1
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1623,7 +1488,6 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
@@ -1833,7 +1697,6 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
@@ -2161,7 +2024,6 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
 			router.noOfWorkers = 1
 
@@ -2308,7 +2170,6 @@ var _ = Describe("router", func() {
 			router.transformer = mockTransformer
 
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
-			router.reloadableConfig.routerTimeout = config.SingleValueLoader(time.Duration(math.MaxInt64))
 			router.reloadableConfig.transformerProxy = config.SingleValueLoader(true)
 			router.noOfWorkers = 1
 

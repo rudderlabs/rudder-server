@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	stdjson "encoding/json"
@@ -25,7 +26,6 @@ import (
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -265,11 +265,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				return fmt.Errorf("receiving notifier channel closed")
 			}
 
-			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from notifier",
-				"startId", startId,
-				"endID", endId,
-				logfield.DestinationID, destType,
-				logfield.DestinationType, destID,
+			lf.Logger.Infon("Received responses for staging files from notifier",
+				logger.NewIntField("startId", startId),
+				logger.NewIntField("endID", endId),
+				obskit.DestinationID(destID),
+				obskit.DestinationType(destType),
 			)
 			if responses.Err != nil {
 				return fmt.Errorf("receiving responses from notifier: %w", responses.Err)
