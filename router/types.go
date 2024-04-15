@@ -70,7 +70,6 @@ type reloadableConfig struct {
 	maxFailedCountForJob              config.ValueLoader[int]
 	maxFailedCountForSourcesJob       config.ValueLoader[int]
 	payloadLimit                      config.ValueLoader[int64]
-	routerTimeout                     config.ValueLoader[time.Duration]
 	retryTimeWindow                   config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow            config.ValueLoader[time.Duration]
 	pickupFlushInterval               config.ValueLoader[time.Duration]

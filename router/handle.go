@@ -367,7 +367,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 
 		switch workerJobStatus.status.JobState {
 		case jobsdb.Failed.State:
-			if workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) && workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
+			if workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
 				if workerJobStatus.status.AttemptNum == 1 {
 					sd.Count++
 				}
@@ -644,8 +644,7 @@ func (rt *Handle) drainOrRetryLimitReached(job *jobsdb.JobT) (bool, string) {
 func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	respStatusCode, _ := strconv.Atoi(status.ErrorCode)
 	switch respStatusCode {
-	case types.RouterTimedOutStatusCode,
-		types.RouterUnMarshalErrorCode: // 5xx errors
+	case types.RouterUnMarshalErrorCode: // 5xx errors
 		return false
 	}
 
