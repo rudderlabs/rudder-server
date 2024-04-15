@@ -91,7 +91,7 @@ const bufferSize = 5000 * 1024
 type YandexMetricaBulkUploader struct {
 	pollUrl         string
 	logger          logger.Logger
-	client          *http.Client
+	Client          *http.Client
 	destinationInfo *oauthv2.DestinationInfo
 }
 
@@ -115,7 +115,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	// TODO: Add http related timeout values
 	originalHttpClient := &http.Client{Transport: &http.Transport{}}
 	// This client is used for uploading data to yandex metrica
-	yandexUploadManager.client = oauthv2httpclient.NewOAuthHttpClient(
+	yandexUploadManager.Client = oauthv2httpclient.NewOAuthHttpClient(
 		originalHttpClient,
 		oauthv2common.RudderFlowDelivery,
 		&cache,
@@ -259,7 +259,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	q.Add("client_id_type", clientType)
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, clientDoErr := ym.client.Do(req)
+	resp, clientDoErr := ym.Client.Do(req)
 	if clientDoErr != nil {
 		return nil, clientDoErr
 	}
@@ -319,9 +319,8 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		return ym.generateErrorOutput("Error while marshalling AsyncUploadT.", err, importingJobIDs)
 	}
 
-	ym.logger.Info("Payload", string(ympayload))
-
 	userIdType, csvFilePath, err := generateCSVFromJSON(ympayload, goalId)
+	defer os.Remove(csvFilePath)
 	if err != nil {
 		return ym.generateErrorOutput("Error while generating CSV from JSON.", err, importingJobIDs)
 	}
@@ -329,7 +328,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	uploadURL, err := url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload")
 
 	if err != nil {
-		return ym.generateErrorOutput("JSON Marshal Failed", err, importingJobIDs)
+		return ym.generateErrorOutput("Error while joining uploadUrl with counterId", err, importingJobIDs)
 	}
 
 	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
