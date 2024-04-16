@@ -25,7 +25,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -298,7 +297,7 @@ func (a *App) migrate() error {
 // Run runs the warehouse service
 func (a *App) Run(ctx context.Context) error {
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.mode) && !db.IsNormalMode() {
+	if !mode.IsStandAlone(a.config.mode) {
 		a.logger.Info("Skipping start of warehouse service...")
 		return nil
 	}

@@ -19,11 +19,9 @@ import (
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -38,11 +36,8 @@ type gatewayApp struct {
 	}
 }
 
-func (a *gatewayApp) Setup(options *app.Options) error {
+func (a *gatewayApp) Setup() error {
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY); err != nil {
-		return err
-	}
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}

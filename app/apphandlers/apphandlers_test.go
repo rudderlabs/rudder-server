@@ -27,12 +27,12 @@ func TestAppHandlerStartSequence(t *testing.T) {
 		})
 
 		t.Run("it shouldn't be able to setup if database is down", func(t *testing.T) {
-			require.Error(t, appHandler.Setup(options))
+			require.Error(t, appHandler.Setup())
 		})
 
 		t.Run("it should be able to setup if database is up", func(t *testing.T) {
 			startJobsDBPostgresql(t)
-			require.NoError(t, appHandler.Setup(options))
+			require.NoError(t, appHandler.Setup())
 		})
 	}
 

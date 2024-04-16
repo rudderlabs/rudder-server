@@ -22,7 +22,6 @@ type badgerDB struct {
 	close    chan struct{}
 	gcDone   chan struct{}
 	path     string
-	clearDB  bool
 	opts     badger.Options
 }
 
@@ -79,12 +78,6 @@ func (d *badgerDB) start() {
 	d.badgerDB, err = badger.Open(d.opts)
 	if err != nil {
 		panic(err)
-	}
-	if d.clearDB {
-		err = d.badgerDB.DropAll()
-		if err != nil {
-			panic(err)
-		}
 	}
 	rruntime.Go(func() {
 		d.gcLoop()

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
@@ -34,8 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -194,7 +193,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
-		if err := r.appHandler.Setup(options); err != nil {
+		if err := r.appHandler.Setup(); err != nil {
 			r.logger.Errorf("Unable to prepare rudder-core database: %s", err)
 			return 1
 		}
@@ -231,8 +230,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			return profiler.StartServer(ctx, config.GetInt("Profiler.Port", 7777))
 		})
 	}
-
-	misc.AppStartTime = time.Now().Unix()
 
 	// Start rudder core
 	if r.canStartServer() {
@@ -322,7 +319,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 func runAllInit() {
 	admin.Init()
 	misc.Init()
-	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
