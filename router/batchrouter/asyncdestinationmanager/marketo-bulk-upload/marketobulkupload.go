@@ -227,6 +227,10 @@ func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, sta
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
+func (b *MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(job), nil
+}
+
 func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID

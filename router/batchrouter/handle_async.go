@@ -17,7 +17,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -465,13 +464,21 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	allowedSize := brt.maxPayloadSizeInBytes
 	for _, job := range batchJobs.Jobs {
-		transformedData := common.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch &&
 			!brt.asyncDestinationStruct[destinationID].UploadInProgress &&
 			brt.asyncDestinationStruct[destinationID].Size < allowedSize {
-			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
+			fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
+			if err != nil {
+				failedAsyncJobs := BatchedJobs{
+					Jobs:       []*jobsdb.JobT{job},
+					Connection: batchJobs.Connection,
+					TimeWindow: batchJobs.TimeWindow,
+				}
+				brt.updateJobStatus(&failedAsyncJobs, false, err, false)
+				continue
+			}
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
-			_, err := file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
+			_, err = file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
 			if err != nil {
 				panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
 			}
