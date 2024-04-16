@@ -296,12 +296,6 @@ func (a *App) migrate() error {
 
 // Run runs the warehouse service
 func (a *App) Run(ctx context.Context) error {
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.mode) {
-		a.logger.Info("Skipping start of warehouse service...")
-		return nil
-	}
-
 	a.logger.Info("Starting Warehouse service...")
 
 	defer func() {
