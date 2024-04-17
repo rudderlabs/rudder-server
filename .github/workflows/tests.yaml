@@ -174,7 +174,7 @@ jobs:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
         run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Setup tmate session
-        if: failure()
+        if: always()
         uses: mxschmitt/action-tmate@v3
       - name: Sanitize name for Artifact
         run: |
