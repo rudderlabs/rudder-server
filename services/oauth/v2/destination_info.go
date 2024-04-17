@@ -40,11 +40,12 @@ func (d *DestinationInfo) IsOAuthSupportedForFlow(flow string) (bool, error) {
 	rudderScopesValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "rudderScopes")
 	if rudderScopesValue == nil {
 		// valid use-case for non-OAuth destinations
-		return false, nil
+		// when the auth.type is OAuth and rudderScopes is not mentioned, we would assume oauth flow is to be used when it is in "delivery" flow
+		return flow == string(common.RudderFlowDelivery), nil
 	}
 	interfaceArr, ok := rudderScopesValue.([]interface{})
 	if !ok {
-		return false, fmt.Errorf("rudderScopes should be a string[]")
+		return false, fmt.Errorf("rudderScopes should be a interface[]")
 	}
 	var rudderScopes []string
 	for _, scopeInterface := range interfaceArr {
@@ -65,16 +66,16 @@ Example:
 `GetAccountID(common.RudderFlowDelivery)` --> To be used when we make use of OAuth during normal event delivery
 */
 func (d *DestinationInfo) GetAccountID(flow common.RudderFlow) (string, error) {
-	idKey := common.DeliveryAccountIDKey
-	if flow == common.RudderFlowDelete {
-		idKey = common.DeleteAccountIDKey
-	}
-
-	rudderAccountIdInterface, found := d.Config[idKey]
 	oauthDest, err := d.IsOAuthDestination(flow)
 	if err != nil {
 		return "", fmt.Errorf("failed to check if destination is oauth destination: %v", err)
 	}
+
+	idKey := common.DeliveryAccountIDKey
+	if flow == common.RudderFlowDelete {
+		idKey = common.DeleteAccountIDKey
+	}
+	rudderAccountIdInterface, found := d.Config[idKey]
 	if !oauthDest || !found || idKey == "" {
 		return "", fmt.Errorf("destination is not an oauth destination or accountId not found")
 	}
