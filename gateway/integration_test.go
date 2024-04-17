@@ -205,7 +205,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	// Test basic Gateway happy path
 	t.Run("events are received in gateway", func(t *testing.T) {
 		require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
-		sendEventsToGateway(t, httpPort, writeKey, sourceID)
+		sendEventsToGateway(t, httpPort, writeKey, sourceID, workspaceID)
 		t.Cleanup(cleanupGwJobs)
 
 		var (
@@ -247,7 +247,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	if appType == app.EMBEDDED {
 		// Trigger normal mode for the processor to start
 		t.Run("switch to normal mode", func(t *testing.T) {
-			sendEventsToGateway(t, httpPort, writeKey, sourceID)
+			sendEventsToGateway(t, httpPort, writeKey, sourceID, workspaceID)
 			t.Cleanup(cleanupGwJobs)
 
 			require.Eventuallyf(t, func() bool {
@@ -257,7 +257,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 		// Trigger degraded mode, the Gateway should still work
 		t.Run("switch to degraded mode", func(t *testing.T) {
-			sendEventsToGateway(t, httpPort, writeKey, sourceID)
+			sendEventsToGateway(t, httpPort, writeKey, sourceID, workspaceID)
 			t.Cleanup(cleanupGwJobs)
 
 			var count int
@@ -277,7 +277,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	}
 }
 
-func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID string) {
+func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID, workspaceID string) {
 	event := `{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
@@ -295,11 +295,23 @@ func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID string) 
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	}`
-	batchedEvent := fmt.Sprintf(`{"batch": [%s]}`, event)
 	payload1 := strings.NewReader(event)
 	sendEvent(t, httpPort, payload1, "identify", writeKey)
-	payload2 := strings.NewReader(batchedEvent)
-	sendInternalBatch(t, httpPort, payload2, sourceID)
+	internalBatchPayload := fmt.Sprintf(`[{
+			"properties": {
+				"messageID": "messageID",
+				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				"workspaceID": %q,
+				"userID": "identified_user_id",
+				"sourceID": %q,
+				"sourceJobRunID": "sourceJobRunID",
+				"sourceTaskRunID": "sourceTaskRunID",
+				"traceID": "traceID"
+			},
+			"payload": %s
+			}]`, workspaceID, sourceID, event)
+	payload2 := strings.NewReader(internalBatchPayload)
+	sendInternalBatch(t, httpPort, payload2)
 }
 
 func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, writeKey string) {
@@ -332,7 +344,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
-func sendInternalBatch(t *testing.T, httpPort int, payload *strings.Reader, sourceID string) {
+func sendInternalBatch(t *testing.T, httpPort int, payload *strings.Reader) {
 	t.Helper()
 	t.Logf("Sending Internal Batch")
 
@@ -346,8 +358,6 @@ func sendInternalBatch(t *testing.T, httpPort int, payload *strings.Reader, sour
 	require.NoError(t, err)
 
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Set("X-Rudder-Source-Id", sourceID)
-	req.Header.Add("AnonymousId", "anonymousId_header")
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)
