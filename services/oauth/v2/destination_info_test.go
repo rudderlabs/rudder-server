@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
@@ -111,7 +112,6 @@ var isOAuthDestTestCases = []destInfoTestCase{
 }
 
 var _ = Describe("DestinationInfo tests", func() {
-
 	Describe("IsOAuthDestination tests", func() {
 		for _, tc := range isOAuthDestTestCases {
 			It(tc.description, func() {
