@@ -10,10 +10,11 @@ import (
 
 	"github.com/tidwall/sjson"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // pixelPageHandler can handle pixel page requests where everything is passed as query params.
@@ -62,7 +63,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 				next(pw, pr)
 				if pw.status != http.StatusOK {
 					gw.logger.Infow("Error while handling request",
-						"ip", misc.GetIPFromReq(r),
+						"ip", kithttputil.GetRequestIP(r),
 						"path", r.URL.Path,
 						"status", pw.status,
 						"body", string(pw.body))
@@ -78,7 +79,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 			stat.RequestFailed("NoWriteKeyInQueryParams")
 			stat.Report(gw.stats)
 			gw.logger.Infow("Error while handling request",
-				"ip", misc.GetIPFromReq(r),
+				"ip", kithttputil.GetRequestIP(r),
 				"path", r.URL.Path,
 				"body", response.NoWriteKeyInQueryParams)
 		}

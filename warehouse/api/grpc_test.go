@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -177,7 +178,10 @@ func TestGRPC(t *testing.T) {
 			return server.Serve(listener)
 		})
 
-		grpcClientConn, err := grpc.Dial("localhost:"+strconv.Itoa(tcpPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpcClientConn, err := grpc.NewClient(
+			fmt.Sprintf("localhost:%d", tcpPort),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, grpcClientConn.Close())

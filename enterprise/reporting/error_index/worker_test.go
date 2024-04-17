@@ -36,8 +36,8 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -84,9 +84,9 @@ func TestWorkerWriter(t *testing.T) {
 			buf := bytes.NewBuffer(make([]byte, 0, 1024))
 
 			w := worker{}
-			w.config.parquetRowGroupSize = misc.SingleValueLoader(512 * bytesize.MB)
-			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
-			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
+			w.config.parquetRowGroupSize = config.SingleValueLoader(512 * bytesize.MB)
+			w.config.parquetPageSize = config.SingleValueLoader(8 * bytesize.KB)
+			w.config.parquetParallelWriters = config.SingleValueLoader(int64(8))
 
 			require.NoError(t, w.encodeToParquet(buf, toEncode))
 
@@ -125,9 +125,9 @@ func TestWorkerWriter(t *testing.T) {
 			require.NoError(t, err)
 
 			w := worker{}
-			w.config.parquetRowGroupSize = misc.SingleValueLoader(512 * bytesize.MB)
-			w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
-			w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
+			w.config.parquetRowGroupSize = config.SingleValueLoader(512 * bytesize.MB)
+			w.config.parquetPageSize = config.SingleValueLoader(8 * bytesize.KB)
+			w.config.parquetParallelWriters = config.SingleValueLoader(int64(8))
 
 			require.NoError(t, w.encodeToParquet(fw, toEncode))
 
@@ -713,9 +713,9 @@ func BenchmarkFileFormat(b *testing.B) {
 		}
 
 		w := worker{}
-		w.config.parquetRowGroupSize = misc.SingleValueLoader(512 * bytesize.MB)
-		w.config.parquetPageSize = misc.SingleValueLoader(8 * bytesize.KB)
-		w.config.parquetParallelWriters = misc.SingleValueLoader(int64(8))
+		w.config.parquetRowGroupSize = config.SingleValueLoader(512 * bytesize.MB)
+		w.config.parquetPageSize = config.SingleValueLoader(8 * bytesize.KB)
+		w.config.parquetParallelWriters = config.SingleValueLoader(int64(8))
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024))
 
