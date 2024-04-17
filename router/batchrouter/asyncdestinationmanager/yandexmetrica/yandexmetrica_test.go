@@ -24,9 +24,9 @@ import (
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
-var currentDir, _ = os.Getwd()
 var (
-	destination = &backendconfig.DestinationT{
+	currentDir, _ = os.Getwd()
+	destination   = &backendconfig.DestinationT{
 		ID:   "1",
 		Name: "YANDEX_METRICA_OFFLINE_EVENTS",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{

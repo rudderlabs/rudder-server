@@ -676,6 +676,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				DestinationID: asyncOutput.DestinationID,
 				SourceID:      gjson.GetBytes(originalJobParameters[jobId], "source_id").String(),
 			}
+			resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", asyncOutput.AbortReason)
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Aborted.State,
@@ -683,7 +684,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "400",
-				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.AbortReason)),
+				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(resp)),
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: originalJobParameters[jobId],
 				WorkspaceId:   workspaceID,

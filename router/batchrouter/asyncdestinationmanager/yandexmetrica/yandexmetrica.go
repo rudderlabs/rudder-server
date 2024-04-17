@@ -1,7 +1,6 @@
 package yandexmetrica
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/csv"
 	"fmt"
@@ -19,6 +18,8 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -29,7 +30,6 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 var (
@@ -66,30 +66,27 @@ func (ym YandexMetricaMessageBody) Id() (IdStruct, error) {
 	case ym.ClientID != nil:
 		_, ok := ym.ClientID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("Non-string data for ClientID is not supported")
+			return IdStruct{}, fmt.Errorf("non-string data for ClientID is not supported")
 		}
 		return IdStruct{id: ym.ClientID.(string), clientType: idClientMap["ClientId"], headerName: "ClientId"}, nil
 	case ym.YclID != nil:
 		_, ok := ym.YclID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("Non-string data for Yclid is not supported")
+			return IdStruct{}, fmt.Errorf("non-string data for Yclid is not supported")
 		}
 		return IdStruct{id: ym.YclID.(string), clientType: idClientMap["Yclid"], headerName: "Yclid"}, nil
 	case ym.UserID != nil:
 		_, ok := ym.UserID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("Non-string data for UserId is not supported")
+			return IdStruct{}, fmt.Errorf("non-string data for UserId is not supported")
 		}
 		return IdStruct{id: ym.UserID.(string), clientType: idClientMap["UserId"], headerName: "UserId"}, nil
 	default:
-		return IdStruct{}, fmt.Errorf("...")
+		return IdStruct{}, fmt.Errorf("no valid id found in message object")
 	}
 }
 
-const bufferSize = 5000 * 1024
-
 type YandexMetricaBulkUploader struct {
-	pollUrl         string
 	logger          logger.Logger
 	Client          *http.Client
 	destinationInfo *oauthv2.DestinationInfo
@@ -112,7 +109,6 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		Logger:    yandexUploadManager.logger,
 		Augmenter: augmenter.YandexReqAugmenter,
 	}
-	// TODO: Add http related timeout values
 	originalHttpClient := &http.Client{Transport: &http.Transport{}}
 	// This client is used for uploading data to yandex metrica
 	yandexUploadManager.Client = oauthv2httpclient.NewOAuthHttpClient(
@@ -131,24 +127,18 @@ func (ym *YandexMetricaBulkUploader) Poll(pollInput common.AsyncPoll) common.Pol
 	return common.PollStatusResponse{}
 }
 
+// return a success response for the getUploadStats request every time by default
 func (ym *YandexMetricaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	return common.GetUploadStatsResponse{}
 }
 
 func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error) {
 	// Define an empty map to store the parsed JSON data
-	var data map[string]interface{}
-
-	// Unmarshal the JSON data into
 	var ymMsgs []YandexMetricaMessage
-	err := json.Unmarshal(jsonData, &data)
-	if err != nil {
-		return "", "", err
-	}
 	inputData := gjson.GetBytes(jsonData, "input").String()
-	err = json.Unmarshal([]byte(inputData), &ymMsgs)
+	err := json.Unmarshal([]byte(inputData), &ymMsgs)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("error while unmarshalling transformed response: %v", err)
 	}
 
 	ymMsgsBody := lo.Map(ymMsgs, func(ym YandexMetricaMessage, _ int) YandexMetricaMessageBody {
@@ -159,23 +149,20 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("error creating tmp dir: %v", err)
 	}
 	folderPath := path.Join(tmpDirPath, localTmpDirName)
-	_, e := os.Stat(folderPath)
-	if os.IsNotExist(e) {
+	_, err = os.Stat(folderPath)
+	if os.IsNotExist(err) {
 		folderPath, _ = os.MkdirTemp(folderPath, "")
 	}
 	path := path.Join(folderPath, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%s.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
-	_, _ = csvFile.Seek(0, 0)
-	scanner := bufio.NewScanner(csvFile)
-	scanner.Buffer(nil, bufferSize)
-
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("error creating csv file: %v", err)
 	}
+
 	defer csvFile.Close()
 
 	// Create a CSV writer
@@ -191,11 +178,11 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	// Write the header row
 	err = csvWriter.Write(header)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("error writing header row: %v", err)
 	}
 
 	// Extract and write data rows
-	for _, ymMsg := range ymMsgsBody {
+	for index, ymMsg := range ymMsgsBody {
 		if ymMsg.Target == "" {
 			ymMsg.Target = goalId
 		}
@@ -213,7 +200,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 		}
 		err = csvWriter.Write(row)
 		if err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("error writing data row: %v, index: %d", err, index)
 		}
 	}
 
@@ -224,7 +211,12 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	return idDecider, csvFilePath, nil
 }
 
-func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFilePath, userIdType string) (*http.Response, error) {
+type ymBuffer struct {
+	buffer *bytes.Buffer
+	writer *multipart.Writer
+}
+
+func copyDataIntoBuffer(csvFilePath string) (*ymBuffer, error) {
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 	file, openFileErr := os.Open(csvFilePath)
@@ -245,23 +237,31 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 		return nil, closeWriterErr
 	}
 
-	req, err := http.NewRequest(http.MethodPost, uploadURL, payload)
+	return &ymBuffer{buffer: payload, writer: writer}, nil
+}
+
+func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFilePath, userIdType string) (*http.Response, error) {
+	ymBuffer, err := copyDataIntoBuffer(csvFilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while copying data into buffer: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, uploadURL, ymBuffer.buffer)
+	if err != nil {
+		return nil, fmt.Errorf("error while creating request: %v", err)
 	}
 	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), ym.destinationInfo))
-	q := req.URL.Query()
 
 	clientType, ok := idClientMap[userIdType]
 	if !ok {
 		return nil, fmt.Errorf("not a valid userId type")
 	}
+	q := req.URL.Query()
 	q.Add("client_id_type", clientType)
 	req.URL.RawQuery = q.Encode()
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, clientDoErr := ym.Client.Do(req)
-	if clientDoErr != nil {
-		return nil, clientDoErr
+	req.Header.Set("Content-Type", ymBuffer.writer.FormDataContentType())
+	resp, err := ym.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error while sending request: %v", err)
 	}
 	return resp, nil
 }
@@ -273,10 +273,10 @@ func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err
 	})
 	eventsAbortedStat.Count(len(importingJobIds))
 	return common.AsyncUploadOutput{
-		FailedCount:   len(importingJobIds),
+		AbortCount:    len(importingJobIds),
 		DestinationID: ym.destinationInfo.ID,
-		FailedJobIDs:  importingJobIds,
-		FailedReason:  fmt.Sprintf("%s %v", errorString, err.Error()),
+		AbortJobIDs:   importingJobIds,
+		AbortReason:   fmt.Sprintf("%s %v", errorString, err.Error()),
 	}
 }
 
@@ -326,7 +326,6 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	}
 
 	uploadURL, err := url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload")
-
 	if err != nil {
 		return ym.generateErrorOutput("Error while joining uploadUrl with counterId", err, importingJobIDs)
 	}
@@ -347,19 +346,20 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	})
 
 	payloadSizeStat.Observe(float64(len(ympayload)))
-	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
+	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v\n", destType)
 
 	resp, err := ym.uploadFileToDestination(uploadURL, csvFilePath, userIdType)
 	if err != nil {
 		return ym.generateErrorOutput("Error while uploading file to destination. ", err, importingJobIDs)
 	}
 	var bodyBytes []byte
-	if err == nil {
-		bodyBytes, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return ym.generateErrorOutput("Error while reading response body. ", err, importingJobIDs)
-		}
+
+	bodyBytes, err = io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		return ym.generateErrorOutput("Error while reading response body. ", err, importingJobIDs)
 	}
+
 	var transResp oauthv2.TransportResponse
 	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 	// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
@@ -367,7 +367,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	if err == nil && transResp.OriginalResponse != "" {
 		bodyBytes = []byte(transResp.OriginalResponse) // re-assign originalResponse
 	}
-	ym.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
+	ym.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v\n", destType)
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != http.StatusOK { // error scenario
