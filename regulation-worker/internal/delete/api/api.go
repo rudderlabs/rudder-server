@@ -104,7 +104,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestDefConfig,
 	}
-	isOAuth, err := dest.IsOAuthDestination()
+	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
 	if err != nil {
 		pkgLogger.Error(err)
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
