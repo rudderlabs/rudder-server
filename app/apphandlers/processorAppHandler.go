@@ -49,10 +49,10 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		processorDSLimit   misc.ValueLoader[int]
-		routerDSLimit      misc.ValueLoader[int]
-		batchRouterDSLimit misc.ValueLoader[int]
-		gatewayDSLimit     misc.ValueLoader[int]
+		processorDSLimit   config.ValueLoader[int]
+		routerDSLimit      config.ValueLoader[int]
+		batchRouterDSLimit config.ValueLoader[int]
+		gatewayDSLimit     config.ValueLoader[int]
 		http               struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration

@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/archiver"
@@ -48,10 +49,10 @@ type embeddedApp struct {
 	log            logger.Logger
 	config         struct {
 		enableReplay       bool
-		processorDSLimit   misc.ValueLoader[int]
-		routerDSLimit      misc.ValueLoader[int]
-		batchRouterDSLimit misc.ValueLoader[int]
-		gatewayDSLimit     misc.ValueLoader[int]
+		processorDSLimit   config.ValueLoader[int]
+		routerDSLimit      config.ValueLoader[int]
+		batchRouterDSLimit config.ValueLoader[int]
+		gatewayDSLimit     config.ValueLoader[int]
 	}
 }
 

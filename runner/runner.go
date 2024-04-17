@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
@@ -59,13 +60,9 @@ var (
 // ReleaseInfo holds the release information
 type ReleaseInfo struct {
 	Version         string
-	Major           string
-	Minor           string
-	Patch           string
 	Commit          string
 	BuildDate       string
 	BuiltBy         string
-	GitURL          string
 	EnterpriseToken string
 }
 
@@ -103,6 +100,19 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return 1
 	}
 
+	path, err := config.Default.ConfigFileUsed()
+	if err != nil {
+		r.logger.Warnf("Config: Failed to parse config file from path %q, using default values: %v", path, err)
+	} else {
+		r.logger.Infof("Config: Using config file: %s", path)
+	}
+
+	if err := config.Default.DotEnvLoaded(); err != nil {
+		r.logger.Infof("Config: No .env file loaded: %v", err)
+	} else {
+		r.logger.Infof("Config: Loaded .env file")
+	}
+
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
 		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
@@ -116,6 +126,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
 	} else {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
+		for histogramName, buckets := range customBucketsServer {
+			statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
+		}
 	}
 	for histogramName, buckets := range customBuckets {
 		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
@@ -165,13 +178,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		stats.GaugeType,
 		stats.Tags{
 			"version":            r.releaseInfo.Version,
-			"major":              r.releaseInfo.Major,
-			"minor":              r.releaseInfo.Minor,
-			"patch":              r.releaseInfo.Patch,
 			"commit":             r.releaseInfo.Commit,
 			"buildDate":          r.releaseInfo.BuildDate,
 			"builtBy":            r.releaseInfo.BuiltBy,
-			"gitUrl":             r.releaseInfo.GitURL,
 			"TransformerVersion": transformer.GetVersion(),
 		}).Gauge(1)
 
@@ -327,13 +336,9 @@ func runAllInit() {
 func (r *Runner) versionInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"Version":            r.releaseInfo.Version,
-		"Major":              r.releaseInfo.Major,
-		"Minor":              r.releaseInfo.Minor,
-		"Patch":              r.releaseInfo.Patch,
 		"Commit":             r.releaseInfo.Commit,
 		"BuildDate":          r.releaseInfo.BuildDate,
 		"BuiltBy":            r.releaseInfo.BuiltBy,
-		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
 		"Features":           info.ServerComponent.Features,
 	}

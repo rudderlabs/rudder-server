@@ -1,7 +1,7 @@
 
 # syntax=docker/dockerfile:1
-ARG GO_VERSION=1.21.3
-ARG ALPINE_VERSION=3.18
+ARG GO_VERSION=1.22.1
+ARG ALPINE_VERSION=3.19
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG VERSION
 ARG REVISION
@@ -23,7 +23,7 @@ RUN go mod download
 COPY . .
 
 RUN BUILD_DATE=$(date "+%F,%T") \
-    LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} -X main.builtBy=${REVISION} -X main.enterpriseToken=${ENTERPRISE_TOKEN} " \
+    LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} -X main.enterpriseToken=${ENTERPRISE_TOKEN} " \
     make build
 
 RUN go build -o devtool ./cmd/devtool/

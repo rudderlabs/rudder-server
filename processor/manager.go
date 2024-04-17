@@ -7,7 +7,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -78,7 +77,6 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-	metric.Instance.Reset()
 	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
 		return err
 	}
