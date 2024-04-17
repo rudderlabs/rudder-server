@@ -3,10 +3,11 @@ package v2
 import (
 	"fmt"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 type DestinationInfo struct {
