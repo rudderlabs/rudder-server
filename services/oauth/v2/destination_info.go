@@ -42,9 +42,17 @@ func (d *DestinationInfo) IsOAuthSupportedForFlow(flow string) (bool, error) {
 		// valid use-case for non-OAuth destinations
 		return false, nil
 	}
-	rudderScopes, ok := rudderScopesValue.([]string)
+	interfaceArr, ok := rudderScopesValue.([]interface{})
 	if !ok {
 		return false, fmt.Errorf("rudderScopes should be a string[]")
+	}
+	var rudderScopes []string
+	for _, scopeInterface := range interfaceArr {
+		scope, ok := scopeInterface.(string)
+		if !ok {
+			return false, fmt.Errorf("%v in auth.rudderScopes should be string", scopeInterface)
+		}
+		rudderScopes = append(rudderScopes, scope)
 	}
 	return lo.Contains(rudderScopes, flow), nil
 }

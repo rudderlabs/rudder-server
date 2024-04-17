@@ -501,6 +501,7 @@ var oauthDests = []backendconfig.DestinationT{
 			Config: map[string]interface{}{
 				"auth": map[string]interface{}{
 					"type": "OAuth",
+					"rudderScopes": []interface{}{"delivery"},
 				},
 			},
 		},

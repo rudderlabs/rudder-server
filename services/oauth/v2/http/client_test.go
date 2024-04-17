@@ -23,6 +23,13 @@ import (
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
+var oauthDefinitionConfig = map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+						"rudderScopes": []interface{}{"delivery"},
+					},
+				}
+
 var _ = Describe("Http/Client", func() {
 	Describe("OAuthHttpClient", func() {
 		It("should return an http client", func() {
@@ -103,11 +110,7 @@ var _ = Describe("Http/Client", func() {
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
-						"type": "OAuth",
-					},
-				},
+				DefinitionConfig: oauthDefinitionConfig,
 				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
@@ -168,11 +171,7 @@ var _ = Describe("Http/Client", func() {
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
-						"type": "OAuth",
-					},
-				},
+				DefinitionConfig: oauthDefinitionConfig,
 				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
@@ -221,11 +220,7 @@ var _ = Describe("Http/Client", func() {
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &v2.DestinationInfo{
 				DefinitionName: "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
-						"type": "OAuth",
-					},
-				},
+				DefinitionConfig: oauthDefinitionConfig,
 				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
