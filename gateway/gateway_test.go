@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
+
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
@@ -1746,6 +1748,10 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
 		})
 
 		It("request failed unmarshall error", func() {
@@ -1754,6 +1760,10 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
 		})
 
 		It("request failed message validation error", func() {
@@ -1762,6 +1772,10 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidMessage))
 		})
 
 		It("request success - suppressed user", func() {

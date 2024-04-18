@@ -738,12 +738,12 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	err := jsonfast.Unmarshal(body, &messages)
 	if err != nil {
-		return nil, fmt.Errorf("%s", response.NotRudderEvent)
+		return nil, fmt.Errorf("%s", response.InvalidJSON)
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))
 
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("%s", response.InvalidJSON)
+		return nil, fmt.Errorf("%s", response.NotRudderEvent)
 	}
 
 	jobs = make([]*jobsdb.JobT, 0, len(messages))
@@ -751,7 +751,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	for _, msg := range messages {
 		err := streamMsgValidator(&msg)
 		if err != nil {
-			return nil, fmt.Errorf("%s", response.InvalidJSON)
+			return nil, fmt.Errorf("%s", response.InvalidMessage)
 		}
 		arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
