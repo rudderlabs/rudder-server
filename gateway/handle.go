@@ -739,12 +739,12 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	err := jsonfast.Unmarshal(body, &messages)
 	if err != nil {
-		return nil, fmt.Errorf("%s", response.InvalidJSON)
+		return nil, errors.New(response.InvalidJSON)
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))
 
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("%s", response.NotRudderEvent)
+		return nil, errors.New(response.NotRudderEvent)
 	}
 
 	jobs = make([]*jobsdb.JobT, 0, len(messages))
@@ -752,15 +752,15 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	for _, msg := range messages {
 		err := streamMsgValidator(&msg)
 		if err != nil {
-			return nil, fmt.Errorf("%s", response.InvalidMessage)
+			return nil, errors.New(response.InvalidMessage)
 		}
-		arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
 				logger.NewStringField("sourceID", msg.Properties.SourceID),
 				logger.NewStringField("workspaceID", msg.Properties.WorkspaceID),
 				logger.NewStringField("userIDFromReq", msg.Properties.UserID),
 			)
+			arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
@@ -798,7 +798,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		payload, err := json.Marshal(eventBatch)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 
 		jobs = append(jobs, &jobsdb.JobT{

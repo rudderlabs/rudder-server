@@ -122,8 +122,7 @@ func (gw *Handle) Setup(
 		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)
 	}
 	gw.whProxy = httputil.NewSingleHostReverseProxy(whURL)
-	suh := gw.application.Features().SuppressUser
-	if gw.conf.enableSuppressUserFeature && suh != nil {
+	if gw.conf.enableSuppressUserFeature && gw.application.Features().SuppressUser != nil {
 		gw.suppressUserHandler, err = application.Features().SuppressUser.Setup(ctx, gw.backendConfig)
 		if err != nil {
 			return fmt.Errorf("could not setup suppress user feature: %w", err)
