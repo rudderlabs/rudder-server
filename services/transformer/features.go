@@ -5,6 +5,7 @@ package transformer
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -44,6 +45,15 @@ func NewFeaturesService(ctx context.Context, config FeaturesServiceConfig) Featu
 		logger:   logger.NewLogger().Child("transformer-features"),
 		waitChan: make(chan struct{}),
 		config:   config,
+		client: &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives:   true,
+				MaxConnsPerHost:     100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     30 * time.Second,
+			},
+			Timeout: 30 * time.Second,
+		},
 	}
 
 	rruntime.Go(func() { handler.syncTransformerFeatureJson(ctx) })

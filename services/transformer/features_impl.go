@@ -11,7 +11,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -21,6 +20,7 @@ type featuresService struct {
 	waitChan chan struct{}
 	config   FeaturesServiceConfig
 	features json.RawMessage
+	client   *http.Client
 }
 
 func (t *featuresService) SourceTransformerVersion() string {
@@ -102,9 +102,7 @@ func (t *featuresService) makeFeaturesFetchCall() bool {
 		t.logger.Error("error creating request - ", err)
 		return true
 	}
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second)}
-	res, err := client.Do(req)
+	res, err := t.client.Do(req)
 	if err != nil {
 		t.logger.Error("error sending request - ", err)
 		return true
