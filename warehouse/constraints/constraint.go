@@ -29,7 +29,7 @@ type indexConstraint struct {
 
 type Manager struct {
 	constraintsMap              map[string][]constraints
-	enableConstraintsViolations misc.ValueLoader[bool]
+	enableConstraintsViolations config.ValueLoader[bool]
 }
 
 func New(conf *config.Config) *Manager {

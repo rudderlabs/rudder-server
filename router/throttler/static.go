@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type staticThrottleConfig struct {
-	limit  misc.ValueLoader[int64]
-	window misc.ValueLoader[time.Duration]
+	limit  config.ValueLoader[int64]
+	window config.ValueLoader[time.Duration]
 }
 
 func (c *staticThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {

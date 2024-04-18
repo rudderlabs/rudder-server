@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/stringify"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -25,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -92,10 +95,10 @@ type Handle struct {
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
 	stats                      processorStats
-	payloadLimit               misc.ValueLoader[int64]
-	jobsDBCommandTimeout       misc.ValueLoader[time.Duration]
-	jobdDBQueryRequestTimeout  misc.ValueLoader[time.Duration]
-	jobdDBMaxRetries           misc.ValueLoader[int]
+	payloadLimit               config.ValueLoader[int64]
+	jobsDBCommandTimeout       config.ValueLoader[time.Duration]
+	jobdDBQueryRequestTimeout  config.ValueLoader[time.Duration]
+	jobdDBMaxRetries           config.ValueLoader[int]
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	rsourcesService            rsources.JobService
@@ -115,13 +118,13 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
-		pingerSleep                     misc.ValueLoader[time.Duration]
-		readLoopSleep                   misc.ValueLoader[time.Duration]
-		maxLoopSleep                    misc.ValueLoader[time.Duration]
-		storeTimeout                    misc.ValueLoader[time.Duration]
-		maxEventsToProcess              misc.ValueLoader[int]
-		transformBatchSize              misc.ValueLoader[int]
-		userTransformBatchSize          misc.ValueLoader[int]
+		pingerSleep                     config.ValueLoader[time.Duration]
+		readLoopSleep                   config.ValueLoader[time.Duration]
+		maxLoopSleep                    config.ValueLoader[time.Duration]
+		storeTimeout                    config.ValueLoader[time.Duration]
+		maxEventsToProcess              config.ValueLoader[int]
+		transformBatchSize              config.ValueLoader[int]
+		userTransformBatchSize          config.ValueLoader[int]
 		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
 		sourceIdSourceMap               map[string]backendconfig.SourceT
 		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
@@ -131,20 +134,20 @@ type Handle struct {
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
-		enableEventCount                misc.ValueLoader[bool]
+		enableEventCount                config.ValueLoader[bool]
 		transformTimesPQLength          int
-		captureEventNameStats           misc.ValueLoader[bool]
+		captureEventNameStats           config.ValueLoader[bool]
 		transformerURL                  string
 		pollInterval                    time.Duration
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
-		archivalEnabled                 misc.ValueLoader[bool]
+		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 	}
 
 	drainConfig struct {
-		jobRunIDs misc.ValueLoader[[]string]
+		jobRunIDs config.ValueLoader[[]string]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -916,7 +919,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = misc.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
+	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
@@ -1007,8 +1010,8 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 					continue
 				}
 
-				eventName := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "event").String())
-				eventType := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "type").String())
+				eventName := stringify.Any(gjson.GetBytes(eventPayload, "event").String())
+				eventType := stringify.Any(gjson.GetBytes(eventPayload, "type").String())
 				deliveryStatus := destinationdebugger.DeliveryStatusT{
 					EventName:     eventName,
 					EventType:     eventType,
@@ -1635,7 +1638,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
-			messageId := misc.GetStringifiedData(singularEvent["messageId"])
+			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)

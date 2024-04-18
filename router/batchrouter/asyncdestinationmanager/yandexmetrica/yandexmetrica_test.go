@@ -24,9 +24,9 @@ import (
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
-var currentDir, _ = os.Getwd()
 var (
-	destination = &backendconfig.DestinationT{
+	currentDir, _ = os.Getwd()
+	destination   = &backendconfig.DestinationT{
 		ID:   "1",
 		Name: "YANDEX_METRICA_OFFLINE_EVENTS",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -135,8 +135,8 @@ var _ = Describe("Yandexmetrica", func() {
 				Manager:         yandexmetrica,
 			}
 			res := yandexmetrica.Upload(&asyncDestination)
-			Expect(res.FailedReason).To(Equal("got not 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
-			Expect(res.FailedJobIDs).To(Equal([]int64{1, 2, 3, 4}))
+			Expect(res.AbortReason).To(Equal("got not 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
+			Expect(res.AbortJobIDs).To(Equal([]int64{1, 2, 3, 4}))
 		})
 	})
 })

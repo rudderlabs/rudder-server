@@ -8,9 +8,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 type yandexAugmenter struct{}
@@ -43,7 +44,7 @@ func GetAuthErrorCategoryForYandex(responseBody []byte) (string, error) {
 		    "message": "Invalid oauth_token"
 		}
 	*/
-	allErrorTypes := lo.Map(gjson.GetBytes(responseBody, "errors.#.error_type").Array(), func (errorTypeResult gjson.Result, _ int) string {
+	allErrorTypes := lo.Map(gjson.GetBytes(responseBody, "errors.#.error_type").Array(), func(errorTypeResult gjson.Result, _ int) string {
 		return errorTypeResult.String()
 	})
 	isInvalidToken := lo.Contains(allErrorTypes, "invalid_token")

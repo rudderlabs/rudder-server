@@ -21,7 +21,7 @@ const (
 type Factory struct {
 	config struct {
 		maxStagingFileReadBufferCapacityInK int
-		parquetParallelWriters              misc.ValueLoader[int64]
+		parquetParallelWriters              config.ValueLoader[int64]
 	}
 }
 

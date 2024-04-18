@@ -11,10 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-const (
-	RouterUnMarshalErrorCode = 599
-	RouterTimedOutStatusCode = 1113
-)
+const RouterUnMarshalErrorCode = 599
 
 // RouterJobT holds the router job and its related metadata
 type RouterJobT struct {
@@ -68,6 +65,7 @@ type JobMetadataT struct {
 	UserID             string          `json:"userId"`
 	JobID              int64           `json:"jobId"`
 	SourceID           string          `json:"sourceId"`
+	SourceCategory     string          `json:"sourceCategory"`
 	DestinationID      string          `json:"destinationId"`
 	AttemptNum         int             `json:"attemptNum"`
 	ReceivedAt         string          `json:"receivedAt"`

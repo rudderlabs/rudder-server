@@ -17,10 +17,16 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/sanitize"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
+	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -96,18 +102,18 @@ type Handle struct {
 	conf struct { // configuration parameters
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
 		maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
-		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   misc.ValueLoader[time.Duration]
+		userWebRequestBatchTimeout, dbBatchWriteTimeout                                   config.ValueLoader[time.Duration]
 
-		maxReqSize                           misc.ValueLoader[int]
-		enableRateLimit                      misc.ValueLoader[bool]
+		maxReqSize                           config.ValueLoader[int]
+		enableRateLimit                      config.ValueLoader[bool]
 		enableSuppressUserFeature            bool
 		diagnosisTickerTime                  time.Duration
 		ReadTimeout                          time.Duration
 		ReadHeaderTimeout                    time.Duration
 		WriteTimeout                         time.Duration
 		IdleTimeout                          time.Duration
-		allowReqsWithoutUserIDAndAnonymousID misc.ValueLoader[bool]
-		gwAllowPartialWriteWithErrors        misc.ValueLoader[bool]
+		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
+		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -279,7 +285,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	fillMessageID := func(event map[string]interface{}) {
 		messageID, _ := event["messageId"].(string)
-		messageID = strings.TrimSpace(misc.SanitizeUnicode(messageID))
+		messageID = strings.TrimSpace(sanitize.Unicode(messageID))
 		if messageID == "" {
 			event["messageId"] = uuid.New().String()
 		} else {
@@ -329,8 +335,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 
-		anonIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["anonymousId"])))
-		userIDFromReq := strings.TrimSpace(misc.SanitizeUnicode(misc.GetStringifiedData(toSet["userId"])))
+		anonIDFromReq := strings.TrimSpace(sanitize.Unicode(stringify.Any(toSet["anonymousId"])))
+		userIDFromReq := strings.TrimSpace(sanitize.Unicode(stringify.Any(toSet["userId"])))
 		eventTypeFromReq, _ := misc.MapLookup(
 			toSet,
 			"type",
@@ -387,7 +393,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 		var rudderId uuid.UUID
-		rudderId, err = misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		rudderId, err = kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
@@ -595,7 +601,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 		gw.emptyAnonIdHeaderStat.Increment()
 	}
 	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
-	ipAddr := misc.GetIPFromReq(req)
+	ipAddr := kithttputil.GetRequestIP(req)
 
 	traceParent := stats.GetTraceParentFromContext(req.Context())
 	if traceParent == "" {
@@ -663,7 +669,7 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			gw.newSourceStatTagsWithReason(arctx, reqType, ""),
 		).Increment()
 		gw.logger.Debugn("response",
-			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),
@@ -681,7 +687,7 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			gw.newSourceStatTagsWithReason(arctx, reqType, errorMessage),
 		).Increment()
 		gw.logger.Infon("response",
-			logger.NewStringField("ip", misc.GetIPFromReq(r)),
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),
@@ -753,8 +759,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(
 			continue
 		}
 
-		rudderID, _ := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-		toSet["rudderId"] = rudderID
 		userID := buildUserID("", anonIDFromReq, userIDFromReq)
 		receivedAt, _ := toSet["receivedAt"].(string)
 		if receivedAt == "" {
