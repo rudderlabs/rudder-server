@@ -704,6 +704,13 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),
 		)
+		gw.logger.Debugn("response",
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody),
+			logger.NewStringField("request", string(body)),
+		)
 		http.Error(w, responseBody, status)
 	}
 }
