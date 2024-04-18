@@ -728,6 +728,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	type singularEventBatch struct {
 		Batch      []json.RawMessage `json:"batch"`
 		ReceivedAt string            `json:"receivedAt"`
+		RequestIP  string            `json:"requestIP"`
 	}
 
 	var (
@@ -768,11 +769,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			continue
 		}
 
-		receivedAt := gjson.GetBytes(msg.Payload, "received_at").String()
-		if receivedAt == "" {
-			receivedAt = time.Now().Format(misc.RFC3339Milli)
-		}
-
 		jobsDBParams := params{
 			MessageID:       msg.Properties.MessageID,
 			SourceID:        msg.Properties.SourceID,
@@ -796,7 +792,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		eventBatch := singularEventBatch{
 			Batch:      []json.RawMessage{msg.Payload},
-			ReceivedAt: receivedAt,
+			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
+			RequestIP:  msg.Properties.RequestIP,
 		}
 
 		payload, err := json.Marshal(eventBatch)

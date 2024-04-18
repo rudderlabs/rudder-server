@@ -306,6 +306,8 @@ func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID, workspa
 				"sourceID": %q,
 				"sourceJobRunID": "sourceJobRunID",
 				"sourceTaskRunID": "sourceTaskRunID",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z",
+				"requestIP": "1.1.1.1",
 				"traceID": "traceID"
 			},
 			"payload": %s

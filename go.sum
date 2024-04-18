@@ -962,8 +962,8 @@ github.com/rudderlabs/rudder-go-kit v0.26.0 h1:vwcBLv1g1VWyN4RV5YAdZxK5pdKfrazoH
 github.com/rudderlabs/rudder-go-kit v0.26.0/go.mod h1:Q/FZs5jSRpVprgtFBBYRNPE4mdo7qFQ46XezoW5FnfI=
 github.com/rudderlabs/rudder-observability-kit v0.0.3 h1:vZtuZRkGX+6rjaeKtxxFE2YYP6QlmAcVcgecTOjvz+Q=
 github.com/rudderlabs/rudder-observability-kit v0.0.3/go.mod h1:6UjAh3H6rkE0fFLh7z8ZGQEQbKtUkRfhWOf/OUhfqW8=
-github.com/rudderlabs/rudder-schemas v0.1.0 h1:CgoeJkPoh+VvrHDyPhmuIlF8K+J19hnMa++GbWNR84g=
-github.com/rudderlabs/rudder-schemas v0.1.0/go.mod h1:ybuNiyNW/FWQZYVQliVhtNO+dPtxybx6eS+0cthcpFU=
+github.com/rudderlabs/rudder-schemas v0.3.0 h1:XKUheIVKTvjF7URUNr6bICBuEpszet9oDn4r+39WlLE=
+github.com/rudderlabs/rudder-schemas v0.3.0/go.mod h1:ybuNiyNW/FWQZYVQliVhtNO+dPtxybx6eS+0cthcpFU=
 github.com/rudderlabs/sql-tunnels v0.1.6 h1:v2KA2cq8ZV5LXRJQpqigq1Q4V64oDL+XlfckW/0K2/4=
 github.com/rudderlabs/sql-tunnels v0.1.6/go.mod h1:Jew/XwojzFTK4KTDj/wvChI7iZCgAKYyKjFK1nnHlNM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=

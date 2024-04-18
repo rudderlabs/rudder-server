@@ -85,7 +85,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.26.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
-	github.com/rudderlabs/rudder-schemas v0.1.0
+	github.com/rudderlabs/rudder-schemas v0.3.0
 	github.com/rudderlabs/sql-tunnels v0.1.6
 	github.com/samber/lo v1.39.0
 	github.com/segmentio/kafka-go v0.4.47
