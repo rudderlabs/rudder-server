@@ -500,7 +500,8 @@ var oauthDests = []backendconfig.DestinationT{
 			Name: "SALESFORCE_OAUTH",
 			Config: map[string]interface{}{
 				"auth": map[string]interface{}{
-					"type": "OAuth",
+					"type":         "OAuth",
+					"rudderScopes": []interface{}{"delivery"},
 				},
 			},
 		},
