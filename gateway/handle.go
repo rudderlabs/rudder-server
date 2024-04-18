@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -43,7 +45,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var streamMsgValidator = stream.NewMessageValidator()
+var (
+	streamMsgValidator = stream.NewMessageValidator()
+	jsonfast           = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
 type Handle struct {
 	// dependencies
@@ -724,7 +729,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		jobs             []*jobsdb.JobT
 	)
 
-	err := json.Unmarshal(body, &messages)
+	err := jsonfast.Unmarshal(body, &messages)
 	if err != nil {
 		return nil, fmt.Errorf("%s", response.NotRudderEvent)
 	}
