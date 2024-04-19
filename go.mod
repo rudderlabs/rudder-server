@@ -40,8 +40,8 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.12.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.51.20
-	github.com/bugsnag/bugsnag-go/v2 v2.3.1
+	github.com/aws/aws-sdk-go v1.51.24
+	github.com/bugsnag/bugsnag-go/v2 v2.4.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
@@ -52,7 +52,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golang-migrate/migrate/v4 v4.17.0
+	github.com/golang-migrate/migrate/v4 v4.17.1
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
@@ -73,7 +73,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.17.1
-	github.com/onsi/gomega v1.32.0
+	github.com/onsi/gomega v1.33.0
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/oschwald/maxminddb-golang v1.12.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -83,7 +83,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.1
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.26.0
+	github.com/rudderlabs/rudder-go-kit v0.27.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.3.0
 	github.com/rudderlabs/sql-tunnels v0.1.6
@@ -98,7 +98,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.1
 	github.com/tidwall/sjson v1.2.5
-	github.com/trinodb/trino-go-client v0.313.0
+	github.com/trinodb/trino-go-client v0.314.0
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/valyala/fasthttp v1.52.0
 	github.com/viney-shih/go-lock v1.1.2
@@ -113,16 +113,17 @@ require (
 	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a
 	golang.org/x/oauth2 v0.19.0
 	golang.org/x/sync v0.7.0
-	google.golang.org/api v0.172.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240401170217-c3f982113cda
+	google.golang.org/api v0.174.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240415180920-8c6c420018be
 	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.33.0
 )
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
-	cloud.google.com/go/compute v1.24.0 // indirect
-	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/auth v0.2.0 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.0 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
@@ -303,7 +304,7 @@ require (
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.17.0 // indirect
