@@ -41,7 +41,7 @@ var (
 	}
 )
 
-type YandexMetricaMessageBody struct {
+type yandexMetricaMessageBody struct {
 	ClientID any     `json:"ClientId"`
 	YclID    any     `json:"Yclid"`
 	UserID   any     `json:"UserId"`
@@ -51,38 +51,38 @@ type YandexMetricaMessageBody struct {
 	Currency string  `json:"Currency"`
 }
 
-type YandexMetricaMessage struct {
-	Message YandexMetricaMessageBody `json:"message"`
+type yandexMetricaMessage struct {
+	Message yandexMetricaMessageBody `json:"message"`
 }
 
-type IdStruct struct {
+type idStruct struct {
 	id         string
 	clientType string
 	headerName string
 }
 
-func (ym YandexMetricaMessageBody) Id() (IdStruct, error) {
+func (ym yandexMetricaMessageBody) Id() (idStruct, error) {
 	switch {
 	case ym.ClientID != nil:
 		_, ok := ym.ClientID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("non-string data for ClientID is not supported")
+			return idStruct{}, fmt.Errorf("non-string data for ClientID is not supported")
 		}
-		return IdStruct{id: ym.ClientID.(string), clientType: idClientMap["ClientId"], headerName: "ClientId"}, nil
+		return idStruct{id: ym.ClientID.(string), clientType: idClientMap["ClientId"], headerName: "ClientId"}, nil
 	case ym.YclID != nil:
 		_, ok := ym.YclID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("non-string data for Yclid is not supported")
+			return idStruct{}, fmt.Errorf("non-string data for Yclid is not supported")
 		}
-		return IdStruct{id: ym.YclID.(string), clientType: idClientMap["Yclid"], headerName: "Yclid"}, nil
+		return idStruct{id: ym.YclID.(string), clientType: idClientMap["Yclid"], headerName: "Yclid"}, nil
 	case ym.UserID != nil:
 		_, ok := ym.UserID.(string)
 		if !ok {
-			return IdStruct{}, fmt.Errorf("non-string data for UserId is not supported")
+			return idStruct{}, fmt.Errorf("non-string data for UserId is not supported")
 		}
-		return IdStruct{id: ym.UserID.(string), clientType: idClientMap["UserId"], headerName: "UserId"}, nil
+		return idStruct{id: ym.UserID.(string), clientType: idClientMap["UserId"], headerName: "UserId"}, nil
 	default:
-		return IdStruct{}, fmt.Errorf("no valid id found in message object")
+		return idStruct{}, fmt.Errorf("no valid id found in message object")
 	}
 }
 
@@ -134,14 +134,14 @@ func (ym *YandexMetricaBulkUploader) GetUploadStats(UploadStatsInput common.GetU
 
 func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error) {
 	// Define an empty map to store the parsed JSON data
-	var ymMsgs []YandexMetricaMessage
+	var ymMsgs []yandexMetricaMessage
 	inputData := gjson.GetBytes(jsonData, "input").String()
 	err := json.Unmarshal([]byte(inputData), &ymMsgs)
 	if err != nil {
-		return "", "", fmt.Errorf("error while unmarshalling transformed response: %v", err)
+		return "", "", fmt.Errorf("unmarshalling transformed response: %v", err)
 	}
 
-	ymMsgsBody := lo.Map(ymMsgs, func(ym YandexMetricaMessage, _ int) YandexMetricaMessageBody {
+	ymMsgsBody := lo.Map(ymMsgs, func(ym yandexMetricaMessage, _ int) yandexMetricaMessageBody {
 		return ym.Message
 	})
 
@@ -149,7 +149,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		return "", "", fmt.Errorf("error creating tmp dir: %v", err)
+		return "", "", fmt.Errorf("creating tmp dir: %v", err)
 	}
 	folderPath := path.Join(tmpDirPath, localTmpDirName)
 	_, err = os.Stat(folderPath)
@@ -160,7 +160,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	csvFilePath := fmt.Sprintf(`%s.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", "", fmt.Errorf("error creating csv file: %v", err)
+		return "", "", fmt.Errorf("creating csv file: %v", err)
 	}
 
 	defer csvFile.Close()
