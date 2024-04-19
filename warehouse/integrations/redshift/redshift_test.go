@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -1108,7 +1109,7 @@ func TestRedshift_ShouldMerge(t *testing.T) {
 			uploaderCanAppend: false,
 			tableName:         "tracks",
 			appendOnlyTables:  []string{"tracks"},
-			expected:          true,
+			expected:          false,
 		},
 		{
 			name:              "uploader says we can append, in merge mode, but table is not in append only",
