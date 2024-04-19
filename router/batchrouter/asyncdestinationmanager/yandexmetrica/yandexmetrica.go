@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -191,14 +192,13 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 		if err != nil {
 			continue
 		}
-		row := []string{
-			fmt.Sprintf("%v", idDetails.id),
-			fmt.Sprintf("%v", ymMsg.Target),
-			fmt.Sprintf("%v", ymMsg.DateTime),
-			fmt.Sprintf("%v", ymMsg.Price),
-			fmt.Sprintf("%v", ymMsg.Currency),
-		}
-		err = csvWriter.Write(row)
+		err = csvWriter.Write([]string{
+			idDetails.id,
+			ymMsg.Target,
+			ymMsg.DateTime,
+			strconv.FormatFloat(ymMsg.Price, 'f', -1, 64),
+			ymMsg.Currency,
+		})
 		if err != nil {
 			return "", "", fmt.Errorf("error writing data row: %v, index: %d", err, index)
 		}
