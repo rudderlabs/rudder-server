@@ -45,10 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var (
-	streamMsgValidator = stream.NewMessageValidator()
-	jsonfast           = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	// dependencies
@@ -126,6 +123,8 @@ type Handle struct {
 
 	// additional internal http handlers
 	internalHttpHandlers map[string]http.Handler
+
+	streamMsgValidator func(message *stream.Message) error
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -750,9 +749,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	jobs = make([]*jobsdb.JobT, 0, len(messages))
 
 	for _, msg := range messages {
-		err := streamMsgValidator(&msg)
+		err := gw.streamMsgValidator(&msg)
 		if err != nil {
-			return nil, errors.New(response.InvalidMessage)
+			return nil, errors.New(response.InvalidStreamMessage)
 		}
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
@@ -780,8 +779,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
 		if err != nil {
-			gw.logger.Errorn(
-				"[Gateway] Failed to marshal parameters map. Parameters: %+v",
+			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
 				logger.NewField("params", jobsDBParams),
 				obskit.Error(err),
 			)
