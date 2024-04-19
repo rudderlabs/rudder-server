@@ -61,7 +61,7 @@ type idStruct struct {
 	headerName string
 }
 
-func (ym yandexMetricaMessageBody) Id() (idStruct, error) {
+func (ym yandexMetricaMessageBody) ID() (idStruct, error) {
 	switch {
 	case ym.ClientID != nil:
 		_, ok := ym.ClientID.(string)
@@ -169,7 +169,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	csvWriter := csv.NewWriter(csvFile)
 
 	// Define the header row based on key presence in "message" object
-	firstMsgIdDetails, err := ymMsgsBody[0].Id()
+	firstMsgIdDetails, err := ymMsgsBody[0].ID()
 	if err != nil {
 		return "", "", fmt.Errorf("missing 'ClientId', 'Yclid', or 'UserId' key in 'message' object")
 	}
@@ -187,7 +187,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 			ymMsg.Target = goalId
 		}
 
-		idDetails, err := ymMsg.Id()
+		idDetails, err := ymMsg.ID()
 		if err != nil {
 			continue
 		}
