@@ -11,7 +11,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -19,8 +18,9 @@ import (
 type featuresService struct {
 	logger   logger.Logger
 	waitChan chan struct{}
-	config   FeaturesServiceConfig
+	options  FeaturesServiceOptions
 	features json.RawMessage
+	client   *http.Client
 }
 
 func (t *featuresService) SourceTransformerVersion() string {
@@ -59,10 +59,10 @@ func (t *featuresService) Wait() chan struct{} {
 
 func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 	var initDone bool
-	t.logger.Infof("Fetching transformer features from %s", t.config.TransformerURL)
+	t.logger.Infof("Fetching transformer features from %s", t.options.TransformerURL)
 	for {
 		var downloaded bool
-		for i := 0; i < t.config.FeaturesRetryMaxAttempts; i++ {
+		for i := 0; i < t.options.FeaturesRetryMaxAttempts; i++ {
 
 			if ctx.Err() != nil {
 				return
@@ -70,11 +70,11 @@ func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 
 			retry := t.makeFeaturesFetchCall()
 			if retry {
-				t.logger.Infof("Fetched transformer features from %s (retry: %v)", t.config.TransformerURL, retry)
+				t.logger.Infof("Fetched transformer features from %s (retry: %v)", t.options.TransformerURL, retry)
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(200 * time.Millisecond):
+				case <-time.After(2 * time.Millisecond):
 					continue
 				}
 			}
@@ -90,21 +90,19 @@ func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(t.config.PollInterval):
+		case <-time.After(t.options.PollInterval):
 		}
 	}
 }
 
 func (t *featuresService) makeFeaturesFetchCall() bool {
-	url := t.config.TransformerURL + "/features"
+	url := t.options.TransformerURL + "/features"
 	req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 	if err != nil {
 		t.logger.Error("error creating request - ", err)
 		return true
 	}
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second)}
-	res, err := client.Do(req)
+	res, err := t.client.Do(req)
 	if err != nil {
 		t.logger.Error("error sending request - ", err)
 		return true

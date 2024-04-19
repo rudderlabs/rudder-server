@@ -123,8 +123,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return err
 	}
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
