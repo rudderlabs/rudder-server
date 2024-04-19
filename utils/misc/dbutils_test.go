@@ -1,8 +1,15 @@
 package misc_test
 
 import (
+	"database/sql"
 	"testing"
+	"time"
 
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -57,4 +64,53 @@ func TestSetApplicationNameInDBConnectionURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIdleTxTimeout(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	conf := config.New()
+	conf.Set("DB.host", postgresContainer.Host)
+	conf.Set("DB.user", postgresContainer.User)
+	conf.Set("DB.name", postgresContainer.Database)
+	conf.Set("DB.port", postgresContainer.Port)
+	conf.Set("DB.password", postgresContainer.Password)
+
+	txTimeout := 2 * time.Millisecond
+
+	conf.Set("DB.IdleTxTimeout", txTimeout)
+
+	dsn := misc.GetConnectionString(conf, "test")
+
+	db, err := sql.Open("postgres", dsn)
+	require.NoError(t, err)
+
+	var sessionTimeout string
+	err = db.QueryRow("SHOW idle_in_transaction_session_timeout;").Scan(&sessionTimeout)
+	require.NoError(t, err)
+	require.Equal(t, txTimeout.String(), sessionTimeout)
+
+	t.Run("timeout tx", func(t *testing.T) {
+		tx, err := db.Begin()
+		require.NoError(t, err)
+
+		_, err = tx.Exec("select 1")
+		require.NoError(t, err)
+		t.Log("sleep double the timeout to close connection")
+		time.Sleep(2 * txTimeout)
+
+		err = tx.Commit()
+		require.EqualError(t, err, "driver: bad connection")
+	})
+
+	t.Run("successful tx", func(t *testing.T) {
+		tx, err := db.Begin()
+		require.NoError(t, err)
+		_, err = tx.Exec("select 1")
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+	})
 }
