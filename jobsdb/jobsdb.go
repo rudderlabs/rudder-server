@@ -51,6 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/google/uuid"
@@ -287,7 +288,7 @@ type JobsDB interface {
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
+	GetPileUpCounts(ctx context.Context) (err error)
 
 	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
 	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
@@ -469,14 +470,14 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
-		maxTableSize                   misc.ValueLoader[int64]
-		cacheExpiration                misc.ValueLoader[time.Duration]
-		addNewDSLoopSleepDuration      misc.ValueLoader[time.Duration]
-		refreshDSListLoopSleepDuration misc.ValueLoader[time.Duration]
-		jobCleanupFrequency            misc.ValueLoader[time.Duration]
-		minDSRetentionPeriod           misc.ValueLoader[time.Duration]
-		maxDSRetentionPeriod           misc.ValueLoader[time.Duration]
-		refreshDSTimeout               misc.ValueLoader[time.Duration]
+		maxTableSize                   config.ValueLoader[int64]
+		cacheExpiration                config.ValueLoader[time.Duration]
+		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
+		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
+		jobCleanupFrequency            config.ValueLoader[time.Duration]
+		minDSRetentionPeriod           config.ValueLoader[time.Duration]
+		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
+		refreshDSTimeout               config.ValueLoader[time.Duration]
 		jobMaxAge                      func() time.Duration
 		writeCapacity                  chan struct{}
 		readCapacity                   chan struct{}
@@ -484,32 +485,32 @@ type Handle struct {
 		enableReaderQueue              bool
 		clearAll                       bool
 		skipMaintenanceError           bool
-		dsLimit                        misc.ValueLoader[int]
+		dsLimit                        config.ValueLoader[int]
 		maxReaders                     int
 		maxWriters                     int
 		maxOpenConnections             int
-		analyzeThreshold               misc.ValueLoader[int]
-		MaxDSSize                      misc.ValueLoader[int]
+		analyzeThreshold               config.ValueLoader[int]
+		MaxDSSize                      config.ValueLoader[int]
 		migration                      struct {
-			maxMigrateOnce, maxMigrateDSProbe          misc.ValueLoader[int]
+			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
 			vacuumFullStatusTableThreshold             func() int64
 			vacuumAnalyzeStatusTableThreshold          func() int64
 			jobDoneMigrateThres, jobStatusMigrateThres func() float64
 			jobMinRowsMigrateThres                     func() float64
-			migrateDSLoopSleepDuration                 misc.ValueLoader[time.Duration]
-			migrateDSTimeout                           misc.ValueLoader[time.Duration]
+			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
+			migrateDSTimeout                           config.ValueLoader[time.Duration]
 		}
 		backup struct {
-			masterBackupEnabled       misc.ValueLoader[bool]
-			maxBackupRetryTime        misc.ValueLoader[time.Duration]
-			backupCheckSleepDuration  misc.ValueLoader[time.Duration]
+			masterBackupEnabled       config.ValueLoader[bool]
+			maxBackupRetryTime        config.ValueLoader[time.Duration]
+			backupCheckSleepDuration  config.ValueLoader[time.Duration]
 			preBackupHandlers         []prebackup.Handler
 			fileUploaderProvider      fileuploader.Provider
-			instanceBackupEnabled     misc.ValueLoader[bool]
+			instanceBackupEnabled     config.ValueLoader[bool]
 			FailedOnly                bool
 			PathPrefix                string
-			backupRowsBatchSize       misc.ValueLoader[int64]
-			backupMaxTotalPayloadSize misc.ValueLoader[int64]
+			backupRowsBatchSize       config.ValueLoader[int64]
+			backupMaxTotalPayloadSize config.ValueLoader[int64]
 		}
 	}
 }
@@ -646,7 +647,7 @@ func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	}
 }
 
-func WithDSLimit(limit misc.ValueLoader[int]) OptsFunc {
+func WithDSLimit(limit config.ValueLoader[int]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.dsLimit = limit
 	}
@@ -1863,66 +1864,87 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
+func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
 	defer jd.dsMigrationLock.RUnlock()
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
-	statMap := make(map[string]map[string]int)
 
-	for _, ds := range dsList {
-		queryString := fmt.Sprintf(`with joined as (
-			select
-			  j.job_id as jobID,
-			  j.custom_val as customVal,
-			  s.id as statusID,
-			  s.job_state as jobState,
-			  j.workspace_id as workspace
-			from
-			  %[1]q j
-			  left join "v_last_%[2]s" s on j.job_id = s.job_id
-			where (
-			  s.job_state not in ('aborted', 'succeeded', 'migrated')
-			  or s.job_id is null
-			)
-		  )
-		  select
-			count(*),
-			customVal,
-			workspace
-		  from
-			joined
-		  group by
-			customVal,
-			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
-		if err != nil {
-			return nil, err
-		}
+	queryString := `with joined as (
+		select
+		  j.custom_val as customVal,
+		  j.workspace_id as workspace
+		from
+		  %[1]q j
+		  left join "v_last_%[2]s" s on j.job_id = s.job_id
+		where (
+		  s.job_state not in ('aborted', 'succeeded', 'migrated')
+		  or s.job_id is null
+		)
+	  )
+	  select
+		count(*),
+		customVal,
+		workspace
+	  from
+		joined
+	  group by
+		customVal,
+		workspace;`
 
-		for rows.Next() {
-			var count sql.NullInt64
-			var customVal string
-			var workspace string
-			err := rows.Scan(&count, &customVal, &workspace)
-			if err != nil {
-				return statMap, err
-			}
-			if _, ok := statMap[workspace]; !ok {
-				statMap[workspace] = make(map[string]int)
-			}
-			statMap[workspace][customVal] += int(count.Int64)
-		}
-		if err = rows.Err(); err != nil {
-			return statMap, err
-		}
+	g, ctx := errgroup.WithContext(ctx)
+	defaultConcurrency := 10
+	conc := jd.config.GetInt("jobsdb.pileupcount.parallelism", 10)
+	if conc < 1 || conc > defaultConcurrency {
+		jd.logger.Warnn(
+			"parallelism out of safe bounds. Using default value",
+			logger.NewIntField("parallelism", int64(conc)),
+			logger.NewIntField("default", int64(defaultConcurrency)),
+		)
+		conc = defaultConcurrency
 	}
-	return statMap, nil
+	g.SetLimit(conc)
+	for _, ds := range dsList {
+		g.Go(func() error {
+			rows, err := jd.dbHandle.QueryContext(
+				ctx,
+				fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+			)
+			if err != nil {
+				return fmt.Errorf("query on %s: %w", ds.JobTable, err)
+			}
+			for rows.Next() {
+				var count sql.NullInt64
+				var customVal string
+				var workspace string
+				err := rows.Scan(&count, &customVal, &workspace)
+				if err != nil {
+					return fmt.Errorf("rows.Scan(...) on %s: %w", ds.JobTable, err)
+				}
+				if count.Valid {
+					rmetrics.IncreasePendingEvents(
+						jd.tablePrefix,
+						workspace,
+						customVal,
+						float64(count.Int64),
+					)
+				}
+			}
+			if err = rows.Err(); err != nil {
+				return fmt.Errorf("rows.Err() on %s: %w", ds.JobTable, err)
+			}
+			if err = rows.Close(); err != nil {
+				return fmt.Errorf("rows.Close() on %s: %w", ds.JobTable, err)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
 }
 
 func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]string, error) {

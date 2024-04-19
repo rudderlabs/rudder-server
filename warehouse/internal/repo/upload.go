@@ -747,6 +747,7 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 	}
 
 	stmt := fmt.Sprintf(`
+	WITH filtered_uploads as (
 		SELECT
 			id,
 			source_id,
@@ -767,7 +768,8 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 		FROM
 			`+uploadsTableName+`
 		WHERE
-			1 = 1 %s
+			1 = 1 %s )
+	SELECT * from filtered_uploads
 		ORDER BY
 		  	id DESC
 		LIMIT
@@ -899,7 +901,10 @@ func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []interface{}) {
 		queryFilters += fmt.Sprintf(" AND id = $%d", len(queryArgs)+1)
 		queryArgs = append(queryArgs, suo.UploadID)
 	}
-
+	if suo.WorkspaceID != "" {
+		queryFilters += fmt.Sprintf(" AND workspace_id = $%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, suo.WorkspaceID)
+	}
 	return queryFilters, queryArgs
 }
 

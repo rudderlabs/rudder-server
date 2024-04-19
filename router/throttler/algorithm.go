@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/router/throttler/adaptivethrottlercounter"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type adaptiveAlgorithm interface {
@@ -17,7 +17,7 @@ type adaptiveAlgorithm interface {
 	LimitFactor() float64
 }
 
-func newAdaptiveAlgorithm(config *config.Config, window misc.ValueLoader[time.Duration]) adaptiveAlgorithm {
+func newAdaptiveAlgorithm(config *config.Config, window config.ValueLoader[time.Duration]) adaptiveAlgorithm {
 	name := config.GetString("Router.throttler.adaptive.algorithm", "")
 	switch name {
 	default:

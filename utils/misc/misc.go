@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -35,13 +34,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
-	AppStartTime        int64
-	errorStorePath      string
 	reservedFolderPaths []*RFP
 	notifyOnce          sync.Once
 
@@ -97,82 +95,12 @@ func init() {
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
-	errorStorePath = config.GetStringVar("/tmp/error_store.json", "recovery.errorStorePath")
 	reservedFolderPaths = GetReservedFolderPaths()
 }
 
 func BatchDestinations() []string {
 	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BINGADS_AUDIENCE", "ELOQUA"}
 	return batchDestinations
-}
-
-func getErrorStore() (ErrorStoreT, error) {
-	var errorStore ErrorStoreT
-	data, err := os.ReadFile(errorStorePath)
-	if os.IsNotExist(err) {
-		defaultErrorStoreJSON := "{\"Errors\":[]}"
-		data = []byte(defaultErrorStoreJSON)
-	} else if err != nil {
-		pkgLogger.Fatal("Failed to get ErrorStore", err)
-		return errorStore, err
-	}
-
-	err = json.Unmarshal(data, &errorStore)
-	if err != nil {
-		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %v", errorStorePath, err)
-		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
-			pkgLogger.Errorf("Failed to back up: %s. Error: %v", errorStorePath, err)
-		}
-		errorStore = ErrorStoreT{Errors: []RudderError{}}
-	}
-	return errorStore, nil
-}
-
-func saveErrorStore(errorStore ErrorStoreT) {
-	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
-	if err != nil {
-		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
-		return
-	}
-	err = os.WriteFile(errorStorePath, errorStoreJSON, 0o644)
-	if err != nil {
-		pkgLogger.Fatal("failed to write to errorStore")
-	}
-}
-
-// RecordAppError appends the error occurred to error_store.json
-func RecordAppError(err error) {
-	if err == nil {
-		return
-	}
-
-	if AppStartTime == 0 {
-		return
-	}
-
-	byteArr := make([]byte, 2048) // adjust buffer size to be larger than expected stack
-	n := runtime.Stack(byteArr, false)
-	stackTrace := string(byteArr[:n])
-
-	errorStore, localErr := getErrorStore()
-	if localErr != nil || errorStore.Errors == nil {
-		return
-	}
-
-	crashTime := time.Now().Unix()
-
-	// TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors,
-		RudderError{
-			StartTime:         AppStartTime,
-			CrashTime:         crashTime,
-			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
-			ReadableCrashTime: fmt.Sprint(time.Unix(crashTime, 0)),
-			Message:           err.Error(),
-			StackTrace:        stackTrace,
-			Code:              101,
-		})
-	saveErrorStore(errorStore)
 }
 
 func GetHash(s string) int {
@@ -347,17 +275,6 @@ func Copy(dst, src interface{}) {
 		}
 		dstV.Field(i).Set(srcV.Field(i))
 	}
-}
-
-// GetIPFromReq gets ip address from request
-func GetIPFromReq(req *http.Request) string {
-	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
-	if addresses[0] == "" {
-		splits := strings.Split(req.RemoteAddr, ":")
-		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
-	}
-
-	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
 //  Returns chronological timestamp of the event using the formula
@@ -774,29 +691,6 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 	return objectStorageConfigMap
 }
 
-// GetMD5UUID hashes the given string into md5 and returns it as auuid
-func GetMD5UUID(str string) (uuid.UUID, error) {
-	// To maintain backward compatibility, we are using md5 hash of the string
-	// We are mimicking github.com/gofrs/uuid behavior:
-	//
-	// md5Sum := md5.Sum([]byte(str))
-	// u, err := uuid.FromBytes(md5Sum[:])
-
-	// u.SetVersion(uuid.V4)
-	// u.SetVariant(uuid.VariantRFC4122)
-
-	// google/uuid doesn't allow us to modify the version and variant
-	// so we are doing it manually, using gofrs/uuid library implementation.
-	md5Sum := md5.Sum([]byte(str)) // skipcq: GO-S1023
-	// SetVariant: VariantRFC4122
-	md5Sum[8] = md5Sum[8]&(0xff>>2) | (0x02 << 6)
-	// SetVersion: Version 4
-	version := byte(4)
-	md5Sum[6] = (md5Sum[6] & 0x0f) | (version << 4)
-
-	return uuid.FromBytes(md5Sum[:])
-}
-
 // GetParsedTimestamp returns the parsed timestamp
 func GetParsedTimestamp(input interface{}) (time.Time, bool) {
 	var parsedTimestamp time.Time
@@ -922,7 +816,6 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 						"Name": team,
 					},
 				})
-				RecordAppError(fmt.Errorf("%v", r))
 				pkgLogger.Fatalw("Panic detected. Application will crash.",
 					"stack", string(debug.Stack()),
 					"panic", r,
@@ -943,22 +836,6 @@ func WithBugsnag(fn func() error) func() error {
 		ctx := bugsnag.StartSession(context.Background())
 		defer BugsnagNotify(ctx, "Core")()
 		return fn()
-	}
-}
-
-func GetStringifiedData(data interface{}) string {
-	if data == nil {
-		return ""
-	}
-	switch d := data.(type) {
-	case string:
-		return d
-	default:
-		dataBytes, err := json.Marshal(d)
-		if err != nil {
-			return fmt.Sprint(d)
-		}
-		return string(dataBytes)
 	}
 }
 
@@ -1011,24 +888,6 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapL
 		return lookupWithLevel(searchMap, level, keys[1:]...)
 	}
 	return lookupWithLevel(m, 0, ks...)
-}
-
-// GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
-// References:
-// 1. Go supported types: https://golangbyexample.com/all-data-types-in-golang-with-examples/
-// 2. Json schema supported types: https://json-schema.org/understanding-json-schema/reference/type.html
-func GetJsonSchemaDTFromGoDT(goType string) string {
-	switch goType {
-	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
-		return "integer"
-	case "float32", "float64":
-		return "number"
-	case "string":
-		return "string"
-	case "bool":
-		return "boolean"
-	}
-	return "object"
 }
 
 // SleepCtx sleeps for the given duration or until the context is canceled.

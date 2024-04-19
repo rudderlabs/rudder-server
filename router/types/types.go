@@ -11,10 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-const (
-	RouterUnMarshalErrorCode = 599
-	RouterTimedOutStatusCode = 1113
-)
+const RouterUnMarshalErrorCode = 599
 
 // RouterJobT holds the router job and its related metadata
 type RouterJobT struct {
@@ -39,12 +36,13 @@ func (djs DestinationJobs) Hydrate(jobs map[int64]*jobsdb.JobT) {
 // DestinationJobT holds the job to be sent to destination
 // and metadata of all the router jobs from which this job is cooked up
 type DestinationJobT struct {
-	Message          json.RawMessage            `json:"batchedRequest"`
-	JobMetadataArray []JobMetadataT             `json:"metadata"` // multiple jobs may be batched in a single message
-	Destination      backendconfig.DestinationT `json:"destination"`
-	Batched          bool                       `json:"batched"`
-	StatusCode       int                        `json:"statusCode"`
-	Error            string                     `json:"error"`
+	Message           json.RawMessage            `json:"batchedRequest"`
+	JobMetadataArray  []JobMetadataT             `json:"metadata"` // multiple jobs may be batched in a single message
+	Destination       backendconfig.DestinationT `json:"destination"`
+	Batched           bool                       `json:"batched"`
+	StatusCode        int                        `json:"statusCode"`
+	Error             string                     `json:"error"`
+	AuthErrorCategory string                     `json:"authErrorCategory"`
 }
 
 func (dj *DestinationJobT) MinJobID() int64 {
@@ -67,6 +65,7 @@ type JobMetadataT struct {
 	UserID             string          `json:"userId"`
 	JobID              int64           `json:"jobId"`
 	SourceID           string          `json:"sourceId"`
+	SourceCategory     string          `json:"sourceCategory"`
 	DestinationID      string          `json:"destinationId"`
 	AttemptNum         int             `json:"attemptNum"`
 	ReceivedAt         string          `json:"receivedAt"`

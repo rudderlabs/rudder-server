@@ -214,13 +214,6 @@ BackendConfig:
   Regulations:
     pageSize: 50
     pollInterval: 300s
-recovery:
-  enabled: true
-  errorStorePath: /tmp/error_store.json
-  storagePath: /tmp/recovery_data.json
-  normal:
-    crashThreshold: 5
-    duration: 300s
 Logger:
   enableConsole: true
   enableFile: false

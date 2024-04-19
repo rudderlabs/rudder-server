@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,14 +20,14 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
-	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -43,6 +44,7 @@ const (
 	StatReportingHttpReq                   = "reporting_client_http_request"
 	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
 	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
+	StatReportingVacuumDuration            = "reporting_vacuum_duration"
 )
 
 type DefaultReporter struct {
@@ -59,12 +61,12 @@ type DefaultReporter struct {
 	instanceID                           string
 	whActionsOnly                        bool
 	region                               string
-	sleepInterval                        misc.ValueLoader[time.Duration]
-	mainLoopSleepInterval                misc.ValueLoader[time.Duration]
+	sleepInterval                        config.ValueLoader[time.Duration]
+	mainLoopSleepInterval                config.ValueLoader[time.Duration]
 	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
-	maxConcurrentRequests                misc.ValueLoader[int]
+	maxConcurrentRequests                config.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -180,7 +182,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 }
 
 func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
+	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
 	if err != nil {
@@ -190,7 +192,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	queryStart := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), r.dbQueryTimeout.Load())
 	defer cancel()
-	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+	err = dbHandle.QueryRowContext(ctx, sqlStatement, currentMs).Scan(&queryMin)
 
 	if err != nil && err != sql.ErrNoRows && ctx.Err() == nil {
 		panic(err)
@@ -204,10 +206,11 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		return nil, 0, nil
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
+	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
+	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement)
+	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)
 	if err != nil {
 		panic(err)
 	}
@@ -235,12 +238,12 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
 			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.Status,
-			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
 			&metricReport.StatusDetail.StatusCode,
-			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
+			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
+			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 		)
 		if err != nil {
 			panic(err)
@@ -257,6 +260,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 
 func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
+	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
 		groupingIdentifiers := []string{
@@ -311,36 +315,39 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
 				},
 			}
+			values = append(values, metricsByGroup[identifier])
 		}
-		statusDetailInterface, found := lo.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
-			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode && i.ErrorType == report.StatusDetail.ErrorType
+
+		metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
+			Status:         report.StatusDetail.Status,
+			StatusCode:     report.StatusDetail.StatusCode,
+			Count:          report.StatusDetail.Count,
+			ViolationCount: report.StatusDetail.ViolationCount,
+			SampleResponse: report.StatusDetail.SampleResponse,
+			SampleEvent:    report.StatusDetail.SampleEvent,
+			EventName:      report.StatusDetail.EventName,
+			EventType:      report.StatusDetail.EventType,
+			ErrorType:      report.StatusDetail.ErrorType,
 		})
-		if !found {
-			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
-				Status:         report.StatusDetail.Status,
-				StatusCode:     report.StatusDetail.StatusCode,
-				Count:          report.StatusDetail.Count,
-				ViolationCount: report.StatusDetail.ViolationCount,
-				SampleResponse: report.StatusDetail.SampleResponse,
-				SampleEvent:    report.StatusDetail.SampleEvent,
-				EventName:      report.StatusDetail.EventName,
-				EventType:      report.StatusDetail.EventType,
-				ErrorType:      report.StatusDetail.ErrorType,
-			})
-			continue
-		}
-		statusDetail := statusDetailInterface
-		statusDetail.Count += report.StatusDetail.Count
-		statusDetail.ViolationCount += report.StatusDetail.ViolationCount
-		statusDetail.SampleResponse = report.StatusDetail.SampleResponse
-		statusDetail.SampleEvent = report.StatusDetail.SampleEvent
 	}
 
-	var values []*types.Metric
-	for _, val := range metricsByGroup {
-		values = append(values, val)
-	}
 	return values
+}
+
+func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
+	// for monitoring reports pileups
+	reportingLag := r.stats.NewTaggedStat(
+		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
+	)
+	for {
+		lag := time.Since(lastReportedAtTime.Load())
+		reportingLag.Gauge(lag.Seconds())
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Minute):
+		}
+	}
 }
 
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
@@ -354,106 +361,130 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
 	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	vacuumDuration := r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = r.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
-	reportingLag := r.stats.NewTaggedStat(
-		"reporting_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
-	)
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer wg.Wait()
-	go func() {
-		// for monitoring reports pileups
-		defer wg.Done()
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return r.emitLagMetric(ctx, c, &lastReportedAtTime)
+	})
+
+	g.Go(func() error {
 		for {
-			lag := time.Since(lastReportedAtTime.Load())
-			reportingLag.Gauge(lag.Seconds())
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(2 * time.Minute):
-			}
-		}
-	}()
-
-	for {
-		if ctx.Err() != nil {
-			r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-			return
-		}
-		requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
-		loopStart := time.Now()
-		currentMs := time.Now().UTC().Unix() / 60
-
-		getReportsStart := time.Now()
-		reports, reportedAt, err := r.getReports(currentMs, c.ConnInfo)
-		getReportsTimer.Since(getReportsStart)
-		getReportsCount.Observe(float64(len(reports)))
-		if len(reports) == 0 {
-			if err == nil {
-				lastReportedAtTime.Store(loopStart)
-			} else {
-				r.log.Errorw("getting reports", "error", err)
-			}
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return
-			case <-time.After(r.sleepInterval.Load()):
+				return ctx.Err()
 			}
-			continue
-		}
+			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
+			loopStart := time.Now()
+			currentMin := time.Now().UTC().Unix() / 60
 
-		lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
-		getAggregatedReportsStart := time.Now()
-		metrics := r.getAggregatedReports(reports)
-		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
-		getAggregatedReportsCount.Observe(float64(len(metrics)))
-
-		errGroup, errCtx := errgroup.WithContext(ctx)
-		for _, metric := range metrics {
-			if r.whActionsOnly && metric.SourceCategory != "warehouse" {
-				// if whActionsOnly is true, we only send reports for wh actions sources
-				// we silently drop all other reports
+			getReportsStart := time.Now()
+			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
+			if err != nil {
+				r.log.Errorw("getting reports", "error", err)
+				select {
+				case <-ctx.Done():
+					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return ctx.Err()
+				case <-time.After(r.mainLoopSleepInterval.Load()):
+				}
 				continue
 			}
-			metricToSend := metric
-			requestChan <- struct{}{}
-			if errCtx.Err() != nil {
-				// if any of errGroup's goroutines fail - don't send anymore requests for this batch
-				break
-			}
-			errGroup.Go(func() error {
-				err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
-				<-requestChan
-				return err
-			})
-		}
 
-		err = errGroup.Wait()
-		if err == nil {
-			dbHandle, err := r.getDBHandle(c.ConnInfo)
-			if err != nil {
-				panic(err)
+			getReportsTimer.Since(getReportsStart)
+			getReportsCount.Observe(float64(len(reports)))
+			if len(reports) == 0 {
+				lastReportedAtTime.Store(loopStart)
+				select {
+				case <-ctx.Done():
+					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return ctx.Err()
+				case <-time.After(r.sleepInterval.Load()):
+				}
+				continue
 			}
-			_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
-			if err != nil {
-				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
-			}
-		}
 
-		mainLoopTimer.Since(loopStart)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(r.mainLoopSleepInterval.Load()):
+			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
+			getAggregatedReportsStart := time.Now()
+			metrics := r.getAggregatedReports(reports)
+			getAggregatedReportsTimer.Since(getAggregatedReportsStart)
+			getAggregatedReportsCount.Observe(float64(len(metrics)))
+
+			errGroup, errCtx := errgroup.WithContext(ctx)
+			for _, metric := range metrics {
+				if r.whActionsOnly && metric.SourceCategory != "warehouse" {
+					// if whActionsOnly is true, we only send reports for wh actions sources
+					// we silently drop all other reports
+					continue
+				}
+				metricToSend := metric
+				requestChan <- struct{}{}
+				if errCtx.Err() != nil {
+					// if any of errGroup's goroutines fail - don't send anymore requests for this batch
+					break
+				}
+				errGroup.Go(func() error {
+					err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
+					<-requestChan
+					return err
+				})
+			}
+
+			err = errGroup.Wait()
+			if err != nil {
+				r.log.Errorf(`[ Reporting ]: Error sending metrics to service: %v`, err)
+			} else {
+				dbHandle, err := r.getDBHandle(c.ConnInfo)
+				if err != nil {
+					return err
+				}
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
+				if err != nil {
+					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				}
+
+				vacuumStart := time.Now()
+				var sizeEstimate int64
+				if err := dbHandle.QueryRowContext(
+					ctx,
+					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
+				).Scan(&sizeEstimate); err != nil {
+					r.log.Errorn(
+						`[ Reporting ]: Error getting table size estimate`,
+						logger.NewErrorField(err),
+					)
+				}
+				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
+					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+						r.log.Errorn(
+							`[ Reporting ]: Error vacuuming reports table`,
+							logger.NewErrorField(err),
+						)
+					}
+					vacuumDuration.Since(vacuumStart)
+				}
+			}
+
+			mainLoopTimer.Since(loopStart)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(r.mainLoopSleepInterval.Load()):
+			}
 		}
+	})
+
+	err := g.Wait()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		panic(err)
 	}
 }
 

@@ -712,6 +712,14 @@ func TestNestedMapLookup(t *testing.T) {
 			require.Equal(t, testCase.expectedValue, val)
 		})
 	}
+	t.Run("key not present at all(at level-0)", func(t *testing.T) {
+		searchMap1 := map[string]interface{}{}
+		v, searchErr := NestedMapLookup(searchMap1, "key", "key")
+		require.Equal(t, v, nil)
+		require.Error(t, searchErr.Err)
+		require.EqualError(t, searchErr.Err, "key: key not found")
+		require.Equal(t, searchErr.Level, 0)
+	})
 
 	t.Run("key not found at level-1", func(t *testing.T) {
 		searchMap1 := map[string]interface{}{

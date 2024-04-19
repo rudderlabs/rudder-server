@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,16 +14,17 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/valyala/fasthttp"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 
@@ -156,8 +156,13 @@ func TestTransformer(t *testing.T) {
 		tr.guardConcurrency = make(chan struct{}, 200)
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+		tr.config.timeoutDuration = 1 * time.Second
+		tr.config.useFasthttpClient = func() bool { return true }
+		tr.fasthttpClient = &fasthttp.Client{}
+		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
+		tr.config.failOnError = config.SingleValueLoader(true)
 
-		tr.config.maxRetry = misc.SingleValueLoader(1)
+		tr.config.maxRetry = config.SingleValueLoader(1)
 
 		tc := []struct {
 			batchSize   int
@@ -299,12 +304,15 @@ func TestTransformer(t *testing.T) {
 				client.Timeout = 1 * time.Millisecond
 
 				tr := handle{}
+				tr.config.timeoutDuration = 1 * time.Millisecond
+				tr.config.useFasthttpClient = func() bool { return true }
+				tr.fasthttpClient = &fasthttp.Client{}
 				tr.stat = stats.Default
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = client
-				tr.config.maxRetry = misc.SingleValueLoader(tc.retries)
-				tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(tc.failOnUserTransformTimeout)
+				tr.config.maxRetry = config.SingleValueLoader(tc.retries)
+				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(tc.failOnUserTransformTimeout)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 				if tc.expectPanic {
@@ -315,7 +323,7 @@ func TestTransformer(t *testing.T) {
 					return
 				}
 
-				u, err := url.Parse(srv.URL)
+				_, err := url.Parse(srv.URL)
 				require.NoError(t, err)
 
 				rsp := tr.request(context.TODO(), srv.URL, tc.stage, events)
@@ -324,7 +332,7 @@ func TestTransformer(t *testing.T) {
 				require.Equal(t, rsp[0].Metadata, Metadata{
 					MessageID: msgID,
 				})
-				require.Equal(t, rsp[0].Error, errors.New(`transformer request timed out: Post "http://127.0.0.1:`+u.Port()+`": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`).Error())
+				require.Contains(t, rsp[0].Error, "transformer request timed out:")
 				close(ch)
 			})
 		}
@@ -357,8 +365,11 @@ func TestTransformer(t *testing.T) {
 		tr.logger = logger.NOP
 		tr.conf = config.Default
 		tr.client = srv.Client()
-		tr.config.maxRetry = misc.SingleValueLoader(1)
-		tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(false)
+		tr.config.maxRetry = config.SingleValueLoader(1)
+		tr.config.timeoutDuration = 1 * time.Second
+		tr.config.useFasthttpClient = func() bool { return true }
+		tr.fasthttpClient = &fasthttp.Client{}
+		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 		rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
@@ -478,10 +489,13 @@ func TestTransformer(t *testing.T) {
 				tr.logger = logger.NOP
 				tr.conf = config.Default
 				tr.client = srv.Client()
-				tr.config.failOnUserTransformTimeout = misc.SingleValueLoader(false)
-				tr.config.maxRetry = misc.SingleValueLoader(tc.retries)
-				tr.config.failOnError = misc.SingleValueLoader(tc.failOnError)
+				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
+				tr.config.maxRetry = config.SingleValueLoader(tc.retries)
+				tr.config.failOnError = config.SingleValueLoader(tc.failOnError)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+				tr.config.timeoutDuration = 1 * time.Second
+				tr.config.useFasthttpClient = func() bool { return true }
+				tr.fasthttpClient = &fasthttp.Client{}
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
@@ -572,7 +586,10 @@ func TestTransformer(t *testing.T) {
 				tr.conf = config.Default
 				tr.logger = logger.NOP
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
-				tr.config.maxRetry = misc.SingleValueLoader(1)
+				tr.config.maxRetry = config.SingleValueLoader(1)
+				tr.config.timeoutDuration = 1 * time.Second
+				tr.config.useFasthttpClient = func() bool { return true }
+				tr.fasthttpClient = &fasthttp.Client{}
 
 				if tc.expectPanic {
 					require.Panics(t, func() {

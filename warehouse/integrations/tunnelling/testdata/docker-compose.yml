@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   openssh-server:
-    image: lscr.io/linuxserver/openssh-server:latest
+    image: lscr.io/linuxserver/openssh-server:9.3_p2-r1-ls145
     environment:
       - PUBLIC_KEY_FILE=/test_key.pub
       - SUDO_ACCESS=false

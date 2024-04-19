@@ -996,9 +996,11 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterating for dangling staging tables: %w", err)
 	}
-	rs.logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	rs.logger.Infon("Dropping dangling staging tables",
+		logger.NewStringField("stagingTableNames", strings.Join(stagingTableNames, ",")),
+	)
 	for _, stagingTableName := range stagingTableNames {
-		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
+		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
 			return fmt.Errorf("dropping dangling staging table %q.%q: %w", rs.Namespace, stagingTableName, err)
 		}

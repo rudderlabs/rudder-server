@@ -47,10 +47,10 @@ func TestBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := postgres.Setup(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
-	minioResource, err = minio.Setup(pool, cleanup)
+	minioResource, err = minio.Setup(pool, t)
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution
@@ -97,10 +97,10 @@ func TestBackupTable(t *testing.T) {
 	fileUploaderProvider := fileuploader.NewDefaultProvider()
 
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileUploaderProvider)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, fileUploaderProvider)
 
 	// rt jobsdb is taking a backup of failed jobs only
-	tc.insertRTData(t, jobs, statusList, cleanup, fileUploaderProvider)
+	tc.insertRTData(t, jobs, statusList, fileUploaderProvider)
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// create a filemanager instance
@@ -159,13 +159,13 @@ func TestBackupTable(t *testing.T) {
 	}
 
 	// Verify aborted jobs backup
-	f := tc.downloadFile(t, fm, abortedJobsBackupFilename, cleanup)
+	f := tc.downloadFile(t, fm, abortedJobsBackupFilename)
 	abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
 	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
 	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
 
 	// Verify full backup of job statuses
-	f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
+	f = tc.downloadFile(t, fm, jobStatusBackupFilename)
 	backedupStatus, err := tc.readGzipStatusFile(f.Name())
 	require.NoError(t, err, "expected no error while reading backedup status file")
 	goldenStatusFile, err := tc.readGzipStatusFile(goldenFileStatusFileName)
@@ -174,7 +174,7 @@ func TestBackupTable(t *testing.T) {
 	require.Equal(t, len(goldenStatusFile), len(backedupStatus), "expected status files to be same")
 
 	// Verify full backup of jobs
-	f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
+	f = tc.downloadFile(t, fm, jobsBackupFilename)
 	backedupJobs, err := tc.readGzipJobFile(f.Name())
 	require.NoError(t, err, "expected no error while reading backedup status file")
 	goldenFileJobs, err := tc.readGzipJobFile(goldenFileJobsFileName)
@@ -195,15 +195,13 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	// running minio container on docker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
 
-	postgresResource, err := postgres.Setup(pool, cleanup)
+	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
 	minioResource = make([]*minio.Resource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = minio.Setup(pool, cleanup)
+		minioResource[i], err = minio.Setup(pool, t)
 		require.NoError(t, err)
 	}
 
@@ -305,10 +303,10 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileuploaderProvider)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, fileuploaderProvider)
 
 	// rt jobsdb is taking a backup of failed jobs only
-	tc.insertRTData(t, jobs, statusList, cleanup, fileuploaderProvider)
+	tc.insertRTData(t, jobs, statusList, fileuploaderProvider)
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// wait for the backup to finish
@@ -353,7 +351,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		require.NotEmpty(t, abortedJobsBackupFilename)
 
 		// Verify aborted jobs backup
-		f := tc.downloadFile(t, fm, abortedJobsBackupFilename, cleanup)
+		f := tc.downloadFile(t, fm, abortedJobsBackupFilename)
 		abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
 		require.NotZero(t, len(abortedJobs))
 		require.NotZero(t, len(abortedStatus))
@@ -361,7 +359,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		require.Equal(t, jobStatusByWorkspace[workspace], abortedStatus, "expected status to be same in case of only aborted backup")
 
 		// Verify full backup of job statuses
-		f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
+		f = tc.downloadFile(t, fm, jobStatusBackupFilename)
 		backedupStatus, err := tc.readGzipStatusFile(f.Name())
 		require.NotZero(t, len(backedupStatus))
 		require.NoError(t, err, "expected no error while reading backedup status file")
@@ -369,7 +367,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		require.Equal(t, len(jobStatusByWorkspace[workspace]), len(backedupStatus), "expected status files to be same")
 
 		// Verify full backup of jobs
-		f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
+		f = tc.downloadFile(t, fm, jobsBackupFilename)
 		backedupJobs, err := tc.readGzipJobFile(f.Name())
 		require.NotZero(t, len(backedupJobs))
 		require.NoError(t, err, "expected no error while reading backedup status file")
@@ -403,7 +401,7 @@ func duplicateStatuses(statusList []*JobStatusT, duplicateCount int) []*JobStatu
 	return res
 }
 
-func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileuploader fileuploader.Provider) {
+func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, fileuploader fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
 
 	jobsDB := &Handle{
@@ -435,12 +433,12 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{})
 	})
 	require.NoError(t, err)
-	cleanup.Cleanup(func() {
+	t.Cleanup(func() {
 		jobsDB.TearDown()
 	})
 }
 
-func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileUploaderProvider fileuploader.Provider) {
+func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, fileUploaderProvider fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -474,7 +472,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{})
 	})
 	require.NoError(t, err)
-	cleanup.Cleanup(func() {
+	t.Cleanup(func() {
 		jobsDB.TearDown()
 	})
 }
@@ -523,7 +521,7 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 	return jobs, statusList
 }
 
-func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fileToDownload string, cleanup *testhelper.Cleanup) *os.File {
+func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fileToDownload string) *os.File {
 	file, err := os.CreateTemp("", "backedupfile")
 	require.NoError(t, err, "expected no error while creating temporary file")
 
@@ -537,7 +535,7 @@ func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fi
 	require.NoError(t, err, "expected no error while reopening downloaded file")
 
 	require.NoError(t, err)
-	cleanup.Cleanup(func() {
+	t.Cleanup(func() {
 		_ = file.Close()
 		_ = os.Remove(file.Name())
 	})

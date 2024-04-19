@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/stringify"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -25,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -75,7 +78,6 @@ type Handle struct {
 	tracer        stats.Tracer
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
-	lastJobID     int64
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -93,10 +95,10 @@ type Handle struct {
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
 	stats                      processorStats
-	payloadLimit               misc.ValueLoader[int64]
-	jobsDBCommandTimeout       misc.ValueLoader[time.Duration]
-	jobdDBQueryRequestTimeout  misc.ValueLoader[time.Duration]
-	jobdDBMaxRetries           misc.ValueLoader[int]
+	payloadLimit               config.ValueLoader[int64]
+	jobsDBCommandTimeout       config.ValueLoader[time.Duration]
+	jobdDBQueryRequestTimeout  config.ValueLoader[time.Duration]
+	jobdDBMaxRetries           config.ValueLoader[int]
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	rsourcesService            rsources.JobService
@@ -116,37 +118,36 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
-		pingerSleep                     misc.ValueLoader[time.Duration]
-		readLoopSleep                   misc.ValueLoader[time.Duration]
-		maxLoopSleep                    misc.ValueLoader[time.Duration]
-		storeTimeout                    misc.ValueLoader[time.Duration]
-		maxEventsToProcess              misc.ValueLoader[int]
-		transformBatchSize              misc.ValueLoader[int]
-		userTransformBatchSize          misc.ValueLoader[int]
+		pingerSleep                     config.ValueLoader[time.Duration]
+		readLoopSleep                   config.ValueLoader[time.Duration]
+		maxLoopSleep                    config.ValueLoader[time.Duration]
+		storeTimeout                    config.ValueLoader[time.Duration]
+		maxEventsToProcess              config.ValueLoader[int]
+		transformBatchSize              config.ValueLoader[int]
+		userTransformBatchSize          config.ValueLoader[int]
 		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
 		sourceIdSourceMap               map[string]backendconfig.SourceT
 		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		destinationIDtoTypeMap          map[string]string
 		oneTrustConsentCategoriesMap    map[string][]string
 		ketchConsentCategoriesMap       map[string][]string
 		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
-		enableEventCount                misc.ValueLoader[bool]
+		enableEventCount                config.ValueLoader[bool]
 		transformTimesPQLength          int
-		captureEventNameStats           misc.ValueLoader[bool]
+		captureEventNameStats           config.ValueLoader[bool]
 		transformerURL                  string
 		pollInterval                    time.Duration
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
-		archivalEnabled                 misc.ValueLoader[bool]
+		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 	}
 
 	drainConfig struct {
-		jobRunIDs misc.ValueLoader[[]string]
+		jobRunIDs config.ValueLoader[[]string]
 	}
 
 	adaptiveLimit func(int64) int64
@@ -203,6 +204,7 @@ type DestStatT struct {
 
 type ParametersT struct {
 	SourceID                string      `json:"source_id"`
+	SourceName              string      `json:"source_name"`
 	DestinationID           string      `json:"destination_id"`
 	ReceivedAt              string      `json:"received_at"`
 	TransformAt             string      `json:"transform_at"`
@@ -794,7 +796,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
-			destinationIDtoTypeMap          = make(map[string]string)
 			eventAuditEnabled               = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
@@ -805,7 +806,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 					sourceIdDestinationMap[source.ID] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
-						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
@@ -827,7 +827,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
-		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
@@ -914,12 +913,13 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
+	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = misc.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
+	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
@@ -945,6 +945,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
 	metadata.InstanceID = commonMetadata.InstanceID
@@ -1009,8 +1010,8 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 					continue
 				}
 
-				eventName := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "event").String())
-				eventType := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "type").String())
+				eventName := stringify.Any(gjson.GetBytes(eventPayload, "event").String())
+				eventType := stringify.Any(gjson.GetBytes(eventPayload, "type").String())
 				deliveryStatus := destinationdebugger.DeliveryStatusT{
 					EventName:     eventName,
 					EventType:     eventType,
@@ -1458,7 +1459,12 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}
 }
 
-func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64) []*types.PUReportedMetric {
+func getDiffMetrics(
+	inPU, pu string,
+	inCountMetadataMap map[string]MetricMetadata,
+	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
+	statFactory stats.Stats,
+) []*types.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
@@ -1484,6 +1490,15 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
 			diffMetrics = append(diffMetrics, metric)
+			statFactory.NewTaggedStat(
+				"processor_diff_count",
+				stats.CountType,
+				stats.Tags{
+					"stage":         metric.PU,
+					"sourceId":      metric.ConnectionDetails.SourceID,
+					"destinationId": metric.ConnectionDetails.DestinationID,
+				},
+			).Count(int(-diff))
 		}
 	}
 
@@ -1623,7 +1638,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
-			messageId := misc.GetStringifiedData(singularEvent["messageId"])
+			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
@@ -1849,6 +1864,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			outCountMap,
 			map[string]int64{},
 			map[string]int64{},
+			proc.statsFactory,
 		)
 		reportMetrics = append(reportMetrics, diffMetrics...)
 	}
@@ -2390,17 +2406,20 @@ func (proc *Handle) transformSrcDest(
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
+	sourceName := eventList[0].Metadata.SourceName
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
+	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
+		SourceName:           sourceName,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
 		Namespace:            config.GetKubeNamespace(),
 		InstanceID:           misc.GetInstanceID(),
 		DestinationID:        destID,
-		DestinationType:      destination.DestinationDefinition.Name,
+		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
 	}
 
@@ -2412,7 +2431,6 @@ func (proc *Handle) transformSrcDest(
 	droppedJobs := make([]*jobsdb.JobT, 0)
 
 	proc.config.configSubscriberLock.RLock()
-	destType := proc.config.destinationIDtoTypeMap[destID]
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
 
@@ -2507,6 +2525,7 @@ func (proc *Handle) transformSrcDest(
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2583,7 +2602,16 @@ func (proc *Handle) transformSrcDest(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+		diffMetrics := getDiffMetrics(
+			inPU,
+			types.EVENT_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			successCountMap,
+			nonSuccessMetrics.failedCountMap,
+			nonSuccessMetrics.filteredCountMap,
+			proc.statsFactory,
+		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2671,7 +2699,16 @@ func (proc *Handle) transformSrcDest(
 					}
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, nonSuccessMetrics.failedCountMap, nonSuccessMetrics.filteredCountMap)
+				diffMetrics := getDiffMetrics(
+					types.EVENT_FILTER,
+					types.DEST_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					nonSuccessMetrics.failedCountMap,
+					nonSuccessMetrics.filteredCountMap,
+					proc.statsFactory,
+				)
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.filteredMetrics...)
@@ -2722,6 +2759,7 @@ func (proc *Handle) transformSrcDest(
 
 			params := ParametersT{
 				SourceID:                sourceID,
+				SourceName:              sourceName,
 				DestinationID:           destID,
 				ReceivedAt:              receivedAt,
 				TransformAt:             transformAt,
@@ -2922,15 +2960,6 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)
-
-		if job.JobID <= proc.lastJobID {
-			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfOrder(partition).Count(1)
-		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
-			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.stats.statDBReadOutOfSequence(partition).Count(1)
-		}
-		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
@@ -3149,20 +3178,23 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
-	for tablePrefix, db := range dbs {
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
-			jobdDBQueryRequestTimeout,
-			jobdDBMaxRetries.Load(),
-			func(ctx context.Context) (map[string]map[string]int, error) {
-				return db.GetPileUpCounts(ctx)
-			}, func(attempt int) {
-				proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
-				stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Count(1)
-			})
-		if err != nil {
-			return err
-		}
-		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
-	}
-	return nil
+	return misc.RetryWithNotify(ctx,
+		jobdDBQueryRequestTimeout,
+		jobdDBMaxRetries.Load(),
+		func(ctx context.Context) error {
+			metric.Instance.Reset()
+			g, ctx := errgroup.WithContext(ctx)
+			for tablePrefix, db := range dbs {
+				g.Go(func() error {
+					if err := db.GetPileUpCounts(ctx); err != nil {
+						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
+					}
+					return nil
+				})
+			}
+			return g.Wait()
+		}, func(attempt int) {
+			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
+			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
+		})
 }

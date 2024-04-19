@@ -7,14 +7,15 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type adaptiveThrottleConfig struct {
-	window   misc.ValueLoader[time.Duration]
-	minLimit misc.ValueLoader[int64]
+	window   config.ValueLoader[time.Duration]
+	minLimit config.ValueLoader[int64]
 	maxLimit func() int64
 }
+
+const adaptiveDefaultMaxLimit = 1000 // 1000 requests per second
 
 func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, destName, destID string) {
 	c.window = config.GetReloadableDurationVar(1, time.Second,
@@ -36,12 +37,17 @@ func (c *adaptiveThrottleConfig) readThrottlingConfig(config *config.Config, des
 	limit := config.GetReloadableInt64Var(0, 1,
 		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
 		fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+	defaultMaxLimit := config.GetReloadableInt64Var(adaptiveDefaultMaxLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
 	c.maxLimit = func() int64 {
 		maxLimit := maxLimit.Load()
+		staticLimit := limit.Load()
+		staticLimitMultiplier := limitMultiplier.Load()
 		if maxLimit > 0 {
 			return maxLimit
+		} else if staticLimit > 0 && staticLimitMultiplier > 0 {
+			return int64(float64(staticLimit) * staticLimitMultiplier)
 		}
-		return int64(float64(limit.Load()) * limitMultiplier.Load())
+		return defaultMaxLimit.Load()
 	}
 }
 

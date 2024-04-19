@@ -87,32 +87,6 @@ func Test_Dedup_Window(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 }
 
-func Test_Dedup_ClearDB(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-	misc.Init()
-
-	dbPath := os.TempDir() + "/dedup_test"
-	defer func() { _ = os.RemoveAll(dbPath) }()
-	_ = os.RemoveAll(dbPath)
-
-	t.Run("Setting a messageid with clear db and dedup window", func(t *testing.T) {
-		d := dedup.New(dbPath)
-		found, _ := d.Set(dedup.KeyValue{Key: "a", Value: 1})
-		require.Equal(t, true, found)
-		err := d.Commit([]string{"a"})
-		require.NoError(t, err)
-		d.Close()
-	})
-	t.Run("Setting a messageid without cleardb should return false and previous value", func(t *testing.T) {
-		dNew := dedup.New(dbPath)
-		found, size := dNew.Set(dedup.KeyValue{Key: "a", Value: 2})
-		require.Equal(t, false, found)
-		require.Equal(t, int64(1), size)
-		dNew.Close()
-	})
-}
-
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	config.Reset()
 	logger.Reset()

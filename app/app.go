@@ -12,13 +12,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
 	"github.com/rudderlabs/rudder-server/enterprise/replay"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/db"
 )
 
 const (
@@ -165,9 +165,9 @@ func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
 	return healthy, fmt.Sprintf(
-		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
+		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","mode":"%s",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
-		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
+		appTypeStr, dbService, enabledRouter,
 		backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
 	)
 }

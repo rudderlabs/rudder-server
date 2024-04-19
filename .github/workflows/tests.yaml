@@ -6,6 +6,9 @@ on:
       - main
       - "release/*"
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
+  cancel-in-progress: true
 jobs:
   integration:
     name: Integration
@@ -14,11 +17,14 @@ jobs:
       matrix:
         FEATURES: [ oss ,enterprise ]
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '~1.21'
           check-latest: true
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
@@ -61,17 +67,20 @@ jobs:
           - package: warehouse/integrations/snowflake
             destination: snowflake
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '~1.21'
           check-latest: true
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.1.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -92,10 +101,13 @@ jobs:
     name: Unit
     runs-on: 'ubuntu-20.04'
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '~1.21'
           check-latest: true
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
@@ -120,6 +132,7 @@ jobs:
           - integration_test/reporting_error_index
           - integration_test/warehouse
           - integration_test/tracing
+          - integration_test/backendconfigunavailability
           - processor
           - regulation-worker
           - router
@@ -132,10 +145,13 @@ jobs:
             exclude: services/rsources
 
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '~1.21'
           check-latest: true
       - run: go version
       - run: go mod download
@@ -172,7 +188,6 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '~1.21'
           check-latest: true
       - name: Download coverage reports
         uses: actions/download-artifact@v4

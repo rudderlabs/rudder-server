@@ -103,6 +103,16 @@ func TestFactory(t *testing.T) {
 			"destType":      "destName",
 		}).LastValue())
 	})
+
+	t.Run("when no limit is set", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Router.throttler.adaptive.enabled", true)
+		f, err := NewFactory(conf, nil)
+		require.NoError(t, err)
+		defer f.Shutdown()
+		ta := f.Get("destName", "destID")
+		require.EqualValues(t, adaptiveDefaultMaxLimit, ta.getLimit())
+	})
 }
 
 func floatCheck(a, b int64) bool {

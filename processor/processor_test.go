@@ -25,6 +25,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -114,34 +116,55 @@ func (c *testContext) Finish() {
 }
 
 const (
-	WriteKeyEnabled       = "enabled-write-key"
-	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
-	WriteKeyEnabledNoUT2  = "enabled-write-key-no-ut2"
-	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
-	SourceIDEnabled       = "enabled-source"
-	SourceIDTransient     = "transient-source"
-	WriteKeyTransient     = "transient-write-key"
-	SourceIDEnabledNoUT   = "enabled-source-no-ut"
-	SourceIDEnabledOnlyUT = "enabled-source-only-ut"
-	SourceIDEnabledNoUT2  = "enabled-source-no-ut2"
-	SourceIDDisabled      = "disabled-source"
-	DestinationIDEnabledA = "enabled-destination-a" // test destination router
-	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
-	DestinationIDEnabledC = "enabled-destination-c"
-	DestinationIDDisabled = "disabled-destination"
+	WriteKeyEnabled           = "enabled-write-key"
+	WriteKeyEnabledNoUT       = "enabled-write-key-no-ut"
+	WriteKeyEnabledNoUT2      = "enabled-write-key-no-ut2"
+	WriteKeyEnabledOnlyUT     = "enabled-write-key-only-ut"
+	SourceIDEnabled           = "enabled-source"
+	SourceIDEnabledName       = "SourceIDEnabled"
+	SourceIDTransient         = "transient-source"
+	SourceIDTransientName     = "SourceIDTransient"
+	WriteKeyTransient         = "transient-write-key"
+	SourceIDEnabledNoUT       = "enabled-source-no-ut"
+	SourceIDEnabledNoUTName   = "SourceIDEnabledNoUT"
+	SourceIDEnabledOnlyUT     = "enabled-source-only-ut"
+	SourceIDEnabledOnlyUTName = "SourceIDEnabledOnlyUT"
+	SourceIDEnabledNoUT2      = "enabled-source-no-ut2"
+	SourceIDEnabledNoUT2Name  = "SourceIDEnabledNoUT2"
+	SourceIDDisabled          = "disabled-source"
+	SourceIDDisabledName      = "SourceIDDisabled"
+	DestinationIDEnabledA     = "enabled-destination-a" // test destination router
+	DestinationIDEnabledB     = "enabled-destination-b" // test destination batch router
+	DestinationIDEnabledC     = "enabled-destination-c"
+	DestinationIDDisabled     = "disabled-destination"
 
-	SourceIDOneTrustConsent = "source-id-oneTrust-consent"
-	SourceIDGCM             = "source-id-gcm"
-	WriteKeyOneTrustConsent = "write-key-oneTrust-consent"
-	WriteKeyGCM             = "write-key-gcm"
+	SourceIDOneTrustConsent     = "source-id-oneTrust-consent"
+	SourceIDOneTrustConsentName = "SourceIDOneTrustConsent"
+	SourceIDGCM                 = "source-id-gcm"
+	SourceIDGCMName             = "SourceIDGCM"
+	WriteKeyOneTrustConsent     = "write-key-oneTrust-consent"
+	WriteKeyGCM                 = "write-key-gcm"
 
-	SourceIDKetchConsent = "source-id-ketch-consent"
-	WriteKeyKetchConsent = "write-key-ketch-consent"
+	SourceIDKetchConsent     = "source-id-ketch-consent"
+	SourceIDKetchConsentName = "SourceIDKetchConsent"
+	WriteKeyKetchConsent     = "write-key-ketch-consent"
 )
 
 var (
 	gatewayCustomVal = []string{"GW"}
 	emptyJobsList    []*jobsdb.JobT
+
+	sourceIDToName = map[string]string{
+		SourceIDEnabled:         SourceIDEnabledName,
+		SourceIDEnabledNoUT:     SourceIDEnabledNoUTName,
+		SourceIDEnabledOnlyUT:   SourceIDEnabledOnlyUTName,
+		SourceIDEnabledNoUT2:    SourceIDEnabledNoUT2Name,
+		SourceIDDisabled:        SourceIDDisabledName,
+		SourceIDOneTrustConsent: SourceIDOneTrustConsentName,
+		SourceIDGCM:             SourceIDGCMName,
+		SourceIDKetchConsent:    SourceIDKetchConsentName,
+		SourceIDTransient:       SourceIDTransientName,
+	}
 )
 
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
@@ -163,11 +186,13 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
+			Name:     SourceIDDisabledName,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  false,
 		},
 		{
 			ID:       SourceIDEnabled,
+			Name:     SourceIDEnabledName,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
 			Destinations: []backendconfig.DestinationT{
@@ -229,6 +254,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:       SourceIDEnabledNoUT,
+			Name:     SourceIDEnabledNoUTName,
 			WriteKey: WriteKeyEnabledNoUT,
 			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
@@ -264,6 +290,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:       SourceIDEnabledOnlyUT,
+			Name:     SourceIDEnabledOnlyUTName,
 			WriteKey: WriteKeyEnabledOnlyUT,
 			Enabled:  true,
 			Destinations: []backendconfig.DestinationT{
@@ -288,6 +315,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:       SourceIDEnabledNoUT2,
+			Name:     SourceIDEnabledNoUT2Name,
 			WriteKey: WriteKeyEnabledNoUT2,
 			Enabled:  true,
 			Destinations: []backendconfig.DestinationT{
@@ -325,6 +353,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:          SourceIDOneTrustConsent,
+			Name:        SourceIDOneTrustConsentName,
 			WriteKey:    WriteKeyOneTrustConsent,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
@@ -424,6 +453,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:          SourceIDGCM,
+			Name:        SourceIDGCMName,
 			WriteKey:    WriteKeyGCM,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
@@ -662,6 +692,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:          SourceIDKetchConsent,
+			Name:        SourceIDKetchConsentName,
 			WriteKey:    WriteKeyKetchConsent,
 			WorkspaceID: sampleWorkspaceID,
 			Enabled:     true,
@@ -759,6 +790,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID:        SourceIDTransient,
+			Name:      SourceIDTransientName,
 			WriteKey:  WriteKeyTransient,
 			Enabled:   true,
 			Transient: true,
@@ -1054,7 +1086,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		proc.archivalDB = c.mockArchivalDB
-		proc.config.archivalEnabled = misc.SingleValueLoader(true)
+		proc.config.archivalEnabled = config.SingleValueLoader(true)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -1693,8 +1725,9 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				require.JSONEq(GinkgoT(), `{
+				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
 					"source_id":"source-from-transformer",
+					"source_name": "%s",
 					"destination_id":"destination-from-transformer",
 					"received_at":"",
 					"transform_at":"processor",
@@ -1711,7 +1744,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"record_id":null,
 					"workspaceId":"",
 					"traceparent":""
-				}`, string(job.Parameters))
+				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
 			}
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -1951,8 +1984,9 @@ var _ = Describe("Processor", Ordered, func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				require.JSONEq(GinkgoT(), `{
+				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
 					"source_id": "source-from-transformer",
+					"source_name": "%s",
 					"destination_id": "destination-from-transformer",
 					"received_at": "",
 					"transform_at": "processor",
@@ -1969,7 +2003,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"record_id": null,
 					"workspaceId": "",
 					"traceparent": ""
-				}`, string(job.Parameters))
+				}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
 			}
 
 			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -2668,7 +2702,7 @@ var _ = Describe("Processor", Ordered, func() {
 			)
 			defer processor.Shutdown()
 
-			processor.config.readLoopSleep = misc.SingleValueLoader(time.Millisecond)
+			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
 
 			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
 			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
@@ -3239,7 +3273,16 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("getDiffMetrics Tests", func() {
 		It("Should match diffMetrics response for Empty Inputs", func() {
-			response := getDiffMetrics("some-string-1", "some-string-2", map[string]MetricMetadata{}, map[string]int64{}, map[string]int64{}, map[string]int64{}, map[string]int64{})
+			response := getDiffMetrics(
+				"some-string-1",
+				"some-string-2",
+				map[string]MetricMetadata{},
+				map[string]int64{},
+				map[string]int64{},
+				map[string]int64{},
+				map[string]int64{},
+				stats.NOP,
+			)
 			Expect(len(response)).To(Equal(0))
 		})
 
@@ -3325,7 +3368,28 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap, filteredCountMap)
+			statsStore, err := memstats.New()
+			Expect(err).To(BeNil())
+			response := getDiffMetrics(
+				"some-string-1",
+				"some-string-2",
+				inCountMetadataMap,
+				inCountMap,
+				successCountMap,
+				failedCountMap,
+				filteredCountMap,
+				statsStore,
+			)
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "some-string-2",
+				"sourceId":      "some-source-id-1",
+				"destinationId": "some-destination-id-1",
+			}).LastValue()).To(Equal(float64(-5)))
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "some-string-2",
+				"sourceId":      "some-source-id-2",
+				"destinationId": "some-destination-id-2",
+			}).LastValue()).To(Equal(float64(-7)))
 			assertReportMetric(expectedResponse, response)
 		})
 	})
@@ -4528,6 +4592,7 @@ func assertDestinationTransform(
 				Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
 				Expect(event.Metadata.MessageID).To(Equal(messageID))
 				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
+				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
 				rawEvent, err := json.Marshal(event)
 				Expect(err).ToNot(HaveOccurred())
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
@@ -4547,6 +4612,7 @@ func assertDestinationTransform(
 				Expect(event.Metadata.JobID).To(Equal(int64(0)))
 				Expect(event.Metadata.MessageID).To(Equal(""))
 				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
+				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
 			}
 
 			// Expect timestamp fields
@@ -4591,7 +4657,8 @@ func assertDestinationTransform(
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
 					Metadata: transformer.Metadata{
-						SourceID:      "source-from-transformer",      // transformer should replay source id
+						SourceID:      "source-from-transformer", // transformer should replay source id
+						SourceName:    "source-from-transformer-name",
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
 					},
 				},
@@ -4601,7 +4668,8 @@ func assertDestinationTransform(
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
 					Metadata: transformer.Metadata{
-						SourceID:      "source-from-transformer",      // transformer should replay source id
+						SourceID:      "source-from-transformer", // transformer should replay source id
+						SourceName:    "source-from-transformer-name",
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
 					},
 				},

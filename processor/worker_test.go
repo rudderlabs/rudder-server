@@ -9,12 +9,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -181,11 +183,11 @@ func (m *mockWorkerHandle) logger() logger.Logger {
 func (m *mockWorkerHandle) config() workerHandleConfig {
 	return workerHandleConfig{
 		enablePipelining:      m.pipelining,
-		maxEventsToProcess:    misc.SingleValueLoader(m.loopEvents),
+		maxEventsToProcess:    config.SingleValueLoader(m.loopEvents),
 		pipelineBufferedItems: 1,
 		subJobSize:            10,
-		readLoopSleep:         misc.SingleValueLoader(1 * time.Millisecond),
-		maxLoopSleep:          misc.SingleValueLoader(100 * time.Millisecond),
+		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
+		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
 	}
 }
 
@@ -213,6 +215,12 @@ func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{
 		DBReadThroughput: func(partition string) stats.Measurement {
 			return stats.Default.NewStat("db_read_throughput", stats.CountType)
+		},
+		statDBReadOutOfOrder: func(partition string) stats.Measurement {
+			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
+		},
+		statDBReadOutOfSequence: func(partition string) stats.Measurement {
+			return stats.NOP.NewStat("db_read_out_of_sequence", stats.CountType)
 		},
 	}
 }

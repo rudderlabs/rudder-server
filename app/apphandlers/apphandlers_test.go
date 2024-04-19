@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/services/db"
 )
 
 func TestAppHandlerStartSequence(t *testing.T) {
@@ -27,12 +26,12 @@ func TestAppHandlerStartSequence(t *testing.T) {
 		})
 
 		t.Run("it shouldn't be able to setup if database is down", func(t *testing.T) {
-			require.Error(t, appHandler.Setup(options))
+			require.Error(t, appHandler.Setup())
 		})
 
 		t.Run("it should be able to setup if database is up", func(t *testing.T) {
 			startJobsDBPostgresql(t)
-			require.NoError(t, appHandler.Setup(options))
+			require.NoError(t, appHandler.Setup())
 		})
 	}
 
@@ -64,8 +63,4 @@ func startJobsDBPostgresql(t *testing.T) {
 	config.Set("DB.user", r.User)
 	config.Set("DB.name", r.Database)
 	config.Set("DB.password", r.Password)
-}
-
-func init() {
-	db.Init()
 }
