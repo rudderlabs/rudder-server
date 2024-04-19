@@ -751,12 +751,13 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	for _, msg := range messages {
 		err := gw.streamMsgValidator(&msg)
 		if err != nil {
+			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
-				logger.NewStringField("sourceID", msg.Properties.SourceID),
-				logger.NewStringField("workspaceID", msg.Properties.WorkspaceID),
+				obskit.SourceID(msg.Properties.SourceID),
+				obskit.WorkspaceID(msg.Properties.WorkspaceID),
 				logger.NewStringField("userIDFromReq", msg.Properties.UserID),
 			)
 			arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
