@@ -913,6 +913,7 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
+	commonMetadata.OriginalSourceID = source.OriginalID
 	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
@@ -945,6 +946,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.OriginalSourceID = commonMetadata.OriginalSourceID
 	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
@@ -2412,6 +2414,7 @@ func (proc *Handle) transformSrcDest(
 	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
+		OriginalSourceID:     eventList[0].Metadata.OriginalSourceID,
 		SourceName:           sourceName,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,

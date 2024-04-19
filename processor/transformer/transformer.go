@@ -51,6 +51,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
 	SourceName          string                            `json:"sourceName"`
+	OriginalSourceID    string                            `json:"originalSourceId"`
 	WorkspaceID         string                            `json:"workspaceId"`
 	Namespace           string                            `json:"namespace"`
 	InstanceID          string                            `json:"instanceId"`
@@ -287,6 +288,16 @@ func (trans *handle) transform(
 	}
 	sTags := statsTags(&clientEvents[0])
 
+	// flip sourceID and originalSourceID if it's a replay source for the purpose of any transformation
+	// flip back afterwards
+	for _, clientEvent := range clientEvents {
+		if clientEvent.Metadata.OriginalSourceID != "" {
+			originalSourceID := clientEvent.Metadata.OriginalSourceID
+			clientEvent.Metadata.OriginalSourceID = clientEvent.Metadata.SourceID
+			clientEvent.Metadata.SourceID = originalSourceID
+		}
+	}
+
 	var trackWg sync.WaitGroup
 	defer trackWg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
@@ -342,6 +353,12 @@ func (trans *handle) transform(
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
+			// flip back sourceID and original sourceID
+			if transformerResponse.Metadata.OriginalSourceID != "" {
+				originalSourceID := transformerResponse.Metadata.SourceID
+				transformerResponse.Metadata.SourceID = transformerResponse.Metadata.OriginalSourceID
+				transformerResponse.Metadata.OriginalSourceID = originalSourceID
+			}
 			if transformerResponse.StatusCode != 200 {
 				failedEvents = append(failedEvents, transformerResponse)
 				continue
