@@ -2,6 +2,7 @@ package misc_test
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -97,6 +98,10 @@ func TestIdleTxTimeout(t *testing.T) {
 		tx, err := db.Begin()
 		require.NoError(t, err)
 
+		var pid int
+		err = tx.QueryRow(`select pg_backend_pid();`).Scan(&pid)
+		require.NoError(t, err)
+
 		_, err = tx.Exec("select 1")
 		require.NoError(t, err)
 		t.Log("sleep double the timeout to close connection")
@@ -104,6 +109,12 @@ func TestIdleTxTimeout(t *testing.T) {
 
 		err = tx.Commit()
 		require.EqualError(t, err, "driver: bad connection")
+
+		var count int
+		err = db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE pid = $1`, pid).Scan(&count)
+		require.NoError(t, err)
+
+		require.Zero(t, count)
 	})
 
 	t.Run("successful tx", func(t *testing.T) {
@@ -111,6 +122,9 @@ func TestIdleTxTimeout(t *testing.T) {
 		require.NoError(t, err)
 		_, err = tx.Exec("select 1")
 		require.NoError(t, err)
+		_, err = tx.Exec(fmt.Sprintf("select pg_sleep(%f)", txTimeout.Seconds()))
+		require.NoError(t, err)
+
 		require.NoError(t, tx.Commit())
 	})
 }
