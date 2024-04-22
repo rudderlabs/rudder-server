@@ -135,7 +135,7 @@ var _ = Describe("Yandexmetrica", func() {
 				Manager:         yandexmetrica,
 			}
 			res := yandexmetrica.Upload(&asyncDestination)
-			Expect(res.AbortReason).To(Equal("got not 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
+			Expect(res.AbortReason).To(Equal("got non 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
 			Expect(res.AbortJobIDs).To(Equal([]int64{1, 2, 3, 4}))
 		})
 	})
