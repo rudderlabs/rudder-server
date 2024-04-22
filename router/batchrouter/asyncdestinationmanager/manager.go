@@ -3,8 +3,6 @@ package asyncdestinationmanager
 import (
 	"errors"
 
-	jsoniter "github.com/json-iterator/go"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -12,23 +10,6 @@ import (
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/sftp"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
-
-func GetMarshalledData(payload string, jobID int64) string {
-	var job common.AsyncJob
-	err := json.Unmarshal([]byte(payload), &job.Message)
-	if err != nil {
-		panic("Unmarshalling Transformer Response Failed")
-	}
-	job.Metadata = make(map[string]interface{})
-	job.Metadata["job_id"] = jobID
-	responsePayload, err := json.Marshal(job)
-	if err != nil {
-		panic("Marshalling Response Payload Failed")
-	}
-	return string(responsePayload)
-}
 
 func NewRegularManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
@@ -43,12 +24,20 @@ func NewRegularManager(destination *backendconfig.DestinationT, backendConfig ba
 	return nil, errors.New("invalid destination type")
 }
 
+func NewSFTPManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
+	switch destination.DestinationDefinition.Name {
+	case "SFTP":
+		return sftp.NewManager(destination)
+	}
+	return nil, errors.New("invalid destination type")
+}
+
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch {
 	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
 		return NewRegularManager(destination, backendConfig)
 	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
-		return sftp.NewManager(destination, backendConfig)
+		return NewSFTPManager(destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }

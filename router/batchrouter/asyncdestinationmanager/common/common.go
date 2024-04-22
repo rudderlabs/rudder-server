@@ -13,22 +13,23 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-type AsyncUploadDestinationManager interface {
+type AsyncUploadAndTransformManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
+	Transform(job *jobsdb.JobT) (string, error)
 }
 
 type AsyncDestinationManager interface {
-	AsyncUploadDestinationManager
+	AsyncUploadAndTransformManager
 	Poll(pollInput AsyncPoll) PollStatusResponse
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
 type SimpleAsyncDestinationManager struct {
-	Uploader AsyncUploadDestinationManager
+	UploaderAndTransformer AsyncUploadAndTransformManager
 }
 
 func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
-	return m.Uploader.Upload(asyncDestStruct)
+	return m.UploaderAndTransformer.Upload(asyncDestStruct)
 }
 
 func (m SimpleAsyncDestinationManager) Poll(pollInput AsyncPoll) PollStatusResponse {
@@ -42,6 +43,10 @@ func (m SimpleAsyncDestinationManager) GetUploadStats(UploadStatsInput GetUpload
 	return GetUploadStatsResponse{
 		StatusCode: 200,
 	}
+}
+
+func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
+	return m.UploaderAndTransformer.Transform(job)
 }
 
 type PollStatusResponse struct {
@@ -160,8 +165,30 @@ type GetUploadStatsResponse struct {
 	Error      string        `json:"error"`
 }
 
+type TransformationFunc func(payload stdjson.RawMessage) string
+
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
+}
+
+func GetMarshalledData(job *jobsdb.JobT, transformFn ...TransformationFunc) string {
+	fn := GetTransformedData
+	if len(transformFn) > 0 {
+		fn = transformFn[0]
+	}
+	payload := fn(job.EventPayload)
+	var asyncJob AsyncJob
+	err := stdjson.Unmarshal([]byte(payload), &asyncJob.Message)
+	if err != nil {
+		panic("Unmarshalling Transformer Response Failed")
+	}
+	asyncJob.Metadata = make(map[string]interface{})
+	asyncJob.Metadata["job_id"] = job.JobID
+	responsePayload, err := stdjson.Marshal(asyncJob)
+	if err != nil {
+		panic("Marshalling Response Payload Failed")
+	}
+	return string(responsePayload)
 }
 
 func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {

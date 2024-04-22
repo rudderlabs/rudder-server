@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -21,6 +22,10 @@ func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, er
 		FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 		DestinationID: destinationId,
 	}
+}
+
+func (b *EloquaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(job), nil
 }
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

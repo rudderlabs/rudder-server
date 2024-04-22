@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -27,6 +28,10 @@ func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, clien
 		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
 		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 4000000),
 	}
+}
+
+func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(job), nil
 }
 
 /*

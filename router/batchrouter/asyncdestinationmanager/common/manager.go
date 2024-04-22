@@ -1,10 +1,17 @@
 package common
 
 import (
+	"errors"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type InvalidManager struct{}
+
+func (f *InvalidManager) Transform(job *jobsdb.JobT) (string, error) {
+	return "", errors.New("invalid job")
+}
 
 func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	abortedJobIDs := append(asyncDestStruct.ImportingJobIDs, asyncDestStruct.FailedJobIDs...)
