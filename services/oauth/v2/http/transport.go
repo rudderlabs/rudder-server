@@ -195,12 +195,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 }
 
 func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) {
-	accountIdKey := common.DeliveryAccountIDKey
-	if flow == common.RudderFlowDelete {
-		accountIdKey = common.DeleteAccountIDKey
-	}
-
-	accountId, err := rts.destination.GetAccountID(accountIdKey)
+	accountId, err := rts.destination.GetAccountID(flow)
 	if err != nil {
 		return "", fmt.Errorf("accountId not found for destination(%s) in %s flow", rts.destination.ID, flow)
 	}
@@ -232,7 +227,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	startTime := time.Now()
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
-	isOauthDestination, err := destination.IsOAuthDestination()
+	isOauthDestination, err := destination.IsOAuthDestination(t.flow)
 	if err != nil {
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("checking if destination is oauth destination: %v", err.Error()))), nil
 	}
