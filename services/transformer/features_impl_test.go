@@ -10,6 +10,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -19,7 +21,7 @@ var _ = Describe("Transformer features", func() {
 			handler := &featuresService{
 				logger:   logger.NewLogger(),
 				waitChan: make(chan struct{}),
-				config: FeaturesServiceConfig{
+				options: FeaturesServiceOptions{
 					PollInterval:             time.Duration(1),
 					FeaturesRetryMaxAttempts: 1,
 				},
@@ -40,7 +42,7 @@ var _ = Describe("Transformer features", func() {
 				features: json.RawMessage(defaultTransformerFeatures),
 				logger:   logger.NewLogger(),
 				waitChan: make(chan struct{}),
-				config: FeaturesServiceConfig{
+				options: FeaturesServiceOptions{
 					PollInterval:             time.Duration(1),
 					FeaturesRetryMaxAttempts: 1,
 				},
@@ -54,7 +56,7 @@ var _ = Describe("Transformer features", func() {
 				features: json.RawMessage(defaultTransformerFeatures),
 				logger:   logger.NewLogger(),
 				waitChan: make(chan struct{}),
-				config: FeaturesServiceConfig{
+				options: FeaturesServiceOptions{
 					PollInterval:             time.Duration(1),
 					FeaturesRetryMaxAttempts: 1,
 				},
@@ -68,7 +70,7 @@ var _ = Describe("Transformer features", func() {
 				features: json.RawMessage(defaultTransformerFeatures),
 				logger:   logger.NewLogger(),
 				waitChan: make(chan struct{}),
-				config: FeaturesServiceConfig{
+				options: FeaturesServiceOptions{
 					PollInterval:             time.Duration(1),
 					FeaturesRetryMaxAttempts: 1,
 				},
@@ -87,7 +89,7 @@ var _ = Describe("Transformer features", func() {
 					http.Error(w, "not found error", http.StatusNotFound)
 				}))
 
-			handler := NewFeaturesService(context.TODO(), FeaturesServiceConfig{
+			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
 				PollInterval:             time.Duration(1),
 				TransformerURL:           transformerServer.URL,
 				FeaturesRetryMaxAttempts: 1,
@@ -116,7 +118,7 @@ var _ = Describe("Transformer features", func() {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
 
-			handler := NewFeaturesService(context.TODO(), FeaturesServiceConfig{
+			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
 				PollInterval:             time.Duration(1),
 				TransformerURL:           transformerServer.URL,
 				FeaturesRetryMaxAttempts: 1,

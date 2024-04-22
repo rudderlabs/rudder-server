@@ -4,7 +4,6 @@ package dedup
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -34,11 +33,6 @@ func New(path string) Dedup {
 	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 
 	log := logger.NewLogger().Child("dedup")
-	defer func() {
-		// TODO : Remove this after badgerdb v2 is completely removed
-		tmpDirPath, _ := misc.CreateTMPDIR()
-		_ = os.RemoveAll(fmt.Sprintf(`%v%v`, tmpDirPath, "/badgerdbv2"))
-	}()
 	badgerOpts := badger.
 		DefaultOptions(path).
 		WithCompression(options.None).
