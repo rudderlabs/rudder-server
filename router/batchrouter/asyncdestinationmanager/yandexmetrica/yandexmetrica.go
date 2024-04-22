@@ -179,7 +179,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	// Write the header row
 	err = csvWriter.Write(header)
 	if err != nil {
-		return "", "", fmt.Errorf("error writing header row: %v", err)
+		return "", "", fmt.Errorf("writing header row: %v", err)
 	}
 
 	// Extract and write data rows
@@ -200,7 +200,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 			ymMsg.Currency,
 		})
 		if err != nil {
-			return "", "", fmt.Errorf("error writing data row: %v, index: %d", err, index)
+			return "", "", fmt.Errorf("writing data row: %v, index: %d", err, index)
 		}
 	}
 
@@ -247,7 +247,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	}
 	req, err := http.NewRequest(http.MethodPost, uploadURL, ymBuffer.buffer)
 	if err != nil {
-		return nil, fmt.Errorf("error while creating request: %v", err)
+		return nil, fmt.Errorf("creating request: %v", err)
 	}
 	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), ym.destinationInfo))
 
@@ -261,7 +261,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	req.Header.Set("Content-Type", ymBuffer.writer.FormDataContentType())
 	resp, err := ym.Client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error while sending request: %v", err)
+		return nil, fmt.Errorf("sending request: %v", err)
 	}
 	return resp, nil
 }
@@ -296,7 +296,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
 	file, err := os.Open(filePath)
 	if err != nil {
-		return ym.generateErrorOutput("Error while opening file. ", err, importingJobIDs)
+		return ym.generateErrorOutput("opening file:", err, importingJobIDs)
 	}
 	defer file.Close()
 	var input []common.AsyncJob
@@ -306,7 +306,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		var tempJob common.AsyncJob
 		err := decoder.Decode(&tempJob)
 		if err != nil {
-			return ym.generateErrorOutput("Error in Unmarshalling Job for Yandex Metrica destination:", err, importingJobIDs)
+			return ym.generateErrorOutput("unmarshalling Job for Yandex Metrica destination:", err, importingJobIDs)
 		}
 		input = append(input, tempJob)
 	}
@@ -316,48 +316,43 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		DestType: strings.ToLower(destType),
 	})
 	if err != nil {
-		return ym.generateErrorOutput("Error while marshalling AsyncUploadT.", err, importingJobIDs)
+		return ym.generateErrorOutput("marshalling AsyncUploadT:", err, importingJobIDs)
+	}
+	statLabels := stats.Tags{
+		"module":   "batch_router",
+		"destType": destType,
 	}
 
 	userIdType, csvFilePath, err := generateCSVFromJSON(ympayload, goalId)
 	defer os.Remove(csvFilePath)
 	if err != nil {
-		return ym.generateErrorOutput("Error while generating CSV from JSON.", err, importingJobIDs)
+		return ym.generateErrorOutput("generating CSV from JSON:", err, importingJobIDs)
 	}
 
 	uploadURL, err := url.JoinPath("https://api-metrica.yandex.net/management/v1/counter/", counterId, "/offline_conversions/upload")
 	if err != nil {
-		return ym.generateErrorOutput("Error while joining uploadUrl with counterId", err, importingJobIDs)
+		return ym.generateErrorOutput("joining uploadUrl with counterId", err, importingJobIDs)
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
 
-	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
+	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	payloadSizeStat.Observe(float64(len(ympayload)))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v\n", destType)
 
 	resp, err := ym.uploadFileToDestination(uploadURL, csvFilePath, userIdType)
 	if err != nil {
-		return ym.generateErrorOutput("Error while uploading file to destination. ", err, importingJobIDs)
+		return ym.generateErrorOutput("uploading file to destination. ", err, importingJobIDs)
 	}
 	var bodyBytes []byte
 
 	bodyBytes, err = io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
-		return ym.generateErrorOutput("Error while reading response body. ", err, importingJobIDs)
+		return ym.generateErrorOutput("reading response body. ", err, importingJobIDs)
 	}
 
 	var transResp oauthv2.TransportResponse
@@ -371,7 +366,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != http.StatusOK { // error scenario
-		return ym.generateErrorOutput("got not 200 response from the destination", fmt.Errorf(string(bodyBytes)), importingJobIDs)
+		return ym.generateErrorOutput("got non 200 response from the destination", fmt.Errorf(string(bodyBytes)), importingJobIDs)
 	}
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 	return common.AsyncUploadOutput{
