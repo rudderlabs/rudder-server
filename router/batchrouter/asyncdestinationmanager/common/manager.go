@@ -16,8 +16,7 @@ func (f *InvalidManager) Transform(job *jobsdb.JobT) (string, error) {
 func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	abortedJobIDs := append(asyncDestStruct.ImportingJobIDs, asyncDestStruct.FailedJobIDs...)
 	return AsyncUploadOutput{
-		AbortJobIDs: abortedJobIDs,
-		// AbortReason:   `{"error":"BingAds could not be initialized. Please check account settings."}`,
+		AbortJobIDs:   abortedJobIDs,
 		AbortReason:   `{"error":"` + fmt.Sprintf("%s could not be initialized. Please check account settings.", asyncDestStruct.Destination.Name) + `"}`,
 		DestinationID: asyncDestStruct.Destination.ID,
 		AbortCount:    len(abortedJobIDs),

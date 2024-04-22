@@ -3,7 +3,9 @@ package bingads
 import (
 	"archive/zip"
 	"bufio"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,31 +13,48 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// Upload related utils
-
-// returns the clientID struct
-func newClientID(jobID int64, hashedEmail string) ClientID {
-	return ClientID{
-		JobID:       jobID,
-		HashedEmail: hashedEmail,
+func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer, error) {
+	var err error
+	csvWriter := csv.NewWriter(csvFile)
+	if actionType == "Insert" {
+		err = csvWriter.WriteAll([][]string{
+			{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
+	} else if actionType == "Update" {
+		err = csvWriter.WriteAll([][]string{
+			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
+	} else {
+		// For deleting conversion
+		err = csvWriter.WriteAll([][]string{
+			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
 	}
+	if err != nil {
+		return nil, fmt.Errorf("error in writing csv header: %v", err)
+	}
+
+	return csvWriter, nil
 }
+
+// Upload related utils
 
 /*
 returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
 */
-func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
+func createActionFile(actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -48,7 +67,7 @@ func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	csvWriter, err := CreateActionFileTemplate(csvFile, audienceId, actionType)
+	csvWriter, err := CreateActionFileTemplate(csvFile, actionType)
 	if err != nil {
 		return nil, err
 	}
@@ -103,19 +122,34 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 
 // populateZipFile only if it is within the file size limit 100mb and row number limit 4000000
 // Otherwise event is appended to the failedJobs and will be retried.
-func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audienceId, line string, data Data) error {
+func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
+	fileType := "Offline Conversion"
 	if newFileSize < b.fileSizeLimit &&
 		actionFile.EventCount < b.eventsLimit {
 		actionFile.FileSize = newFileSize
 		actionFile.EventCount += 1
-		for _, uploadData := range data.Message.List {
-			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
-			clientIdStr := clientIdI.ToString()
-			err := actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
-			if err != nil {
-				return err
-			}
+		jobId := data.Metadata.JobID
+		var fields RecordFields
+		unmarshallingErr := json.Unmarshal(data.Message.Fields, &fields)
+		if unmarshallingErr != nil {
+			fmt.Println("Error during unmarshalling fields:", unmarshallingErr)
+			return unmarshallingErr
+		}
+
+		var err error
+		switch data.Message.Action {
+		case "insert":
+			err = actionFile.CSVWriter.Write([]string{fileType, "", string(jobId), "", "", "", fields.ConversionCurrencyCode, fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, hashEmail(fields.Email), hashString(fields.Phone), fields.ExternalAttributionCredit, fields.ExternalAttributionModel})
+		case "update":
+			err = actionFile.CSVWriter.Write([]string{fileType, "Restate", "", string(jobId), "", fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, hashEmail(fields.Email), hashString(fields.Phone), fields.ConversionCurrencyCode, fields.ConversionAdjustedTime})
+		case "delete":
+			err = actionFile.CSVWriter.Write([]string{fileType, "Retract", "", string(jobId), "", fields.ConversionName, fields.ConversionTime, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionAdjustedTime})
+		default:
+			return fmt.Errorf("%v action is invalid", data.Message.Action)
+		}
+		if err != nil {
+			return err
 		}
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
@@ -125,29 +159,22 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 }
 
 /*
-Depending on add, remove and update action we are creating 3 different zip files using this function
+Depending on insert, delete and update action we are creating 3 different zip files using this function
 It is also returning the list of succeed and failed events lists.
-The following map indicates the index->actionType mapping
-0-> Add
-1-> Remove
-2-> Update
+The following is the list of actions
+-> Insert a conversion
+-> Delete a conversion
+-> Update a conversion
 */
-func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*ActionFileInfo, error) {
-	if audienceId == "" {
-		return nil, fmt.Errorf("audienceId is empty")
-	}
+func (b *BingAdsBulkUploader) createZipFile(filePath string) ([]*ActionFileInfo, error) {
 	textFile, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer textFile.Close()
-
-	if err != nil {
-		return nil, err
-	}
 	actionFiles := map[string]*ActionFileInfo{}
 	for _, actionType := range actionTypes {
-		actionFiles[actionType], err = createActionFile(audienceId, actionType)
+		actionFiles[actionType], err = createActionFile(actionType)
 		if err != nil {
 			return nil, err
 		}
@@ -160,15 +187,9 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return nil, err
 		}
-
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType,
-			map[string]string{
-				"module":   "batch_router",
-				"destType": b.destName,
-			})
-		payloadSizeStat.Observe(float64(len(data.Message.List)))
+		// TODO: check if data.message.Action would work fine or not
 		actionFile := actionFiles[data.Message.Action]
-		err := b.populateZipFile(actionFile, audienceId, line, data)
+		err := b.populateZipFile(actionFile, line, data)
 		if err != nil {
 			return nil, err
 		}
@@ -290,9 +311,9 @@ In the below format (only adding relevant keys)
 
 	[][]string{
 		{"Client Id", "Error", "Type"},
-		{"1<<>>client1", "error1", "Customer List Error"},
-		{"1<<>>client2", "error1", "Customer List Item Error"},
-		{"1<<>>client2", "error2", "Customer List Item Error"},
+		{"1", "error1", "Customer List Error"},
+		{"1", "error1", "Customer List Item Error"},
+		{"1", "error2", "Customer List Item Error"},
 	}
 */
 func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, error) {
@@ -333,31 +354,14 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 	return records, nil
 }
 
-// converting the string clientID to ClientID struct
-
-func newClientIDFromString(clientID string) (*ClientID, error) {
-	clientIDParts := strings.Split(clientID, clientIDSeparator)
-	if len(clientIDParts) != 2 {
-		return nil, fmt.Errorf("invalid client id: %s", clientID)
-	}
-	jobID, err := strconv.ParseInt(clientIDParts[0], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid job id in clientId: %s", clientID)
-	}
-	return &ClientID{
-		JobID:       jobID,
-		HashedEmail: clientIDParts[1],
-	}, nil
-}
-
 /*
 records is the output of ReadPollResults function which is in the below format
 
 	[][]string{
 		{"Client Id", "Error", "Type"},
-		{"1<<>>client1", "error1", "Customer List Error"},
-		{"1<<>>client2", "error1", "Customer List Item Error"},
-		{"1<<>>client2", "error2", "Customer List Item Error"},
+		{"1", "error1", "Customer List Error"},
+		{"1", "error1", "Customer List Item Error"},
+		{"1", "error2", "Customer List Item Error"},
 	}
 
 This function processes the CSV records and returns the JobIDs and the corresponding error messages
@@ -377,14 +381,14 @@ In the below format:
 ** because we want to avoid duplicate error messages
 */
 func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, error) {
-	clientIDIndex := -1
+	jobIdIndex := -1
 	errorIndex := -1
 	typeIndex := 0
 	if len(records) > 0 {
 		header := records[0]
 		for i, column := range header {
-			if column == "Client Id" {
-				clientIDIndex = i
+			if column == "Id" {
+				jobIdIndex = i
 			} else if column == "Error" {
 				errorIndex = i
 			}
@@ -393,31 +397,30 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 
 	// Declare variables for storing data
 
-	clientIDErrors := make(map[int64]map[string]struct{})
+	jobIdErrors := make(map[int64]map[string]struct{})
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
 		rowname := record[typeIndex]
-		if typeIndex < len(record) && strings.Contains(rowname, "Customer List Item Error") {
-			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				// expecting the client ID is present as jobId<<>>clientId
-				clientId, err := newClientIDFromString(record[clientIDIndex])
+		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
+			if jobIdIndex >= 0 && jobIdIndex < len(record) {
+				jobId, err := strconv.ParseInt(record[jobIdIndex], 10, 64)
 				if err != nil {
-					return nil, err
+					return jobIdErrors, err
 				}
-				errorSet, ok := clientIDErrors[clientId.JobID]
+
+				errorSet, ok := jobIdErrors[jobId]
 				if !ok {
 					errorSet = make(map[string]struct{})
 					// making the structure as jobId: [error1, error2]
-					clientIDErrors[clientId.JobID] = errorSet
+					jobIdErrors[jobId] = errorSet
 				}
 				errorSet[record[errorIndex]] = struct{}{}
-
 			}
 		}
 	}
-	return clientIDErrors, nil
+	return jobIdErrors, nil
 }
 
 // GetUploadStats Related utils
@@ -436,4 +439,74 @@ func getFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]st
 func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 	successfulEvents, _ := lo.Difference(initialEventList, failedEventList)
 	return successfulEvents
+}
+
+/*
+This function validates if a `field` is present, not null and have a valid value or not in the `fields“ object
+*/
+func validateField(fields map[string]interface{}, field string) (bool, error) {
+	val, ok := fields[field]
+	if !ok {
+		return false, fmt.Errorf("%v field not defined", field) // Field not defined
+	}
+	if val == nil {
+		return false, fmt.Errorf("%v field is null", field) // Field is null
+	}
+	// Check if the field value is empty for strings
+	if reflect.TypeOf(val) != reflect.TypeOf("") || val == "" {
+		return false, fmt.Errorf("%v field is either not string or an empty string", field)
+	}
+	return true, nil
+}
+
+func hashString(val string) string {
+	// Create a new SHA256 hash
+	hasher := sha256.New()
+
+	// Write the email string to the hasher
+	hasher.Write([]byte(val))
+
+	// Get the hashed bytes
+	hashedBytes := hasher.Sum(nil)
+
+	// Convert the hashed bytes to a hexadecimal string
+	hashedString := hex.EncodeToString(hashedBytes)
+
+	return hashedString
+}
+
+/*
+This function converts the input email into hash email after following rules specified by bingads
+In case email is invalid like @ is missing we will return an empty string
+*/
+func hashEmail(email string) string {
+	// Remove whitespaces from the beginning and end of the email address and convert it into lower case
+	email = strings.TrimSpace(strings.ToLower(email))
+
+	// Remove everything between “+” and “@”
+	re := regexp.MustCompile(`\+.*@`)
+	email = re.ReplaceAllString(email, "@")
+
+	// Remove any periods that come before “@”
+	parts := strings.Split(email, "@")
+	parts[0] = strings.ReplaceAll(parts[0], ".", "")
+	email = strings.Join(parts, "@")
+
+	// Make sure email address contains “@” sign
+	if !strings.Contains(email, "@") {
+		return ""
+	}
+
+	// Remove any spaces
+	email = strings.ReplaceAll(email, " ", "")
+
+	// Make sure there is a period after “@”
+	if !strings.Contains(email, ".") {
+		return ""
+	}
+
+	// Make sure it doesn't start or end with a period
+	email = strings.Trim(email, ".")
+
+	return hashString(email)
 }

@@ -51,7 +51,7 @@ func initBingads() {
 	})
 }
 
-var _ = Describe("Bing ads", func() {
+var _ = Describe("Bing ads Audience", func() {
 	Context("Bing ads", func() {
 		BeforeEach(func() {
 			config.Reset()
