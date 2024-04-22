@@ -271,6 +271,13 @@ type oauthTestCases struct {
 	isOAuthV2Enabled             bool
 }
 
+var defaultDestDefConfig = map[string]interface{}{
+	"auth": map[string]interface{}{
+		"type":         "OAuth",
+		"rudderScopes": []interface{}{"delete"},
+	},
+}
+
 var oauthTests = []oauthTestCases{
 	{
 		name: "test with a valid token and successful response",
@@ -307,12 +314,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "xyz",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -359,12 +362,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "xyz",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -419,12 +418,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "xyz",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		cpResponses: []testutils.CpResponseParams{
 			{
@@ -466,12 +461,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "xyz",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		cpResponses: []testutils.CpResponseParams{
 			{
@@ -522,12 +513,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -570,11 +557,7 @@ var oauthTests = []oauthTestCases{
 			DestinationID: "1234",
 			Config:        map[string]interface{}{},
 			Name:          "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			DestDefConfig: defaultDestDefConfig,
 		},
 		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -611,12 +594,8 @@ var oauthTests = []oauthTestCases{
 			Config: map[string]interface{}{
 				"rudderDeleteAccountId": "xyz",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 
 		oauthHttpClientTimeout: 1 * time.Second,
@@ -664,12 +643,8 @@ var oauthTests = []oauthTestCases{
 				"rudderDeleteAccountId": "xyz",
 				"authStatus":            "active",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -715,12 +690,8 @@ var oauthTests = []oauthTestCases{
 				"rudderDeleteAccountId": "xyz",
 				"authStatus":            "active",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -767,12 +738,8 @@ var oauthTests = []oauthTestCases{
 				"rudderDeleteAccountId": "xyz",
 				"authStatus":            "active",
 			},
-			Name: "GA",
-			DestDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
-					"type": "OAuth",
-				},
-			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
