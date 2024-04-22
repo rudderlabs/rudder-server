@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-schemas/go/stream"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -50,7 +52,8 @@ func (gw *Handle) Setup(
 	config *config.Config, logger logger.Logger, stat stats.Stats,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
-	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService, sourcehandle sourcedebugger.SourceDebugger,
+	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService,
+	sourcehandle sourcedebugger.SourceDebugger, streamMsgValidator func(message *stream.Message) error,
 	opts ...OptFunc,
 ) error {
 	gw.config = config
@@ -132,6 +135,11 @@ func (gw *Handle) Setup(
 	for _, opt := range opts {
 		opt(gw)
 	}
+
+	if streamMsgValidator == nil {
+		streamMsgValidator = stream.NewMessageValidator()
+	}
+	gw.streamMsgValidator = streamMsgValidator
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
