@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-schemas/go/stream"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -127,8 +129,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return err
 	}
 
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
@@ -242,7 +244,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	defer func() {
 		for _, enricher := range enrichers {
-			enricher.Close()
+			_ = enricher.Close()
 		}
 	}()
 
@@ -330,18 +332,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	g.Go(misc.WithBugsnag(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
+	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
-	err = gw.Setup(
-		ctx,
-		config, logger.NewLogger().Child("gateway"), stats.Default,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
-		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		gateway.WithInternalHttpHandlers(
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
-		),
-	)
+		))
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
 	}

@@ -89,6 +89,7 @@ func (a *processorApp) Setup() error {
 }
 
 func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	config := config.Default
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
@@ -105,7 +106,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
-	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default, "reporting")})
+	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
 	g.Go(misc.WithBugsnag(func() error {
 		syncer()
 		return nil
@@ -136,8 +137,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return err
 	}
 
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
@@ -210,14 +211,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
-		client, err := pulsar.NewClient(config.Default)
+		client, err := pulsar.NewClient(config)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -227,18 +228,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config.Default, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
 
 	defer func() {
 		for _, enricher := range enrichers {
-			enricher.Close()
+			_ = enricher.Close()
 		}
 	}()
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
@@ -270,7 +271,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		enrichers,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.NewFactory(config.Default, stats.Default)
+	throttlerFactory, err := throttler.NewFactory(config, stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
@@ -314,7 +315,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Archiver: archiver.New(
 			archivalDB,
 			fileUploaderProvider,
-			config.Default,
+			config,
 			stats.Default,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),

@@ -54,9 +54,10 @@ func main() {
 }
 
 func Run(ctx context.Context) error {
+	config := config.Default
 	config.Set("Diagnostics.enableDiagnostics", false)
 
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+	stats.Default = stats.NewStats(config, logger.Default, svcMetric.Instance,
 		stats.WithServiceName("regulation-worker"),
 	)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
@@ -92,7 +93,7 @@ func Run(ctx context.Context) error {
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
-	apiManagerHttpClient := createHTTPClient(config.Default, httpTimeout, oauthV2Enabled)
+	apiManagerHttpClient := createHTTPClient(config, httpTimeout, oauthV2Enabled)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -113,8 +114,8 @@ func Run(ctx context.Context) error {
 				OAuth:                        OAuth,
 				IsOAuthV2Enabled:             oauthV2Enabled,
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
-				TransformerFeaturesService: transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-					PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+				TransformerFeaturesService: transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+					PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 					TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 					FeaturesRetryMaxAttempts: 10,
 				}),
