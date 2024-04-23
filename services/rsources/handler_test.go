@@ -1585,7 +1585,7 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	internalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@%[3]s:5432/%[4]s?sslmode=disable", username, password, hostname, database)
 	var (
 		db  *sql.DB
-		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable", port, username, password, database)
+		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable options='-c idle_in_transaction_session_timeout=300000' ", port, username, password, database)
 	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() (err error) {
