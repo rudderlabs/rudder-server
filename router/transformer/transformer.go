@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -145,13 +145,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	reqFailed := false
 
 	var url string
-	if transformType == BATCH {
+	switch transformType {
+	case BATCH:
 		url = getBatchURL()
-	} else if transformType == ROUTER_TRANSFORM {
+	case ROUTER_TRANSFORM:
 		url = getRouterTransformURL()
-	} else if transformType == EDGE_TRANSFORM {
+	case EDGE_TRANSFORM:
 		url = getEdgeTransformURL()
-	} else {
+	default:
 		// Unexpected transformType returning empty
 		return []types.DestinationJobT{}
 	}
@@ -596,16 +597,20 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	}
 }
 
+func getBaseTransformerUrl() string {
+	return config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+}
+
 func getBatchURL() string {
-	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
+	return lo.Must(url.JoinPath(getBaseTransformerUrl(), "batch"))
 }
 
 func getEdgeTransformURL() string {
-	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/edgeTransform"
+	return lo.Must(url.JoinPath(getBaseTransformerUrl(), "edgeTransform"))
 }
 
 func getRouterTransformURL() string {
-	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
+	return lo.Must(url.JoinPath(getBaseTransformerUrl(), "routerTransform"))
 }
 
 type transformerResponse struct {
