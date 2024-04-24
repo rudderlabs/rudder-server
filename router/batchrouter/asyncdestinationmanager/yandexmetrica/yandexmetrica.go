@@ -65,26 +65,22 @@ type idStruct struct {
 func (ym yandexMetricaMessageBody) ID() (idStruct, error) {
 	switch {
 	case ym.ClientID != nil:
-		_, ok := ym.ClientID.(string)
-		if !ok {
-			return idStruct{}, fmt.Errorf("non-string data for ClientID is not supported")
-		}
-		return idStruct{id: ym.ClientID.(string), clientType: idClientMap["ClientId"], headerName: "ClientId"}, nil
+		return getID(ym.ClientID, "ClientId")
 	case ym.YclID != nil:
-		_, ok := ym.YclID.(string)
-		if !ok {
-			return idStruct{}, fmt.Errorf("non-string data for Yclid is not supported")
-		}
-		return idStruct{id: ym.YclID.(string), clientType: idClientMap["Yclid"], headerName: "Yclid"}, nil
+		return getID(ym.YclID, "Yclid")
 	case ym.UserID != nil:
-		_, ok := ym.UserID.(string)
-		if !ok {
-			return idStruct{}, fmt.Errorf("non-string data for UserId is not supported")
-		}
-		return idStruct{id: ym.UserID.(string), clientType: idClientMap["UserId"], headerName: "UserId"}, nil
+		return getID(ym.UserID, "UserId")
 	default:
 		return idStruct{}, fmt.Errorf("no valid id found in message object")
 	}
+}
+
+func getID(id interface{}, headerName string) (idStruct, error) {
+	idString, ok := id.(string)
+	if !ok {
+		return idStruct{}, fmt.Errorf("non-string data for %s is not supported", headerName)
+	}
+	return idStruct{id: idString, clientType: idClientMap[headerName], headerName: headerName}, nil
 }
 
 type YandexMetricaBulkUploader struct {
