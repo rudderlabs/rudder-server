@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
+
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -316,6 +318,16 @@ func (a *App) Run(ctx context.Context) error {
 		a.bcManager.Start(gCtx)
 		return nil
 	})
+	g.Go(func() error {
+		sqlutil.MonitorDatabase(
+			gCtx,
+			a.conf,
+			a.statsFactory,
+			a.db.DB,
+			"warehouse",
+		)
+		return nil
+	})
 
 	if mode.IsDegraded(a.config.runningMode) {
 		a.logger.Info("Running warehouse service in degraded mode...")
@@ -409,6 +421,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	g.Go(func() error {
 		return a.api.Start(gCtx)
+	})
+	g.Go(func() error {
+		a.notifier.Monitor(gCtx)
+		return nil
 	})
 	g.Go(func() error {
 		<-gCtx.Done()
