@@ -165,7 +165,7 @@ func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
 	return healthy, fmt.Sprintf(
-		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"TRUE","mode":"%s",`+
+		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"NORMAL",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
 		appTypeStr, dbService, enabledRouter,
 		backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
