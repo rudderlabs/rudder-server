@@ -71,6 +71,7 @@ func getFieldNames(records []Record) ([]string, error) {
 	for key := range fields {
 		header = append(header, key)
 	}
+	header = append(header, "action")
 	return header, nil
 }
 
@@ -186,6 +187,11 @@ func generateCSVFile(filePath string, fileName string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("fields not found in a record")
 		}
+		action, ok := record["message"].(map[string]interface{})["action"].(string)
+		if !ok {
+			return "", fmt.Errorf("action not found in a record")
+		}
+		fields["action"] = action
 		for _, key := range fieldNames {
 			row = append(row, fmt.Sprintf("%v", fields[key]))
 		}
