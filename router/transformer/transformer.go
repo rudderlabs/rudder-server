@@ -42,6 +42,7 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 const (
 	BATCH            = "BATCH"
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
+	EDGE_TRANSFORM   = "EDGE_TRANSFORM"
 	apiVersionHeader = "apiVersion"
 )
 
@@ -148,6 +149,8 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		url = getBatchURL()
 	} else if transformType == ROUTER_TRANSFORM {
 		url = getRouterTransformURL()
+	} else if transformType == EDGE_TRANSFORM {
+		url = getEdgeTransformURL()
 	} else {
 		// Unexpected transformType returning empty
 		return []types.DestinationJobT{}
@@ -238,7 +241,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
 			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
-			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
+			panic(fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
@@ -246,7 +249,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonfast.Unmarshal(respData, &destinationJobs)
-		} else if transformType == ROUTER_TRANSFORM {
+		} else if transformType == ROUTER_TRANSFORM || transformType == EDGE_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
 			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
@@ -595,6 +598,10 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 
 func getBatchURL() string {
 	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
+}
+
+func getEdgeTransformURL() string {
+	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/edgeTransform"
 }
 
 func getRouterTransformURL() string {

@@ -259,6 +259,14 @@ func (w *worker) workLoop() {
 	}
 }
 
+func (w *worker) getTransformType() string {
+	edgeTransform := w.rt.reloadableConfig.edgeTransform.Load()
+	if edgeTransform {
+		return transformer.EDGE_TRANSFORM
+	}
+	return transformer.ROUTER_TRANSFORM
+}
+
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	// transform limiter with dynamic priority
 	start := time.Now()
@@ -295,7 +303,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 	}
 	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
+		w.getTransformType(),
 		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
 	)
 	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
@@ -367,6 +375,7 @@ func (w *worker) processDestinationJobs() {
 	defer w.batchTimeStat.RecordDuration()()
 
 	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
+	edgeTransform := w.rt.reloadableConfig.edgeTransform.Load()
 
 	traces := make(map[string]stats.TraceSpan)
 	defer func() {
@@ -448,7 +457,11 @@ func (w *worker) processDestinationJobs() {
 
 		var errorAt string
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			if w.canSendJobToDestination(failedJobOrderKeys, &destinationJob) {
+			if edgeTransform {
+				respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, http.StatusOK, destinationJob.DestinationResponse)
+				w.logger.Infof("edge transformed with response: %s", destinationJob.DestinationResponse)
+
+			} else if w.canSendJobToDestination(failedJobOrderKeys, &destinationJob) {
 				diagnosisStartTime := time.Now()
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -613,7 +626,7 @@ func (w *worker) processDestinationJobs() {
 		}
 
 		w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-		routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
+		routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt)...)
 	}
 
 	sort.Slice(routerJobResponses, func(i, j int) bool {
@@ -830,13 +843,15 @@ func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[eventorder.Barr
 	}
 }
 
-func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string, transformerProxy bool) []*JobResponse {
+func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string) []*JobResponse {
 	w.hydrateRespStatusCodes(destinationJob, respStatusCodes, respBodys)
 
 	var destinationResponseHandler ResponseHandler
 	w.rt.destinationsMapMu.RLock()
 	destinationResponseHandler = w.rt.destinationResponseHandler
 	w.rt.destinationsMapMu.RUnlock()
+
+	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
 
 	// Using response status code and body to get response code rudder router logic is based on.
 	// Works when transformer proxy in disabled
