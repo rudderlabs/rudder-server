@@ -152,6 +152,37 @@ func TestAnyNonTerminalCode(t *testing.T) {
 	}
 }
 
+func TestGetTransformType(t *testing.T) {
+	tcs := []struct {
+		edgeTransform bool
+		expected      string
+	}{
+		{
+			edgeTransform: true,
+			expected:      transformer.EDGE_TRANSFORM,
+		},
+		{
+			edgeTransform: false,
+			expected:      transformer.ROUTER_TRANSFORM,
+		},
+	}
+	for i, tc := range tcs {
+		testCaseName := fmt.Sprintf("test case index: %d", i)
+		t.Run(testCaseName, func(t *testing.T) {
+			wrk := &worker{
+				logger: logger.NOP,
+				rt: &Handle{
+					reloadableConfig: &reloadableConfig{
+						edgeTransform: config.SingleValueLoader(tc.edgeTransform),
+					},
+				},
+			}
+			out := wrk.getTransformType()
+			require.Equal(t, tc.expected, out)
+		})
+	}
+}
+
 var _ = Describe("Proxy Request", func() {
 	initRouter()
 

@@ -1570,6 +1570,18 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
 }
 
+func TestGetEdgeTransformURL(t *testing.T) {
+	require.Equal(t, "http://localhost:9090/edgeTransform", getEdgeTransformURL())
+}
+
+func TestGetRouterTransformURL(t *testing.T) {
+	require.Equal(t, "http://localhost:9090/routerTransform", getRouterTransformURL())
+}
+
+func TestGetBatchTransformURL(t *testing.T) {
+	require.Equal(t, "http://localhost:9090/batch", getBatchURL())
+}
+
 func TestDehydrateHydrate(t *testing.T) {
 	initMocks(t)
 	config.Reset()
