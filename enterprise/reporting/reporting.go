@@ -72,6 +72,10 @@ type DefaultReporter struct {
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
+
+	eventSamplingEnabled  config.ValueLoader[bool]
+	eventSamplingDuration config.ValueLoader[time.Duration]
+	eventSampler          *EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -86,6 +90,8 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
+	eventSamplingEnabled := config.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
+	eventSamplingDuration := config.GetReloadableDurationVar(1800, time.Second, "Reporting.eventSamplingDuration")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -112,6 +118,9 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 		stats:                                stats,
+		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSamplingDuration:                eventSamplingDuration,
+		eventSampler:                         NewEventSampler(eventSamplingDuration),
 	}
 }
 
@@ -373,6 +382,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
+		return r.eventSampler.StartResetLoop()
+	})
+
+	g.Go(func() error {
 		return r.emitLagMetric(ctx, c, &lastReportedAtTime)
 	})
 
@@ -573,6 +586,17 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
+func (r *DefaultReporter) resetSampleEventIfCollected(metric *types.PUReportedMetric) {
+	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && len(metric.StatusDetail.SampleEvent) > 0 && string(metric.StatusDetail.SampleEvent) != "{}"
+	if isValidSampleEvent {
+		groupingColumnsHash := NewGroupingColumns(*metric).generateHash()
+		if !r.eventSampler.IsSampleEventCollected(groupingColumnsHash) {
+			r.eventSampler.MarkSampleEventAsCollected(groupingColumnsHash)
+			metric.StatusDetail.SampleEvent = []byte(`{}`)
+		}
+	}
+}
+
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -623,6 +647,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		if eventNameMaxLength > 0 && len(metric.StatusDetail.EventName) > eventNameMaxLength {
 			metric.StatusDetail.EventName = types.MaxLengthExceeded
+		}
+
+		if r.eventSamplingEnabled.Load() {
+			r.resetSampleEventIfCollected(&metric)
 		}
 
 		_, err = stmt.Exec(
