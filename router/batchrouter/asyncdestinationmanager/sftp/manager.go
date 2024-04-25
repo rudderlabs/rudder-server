@@ -33,10 +33,7 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	if err != nil {
 		return generateErrorOutput("Error getting upload file path ", err, asyncDestStruct.ImportingJobIDs, destinationID)
 	}
-	fileFormat, err := getFileFormat(uploadFilePath)
-	if err != nil {
-		return generateErrorOutput("Error getting file format ", err, asyncDestStruct.ImportingJobIDs, destinationID)
-	}
+	fileFormat := gjson.Get(string(destConfigJSON), "fileFormat").String()
 	uploadDir := filepath.Dir(uploadFilePath)
 	uploadFileName := filepath.Base(uploadFilePath)
 

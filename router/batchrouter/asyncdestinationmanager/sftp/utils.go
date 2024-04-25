@@ -100,9 +100,9 @@ func parseRecords(filePath string) ([]Record, error) {
 
 func generateFile(filePath string, format string, fileName string) (string, error) {
 	switch strings.ToLower(format) {
-	case ".json":
+	case "json":
 		return generateJSONFile(filePath, fileName)
-	case ".csv":
+	case "csv":
 		return generateCSVFile(filePath, fileName)
 	default:
 		return "", errors.New("unsupported format")
@@ -215,13 +215,6 @@ func generateCSVFile(filePath string, fileName string) (string, error) {
 	return absPath, nil
 }
 
-func getFileFormat(path string) (string, error) {
-	extension := filepath.Ext(path)
-	if extension == "" {
-		return "", errors.New("file extension not found")
-	}
-	return extension, nil
-}
 
 func getUploadFilePath(path string) (string, error) {
 	// Define a regular expression to match dynamic variables
