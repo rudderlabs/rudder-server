@@ -722,6 +722,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		SourceTaskRunID string `json:"source_task_run_id"`
 		UserID          string `json:"user_id"`
 		TraceParent     string `json:"traceparent"`
+		DestinationID   string `json:"destination_id,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -776,6 +777,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			SourceTaskRunID: msg.Properties.SourceTaskRunID,
 			UserID:          msg.Properties.UserID,
 			TraceParent:     msg.Properties.TraceID,
+			DestinationID:   msg.Properties.DestinationID,
 		}
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
