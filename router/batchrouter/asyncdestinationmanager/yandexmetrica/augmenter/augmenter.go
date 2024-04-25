@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -44,11 +45,9 @@ func GetAuthErrorCategoryForYandex(responseBody []byte) (string, error) {
 		    "message": "Invalid oauth_token"
 		}
 	*/
-	allErrorTypes := lo.Map(gjson.GetBytes(responseBody, "errors.#.error_type").Array(), func(errorTypeResult gjson.Result, _ int) string {
-		return errorTypeResult.String()
-	})
-	isInvalidToken := lo.Contains(allErrorTypes, "invalid_token")
-	if isInvalidToken {
+	if len(lo.Filter(gjson.GetBytes(responseBody, "errors.#.error_type").Array(), func(errorTypeResult gjson.Result, _ int) bool {
+		return strings.Contains(errorTypeResult.String(), "invalid_token")
+	})) > 0 {
 		return common.CategoryRefreshToken, nil
 	}
 	return "", nil

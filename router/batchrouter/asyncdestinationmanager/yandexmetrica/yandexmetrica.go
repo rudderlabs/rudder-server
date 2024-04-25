@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
-
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -119,13 +118,13 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	return yandexUploadManager, nil
 }
 
-// return a success response for the poll request every time by default
-func (ym *YandexMetricaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+// Poll return a success response for the poll request every time by default
+func (ym *YandexMetricaBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
 	return common.PollStatusResponse{}
 }
 
-// return a success response for the getUploadStats request every time by default
-func (ym *YandexMetricaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+// GetUploadStats return a success response for the getUploadStats request every time by default
+func (ym *YandexMetricaBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	return common.GetUploadStatsResponse{}
 }
 
@@ -153,14 +152,14 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	if os.IsNotExist(err) {
 		folderPath, _ = os.MkdirTemp(folderPath, "")
 	}
-	path := path.Join(folderPath, uuid.NewString())
-	csvFilePath := fmt.Sprintf(`%s.csv`, path)
+	csvPath := path.Join(folderPath, uuid.NewString())
+	csvFilePath := fmt.Sprintf(`%s.csv`, csvPath)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
 		return "", "", fmt.Errorf("creating csv file: %v", err)
 	}
 
-	defer csvFile.Close()
+	defer func() { _ = csvFile.Close() }()
 
 	// Create a CSV writer
 	csvWriter := csv.NewWriter(csvFile)
@@ -207,41 +206,36 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	return idDecider, csvFilePath, nil
 }
 
-type ymBuffer struct {
-	buffer *bytes.Buffer
-	writer *multipart.Writer
-}
-
-func copyDataIntoBuffer(csvFilePath string) (*ymBuffer, error) {
+func copyDataIntoBuffer(csvFilePath string) (*bytes.Buffer, *multipart.Writer, error) {
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 	file, openFileErr := os.Open(csvFilePath)
 	if openFileErr != nil {
-		return nil, openFileErr
+		return nil, nil, openFileErr
 	}
-	defer file.Close()
-	part1, createFormFileErr := writer.CreateFormFile("file", filepath.Base(csvFilePath))
+	defer func() { _ = file.Close() }()
+	part, createFormFileErr := writer.CreateFormFile("file", filepath.Base(csvFilePath))
 	if createFormFileErr != nil {
-		return nil, createFormFileErr
+		return nil, nil, createFormFileErr
 	}
-	_, copyFileErr := io.Copy(part1, file)
+	_, copyFileErr := io.Copy(part, file)
 	if copyFileErr != nil {
-		return nil, copyFileErr
+		return nil, nil, copyFileErr
 	}
 	closeWriterErr := writer.Close()
 	if closeWriterErr != nil {
-		return nil, closeWriterErr
+		return nil, nil, closeWriterErr
 	}
 
-	return &ymBuffer{buffer: payload, writer: writer}, nil
+	return payload, writer, nil
 }
 
 func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFilePath, userIdType string) (*http.Response, error) {
-	ymBuffer, err := copyDataIntoBuffer(csvFilePath)
+	payload, writer, err := copyDataIntoBuffer(csvFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("error while copying data into buffer: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, uploadURL, ymBuffer.buffer)
+	req, err := http.NewRequest(http.MethodPost, uploadURL, payload)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %v", err)
 	}
@@ -254,7 +248,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	q := req.URL.Query()
 	q.Add("client_id_type", clientType)
 	req.URL.RawQuery = q.Encode()
-	req.Header.Set("Content-Type", ymBuffer.writer.FormDataContentType())
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := ym.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %v", err)
@@ -346,7 +340,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	var bodyBytes []byte
 
 	bodyBytes, err = io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err != nil {
 		return ym.generateErrorOutput("reading response body. ", err, importingJobIDs)
 	}
