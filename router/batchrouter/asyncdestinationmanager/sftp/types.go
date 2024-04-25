@@ -11,7 +11,7 @@ type DefaultManager struct {
 	logger      logger.Logger
 }
 
-type DestConfig struct {
+type destConfig struct {
 	AuthMethod string `json:"authMethod"`
 	Username   string `json:"username"`
 	Host       string `json:"host"`
@@ -21,4 +21,4 @@ type DestConfig struct {
 }
 
 // Record represents a single JSON record.
-type Record map[string]interface{}
+type record map[string]interface{}

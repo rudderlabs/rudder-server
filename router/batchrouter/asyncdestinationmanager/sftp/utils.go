@@ -1,11 +1,10 @@
 package sftp
 
 import (
-	"bufio"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,10 +12,13 @@ import (
 	"strings"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // createSSHConfig creates SSH configuration based on destination
 func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
@@ -25,33 +27,33 @@ func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, 
 		return nil, err
 	}
 
-	var destConfig DestConfig
-	if err := json.Unmarshal(destinationConfigJson, &destConfig); err != nil {
+	var config destConfig
+	if err := json.Unmarshal(destinationConfigJson, &config); err != nil {
 		return nil, err
 	}
 
-	if destConfig.AuthMethod == "passwordAuth" && destConfig.Password == "" {
+	if config.AuthMethod == "passwordAuth" && config.Password == "" {
 		return nil, errors.New("password is required for password authentication")
 	}
 
-	if destConfig.AuthMethod == "keyAuth" && destConfig.PrivateKey == "" {
+	if config.AuthMethod == "keyAuth" && config.PrivateKey == "" {
 		return nil, errors.New("private key is required for key authentication")
 	}
 
 	sshConfig := &sftp.SSHConfig{
-		User:       destConfig.Username,
-		HostName:   destConfig.Host,
-		Port:       destConfig.Port,
-		AuthMethod: destConfig.AuthMethod,
-		Password:   destConfig.Password,
-		PrivateKey: destConfig.PrivateKey,
+		User:       config.Username,
+		HostName:   config.Host,
+		Port:       config.Port,
+		AuthMethod: config.AuthMethod,
+		Password:   config.Password,
+		PrivateKey: config.PrivateKey,
 	}
 
 	return sshConfig, nil
 }
 
 // getFieldNames extracts the field names from the first JSON record.
-func getFieldNames(records []Record) ([]string, error) {
+func getFieldNames(records []record) ([]string, error) {
 	if len(records) == 0 {
 		return nil, fmt.Errorf("no records found")
 	}
@@ -68,24 +70,24 @@ func getFieldNames(records []Record) ([]string, error) {
 }
 
 // parseRecords parses JSON records from the input text file.
-func parseRecords(filePath string) ([]Record, error) {
+func parseRecords(filePath string) ([]record, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var records []Record
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		var record Record
-		if err := json.Unmarshal([]byte(scanner.Text()), &record); err != nil {
+	var records []record
+	decoder := json.NewDecoder(file)
+	for decoder.More() {
+		var record record
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
 			return nil, fmt.Errorf("error parsing JSON record: %v", err)
 		}
 		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 	return records, nil
 }
@@ -243,11 +245,11 @@ func getUploadFilePath(path string) (string, error) {
 	return result, nil
 }
 
-func generateErrorOutput(errorString string, err error, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
+func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
 	return common.AsyncUploadOutput{
 		DestinationID: destinationID,
 		AbortCount:    len(importingJobIds),
 		AbortJobIDs:   importingJobIds,
-		AbortReason:   fmt.Sprintf("%s %v", errorString, err.Error()),
+		AbortReason:   err,
 	}
 }

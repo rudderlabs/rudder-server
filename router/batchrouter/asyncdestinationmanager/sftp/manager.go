@@ -1,7 +1,8 @@
 package sftp
 
 import (
-	"encoding/json"
+	stdjson "encoding/json"
+	"fmt"
 	"path/filepath"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -13,7 +14,7 @@ import (
 )
 
 func (d *DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(job, func(payload json.RawMessage) string {
+	return common.GetMarshalledData(job, func(payload stdjson.RawMessage) string {
 		return string(payload)
 	}), nil
 }
@@ -25,13 +26,13 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	destinationID := destination.ID
 	destConfigJSON, err := json.Marshal(destination.Config)
 	if err != nil {
-		return generateErrorOutput("Error while marshalling destination config ", err, asyncDestStruct.ImportingJobIDs, destinationID)
+		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
 	uploadFilePath := gjson.Get(string(destConfigJSON), "filePath").String()
 	uploadFilePath, err = getUploadFilePath(uploadFilePath)
 	if err != nil {
-		return generateErrorOutput("Error getting upload file path ", err, asyncDestStruct.ImportingJobIDs, destinationID)
+		return generateErrorOutput(fmt.Sprintf("error getting upload file path: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 	fileFormat := gjson.Get(string(destConfigJSON), "fileFormat").String()
 	uploadDir := filepath.Dir(uploadFilePath)
@@ -40,8 +41,7 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	// Generate temporary file based on the destination's file format
 	path, err := generateFile(filePath, fileFormat, uploadFileName)
 	if err != nil {
-		d.logger.Errorf("Error generating temporary file ")
-		return generateErrorOutput("Error generating temporary file ", err, asyncDestStruct.ImportingJobIDs, destinationID)
+		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 
 	}
 
@@ -50,7 +50,7 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	// Upload file
 	err = d.FileManager.Upload(path, uploadDir)
 	if err != nil {
-		return generateErrorOutput("Error uploading file to destination ", err, asyncDestStruct.ImportingJobIDs, destinationID)
+		return generateErrorOutput(fmt.Sprintf("error uploading file to destination: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
 	d.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destination.DestinationDefinition.Name)
