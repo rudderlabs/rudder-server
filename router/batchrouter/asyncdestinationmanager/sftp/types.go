@@ -11,5 +11,14 @@ type DefaultManager struct {
 	logger      logger.Logger
 }
 
+type DestConfig struct {
+	AuthMethod string `json:"authMethod"`
+	Username   string `json:"username"`
+	Host       string `json:"host"`
+	Port       int    `json:"port,string"`
+	Password   string `json:"password,omitempty"`
+	PrivateKey string `json:"privateKey,omitempty"`
+}
+
 // Record represents a single JSON record.
 type Record map[string]interface{}

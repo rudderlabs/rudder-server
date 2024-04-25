@@ -16,43 +16,35 @@ import (
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/tidwall/gjson"
 )
 
 // createSSHConfig creates SSH configuration based on destination
 func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
-	destConfigJSON, err := json.Marshal(destination.Config)
+	destinationConfigJson, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	authMethod := gjson.Get(string(destConfigJSON), "authMethod").String()
-	username := gjson.Get(string(destConfigJSON), "username").String()
-	host := gjson.Get(string(destConfigJSON), "host").String()
-	port := int(gjson.Get(string(destConfigJSON), "port").Int())
-	password := gjson.Get(string(destConfigJSON), "password").String()
-	privateKey := gjson.Get(string(destConfigJSON), "privateKey").String()
+	var destConfig DestConfig
+	if err := json.Unmarshal(destinationConfigJson, &destConfig); err != nil {
+		return nil, err
+	}
 
-	if authMethod == "passwordAuth" && password == "" {
+	if destConfig.AuthMethod == "passwordAuth" && destConfig.Password == "" {
 		return nil, errors.New("password is required for password authentication")
 	}
 
-	if authMethod == "keyAuth" && privateKey == "" {
+	if destConfig.AuthMethod == "keyAuth" && destConfig.PrivateKey == "" {
 		return nil, errors.New("private key is required for key authentication")
 	}
 
 	sshConfig := &sftp.SSHConfig{
-		User:        username,
-		HostName:    host,
-		Port:        port,
-		AuthMethod:  authMethod,
-		DialTimeout: 10 * time.Second,
-	}
-
-	if authMethod == "passwordAuth" {
-		sshConfig.Password = password
-	} else if authMethod == "keyAuth" {
-		sshConfig.PrivateKey = string(privateKey)
+		User:       destConfig.Username,
+		HostName:   destConfig.Host,
+		Port:       destConfig.Port,
+		AuthMethod: destConfig.AuthMethod,
+		Password:   destConfig.Password,
+		PrivateKey: destConfig.PrivateKey,
 	}
 
 	return sshConfig, nil
@@ -214,7 +206,6 @@ func generateCSVFile(filePath string, fileName string) (string, error) {
 
 	return absPath, nil
 }
-
 
 func getUploadFilePath(path string) (string, error) {
 	// Define a regular expression to match dynamic variables
