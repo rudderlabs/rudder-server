@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -654,7 +653,7 @@ func (jd *Handle) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, stat
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
+	_, err = tx.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -671,34 +670,30 @@ func (jd *Handle) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // Wh
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
 	})
-	return jd.copyJobsDSInTx(tx, ds, jobList)
+	return jd.copyJobsDSInTx(tx.Tx, ds, jobList)
 }
 
-func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
-	var stmt *sql.Stmt
-	var err error
-
-	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-		"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
-	if err != nil {
-		return err
-	}
-
-	defer func() { _ = stmt.Close() }()
-
-	for _, job := range jobList {
-		eventCount := 1
-		if job.EventCount > 1 {
-			eventCount = job.EventCount
-		}
-
-		_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-			string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err = stmt.Exec(); err != nil {
+func (*Handle) copyJobsDSInTx(txHandler pgx.Tx, ds dataSetT, jobList []*JobT) error {
+	if _, err := txHandler.CopyFrom(
+		context.TODO(),
+		pgx.Identifier{ds.JobTable},
+		[]string{"job_id", "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "created_at", "expire_at", "workspace_id"},
+		pgx.CopyFromRows(
+			lo.Map(
+				jobList,
+				func(job *JobT, _ int) []any {
+					eventCount := 1
+					if job.EventCount > 1 {
+						eventCount = job.EventCount
+					}
+					return []any{
+						job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
+						string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId,
+					}
+				},
+			),
+		),
+	); err != nil {
 		return err
 	}
 
@@ -706,6 +701,6 @@ func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = txHandler.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
+	_, err := txHandler.Exec(context.TODO(), fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 	return err
 }

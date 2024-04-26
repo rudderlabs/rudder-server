@@ -83,7 +83,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.1
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.29.0
+	github.com/rudderlabs/rudder-go-kit v0.29.1-0.20240426124728-93139eb896c8
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.4.0
 	github.com/rudderlabs/sql-tunnels v0.1.6
@@ -117,6 +117,12 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240415180920-8c6c420018be
 	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.33.0
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/puddle/v2 v2.2.1 // indirect
 )
 
 require (
@@ -221,6 +227,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/heetch/avro v0.4.4 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
+	github.com/jackc/pgx/v5 v5.5.5
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect

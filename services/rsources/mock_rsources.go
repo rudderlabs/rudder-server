@@ -6,10 +6,10 @@ package rsources
 
 import (
 	context "context"
-	sql "database/sql"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	v5 "github.com/jackc/pgx/v5"
 )
 
 // MockStatsIncrementer is a mock of StatsIncrementer interface.
@@ -36,7 +36,7 @@ func (m *MockStatsIncrementer) EXPECT() *MockStatsIncrementerMockRecorder {
 }
 
 // IncrementStats mocks base method.
-func (m *MockStatsIncrementer) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
+func (m *MockStatsIncrementer) IncrementStats(ctx context.Context, tx v5.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IncrementStats", ctx, tx, jobRunId, key, stats)
 	ret0, _ := ret[0].(error)
@@ -73,7 +73,7 @@ func (m *MockJobService) EXPECT() *MockJobServiceMockRecorder {
 }
 
 // AddFailedRecords mocks base method.
-func (m *MockJobService) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
+func (m *MockJobService) AddFailedRecords(ctx context.Context, tx v5.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddFailedRecords", ctx, tx, jobRunId, key, records)
 	ret0, _ := ret[0].(error)
@@ -188,7 +188,7 @@ func (mr *MockJobServiceMockRecorder) GetStatus(ctx, jobRunId, filter interface{
 }
 
 // IncrementStats mocks base method.
-func (m *MockJobService) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
+func (m *MockJobService) IncrementStats(ctx context.Context, tx v5.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IncrementStats", ctx, tx, jobRunId, key, stats)
 	ret0, _ := ret[0].(error)

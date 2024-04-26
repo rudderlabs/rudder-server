@@ -2,11 +2,13 @@ package rsources
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -191,7 +193,7 @@ var ErrFailedRecordsNotFound = errors.New("Failed records not found")
 type StatsIncrementer interface {
 	// IncrementStats increments the existing statistic counters
 	// for a specific job measurement.
-	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
+	IncrementStats(ctx context.Context, tx pgx.Tx, jobRunId string, key JobTargetKey, stats Stats) error
 }
 
 type JobServiceConfig struct {
@@ -223,7 +225,7 @@ type JobService interface {
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
 
 	// AddFailedRecords adds failed records to the database as part of a transaction
-	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error
+	AddFailedRecords(ctx context.Context, tx pgx.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error
 
 	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
 	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter, paging PagingInfo) (JobFailedRecordsV2, error)
@@ -253,23 +255,32 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		config.MinPoolSize = 1
 	}
 	var (
-		localDB, sharedDB *sql.DB
+		localDB, sharedDB *pgxpool.Pool
 		err               error
 	)
 
-	localDB, err = sql.Open("postgres", config.LocalConn)
+	localConfig, err := pgxpool.ParseConfig(config.LocalConn)
+	if err != nil {
+		return nil, fmt.Errorf("parsing config - %s: %w", config.LocalConn, err)
+	}
+	localConfig.MaxConns = int32(config.MaxPoolSize)
+	localDB, err = pgxpool.NewWithConfig(context.TODO(), localConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
-	localDB.SetMaxOpenConns(config.MaxPoolSize)
 
 	if config.SharedConn != "" {
-		sharedDB, err = sql.Open("postgres", config.SharedConn)
+		sharedConfig, err := pgxpool.ParseConfig(config.SharedConn)
+		if err != nil {
+			return nil, fmt.Errorf("parsing shraed config - %s: %w", config.SharedConn, err)
+		}
+		sharedConfig.MaxConns = int32(config.MaxPoolSize)
+		sharedDB, err = pgxpool.NewWithConfig(context.TODO(), sharedConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
-		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
-		sharedDB.SetMaxIdleConns(config.MinPoolSize)
+		// sharedDB.SetMaxOpenConns(config.MaxPoolSize)
+		// sharedDB.SetMaxIdleConns(config.MinPoolSize)
 	}
 	handler := &sourcesHandler{
 		log:      config.Log,
@@ -303,11 +314,11 @@ func (*noopService) GetStatus(_ context.Context, _ string, _ JobFilter) (JobStat
 	return JobStatus{}, nil
 }
 
-func (*noopService) IncrementStats(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ Stats) error {
+func (*noopService) IncrementStats(_ context.Context, _ pgx.Tx, _ string, _ JobTargetKey, _ Stats) error {
 	return nil
 }
 
-func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ []FailedRecord) error {
+func (*noopService) AddFailedRecords(_ context.Context, _ pgx.Tx, _ string, _ JobTargetKey, _ []FailedRecord) error {
 	return nil
 }
 

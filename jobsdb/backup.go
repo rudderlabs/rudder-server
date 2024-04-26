@@ -173,7 +173,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
-		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+		if err = jd.pgxPool.QueryRow(ctx, countStmt).Scan(&totalCount); err != nil {
 			return 0, fmt.Errorf("error while getting row count: %w", err)
 		}
 		return totalCount, nil
@@ -232,7 +232,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
-		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+		if err = jd.pgxPool.QueryRow(ctx, countStmt).Scan(&totalCount); err != nil {
 			return 0, fmt.Errorf("error while getting row count: %w", err)
 		}
 		return totalCount, nil
@@ -298,7 +298,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
-		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+		if err = jd.pgxPool.QueryRow(ctx, countStmt).Scan(&totalCount); err != nil {
 			return 0, fmt.Errorf("error while getting row count: %w", err)
 		}
 		return totalCount, nil
@@ -572,11 +572,11 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 		stmt := queryFunc(offset)
 		var rawJSONRows json.RawMessage
 		var workspaceID string
-		rows, err := jd.dbHandle.QueryContext(ctx, stmt)
+		rows, err := jd.pgxPool.Query(ctx, stmt)
 		if err != nil {
 			return fmt.Errorf("error while getting rows: %w", err)
 		}
-		defer func() { _ = rows.Close() }()
+		defer rows.Close()
 
 		for rows.Next() {
 			err = rows.Scan(&workspaceID, &rawJSONRows)
@@ -700,7 +700,7 @@ func (jd *Handle) getBackupDSRange(ctx context.Context) (*dataSetRangeT, error) 
 	var backupDSRange dataSetRangeT
 
 	// Read the table names from PG
-	tableNames, err := getAllTableNames(jd.dbHandle)
+	tableNames, err := getAllTableNames(jd.pgxPool)
 	if err != nil {
 		return nil, fmt.Errorf("getAllTableNames: %w", err)
 	}
@@ -728,7 +728,7 @@ func (jd *Handle) getBackupDSRange(ctx context.Context) (*dataSetRangeT, error) 
 
 	var minID, maxID sql.NullInt64
 	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from %q`, backupDS.JobTable)
-	row := jd.dbHandle.QueryRowContext(ctx, jobIDSQLStatement)
+	row := jd.pgxPool.QueryRow(ctx, jobIDSQLStatement)
 	err = row.Scan(&minID, &maxID)
 	if err != nil {
 		return nil, fmt.Errorf("getting min and max job_id: %w", err)
@@ -736,7 +736,7 @@ func (jd *Handle) getBackupDSRange(ctx context.Context) (*dataSetRangeT, error) 
 
 	var minCreatedAt, maxCreatedAt time.Time
 	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, backupDS.JobTable)
-	row = jd.dbHandle.QueryRowContext(ctx, jobTimeSQLStatement)
+	row = jd.pgxPool.QueryRow(ctx, jobTimeSQLStatement)
 	err = row.Scan(&minCreatedAt, &maxCreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("getting min and max created_at: %w", err)

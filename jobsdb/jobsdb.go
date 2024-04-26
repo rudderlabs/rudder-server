@@ -38,6 +38,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -55,7 +58,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 var errStaleDsList = errors.New("stale dataset list")
@@ -106,7 +108,7 @@ type GetQueryParams struct {
 // StoreSafeTx sealed interface
 type StoreSafeTx interface {
 	Tx() *Tx
-	SqlTx() *sql.Tx
+	SqlTx() pgx.Tx
 	storeSafeTxIdentifier() string
 }
 
@@ -123,7 +125,7 @@ func (r *storeSafeTx) Tx() *Tx {
 	return r.tx
 }
 
-func (r *storeSafeTx) SqlTx() *sql.Tx {
+func (r *storeSafeTx) SqlTx() pgx.Tx {
 	return r.tx.Tx
 }
 
@@ -135,7 +137,7 @@ func EmptyStoreSafeTx() StoreSafeTx {
 // UpdateSafeTx sealed interface
 type UpdateSafeTx interface {
 	Tx() *Tx
-	SqlTx() *sql.Tx
+	SqlTx() pgx.Tx
 	getDSList() []dataSetT
 	getDSRangeList() []dataSetRangeT
 	updateSafeTxSealIdentifier() string
@@ -163,7 +165,7 @@ func (r *updateSafeTx) Tx() *Tx {
 	return r.tx
 }
 
-func (r *updateSafeTx) SqlTx() *sql.Tx {
+func (r *updateSafeTx) SqlTx() pgx.Tx {
 	return r.tx.Tx
 }
 
@@ -425,6 +427,7 @@ Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
+	pgxPool     *pgxpool.Pool
 	dbHandle    *sql.DB
 	ownerType   OwnerType
 	tablePrefix string
@@ -743,15 +746,13 @@ func (jd *Handle) init() {
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
-	if jd.dbHandle == nil {
-		var err error
-		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
-		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
-		jd.assertError(err)
-	}
+	var err error
+	psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
+	pgxConfig, err := pgxpool.ParseConfig(psqlInfo)
+	jd.assertError(err)
 
 	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		pgxConfig.MaxConns = int32(jd.conf.maxOpenConnections)
 	} else {
 		maxOpenConnections := 2 // buffer
 		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
@@ -764,17 +765,24 @@ func (jd *Handle) init() {
 			maxOpenConnections += 4 // backup, migrate, addNewDS, archive
 		}
 		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
+			pgxConfig.MaxConns = int32(maxOpenConnections)
 		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+			pgxConfig.MaxConns = int32(jd.conf.maxOpenConnections)
 		}
 	}
+	jd.pgxPool, err = pgxpool.NewWithConfig(context.TODO(), pgxConfig)
+	jd.assertError(err)
+	if jd.dbHandle == nil {
+		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+		jd.assertError(err)
+	}
 
+	jd.assertError(jd.pgxPool.Ping(context.TODO()))
 	jd.assertError(jd.dbHandle.Ping())
 
 	jd.workersAndAuxSetup()
 
-	err := jd.WithTx(func(tx *Tx) error {
+	err = jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,
@@ -790,7 +798,7 @@ func (jd *Handle) init() {
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
 					// whether jobsdb is a writer or not.
-					datasets, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					datasets, err := getDSList(jd, jd.pgxPool, jd.tablePrefix)
 					jd.assertError(err)
 
 					datasetIndices := make([]string, 0)
@@ -1091,7 +1099,7 @@ func (jd *Handle) TearDown() {
 //
 //	Stop should be called before Close.
 func (jd *Handle) Close() {
-	_ = jd.dbHandle.Close()
+	jd.pgxPool.Close()
 }
 
 /*
@@ -1110,7 +1118,7 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
 	}
 	var err error
 	// Reset the global list
-	if jd.datasetList, err = getDSList(jd, jd.dbHandle, jd.tablePrefix); err != nil {
+	if jd.datasetList, err = getDSList(jd, jd.pgxPool, jd.tablePrefix); err != nil {
 		return nil, fmt.Errorf("getDSList %w", err)
 	}
 	// report table count metrics before shrinking the datasetList
@@ -1149,7 +1157,7 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 		getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
 			var minID, maxID sql.NullInt64
 			sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
-			row := jd.dbHandle.QueryRow(sqlStatement)
+			row := jd.pgxPool.QueryRow(context.TODO(), sqlStatement)
 			if err := row.Scan(&minID, &maxID); err != nil {
 				return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
 			}
@@ -1194,7 +1202,7 @@ func (jd *Handle) getTableRowCount(jobTable string) int {
 	var count int
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, jobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := jd.pgxPool.QueryRow(context.TODO(), sqlStatement)
 	err := row.Scan(&count)
 	jd.assertError(err)
 	return count
@@ -1204,7 +1212,7 @@ func (jd *Handle) getTableSize(jobTable string) int64 {
 	var tableSize int64
 
 	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := jd.pgxPool.QueryRow(context.TODO(), sqlStatement)
 	err := row.Scan(&tableSize)
 	jd.assertError(err)
 	return tableSize
@@ -1214,9 +1222,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
 		var minJobCreatedAt sql.NullTime
 		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
-		row := tx.QueryRow(sqlStatement)
+		row := tx.QueryRow(context.TODO(), sqlStatement)
 		err := row.Scan(&minJobCreatedAt)
-		if err != nil && err != sql.ErrNoRows {
+		if err != nil && err != pgx.ErrNoRows {
 			return false, err
 		}
 		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
@@ -1359,15 +1367,6 @@ func (jd *Handle) doComputeNewIdxForAppend(dList []dataSetT) string {
 	return newDSIdx
 }
 
-type transactionHandler interface {
-	Exec(string, ...interface{}) (sql.Result, error)
-	Prepare(query string) (*sql.Stmt, error)
-	// If required, add other definitions that are common between *sql.DB and *sql.Tx
-	// Never include Commit and Rollback in this interface
-	// That ensures that whoever is acting on a transactionHandler can't commit or rollback
-	// Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
-}
-
 func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	ctx := context.TODO()
 	// Mark the start of operation. If we crash somewhere here, we delete the
@@ -1383,7 +1382,7 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 
 	// Create the jobs and job_status tables
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
 		uuid UUID NOT NULL,
@@ -1396,31 +1395,31 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
 		return err
 	}
 	for _, param := range cacheParameterFilters {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
 			return err
 		}
 	}
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv_ws" ON %[1]q (custom_val,workspace_id)`, newDS.JobTable)); err != nil {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv_ws" ON %[1]q (custom_val,workspace_id)`, newDS.JobTable)); err != nil {
 			return err
 		}
 	}
 	if jd.tablePrefix == "batch_rt" { // for retrieving active partitions filtered by destination type when workspace isolation is enabled
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws_cv" ON %[1]q (workspace_id,custom_val)`, newDS.JobTable)); err != nil {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws_cv" ON %[1]q (workspace_id,custom_val)`, newDS.JobTable)); err != nil {
 			return err
 		}
 	}
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
 		job_id BIGINT REFERENCES %q(job_id),
 		job_state VARCHAR(64),
@@ -1433,10 +1432,10 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
 	err = jd.journalMarkDoneInTx(tx, opID)
@@ -1456,7 +1455,7 @@ func (jd *Handle) setSequenceNumberInTx(tx *Tx, l lock.LockToken, dsList []dataS
 	// Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dsList) > 0 {
 		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %q`, dsList[len(dsList)-1].JobTable)
-		err := tx.QueryRowContext(context.TODO(), sqlStatement).Scan(&maxID)
+		err := tx.QueryRow(context.TODO(), sqlStatement).Scan(&maxID)
 		if err != nil {
 			return err
 		}
@@ -1464,7 +1463,7 @@ func (jd *Handle) setSequenceNumberInTx(tx *Tx, l lock.LockToken, dsList []dataS
 		newDSMin := maxID.Int64 + 1
 		sqlStatement = fmt.Sprintf(`ALTER SEQUENCE "%[1]s_jobs_%[2]s_job_id_seq" MINVALUE %[3]d START %[3]d RESTART %[3]d`,
 			jd.tablePrefix, newDSIdx, newDSMin)
-		_, err = tx.ExecContext(context.TODO(), sqlStatement)
+		_, err = tx.Exec(context.TODO(), sqlStatement)
 		if err != nil {
 			return err
 		}
@@ -1488,38 +1487,38 @@ func (jd *Handle) GetMaxDSIndex() (maxDSIndex int64) {
 	return maxDSIndex
 }
 
-func (jd *Handle) prepareAndExecStmtInTx(tx *sql.Tx, sqlStatement string) {
-	stmt, err := tx.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	_, err = stmt.Exec()
+func (jd *Handle) prepareAndExecStmtInTx(ctx context.Context, tx pgx.Tx, sqlStatement string) {
+	_, err := tx.Exec(ctx, sqlStatement)
+	jd.logger.Errorn(
+		"tx.Exec failed",
+		logger.NewErrorField(err),
+		logger.NewStringField("tablePrefix", jd.tablePrefix),
+		logger.NewStringField("statement", sqlStatement),
+	)
 	jd.assertError(err)
 }
 
-func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement string) {
+func (jd *Handle) prepareAndExecStmtInTxAllowMissing(ctx context.Context, tx pgx.Tx, sqlStatement string) {
 	const (
 		savepointSql = "SAVEPOINT prepareAndExecStmtInTxAllowMissing"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
 
-	stmt, err := tx.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	_, err = tx.Exec(savepointSql)
+	_, err := tx.Exec(ctx, savepointSql)
 	jd.assertError(err)
 
-	_, err = stmt.Exec()
+	_, err = tx.Exec(ctx, savepointSql)
 	if err != nil {
-		pqError, ok := err.(*pq.Error)
-		if ok && pqError.Code == pq.ErrorCode("42P01") {
-			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
-			_, err = tx.Exec(rollbackSql)
-			jd.assertError(err)
-		} else {
-			jd.assertError(err)
-		}
+		jd.logger.Errorn(
+			"savepoint failed",
+			logger.NewErrorField(err),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("statement", sqlStatement),
+		)
+		_, err = tx.Exec(ctx, rollbackSql)
+		jd.assertError(err)
+	} else {
+		jd.assertError(err)
 	}
 }
 
@@ -1531,17 +1530,20 @@ func (jd *Handle) dropDS(ds dataSetT) error {
 
 // dropDS drops a dataset
 func (jd *Handle) dropDSInTx(tx *Tx, ds dataSetT) error {
-	var err error
-	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
+	var (
+		err error
+		ctx = context.TODO()
+	)
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobStatusTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobTable)); err != nil {
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobTable)); err != nil {
 		return err
 	}
 	jd.postDropDs(ds)
@@ -1552,19 +1554,20 @@ func (jd *Handle) dropDSInTx(tx *Tx, ds dataSetT) error {
 func (jd *Handle) dropDSForRecovery(ds dataSetT) {
 	var sqlStatement string
 	var err error
-	tx, err := jd.dbHandle.Begin()
+	ctx := context.TODO()
+	tx, err := jd.pgxPool.Begin(ctx)
 	jd.assertError(err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
+	jd.prepareAndExecStmtInTxAllowMissing(ctx, tx, sqlStatement)
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
+	jd.prepareAndExecStmtInTxAllowMissing(ctx, tx, sqlStatement)
 
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
+	jd.prepareAndExecStmtInTx(ctx, tx, sqlStatement)
 	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
-	err = tx.Commit()
+	jd.prepareAndExecStmtInTx(ctx, tx, sqlStatement)
+	err = tx.Commit(ctx)
 	jd.assertError(err)
 }
 
@@ -1581,16 +1584,19 @@ func (jd *Handle) postDropDs(ds dataSetT) {
 
 // mustRenameDS renames a dataset
 func (jd *Handle) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
-	var sqlStatement string
+	var (
+		sqlStatement string
+		ctx          = context.TODO()
+	)
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
-	_, err := tx.Exec(sqlStatement)
+	_, err := tx.Exec(ctx, sqlStatement)
 	if err != nil {
 		return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
 	}
 	sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobTable, renamedJobTable)
-	_, err = tx.Exec(sqlStatement)
+	_, err = tx.Exec(ctx, sqlStatement)
 	if err != nil {
 		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 	}
@@ -1602,16 +1608,16 @@ func (jd *Handle) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
 	}
 	// if jobs table is left empty after prebackup handlers, drop the dataset
 	sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM %q) THEN 1 ELSE 0 END`, renamedJobTable)
-	row := tx.QueryRow(sqlStatement)
+	row := tx.QueryRow(ctx, sqlStatement)
 	var count int
 	if err = row.Scan(&count); err != nil {
 		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 	}
 	if count == 0 {
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobStatusTable)); err != nil {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobStatusTable)); err != nil {
 			return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
 		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobTable)); err != nil {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobTable)); err != nil {
 			return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
 		}
 	}
@@ -1620,18 +1626,21 @@ func (jd *Handle) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
 
 // renameDS renames a dataset if it exists
 func (jd *Handle) renameDS(ds dataSetT) error {
-	var sqlStatement string
+	var (
+		sqlStatement string
+		ctx          = context.TODO()
+	)
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
-		_, err := tx.Exec(sqlStatement)
+		_, err := tx.Exec(ctx, sqlStatement)
 		if err != nil {
 			return err
 		}
 
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %q RENAME TO %q`, ds.JobTable, renamedJobTable)
-		_, err = tx.Exec(sqlStatement)
+		_, err = tx.Exec(ctx, sqlStatement)
 		if err != nil {
 			return err
 		}
@@ -1642,7 +1651,7 @@ func (jd *Handle) renameDS(ds dataSetT) error {
 func (jd *Handle) getBackupDSList() ([]dataSetT, error) {
 	var dsList []dataSetT
 	// Read the table names from PG
-	tableNames, err := getAllTableNames(jd.dbHandle)
+	tableNames, err := getAllTableNames(jd.pgxPool)
 	if err != nil {
 		return dsList, err
 	}
@@ -1793,19 +1802,20 @@ func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT,
 }
 
 func (jd *Handle) WithTx(f func(tx *Tx) error) error {
-	sqltx, err := jd.dbHandle.Begin()
+	ctx := context.TODO()
+	txWrap := &Tx{}
+	err := pgx.BeginFunc(
+		ctx,
+		jd.pgxPool,
+		func(tx pgx.Tx) error {
+			txWrap.Tx = tx
+			return f(txWrap)
+		},
+	)
 	if err != nil {
 		return err
 	}
-	tx := &Tx{Tx: sqltx}
-	err = f(tx)
-	if err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("%w; %s", err, rollbackErr)
-		}
-		return err
-	}
-	return tx.Commit()
+	return txWrap.RunSuccessListeners()
 }
 
 func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
@@ -1911,13 +1921,14 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	g.SetLimit(conc)
 	for _, ds := range dsList {
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(
+			rows, err := jd.pgxPool.Query(
 				ctx,
 				fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
 			)
 			if err != nil {
 				return fmt.Errorf("query on %s: %w", ds.JobTable, err)
 			}
+			defer rows.Close()
 			for rows.Next() {
 				var count sql.NullInt64
 				var customVal string
@@ -1937,9 +1948,6 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 			}
 			if err = rows.Err(); err != nil {
 				return fmt.Errorf("rows.Err() on %s: %w", ds.JobTable, err)
-			}
-			if err = rows.Close(); err != nil {
-				return fmt.Errorf("rows.Close() on %s: %w", ds.JobTable, err)
 			}
 			return nil
 		})
@@ -1983,11 +1991,11 @@ func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]
 		}
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	rows, err := jd.pgxPool.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var workspaceId string
 		err := rows.Scan(&workspaceId)
@@ -2027,11 +2035,11 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName 
 			  SELECT * FROM t) a`, parameterName, ds.JobTable))
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	rows, err := jd.pgxPool.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var value string
 		err := rows.Scan(&value)
@@ -2048,50 +2056,71 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName 
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
 	store := func() error {
-		var stmt *sql.Stmt
-		var err error
-
-		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
-		if err != nil {
-			return err
-		}
-
-		defer func() { _ = stmt.Close() }()
-		for _, job := range jobList {
-			eventCount := 1
-			if job.EventCount > 1 {
-				eventCount = job.EventCount
-			}
-
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
-				return err
-			}
-		}
-		if _, err = stmt.ExecContext(ctx); err != nil {
-			return err
+		if _, err := tx.CopyFrom(
+			ctx,
+			pgx.Identifier{ds.JobTable},
+			[]string{
+				"uuid",
+				"user_id",
+				"custom_val",
+				"parameters",
+				"event_payload",
+				"event_count",
+				"workspace_id",
+			},
+			pgx.CopyFromRows(
+				lo.Map(jobList, func(job *JobT, _ int) []any {
+					eventCount := 1
+					if job.EventCount > 1 {
+						eventCount = job.EventCount
+					}
+					return []any{
+						job.UUID,
+						job.UserID,
+						job.CustomVal,
+						string(job.Parameters),
+						string(job.EventPayload),
+						eventCount,
+						job.WorkspaceId,
+					}
+				}),
+			),
+		); err != nil {
+			return fmt.Errorf("copy jobs: %w", err)
 		}
 		if len(jobList) > jd.conf.analyzeThreshold.Load() {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
+			if _, err := tx.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable)); err != nil {
+				return fmt.Errorf("analyze: %w", err)
+			}
 		}
 
-		return err
+		return nil
 	}
 	const (
 		savepointSql = "SAVEPOINT doStoreJobsInTx"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
-	if _, err := tx.ExecContext(ctx, savepointSql); err != nil {
+	if _, err := tx.Exec(ctx, savepointSql); err != nil {
 		return err
 	}
 	err := store()
 
-	var e *pq.Error
+	e := &pgconn.PgError{}
 	if err != nil && errors.As(err, &e) {
 		if e.Code == pgErrorCodeTableReadonly {
+			jd.logger.Errorn(
+				"staleDSList",
+				logger.NewStringField("dsIndex", ds.Index),
+			)
 			return errStaleDsList
 		}
-		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
-			if _, err := tx.ExecContext(ctx, rollbackSql); err != nil {
+		if _, ok := dbInvalidJsonErrors[e.Code]; ok { // TODO: verify these codes
+			jd.logger.Errorn(
+				"dbInvalidJsonErrors",
+				logger.NewStringField("code", e.Code),
+			)
+			if _, err := tx.Exec(ctx, rollbackSql); err != nil {
+				jd.logger.Errorn("rollbackerr", logger.NewErrorField(err))
 				return err
 			}
 			for i := range jobList {
@@ -2201,7 +2230,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		joinTable = ds.JobStatusTable
 	}
 
-	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
 									jobs.created_at, jobs.expire_at, jobs.workspace_id,
@@ -2240,16 +2268,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	stmt, err := jd.dbHandle.PrepareContext(ctx, sqlStatement)
+	rows, err := jd.pgxPool.Query(ctx, sqlStatement, args...)
 	if err != nil {
 		return JobsResult{}, false, err
 	}
-	defer func() { _ = stmt.Close() }()
-	rows, err = stmt.QueryContext(ctx, args...)
-	if err != nil {
-		return JobsResult{}, false, err
-	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var runningEventCount int
 	var runningPayloadSize int64
@@ -2347,43 +2370,56 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 	// workspace -> state -> params
 	updatedStates = map[string]map[string]map[ParameterFilterT]struct{}{}
 	store := func() error {
-		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-			"retry_time", "error_code", "error_response", "parameters"))
-		if err != nil {
-			return err
-		}
-
-		defer func() { _ = stmt.Close() }()
-		for _, status := range statusList {
-			//  Handle the case when google analytics returns gif in response
-			if _, ok := updatedStates[status.WorkspaceId]; !ok {
-				updatedStates[status.WorkspaceId] = make(map[string]map[ParameterFilterT]struct{})
-			}
-			if _, ok := updatedStates[status.WorkspaceId][status.JobState]; !ok {
-				updatedStates[status.WorkspaceId][status.JobState] = make(map[ParameterFilterT]struct{})
-			}
-			if status.JobParameters != nil {
-				for _, param := range cacheParameterFilters {
-					v := gjson.GetBytes(status.JobParameters, param).Str
-					updatedStates[status.WorkspaceId][status.JobState][ParameterFilterT{Name: param, Value: v}] = struct{}{}
+		rows := pgx.CopyFromRows(
+			lo.Map(statusList, func(status *JobStatusT, _ int) []any {
+				if _, ok := updatedStates[status.WorkspaceId]; !ok {
+					updatedStates[status.WorkspaceId] = make(map[string]map[ParameterFilterT]struct{})
 				}
-			}
+				if _, ok := updatedStates[status.WorkspaceId][status.JobState]; !ok {
+					updatedStates[status.WorkspaceId][status.JobState] = make(map[ParameterFilterT]struct{})
+				}
+				if status.JobParameters != nil {
+					for _, param := range cacheParameterFilters {
+						v := gjson.GetBytes(status.JobParameters, param).Str
+						updatedStates[status.WorkspaceId][status.JobState][ParameterFilterT{Name: param, Value: v}] = struct{}{}
+					}
+				}
 
-			if !utf8.ValidString(string(status.ErrorResponse)) {
-				status.ErrorResponse = []byte(`{}`)
-			}
-			_, err = stmt.ExecContext(ctx, status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
-			if err != nil {
-				return err
-			}
-		}
-		if _, err = stmt.ExecContext(ctx); err != nil {
+				if !utf8.ValidString(string(status.ErrorResponse)) {
+					status.ErrorResponse = []byte(`{}`)
+				}
+				return []any{
+					status.JobID,
+					status.JobState,
+					status.AttemptNum,
+					status.ExecTime,
+					status.RetryTime,
+					status.ErrorCode,
+					string(status.ErrorResponse),
+					string(status.Parameters),
+				}
+			}),
+		)
+		if _, err = tx.CopyFrom(
+			ctx,
+			pgx.Identifier{ds.JobStatusTable},
+			[]string{
+				"job_id",
+				"job_state",
+				"attempt",
+				"exec_time",
+				"retry_time",
+				"error_code",
+				"error_response",
+				"parameters",
+			},
+			rows,
+		); err != nil {
 			return err
 		}
 
 		if len(statusList) > jd.conf.analyzeThreshold.Load() {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
+			_, err = tx.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 		}
 
 		return err
@@ -2392,14 +2428,14 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		savepointSql = "SAVEPOINT updateJobStatusDSInTx"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
-	if _, err = tx.ExecContext(ctx, savepointSql); err != nil {
+	if _, err = tx.Exec(ctx, savepointSql); err != nil {
 		return
 	}
 	err = store()
-	var e *pq.Error
+	e := &pgconn.PgError{}
 	if err != nil && errors.As(err, &e) {
-		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
-			if _, err = tx.ExecContext(ctx, rollbackSql); err != nil {
+		if _, ok := dbInvalidJsonErrors[e.Code]; ok { // TODO: verify these codes
+			if _, err = tx.Exec(ctx, rollbackSql); err != nil {
 				return
 			}
 			for i := range statusList {
@@ -2477,7 +2513,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							if err != nil {
 								return err
 							}
-							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+							if _, err = tx.Exec(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
 
@@ -2535,7 +2571,7 @@ func setReadonlyDsInTx(tx *Tx, latestDS dataSetT) error {
 		ON %q
 		FOR EACH STATEMENT
 		EXECUTE PROCEDURE %s;`, latestDS.JobTable, pgReadonlyTableExceptionFuncName)
-	_, err := tx.Exec(sqlStatement)
+	_, err := tx.Exec(context.TODO(), sqlStatement)
 	return err
 }
 
@@ -2570,7 +2606,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
 	jd.dsListLock.RUnlock()
-	nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+	nextDS, err := getDSList(jd, jd.pgxPool, jd.tablePrefix)
 	if err != nil {
 		return fmt.Errorf("getDSList: %w", err)
 	}
@@ -2618,7 +2654,7 @@ type JournalEntryT struct {
 
 func (jd *Handle) dropJournal() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	_, err := jd.pgxPool.Exec(context.TODO(), sqlStatement)
 	jd.assertError(err)
 }
 
@@ -2643,7 +2679,7 @@ func (jd *Handle) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.Raw
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time, owner)
                                        VALUES ($1, $2, $3, $4, $5) RETURNING id`, jd.tablePrefix)
-	err := tx.QueryRow(sqlStatement, opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
+	err := tx.QueryRow(context.TODO(), sqlStatement, opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
 	return opID, err
 }
 
@@ -2657,13 +2693,13 @@ func (jd *Handle) JournalMarkDone(opID int64) error {
 // JournalMarkDoneInTx marks the end of a journal action in a transaction
 func (jd *Handle) journalMarkDoneInTx(tx *Tx, opID int64) error {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1 AND owner=$4`, jd.tablePrefix)
-	_, err := tx.Exec(sqlStatement, opID, true, time.Now(), jd.ownerType)
+	_, err := tx.Exec(context.TODO(), sqlStatement, opID, true, time.Now(), jd.ownerType)
 	return err
 }
 
 func (jd *Handle) JournalDeleteEntry(opID int64) {
 	sqlStatement := fmt.Sprintf(`DELETE from "%s_journal" WHERE id=$1 AND owner=$2`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
+	_, err := jd.pgxPool.Exec(context.TODO(), sqlStatement, opID, jd.ownerType)
 	jd.assertError(err)
 }
 
@@ -2677,13 +2713,9 @@ func (jd *Handle) GetJournalEntries(opType string) (entries []JournalEntryT) {
 									AND
 									owner='%s'
 									ORDER BY id`, jd.tablePrefix, opType, jd.ownerType)
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	rows, err := jd.pgxPool.Query(context.TODO(), sqlStatement)
 	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	rows, err := stmt.Query()
-	jd.assertError(err)
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	count := 0
 	for rows.Next() {
@@ -2717,13 +2749,9 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 									owner = '%s'
                                 	ORDER BY id`, jd.tablePrefix, owner)
 
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	rows, err := jd.pgxPool.Query(context.TODO(), sqlStatement, opTypes)
 	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
-
-	rows, err := stmt.Query(pq.Array(opTypes))
-	jd.assertError(err)
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var opID int64
 	var opType string
@@ -2796,7 +2824,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		sqlStatement = fmt.Sprintf(`UPDATE "%s_journal" SET done=True WHERE id=$1`, jd.tablePrefix)
 	}
 
-	_, err = jd.dbHandle.Exec(sqlStatement, opID)
+	_, err = jd.pgxPool.Exec(context.TODO(), sqlStatement, opID)
 	jd.assertError(err)
 }
 
@@ -3039,7 +3067,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 		return errorMessagesMap
 	}
 	defer jd.getTimerStat("store_jobs_retry_each_batch", nil).RecordDuration()()
-	_, err = tx.ExecContext(ctx, savepointSql)
+	_, err = tx.Exec(ctx, savepointSql)
 	if err != nil {
 		return failAll(err), nil
 	}
@@ -3053,7 +3081,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 	if errors.Is(err, errStaleDsList) {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, rollbackSql)
+	_, err = tx.Exec(ctx, rollbackSql)
 	if err != nil {
 		return failAll(err), nil
 	}
@@ -3067,7 +3095,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 			continue
 		}
 		// savepoint
-		_, txErr = tx.ExecContext(ctx, savepointSql)
+		_, txErr = tx.Exec(ctx, savepointSql)
 		if txErr != nil {
 			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
 			continue
@@ -3080,7 +3108,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 			}
 			errorMessagesMap[jobBatch[0].UUID] = err.Error()
 			// rollback to savepoint
-			_, txErr = tx.ExecContext(ctx, rollbackSql)
+			_, txErr = tx.Exec(ctx, rollbackSql)
 			continue
 		}
 		tx.AddSuccessListener(func() {
@@ -3310,7 +3338,7 @@ func moreQueryResultWrapper(res *MoreJobsResult, err error) moreQueryResult {
 func (jd *Handle) getMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := jd.pgxPool.QueryRow(context.TODO(), sqlStatement)
 	err := row.Scan(&maxID)
 	if err != nil {
 		panic(fmt.Errorf("query for max job_id: %q", err))
@@ -3331,7 +3359,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
-	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+	err := jd.pgxPool.QueryRow(ctx, sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 	if err != nil && err != sql.ErrNoRows {
 		jd.assertError(err)
 	}
@@ -3353,7 +3381,7 @@ type smallDS struct {
 
 func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
 	advisoryLock := jd.getAdvisoryLockForOperation(operation)
-	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))
+	_, err := tx.Exec(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))
 	if err != nil {
 		return fmt.Errorf("error while acquiring advisory lock %d for operation %s: %w", advisoryLock, operation, err)
 	}
@@ -3362,7 +3390,7 @@ func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation str
 
 func (jd *Handle) withDistributedSharedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
 	advisoryLock := jd.getAdvisoryLockForOperation(operation)
-	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock_shared(%d);`, advisoryLock))
+	_, err := tx.Exec(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock_shared(%d);`, advisoryLock))
 	if err != nil {
 		return fmt.Errorf("error while acquiring a shared advisory lock %d for operation %s: %w", advisoryLock, operation, err)
 	}

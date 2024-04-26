@@ -1,11 +1,12 @@
 package misc_test
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -70,7 +71,7 @@ func TestSetApplicationNameInDBConnectionURL(t *testing.T) {
 func TestIdleTxTimeout(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := postgres.Setup(pool, t)
+	postgresContainer, err := postgres.SetupPgx(pool, t)
 	require.NoError(t, err)
 
 	conf := config.New()
@@ -86,45 +87,45 @@ func TestIdleTxTimeout(t *testing.T) {
 
 	dsn := misc.GetConnectionString(conf, "test")
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := pgxpool.New(context.TODO(), dsn)
 	require.NoError(t, err)
 
 	var sessionTimeout string
-	err = db.QueryRow("SHOW idle_in_transaction_session_timeout;").Scan(&sessionTimeout)
+	err = db.QueryRow(context.TODO(), "SHOW idle_in_transaction_session_timeout;").Scan(&sessionTimeout)
 	require.NoError(t, err)
 	require.Equal(t, txTimeout.String(), sessionTimeout)
 
 	t.Run("timeout tx", func(t *testing.T) {
-		tx, err := db.Begin()
+		tx, err := db.Begin(context.TODO())
 		require.NoError(t, err)
 
 		var pid int
-		err = tx.QueryRow(`select pg_backend_pid();`).Scan(&pid)
+		err = tx.QueryRow(context.TODO(), `select pg_backend_pid();`).Scan(&pid)
 		require.NoError(t, err)
 
-		_, err = tx.Exec("select 1")
+		_, err = tx.Exec(context.TODO(), "select 1")
 		require.NoError(t, err)
 		t.Log("sleep double the timeout to close connection")
 		time.Sleep(2 * txTimeout)
 
-		err = tx.Commit()
-		require.EqualError(t, err, "driver: bad connection")
+		err = tx.Commit(context.TODO())
+		require.EqualError(t, err, "FATAL: terminating connection due to idle-in-transaction timeout (SQLSTATE 25P03)")
 
 		var count int
-		err = db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE pid = $1`, pid).Scan(&count)
+		err = db.QueryRow(context.TODO(), `SELECT count(*) FROM pg_stat_activity WHERE pid = $1`, pid).Scan(&count)
 		require.NoError(t, err)
 
 		require.Zero(t, count)
 	})
 
 	t.Run("successful tx", func(t *testing.T) {
-		tx, err := db.Begin()
+		tx, err := db.Begin(context.TODO())
 		require.NoError(t, err)
-		_, err = tx.Exec("select 1")
+		_, err = tx.Exec(context.TODO(), "select 1")
 		require.NoError(t, err)
-		_, err = tx.Exec(fmt.Sprintf("select pg_sleep(%f)", txTimeout.Seconds()))
+		_, err = tx.Exec(context.TODO(), fmt.Sprintf("select pg_sleep(%f)", txTimeout.Seconds()))
 		require.NoError(t, err)
 
-		require.NoError(t, tx.Commit())
+		require.NoError(t, tx.Commit(context.TODO()))
 	})
 }

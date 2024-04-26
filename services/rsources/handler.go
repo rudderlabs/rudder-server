@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lib/pq"
 	"github.com/segmentio/ksuid"
 
@@ -31,8 +34,8 @@ var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 type sourcesHandler struct {
 	log            logger.Logger
 	config         JobServiceConfig
-	localDB        *sql.DB
-	sharedDB       *sql.DB
+	localDB        *pgxpool.Pool
+	sharedDB       *pgxpool.Pool
 	cleanupTrigger func() <-chan time.Time
 }
 
@@ -40,7 +43,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 	return sh.getStatusInternal(ctx, sh.readDB(), jobRunId, filter)
 }
 
-func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, jobRunId string, filter JobFilter) (JobStatus, error) {
+func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *pgxpool.Pool, jobRunId string, filter JobFilter) (JobStatus, error) {
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
@@ -55,7 +58,7 @@ func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, job
 			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
-	rows, err := db.QueryContext(ctx, sqlStatement, filterParams...)
+	rows, err := db.Query(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -85,7 +88,7 @@ func (sh *sourcesHandler) getStatusInternal(ctx context.Context, db *sql.DB, job
 }
 
 // IncrementStats checks for stats table and upserts the stats
-func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
+func (*sourcesHandler) IncrementStats(ctx context.Context, tx pgx.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
 	sqlStatement := `insert into "rsources_stats" (
 		job_run_id,
 		task_run_id,
@@ -102,7 +105,7 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	failed_count = "rsources_stats".failed_count + excluded.failed_count,
 	ts = NOW()`
 
-	_, err := tx.ExecContext(
+	_, err := tx.Exec(
 		ctx,
 		sqlStatement,
 		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
@@ -111,11 +114,11 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
+func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx pgx.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
 	if sh.config.SkipFailedRecordsCollection {
 		return nil
 	}
-	row := tx.QueryRow(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
+	row := tx.QueryRow(ctx, `INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (job_run_id, task_run_id, source_id, destination_id, db_name) DO UPDATE SET ts = NOW()
 		RETURNING id`, ksuid.New().String(), jobRunId, key.TaskRunID, key.SourceID, key.DestinationID)
@@ -124,15 +127,18 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
+	stmt, err := tx.Prepare(
+		ctx,
+		"insertRecords",
+		`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
 	if err != nil {
-		return err
+		return fmt.Errorf("prepare stmt: %w", err)
 	}
-	defer func() { _ = stmt.Close() }()
 
 	for i := range records {
-		if _, err = stmt.ExecContext(
+		if _, err = tx.Exec(
 			ctx,
+			stmt.SQL,
 			id,
 			records[i].Record,
 			records[i].Code,
@@ -140,6 +146,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -159,11 +166,11 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	ids, err := func() ([]string, error) {
 		var ids []string
 		filters, params := sqlFilters(jobRunId, filter)
-		rows, err := sh.readDB().QueryContext(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
+		rows, err := sh.readDB().Query(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
 		if err != nil {
 			return nil, err
 		}
-		defer func() { _ = rows.Close() }()
+		defer rows.Close()
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
@@ -202,11 +209,11 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		filters, limit)
 
 	failedRecordsMap := map[JobTargetKey][]FailedRecord{}
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
+	rows, err := sh.readDB().Query(ctx, sqlStatement, params...)
 	if err != nil {
 		return JobFailedRecordsV2{ID: jobRunId}, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	var queryResultSize int
 	for rows.Next() {
 		var key JobTargetKey
@@ -255,11 +262,11 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 	ids, err := func() ([]string, error) {
 		var ids []string
 		filters, params := sqlFilters(jobRunId, filter)
-		rows, err := sh.readDB().QueryContext(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
+		rows, err := sh.readDB().Query(ctx, `SELECT id FROM "rsources_failed_keys_v2" `+filters, params...)
 		if err != nil {
 			return nil, err
 		}
-		defer func() { _ = rows.Close() }()
+		defer rows.Close()
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
@@ -297,11 +304,11 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 		filters, limit)
 
 	failedRecordsMap := map[JobTargetKey][]json.RawMessage{}
-	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
+	rows, err := sh.readDB().Query(ctx, sqlStatement, params...)
 	if err != nil {
 		return JobFailedRecordsV1{ID: jobRunId}, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	var queryResultSize int
 	for rows.Next() {
 		var key JobTargetKey
@@ -344,45 +351,45 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter Jo
 			}
 		}
 	}
-	tx, err := sh.localDB.Begin()
+	tx, err := sh.localDB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 
 	filters, filterParams := sqlFilters(jobRunId, filter)
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_stats" %s`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`delete from "rsources_stats" %s`, filters), filterParams...); err != nil {
+		_ = tx.Rollback(ctx)
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`WITH deleted AS (
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`WITH deleted AS (
 		DELETE FROM "rsources_failed_keys_v2" %s  RETURNING id)
 		DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM deleted)`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
+		_ = tx.Rollback(ctx)
 		return err
 	}
-	return tx.Commit()
+	return tx.Commit(ctx)
 }
 
 func (sh *sourcesHandler) DeleteFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) error {
 	filters, filterParams := sqlFilters(jobRunId, filter)
-	tx, err := sh.localDB.Begin()
+	tx, err := sh.localDB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2_records" where id in (select id from "rsources_failed_keys_v2" %s) `, filters), filterParams...); err != nil {
+		_ = tx.Rollback(ctx)
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
-		_ = tx.Rollback()
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`delete from "rsources_failed_keys_v2" %s`, filters), filterParams...); err != nil {
+		_ = tx.Rollback(ctx)
 		return err
 	}
 
-	return tx.Commit()
+	return tx.Commit(ctx)
 }
 
 func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, filter JobFilter) error {
@@ -399,7 +406,7 @@ func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, 
 	}
 	filters, filterParams := sqlFilters(jobRunId, filter)
 	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
-	if _, err := sh.localDB.ExecContext(ctx, sqlStatement, filterParams...); err != nil {
+	if _, err := sh.localDB.Exec(ctx, sqlStatement, filterParams...); err != nil {
 		return err
 	}
 	return nil
@@ -424,20 +431,20 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 }
 
 func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
-	tx, err := sh.localDB.Begin()
+	tx, err := sh.localDB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	before := time.Now().Add(-config.GetDuration("Rsources.retention", defaultRetentionPeriodInHours, time.Hour))
-	if _, err := tx.ExecContext(ctx, `delete from "rsources_stats" where job_run_id in (
+	if _, err := tx.Exec(ctx, `delete from "rsources_stats" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from
 			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
 		where lastUpdateToJobRunId.mts <= $1
 	)`, before); err != nil {
-		_ = tx.Rollback()
+		_ = tx.Rollback(ctx)
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `WITH to_delete AS (
+	if _, err := tx.Exec(ctx, `WITH to_delete AS (
 		SELECT id FROM "rsources_failed_keys_v2" WHERE job_run_id IN (
 			SELECT lastUpdateToJobRunId.job_run_id FROM (
 				SELECT k.job_run_id, max(r.ts) as mts from "rsources_failed_keys_v2" k
@@ -450,13 +457,13 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		DELETE FROM "rsources_failed_keys_v2" WHERE id IN (SELECT id FROM to_delete) RETURNING id
 	)
 	DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM to_delete) RETURNING id`, before); err != nil {
-		_ = tx.Rollback()
+		_ = tx.Rollback(ctx)
 		return err
 	}
-	return tx.Commit()
+	return tx.Commit(ctx)
 }
 
-func (sh *sourcesHandler) readDB() *sql.DB {
+func (sh *sourcesHandler) readDB() *pgxpool.Pool {
 	if sh.sharedDB != nil {
 		return sh.sharedDB
 	}
@@ -473,7 +480,7 @@ func (sh *sourcesHandler) init() error {
 
 	const lockID = 100020001
 
-	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx *sql.Tx) error {
+	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx pgx.Tx) error {
 		sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
 		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
@@ -488,7 +495,7 @@ func (sh *sourcesHandler) init() error {
 	}
 
 	if sh.config.ShouldSetupSharedDB && sh.sharedDB != nil {
-		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
+		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ pgx.Tx) error {
 			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
 			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
 				return err
@@ -508,7 +515,7 @@ func (sh *sourcesHandler) init() error {
 	return nil
 }
 
-func setupTables(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
+func setupTables(ctx context.Context, db *pgxpool.Pool, defaultDbName string, log logger.Logger) error {
 	if err := setupFailedKeysTable(ctx, db, defaultDbName, log); err != nil {
 		return fmt.Errorf("failed to setup %s rsources failed keys table: %w", defaultDbName, err)
 	}
@@ -519,14 +526,14 @@ func setupTables(ctx context.Context, db *sql.DB, defaultDbName string, log logg
 }
 
 // TODO: Remove this after a few releases
-func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
+func migrateFailedKeysTable(ctx context.Context, tx pgx.Tx) error {
 	var previousTableExists bool
-	row := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`)
+	row := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`)
 	if err := row.Scan(&previousTableExists); err != nil {
 		return err
 	}
 	if previousTableExists {
-		if _, err := tx.ExecContext(ctx, `create or replace function ksuid() returns text as $$
+		if _, err := tx.Exec(ctx, `create or replace function ksuid() returns text as $$
 		declare
 			v_time timestamp with time zone := null;
 			v_seconds numeric(50) := null;
@@ -570,7 +577,7 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("failed to create ksuid function: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx, `WITH new_keys AS (
+		if _, err := tx.Exec(ctx, `WITH new_keys AS (
 			INSERT INTO "rsources_failed_keys_v2"
 			(id, job_run_id, task_run_id, source_id, destination_id, db_name)
 			SELECT ksuid(), t.* FROM (
@@ -591,10 +598,10 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
+		if _, err := tx.Exec(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
 			return fmt.Errorf("failed to drop old rsources_failed_keys table: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `drop function if exists ksuid()`); err != nil {
+		if _, err := tx.Exec(ctx, `drop function if exists ksuid()`); err != nil {
 			return fmt.Errorf("failed to drop ksuid function: %w", err)
 		}
 		return nil
@@ -604,7 +611,7 @@ func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
 }
 
 // TODO: Remove this after a few releases
-func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
+func setupFailedKeysTableV0(ctx context.Context, db *pgxpool.Pool, defaultDbName string, log logger.Logger) error {
 	sqlStatement := fmt.Sprintf(`create table "rsources_failed_keys" (
 		id BIGSERIAL,
 		db_name text not null default '%s',
@@ -616,22 +623,23 @@ func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName strin
 		ts timestamp not null default NOW(),
 		primary key (job_run_id, task_run_id, source_id, destination_id, db_name, id)
 	)`, defaultDbName)
-	_, err := db.ExecContext(ctx, sqlStatement)
+	_, err := db.Exec(ctx, sqlStatement)
 	if err != nil {
-		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && strings.Contains(e.Code, "42P07") {
 			log.Debugf("table rsources_failed_keys already exists in %s", defaultDbName)
 		} else {
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `create index if not exists rsources_failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`); err != nil {
+	if _, err := db.Exec(ctx, `create index if not exists rsources_failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`); err != nil {
 		return err
 	}
 	return nil
 }
 
-func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`create table "rsources_failed_keys_v2" (
+func setupFailedKeysTable(ctx context.Context, db *pgxpool.Pool, defaultDbName string, log logger.Logger) error {
+	if _, err := db.Exec(ctx, fmt.Sprintf(`create table "rsources_failed_keys_v2" (
 		id VARCHAR(27) COLLATE "C",
 		db_name text not null default '%s',
 		job_run_id text not null,
@@ -641,36 +649,38 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		primary key (id),
 		unique (job_run_id, task_run_id, source_id, destination_id, db_name)
 	)`, defaultDbName)); err != nil {
-		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && strings.Contains(e.Code, "42P07") {
 			log.Debugf("table rsources_failed_keys_v2 already exists in %s", defaultDbName)
 		} else {
 			return err
 		}
 	}
 
-	if _, err := db.ExecContext(ctx, `create table "rsources_failed_keys_v2_records" (
+	if _, err := db.Exec(ctx, `create table "rsources_failed_keys_v2_records" (
 		id VARCHAR(27) COLLATE "C",
 		record_id text not null,
     	ts timestamp not null default NOW(),
 		primary key (id, record_id)
 	)`); err != nil {
-		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && strings.Contains(e.Code, "42P07") {
 			log.Debugf("table rsources_failed_keys_v2_records already exists in %s", defaultDbName)
 		} else {
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+	if _, err := db.Exec(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {
+	if _, err := db.Exec(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
+func setupStatsTable(ctx context.Context, db *pgxpool.Pool, defaultDbName string, log logger.Logger) error {
 	sqlStatement := fmt.Sprintf(`create table "rsources_stats" (
 		db_name text not null default '%s',
 		job_run_id text not null,
@@ -683,38 +693,39 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 		ts timestamp not null default NOW(),
 		primary key (db_name, job_run_id, task_run_id, source_id, destination_id)
 	)`, defaultDbName)
-	_, err := db.ExecContext(ctx, sqlStatement)
+	_, err := db.Exec(ctx, sqlStatement)
 	if err != nil {
-		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && strings.Contains(e.Code, "42P07") {
 			log.Debugf("table rsources_stats already exists in db %s", defaultDbName)
 		} else {
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `create index if not exists rsources_stats_job_run_id_idx on "rsources_stats" (job_run_id)`); err != nil {
+	if _, err := db.Exec(ctx, `create index if not exists rsources_stats_job_run_id_idx on "rsources_stats" (job_run_id)`); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
-	if _, err := sh.localDB.ExecContext(ctx, `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+	if _, err := sh.localDB.Exec(ctx, `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`); err != nil {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && !strings.Contains(e.Code, "42710") { // duplicate
 			return fmt.Errorf("failed to create publication on local database: %w", err)
 		}
 	}
 
-	if _, err := sh.localDB.ExecContext(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+	if _, err := sh.localDB.Exec(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2`); err != nil {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && !strings.Contains(e.Code, "42710") { // duplicate
 			return fmt.Errorf("failed to alter publication on local database to add rsources_failed_keys_v2 table: %w", err)
 		}
 	}
 
-	if _, err := sh.localDB.ExecContext(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2_records`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+	if _, err := sh.localDB.Exec(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2_records`); err != nil {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && !strings.Contains(e.Code, "42710") { // duplicate
 			return fmt.Errorf("failed to alter publication on local database to add rsources_failed_keys_v2_records table: %w", err)
 		}
 	}
@@ -727,20 +738,20 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		subscriptionConn = sh.config.LocalConn
 	}
 	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION %s PUBLICATION "rsources_stats_pub"`, subscriptionName, pq.QuoteLiteral(subscriptionConn)) // skipcq: GO-R4002
-	if _, err := sh.sharedDB.ExecContext(ctx, subscriptionQuery); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+	if _, err := sh.sharedDB.Exec(ctx, subscriptionQuery); err != nil {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && !strings.Contains(e.Code, "42710") { // duplicate
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
 		}
 	}
-	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION "%s" REFRESH PUBLICATION`, subscriptionName)); err != nil {
+	if _, err := sh.sharedDB.Exec(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION "%s" REFRESH PUBLICATION`, subscriptionName)); err != nil {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
 	}
 
 	// TODO: Remove this after a few releases
-	if _, err := sh.sharedDB.ExecContext(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("22023") { // table synchronization in progress
+	if _, err := sh.sharedDB.Exec(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
+		e := &pgconn.PgError{}
+		if errors.As(err, &e) && !strings.Contains(e.Code, "22023") { // table synchronization in progress
 			return fmt.Errorf("failed to drop old rsources_failed_keys table on shared database: %w", err)
 		}
 	}
@@ -779,14 +790,14 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 			return
 		case <-logicalReplicationTrigger():
 			var lag sql.NullFloat64
-			err := sh.localDB.QueryRowContext(
+			err := sh.localDB.QueryRow(
 				ctx,
 				`select EXTRACT(epoch from replay_lag)
 					from pg_stat_replication;`).Scan(&lag)
 			switch err {
 			case nil:
 				lagGauge.Gauge(lag.Float64)
-			case sql.ErrNoRows:
+			case pgx.ErrNoRows:
 				// Indicates that shared db is unavailable
 				lagGauge.Gauge(-1.0)
 			default:
@@ -794,7 +805,7 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 			}
 
 			var replicationSlotCount int64
-			err = sh.localDB.QueryRowContext(
+			err = sh.localDB.QueryRow(
 				ctx,
 				`select count(*) from pg_replication_slots;`).
 				Scan(&replicationSlotCount)
@@ -807,17 +818,17 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 	}
 }
 
-func withAdvisoryLock(ctx context.Context, db *sql.DB, lockId int64, f func(tx *sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
+func withAdvisoryLock(ctx context.Context, db *pgxpool.Pool, lockId int64, f func(tx pgx.Tx) error) error {
+	tx, err := db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockId); err != nil {
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockId); err != nil {
 		return fmt.Errorf("acquiring advisory lock: %w", err)
 	}
 	if err := f(tx); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return tx.Commit(ctx)
 }

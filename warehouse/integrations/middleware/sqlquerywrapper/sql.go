@@ -83,7 +83,7 @@ func (r *Row) Err() error {
 }
 
 type Tx struct {
-	*tx.Tx
+	*tx.TxSql
 	db *DB
 	context.CancelFunc
 }
@@ -285,7 +285,7 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 		defer cancel()
 		return nil, err
 	}
-	return &Tx{&tx.Tx{Tx: sqltx}, db, cancel}, nil
+	return &Tx{&tx.TxSql{Tx: sqltx}, db, cancel}, nil
 }
 
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {

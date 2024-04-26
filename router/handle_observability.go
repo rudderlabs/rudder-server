@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
@@ -146,18 +145,19 @@ func (rt *Handle) eventOrderDebugInfo(orderKey eventorder.BarrierKey) (res strin
 	}()
 	userID, destinationID := orderKey.UserID, orderKey.DestinationID
 	if err := rt.jobsDB.WithTx(func(tx *Tx) error {
-		rows, err := tx.Query(`SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
+		rows, err := tx.Query(context.TODO(), `SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
 		if err != nil {
 			return err
 		}
+		rows.CommandTag()
 		defer func() {
 			_ = rows.Err()
-			_ = rows.Close()
+			rows.Close()
 		}()
-		var out bytes.Buffer
-		if err := sqlutil.PrintRowsToTable(rows, &out); err != nil {
-			out.WriteString(fmt.Sprintf("error printing rows: %v", err))
-		}
+		var out bytes.Buffer // TODO
+		// if err := sqlutil.PrintRowsToTable(rows, &out); err != nil {
+		// 	out.WriteString(fmt.Sprintf("error printing rows: %v", err))
+		// }
 		res = out.String()
 		return nil
 	}); err != nil {

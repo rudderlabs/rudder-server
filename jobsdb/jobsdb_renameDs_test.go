@@ -1,11 +1,12 @@
 package jobsdb
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -20,7 +21,7 @@ func Test_mustRenameDS(t *testing.T) {
 	dbHandle := postgresql.DB
 	jobsdb := &Handle{
 		tablePrefix: prefix,
-		dbHandle:    dbHandle,
+		pgxPool:     dbHandle,
 	}
 	jobsdb.conf.backup.preBackupHandlers = []prebackup.Handler{
 		prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
@@ -66,7 +67,7 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
 	jobsdb := &Handle{
 		tablePrefix: prefix,
-		dbHandle:    dbHandle,
+		pgxPool:     dbHandle,
 	}
 	jobsdb.conf.backup.preBackupHandlers = []prebackup.Handler{
 		prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
@@ -104,8 +105,8 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	requireTableNotExists(t, dbHandle, jobStatusTable)
 }
 
-func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
-	txn, err := db.Begin()
+func createTables(t *testing.T, db *pgxpool.Pool, jobsTable, jobStatusTable string) {
+	txn, err := db.Begin(context.TODO())
 	require.NoError(t, err)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%s" (
@@ -119,7 +120,7 @@ func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, jobsTable)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.Exec(context.TODO(), sqlStatement)
 	if err != nil {
 		t.Fatalf("Failed to create jobs table: %s", err)
 	}
@@ -135,15 +136,15 @@ func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
 			error_response JSONB DEFAULT '{}'::JSONB,
 			parameters JSONB DEFAULT '{}'::JSONB,
 			PRIMARY KEY (job_id, job_state, id));`, jobStatusTable, jobsTable)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.Exec(context.TODO(), sqlStatement)
 	if err != nil {
 		t.Fatalf("Failed to create job status table: %s", err)
 	}
-	require.NoError(t, txn.Commit())
+	require.NoError(t, txn.Commit(context.TODO()))
 }
 
-func addJob(t *testing.T, db *sql.DB, sourceId, state, jobsTable, jobStatusTable string) {
-	txn, err := db.Begin()
+func addJob(t *testing.T, db *pgxpool.Pool, sourceId, state, jobsTable, jobStatusTable string) {
+	txn, err := db.Begin(context.TODO())
 	require.NoError(t, err)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (workspace_id, uuid, user_id, parameters, custom_val, event_payload, event_count) VALUES(
@@ -154,7 +155,7 @@ func addJob(t *testing.T, db *sql.DB, sourceId, state, jobsTable, jobStatusTable
 		'custom_val',
 		'{}',
 		1);`, jobsTable, sourceId)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.Exec(context.TODO(), sqlStatement)
 	if err != nil {
 		t.Fatalf("failed to insert job entry: %s", err)
 	}
@@ -162,27 +163,24 @@ func addJob(t *testing.T, db *sql.DB, sourceId, state, jobsTable, jobStatusTable
 		(SELECT max(job_id) FROM "%s") ,
 		'%s',
 		1);`, jobStatusTable, jobsTable, state)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.Exec(context.TODO(), sqlStatement)
 	if err != nil {
 		t.Fatalf("failed to insert job status entry: %s", err)
 	}
-	require.NoError(t, txn.Commit())
+	require.NoError(t, txn.Commit(context.TODO()))
 }
 
-func requireRowsCount(t *testing.T, db *sql.DB, tableName string, expectedCount int) {
+func requireRowsCount(t *testing.T, db *pgxpool.Pool, tableName string, expectedCount int) {
 	t.Helper()
-	rows := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) as count FROM %s", tableName))
+	rows := db.QueryRow(context.TODO(), fmt.Sprintf("SELECT COUNT(*) as count FROM %s", tableName))
 	var count int
 	require.NoError(t, rows.Scan(&count))
 	require.EqualValues(t, expectedCount, count)
 }
 
-func requireTableNotExists(t *testing.T, db *sql.DB, tableName string) {
+func requireTableNotExists(t *testing.T, db *pgxpool.Pool, tableName string) {
 	t.Helper()
-	stmt, err := db.Prepare("SELECT count(tablename) FROM pg_catalog.pg_tables where tablename = $1")
-	require.NoError(t, err)
-	defer stmt.Close()
-	row := stmt.QueryRow(tableName)
+	row := db.QueryRow(context.TODO(), "SELECT count(tablename) FROM pg_catalog.pg_tables where tablename = $1", tableName)
 	var count int
 	require.NoError(t, row.Scan(&count))
 	require.EqualValues(t, 0, count)

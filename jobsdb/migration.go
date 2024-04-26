@@ -2,7 +2,6 @@ package jobsdb
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -183,8 +182,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
 func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
 	// get name and it's size of all tables
-	var rows *sql.Rows
-	rows, err := jd.dbHandle.QueryContext(
+	rows, err := jd.pgxPool.Query(
 		ctx,
 		`SELECT pg_table_size(oid) AS size, relname
 		FROM pg_class
@@ -199,7 +197,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	tableSizes := map[string]int64{}
 	for rows.Next() {
@@ -230,8 +228,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
 func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
-	var rows *sql.Rows
-	rows, err := jd.dbHandle.QueryContext(
+	rows, err := jd.pgxPool.Query(
 		ctx,
 		`SELECT reltuples AS estimate, relname
 		FROM pg_class
@@ -246,7 +243,7 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	estimates := map[string]float64{}
 	for rows.Next() {
@@ -318,14 +315,14 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	// vacuum full
 	for _, table := range toVacuumFull {
 		jd.logger.Infof("vacuuming full %q", table)
-		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+		if _, err := jd.pgxPool.Exec(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 			return err
 		}
 	}
 	// vacuum analyze
 	for _, table := range toVacuum {
 		jd.logger.Infof("vacuuming %q", table)
-		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
+		if _, err := jd.pgxPool.Exec(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
 			return err
 		}
 	}
@@ -334,7 +331,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 
 // cleanStatusTable deletes all rows except for the latest status for each job
 func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
-	result, err := tx.ExecContext(
+	result, err := tx.Exec(
 		ctx,
 		fmt.Sprintf(`DELETE FROM %[1]q
 						WHERE NOT id = ANY(
@@ -345,15 +342,12 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 		return false, err
 	}
 
-	numJobStatusDeleted, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
+	numJobStatusDeleted := result.RowsAffected()
 
 	if numJobStatusDeleted > jd.conf.migration.vacuumAnalyzeStatusTableThreshold() && canBeVacuumed {
 		vacuum = true
 	} else {
-		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
+		_, err = tx.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, table))
 	}
 
 	return
@@ -451,13 +445,13 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	)
 
 	var numJobsMigrated int64
-	if err := tx.QueryRowContext(
+	if err := tx.QueryRow(
 		ctx,
 		compactDSQuery,
 	).Scan(&numJobsMigrated); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(fmt.Sprintf(`ANALYZE %q, %q`, destDS.JobTable, destDS.JobStatusTable)); err != nil {
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`ANALYZE %q, %q`, destDS.JobTable, destDS.JobStatusTable)); err != nil {
 		return 0, err
 	}
 	return int(numJobsMigrated), nil
@@ -532,7 +526,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 
 	var delCount, totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
+	if err = jd.pgxPool.QueryRow(context.TODO(), sqlStatement).Scan(&totalCount); err != nil {
 		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
 	}
 
@@ -541,7 +535,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
                                       from %q
                                       WHERE job_state IN ('%s')`,
 		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&delCount); err != nil {
+	if err = jd.pgxPool.QueryRow(context.TODO(), sqlStatement).Scan(&delCount); err != nil {
 		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
 	}
 
@@ -550,7 +544,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 	if jd.conf.minDSRetentionPeriod.Load() > 0 {
 		var maxCreatedAt time.Time
 		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&maxCreatedAt); err != nil {
+		if err = jd.pgxPool.QueryRow(context.TODO(), sqlStatement).Scan(&maxCreatedAt); err != nil {
 			return false, false, 0, fmt.Errorf("error getting max created_at from %s: %w", ds.JobTable, err)
 		}
 
@@ -566,7 +560,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 										FROM %q
 										WHERE job_state = ANY($1) and exec_time < $2)`,
 			ds.JobStatusTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement, pq.Array(validTerminalStates), time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load())).Scan(&terminalJobsExist); err != nil {
+		if err = jd.pgxPool.QueryRow(context.TODO(), sqlStatement, pq.Array(validTerminalStates), time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load())).Scan(&terminalJobsExist); err != nil {
 			return false, false, 0, fmt.Errorf("checking terminalJobsExist %s: %w", ds.JobStatusTable, err)
 		}
 		if terminalJobsExist {

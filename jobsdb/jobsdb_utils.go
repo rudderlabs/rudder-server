@@ -1,11 +1,12 @@
 package jobsdb
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -13,7 +14,7 @@ import (
 )
 
 type sqlDbOrTx interface {
-	Query(query string, args ...any) (*sql.Rows, error)
+	Query(ctx context.Context, query string, args ...any) (pgx.Rows, error)
 }
 
 /*
@@ -83,14 +84,21 @@ func sortDnumList(dnumList []string) {
 // getAllTableNames gets all table names from Postgres
 func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 	var tableNames []string
-	rows, err := dbHandle.Query(`SELECT tablename
-									FROM pg_catalog.pg_tables
-									WHERE schemaname != 'pg_catalog' AND
-									schemaname != 'information_schema'`)
+	rows, err := dbHandle.Query(
+		context.TODO(),
+		`SELECT
+			tablename
+		FROM
+			pg_catalog.pg_tables
+		WHERE
+			schemaname != 'pg_catalog'
+			AND
+			schemaname != 'information_schema'`,
+	)
 	if err != nil {
 		return tableNames, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)

@@ -322,7 +322,7 @@ func (eir *ErrorIndexReporter) resolveJobsDB(tx *Tx) (jobsdb.JobsDB, error) {
 
 	dbIdentityQuery := `select inet_server_addr()::text || ':' || inet_server_port()::text || ':' || current_user || ':' || current_database() || ':' || current_schema || ':' || pg_postmaster_start_time()::text || ':' || version()`
 	var txDatabaseIdentity string
-	if err := tx.QueryRow(dbIdentityQuery).Scan(&txDatabaseIdentity); err != nil {
+	if err := tx.QueryRow(context.TODO(), dbIdentityQuery).Scan(&txDatabaseIdentity); err != nil {
 		return nil, fmt.Errorf("failed to get current tx's db identity: %w", err)
 	}
 

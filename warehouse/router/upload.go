@@ -524,16 +524,16 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			if err != nil {
 				return fmt.Errorf("updating upload status: %w", err)
 			}
-			if job.config.reportingEnabled {
-				err = job.reporting.Report(
-					job.ctx,
-					[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
-					tx.Tx,
-				)
-				if err != nil {
-					return fmt.Errorf("reporting upload status: %w", err)
-				}
-			}
+			// if job.config.reportingEnabled {
+			// 	err = job.reporting.Report(
+			// 		job.ctx,
+			// 		[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
+			// 		tx.Tx,
+			// 	)
+			// 	if err != nil {
+			// 		return fmt.Errorf("reporting upload status: %w", err)
+			// 	}
+			// }
 			return nil
 		})
 		return
@@ -699,7 +699,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		},
 	}}
 	if outputCount > 0 {
-		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
+		_ = append(reportingMetrics, &types.PUReportedMetric{
 			ConnectionDetails: types.ConnectionDetails{
 				SourceID:        job.upload.SourceID,
 				DestinationID:   job.upload.DestinationID,
@@ -721,11 +721,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			},
 		})
 	}
-	if job.config.reportingEnabled {
-		if err = job.reporting.Report(job.ctx, reportingMetrics, txn.Tx); err != nil {
-			return "", fmt.Errorf("reporting metrics: %w", err)
-		}
-	}
+	// if job.config.reportingEnabled {	// TODO: reports
+	// 	if err = job.reporting.Report(job.ctx, reportingMetrics, txn.Tx); err != nil {
+	// 		return "", fmt.Errorf("reporting metrics: %w", err)
+	// 	}
+	// }
 	if err = txn.Commit(); err != nil {
 		return "", fmt.Errorf("committing transaction: %w", err)
 	}

@@ -2,7 +2,6 @@ package rsources
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -18,7 +18,7 @@ import (
 // StatsPublisher publishes stats
 type StatsPublisher interface {
 	// Publish publishes statistics
-	Publish(ctx context.Context, tx *sql.Tx) error
+	Publish(ctx context.Context, tx pgx.Tx) error
 }
 
 // StatsCollector collects and publishes stats as jobs are
@@ -202,7 +202,7 @@ func (r *statsCollector) CollectFailedRecords(jobStatuses []*jobsdb.JobStatusT) 
 	}
 }
 
-func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
+func (r *statsCollector) Publish(ctx context.Context, tx pgx.Tx) error {
 	if r.jobService == nil {
 		return fmt.Errorf("no JobService provided during initialization")
 	}

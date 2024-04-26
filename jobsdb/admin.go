@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -16,7 +17,7 @@ Ping returns health check for pg database
 func (jd *Handle) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := jd.dbHandle.ExecContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
+	_, err := jd.pgxPool.Exec(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
 	if err != nil {
 		return err
 	}
@@ -49,7 +50,7 @@ func (jd *Handle) deleteJobStatus() {
 
 		for _, ds := range dsList {
 			ds := ds
-			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
+			if err := jd.deleteJobStatusDSInTx(tx.Tx().Tx, ds); err != nil {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
@@ -62,7 +63,7 @@ func (jd *Handle) deleteJobStatus() {
 	jd.assertError(err)
 }
 
-func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) deleteJobStatusDSInTx(txHandler pgx.Tx, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_delete_job_status_ds_time",
 		&statTags{
@@ -70,6 +71,7 @@ func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSet
 		}).RecordDuration()()
 
 	_, err := txHandler.Exec(
+		context.TODO(),
 		fmt.Sprintf(
 			`DELETE FROM %[1]q
 				WHERE id = ANY(
@@ -122,13 +124,14 @@ func (jd *Handle) failExecuting() {
 	jd.assertError(err)
 }
 
-func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) failExecutingDSInTx(txHandler pgx.Tx, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	).RecordDuration()()
 
 	_, err := txHandler.Exec(
+		context.TODO(),
 		fmt.Sprintf(
 			`UPDATE %[1]q SET job_state='failed'
 				WHERE id = ANY(
@@ -219,7 +222,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 	{
 		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY'"
 		var journalEntryCount int64
-		res, err := jd.dbHandle.ExecContext(
+		res, err := jd.pgxPool.Exec(
 			ctx,
 			fmt.Sprintf(
 				deleteStmt,
@@ -230,10 +233,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 		if err != nil {
 			return fmt.Errorf("cleaning up journal: %w", err)
 		}
-		journalEntryCount, err = res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("finding journal rows affected during cleanup: %w", err)
-		}
+		journalEntryCount = res.RowsAffected()
 		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
 	}
 

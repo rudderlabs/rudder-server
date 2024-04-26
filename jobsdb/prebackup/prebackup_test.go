@@ -2,9 +2,9 @@ package prebackup
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,7 +12,7 @@ func Test_DropSourceIdsHandler_Without_SourceIds(t *testing.T) {
 	handler := DropSourceIds(func() []string { return []string{} })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	var txn *sql.Tx
+	var txn pgx.Tx
 
 	// when I execute the dropSourceIds handler for an empty source ids list, a canceled context and nil transaction
 	err := handler.Handle(ctx, txn, "jobs", "job_status")

@@ -763,7 +763,7 @@ func TestJobsDB(t *testing.T) {
 		var numJobs int64
 		require.NoError(
 			t,
-			jobDB.dbHandle.QueryRow(
+			jobDB.pgxPool.QueryRow(context.TODO(),
 				fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tablePrefix+`_jobs_1_1`),
 			).Scan(&numJobs),
 		)
@@ -773,7 +773,7 @@ func TestJobsDB(t *testing.T) {
 		var numJobstatuses, maxJobStatusID, nextSeqVal int64
 		require.NoError(
 			t,
-			jobDB.dbHandle.QueryRow(
+			jobDB.pgxPool.QueryRow(context.TODO(),
 				fmt.Sprintf(`SELECT COUNT(*), MAX(id), nextval('%[1]s_id_seq') FROM %[1]s`, tablePrefix+`_job_status_1_1`),
 			).Scan(&numJobstatuses, &maxJobStatusID, &nextSeqVal),
 		)
@@ -941,7 +941,7 @@ func TestCreateDS(t *testing.T) {
 		prefix := strings.ToLower(rand.String(5))
 		// create -ve index table
 		func() {
-			_, err := postgresql.DB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_jobs_-2" (
+			_, err := postgresql.DB.Exec(context.TODO(), fmt.Sprintf(`CREATE TABLE "%[1]s_jobs_-2" (
 				job_id BIGSERIAL PRIMARY KEY,
 			workspace_id TEXT NOT NULL DEFAULT '',
 			uuid UUID NOT NULL,
@@ -953,7 +953,7 @@ func TestCreateDS(t *testing.T) {
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, prefix))
 			require.NoError(t, err)
-			_, err = postgresql.DB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_job_status_-2" (
+			_, err = postgresql.DB.Exec(context.TODO(), fmt.Sprintf(`CREATE TABLE "%[1]s_job_status_-2" (
 				id BIGSERIAL,
 				job_id BIGINT REFERENCES "%[1]s_jobs_-2"(job_id),
 				job_state VARCHAR(64),
@@ -966,20 +966,20 @@ func TestCreateDS(t *testing.T) {
 				PRIMARY KEY (job_id, job_state, id));`, prefix))
 			require.NoError(t, err)
 			negativeJobID := -100
-			_, err = postgresql.DB.Exec(fmt.Sprintf(`ALTER SEQUENCE "%[2]s_jobs_-2_job_id_seq" MINVALUE %[1]d START %[1]d RESTART %[1]d;`, negativeJobID, prefix))
+			_, err = postgresql.DB.Exec(context.TODO(), fmt.Sprintf(`ALTER SEQUENCE "%[2]s_jobs_-2_job_id_seq" MINVALUE %[1]d START %[1]d RESTART %[1]d;`, negativeJobID, prefix))
 			require.NoError(t, err)
 
-			_, err = postgresql.DB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7869', 'someuserid', 'GW', '{}', '{}');`, prefix))
+			_, err = postgresql.DB.Exec(context.TODO(), fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7869', 'someuserid', 'GW', '{}', '{}');`, prefix))
 			require.NoError(t, err)
-			_, err = postgresql.DB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, prefix))
+			_, err = postgresql.DB.Exec(context.TODO(), fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, prefix))
 			require.NoError(t, err)
 
 			triggerAddNewDS := make(chan time.Time)
 			c := config.New()
 			c.Set("jobsdb.maxDSSize", 1)
 			jobDB := Handle{
-				dbHandle: postgresql.DB,
-				config:   c,
+				pgxPool: postgresql.DB,
+				config:  c,
 				TriggerAddNewDS: func() <-chan time.Time {
 					return triggerAddNewDS
 				},
@@ -991,9 +991,14 @@ func TestCreateDS(t *testing.T) {
 			triggerAddNewDS <- time.Now()
 			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
-			tables, err := postgresql.DB.Query(fmt.Sprintf(`SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%[1]s_jobs_`, prefix) + `%' order by table_name desc;`)
+			tables, err := postgresql.DB.Query(
+				context.TODO(),
+				fmt.Sprintf(
+					`SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%[1]s_jobs_`,
+					prefix,
+				)+`%' order by table_name desc;`)
 			require.NoError(t, err)
-			defer func() { _ = tables.Close() }()
+			defer tables.Close()
 			var tableName string
 			tableNames := make([]string, 0)
 			for tables.Next() {
@@ -1007,7 +1012,7 @@ func TestCreateDS(t *testing.T) {
 			require.Equal(t, tableNames[1], prefix+"_jobs_-1")
 			expectedNextVal := negativeJobID + 2
 
-			nextVal := postgresql.DB.QueryRow(fmt.Sprintf(`select nextval('"%s_job_id_seq"');`, tableNames[1]))
+			nextVal := postgresql.DB.QueryRow(context.TODO(), fmt.Sprintf(`select nextval('"%s_job_id_seq"');`, tableNames[1]))
 			var nextValInt int
 			err = nextVal.Scan(&nextValInt)
 			require.NoError(t, err)
@@ -1298,7 +1303,7 @@ func getPayloadSize(t *testing.T, jobsDB JobsDB, job *JobT) (int64, error) {
 	var size int64
 	var tables []string
 	err := jobsDB.WithTx(func(tx *Tx) error {
-		rows, err := tx.Query(fmt.Sprintf("SELECT tablename FROM pg_catalog.pg_tables where tablename like '%s_jobs_%%'", jobsDB.Identifier()))
+		rows, err := tx.Query(context.TODO(), fmt.Sprintf("SELECT tablename FROM pg_catalog.pg_tables where tablename like '%s_jobs_%%'", jobsDB.Identifier()))
 		require.NoError(t, err)
 		for rows.Next() {
 			var table string
@@ -1307,13 +1312,10 @@ func getPayloadSize(t *testing.T, jobsDB JobsDB, job *JobT) (int64, error) {
 			tables = append(tables, table)
 		}
 		require.NoError(t, rows.Err())
-		_ = rows.Close()
+		rows.Close()
 
 		for _, table := range tables {
-			stmt, err := tx.Prepare(fmt.Sprintf("select pg_column_size(event_payload) from %s where uuid=$1", table))
-			require.NoError(t, err)
-			err = stmt.QueryRow(job.UUID).Scan(&size)
-			_ = stmt.Close()
+			err = tx.QueryRow(context.TODO(), fmt.Sprintf("select pg_column_size(event_payload) from %s where uuid=$1", table), job.UUID).Scan(&size)
 			if err == nil {
 				break
 			}

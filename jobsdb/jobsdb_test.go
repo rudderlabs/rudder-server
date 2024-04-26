@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -409,11 +409,11 @@ func TestJobsDBTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Test jobsDB GET request context timeout & retry ", func(t *testing.T) {
-		tx, err := jobDB.dbHandle.Begin()
+		tx, err := jobDB.pgxPool.Begin(context.TODO())
 		require.NoError(t, err, "Error in starting transaction to lock the table")
-		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
+		_, err = tx.Exec(context.TODO(), fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
 		require.NoError(t, err, "Error in locking the table")
-		defer func() { _ = tx.Rollback() }()
+		defer func() { _ = tx.Rollback(context.TODO()) }()
 
 		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
 		defer cancelCtx()
@@ -439,10 +439,10 @@ func TestJobsDBTimeout(t *testing.T) {
 	})
 
 	t.Run("Test jobsDB STORE request context timeout & retry ", func(t *testing.T) {
-		tx, err := jobDB.dbHandle.Begin()
+		tx, err := jobDB.pgxPool.Begin(context.TODO())
 		require.NoError(t, err, "Error in starting transaction to lock the table")
-		defer func() { _ = tx.Rollback() }()
-		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
+		defer func() { _ = tx.Rollback(context.TODO()) }()
+		_, err = tx.Exec(context.TODO(), fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
 		require.NoError(t, err, "Error in locking the table")
 
 		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
@@ -612,13 +612,10 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		ds := jobsDB.getDSList()
 		sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
 										   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds[0].JobTable)
-		stmt, err := jobsDB.dbHandle.Prepare(sqlStatement)
-		require.NoError(t, err)
-		defer stmt.Close()
-		_, err = stmt.Exec(jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
+		_, err = jobsDB.pgxPool.Exec(context.TODO(), sqlStatement, jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
 		require.Error(t, err, "expected error as trigger is set on DS")
-		require.Equal(t, "pq: table is readonly", err.Error())
-		var e *pq.Error
+		require.Equal(t, "ERROR: table is readonly (SQLSTATE RS001)", err.Error())
+		e := &pgconn.PgError{}
 		errors.As(err, &e)
 		require.EqualValues(t, e.Code, pgErrorCodeTableReadonly)
 	})
@@ -720,13 +717,13 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Equal(t, 2, len(jobsDB3.getDSList()), "expected jobsDB3 to have refreshed its ds list")
 
 		// since DS-2 is added, if storing jobs from jobsDB-2, should automatically add DS-2. So, both DS-1 and DS-2 should have 2 jobs
-		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSList()[0].JobTable))
+		row := jobsDB2.pgxPool.QueryRow(context.TODO(), fmt.Sprintf("select count(*) from %q", jobsDB2.getDSList()[0].JobTable))
 		var count int
 		err = row.Scan(&count)
 		require.NoError(t, err, "expected no error while scanning rows")
 		require.Equal(t, 2, count, "expected 2 jobs in DS-1")
 
-		row = jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB1.getDSList()[1].JobTable))
+		row = jobsDB1.pgxPool.QueryRow(context.TODO(), fmt.Sprintf("select count(*) from %q", jobsDB1.getDSList()[1].JobTable))
 		err = row.Scan(&count)
 		require.NoError(t, err, "expected no error while scanning rows")
 		require.Equal(t, 4, count, "expected 4 jobs in DS-2")
@@ -1250,7 +1247,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	// store some journal entries
 	timeDelay := time.Duration(-12) * time.Hour * 24
 	t.Log(time.Now().Add(timeDelay))
-	_, err = jobsDB.dbHandle.Exec(
+	_, err = jobsDB.pgxPool.Exec(context.TODO(),
 		fmt.Sprintf(`insert into %s_journal (operation, done, operation_payload, start_time, owner)
 				values ($1, $2, $3, $4, $5) returning id`, tablePrefix),
 		addDSOperation,
@@ -1292,7 +1289,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
 	var journalEntryCount int
-	err = jobsDB.dbHandle.QueryRow(`select count(*) from ` + tablePrefix + `_journal`).Scan(&journalEntryCount)
+	err = jobsDB.pgxPool.QueryRow(context.TODO(), `select count(*) from `+tablePrefix+`_journal`).Scan(&journalEntryCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, journalEntryCount) // one from jd.Setup(addDS) - the one added during the test is cleaned up
 }
@@ -1519,10 +1516,10 @@ type testingT interface {
 }
 
 // startPostgres starts a postgres container and (re)initializes global vars
-func startPostgres(t testingT) *postgres.Resource {
+func startPostgres(t testingT) *postgres.PgxResource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := postgres.Setup(pool, t)
+	postgresContainer, err := postgres.SetupPgx(pool, t)
 	require.NoError(t, err)
 	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)

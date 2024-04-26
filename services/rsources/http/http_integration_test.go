@@ -2,7 +2,6 @@ package http_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -26,11 +26,11 @@ func prepare(
 ) (
 	handler http.Handler,
 	service rsources.JobService,
-	dbResource *postgres.Resource,
+	dbResource *postgres.PgxResource,
 ) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := postgres.Setup(pool, t)
+	postgresContainer, err := postgres.SetupPgx(pool, t)
 	require.NoError(t, err)
 
 	config := rsources.JobServiceConfig{
@@ -50,10 +50,10 @@ func prepare(
 func addFailedRecords(
 	t *testing.T,
 	service rsources.JobService,
-	db *sql.DB,
+	db *pgxpool.Pool,
 	records []rsources.FailedRecord,
 ) {
-	tx, err := db.Begin()
+	tx, err := db.Begin(context.TODO())
 	require.NoError(t, err)
 	err = service.AddFailedRecords(context.Background(), tx,
 		"jobRunID",
@@ -65,7 +65,7 @@ func addFailedRecords(
 		records,
 	)
 	require.NoError(t, err)
-	require.NoError(t, tx.Commit())
+	require.NoError(t, tx.Commit(context.TODO()))
 }
 
 func getFailedRecords(
@@ -156,7 +156,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			{Record: []byte(`"id-4"`)},
 		})
 
-		tx, err := dbResource.DB.Begin()
+		tx, err := dbResource.DB.Begin(context.TODO())
 		require.NoError(t, err)
 		require.NoError(
 			t,
@@ -176,7 +176,7 @@ func TestDeleteEndpoints(t *testing.T) {
 				},
 			),
 		)
-		require.NoError(t, tx.Commit())
+		require.NoError(t, tx.Commit(context.TODO()))
 
 		t.Run("calling v2 failed-keys delete should only delete failed keys", func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodDelete, "http://localhost/jobRunID/failed-records", nil)
@@ -216,7 +216,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			{Record: []byte(`"id-3"`)},
 			{Record: []byte(`"id-4"`)},
 		})
-		tx, err := dbResource.DB.Begin()
+		tx, err := dbResource.DB.Begin(context.TODO())
 		require.NoError(t, err)
 		require.NoError(
 			t,
@@ -236,7 +236,7 @@ func TestDeleteEndpoints(t *testing.T) {
 				},
 			),
 		)
-		require.NoError(t, tx.Commit())
+		require.NoError(t, tx.Commit(context.TODO()))
 
 		t.Run("calling v2 job-status delete should only delete job-status", func(t *testing.T) {
 			req, err := http.NewRequest("GET", "http://localhost/jobRunID", nil)

@@ -213,7 +213,13 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				postgresContainer, err := postgres.Setup(pool, t)
+				postgresContainer, err := postgres.SetupPgx(pool, t)
+				t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+				t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
+				t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
+				t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+				t.Setenv("JOBS_DB_USER", postgresContainer.User)
+				t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 				require.NoError(t, err)
 
 				c := config.New()
@@ -237,12 +243,12 @@ func TestErrorIndexReporter(t *testing.T) {
 				eir.now = func() time.Time {
 					return failedAt
 				}
-				sqlTx, err := postgresContainer.DB.Begin()
+				sqlTx, err := postgresContainer.DB.Begin(ctx)
 				require.NoError(t, err)
 				tx := &Tx{Tx: sqlTx}
 				err = eir.Report(context.Background(), tc.reports, tx)
 				require.NoError(t, err)
-				require.NoError(t, tx.Commit())
+				require.NoError(t, tx.RunSuccessListeners())
 				db, err := eir.resolveJobsDB(tx)
 				require.NoError(t, err)
 				jr, err := db.GetUnprocessed(ctx, jobsdb.GetQueryParams{
@@ -280,7 +286,7 @@ func TestErrorIndexReporter(t *testing.T) {
 	})
 
 	t.Run("graceful shutdown", func(t *testing.T) {
-		postgresContainer, err := postgres.Setup(pool, t)
+		postgresContainer, err := postgres.SetupPgx(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -301,12 +307,12 @@ func TestErrorIndexReporter(t *testing.T) {
 			syncer()
 		}()
 
-		sqlTx, err := postgresContainer.DB.Begin()
+		sqlTx, err := postgresContainer.DB.Begin(ctx)
 		require.NoError(t, err)
 		tx := &Tx{Tx: sqlTx}
 		err = eir.Report(context.Background(), []*types.PUReportedMetric{}, tx)
 		require.NoError(t, err)
-		require.NoError(t, tx.Commit())
+		require.NoError(t, tx.RunSuccessListeners())
 
 		cancel()
 		<-syncerDone
@@ -314,9 +320,9 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	t.Run("using 1 syncer", func(t *testing.T) {
 		t.Run("wrong transaction", func(t *testing.T) {
-			pg1, err := postgres.Setup(pool, t)
+			pg1, err := postgres.SetupPgx(pool, t)
 			require.NoError(t, err)
-			pg2, err := postgres.Setup(pool, t)
+			pg2, err := postgres.SetupPgx(pool, t)
 			require.NoError(t, err)
 
 			c := config.New()
@@ -337,7 +343,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				syncer()
 			}()
 
-			sqlTx, err := pg2.DB.Begin()
+			sqlTx, err := pg2.DB.Begin(ctx)
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
@@ -368,18 +374,18 @@ func TestErrorIndexReporter(t *testing.T) {
 				},
 			}, tx)
 			require.Error(t, err)
-			require.Error(t, tx.Commit())
+			require.Error(t, tx.RunSuccessListeners())
 
 			<-syncerDone
 		})
 	})
 
 	t.Run("using 2 syncers", func(t *testing.T) {
-		pg1, err := postgres.Setup(pool, t)
+		pg1, err := postgres.SetupPgx(pool, t)
 		require.NoError(t, err)
-		pg2, err := postgres.Setup(pool, t)
+		pg2, err := postgres.SetupPgx(pool, t)
 		require.NoError(t, err)
-		pg3, err := postgres.Setup(pool, t)
+		pg3, err := postgres.SetupPgx(pool, t)
 		require.NoError(t, err)
 
 		c := config.New()
@@ -404,7 +410,7 @@ func TestErrorIndexReporter(t *testing.T) {
 		}()
 
 		t.Run("correct transaction", func(t *testing.T) {
-			sqlTx, err := pg1.DB.Begin()
+			sqlTx, err := pg1.DB.Begin(ctx)
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
@@ -435,10 +441,10 @@ func TestErrorIndexReporter(t *testing.T) {
 				},
 			}, tx)
 			require.NoError(t, err)
-			require.NoError(t, tx.Commit())
+			require.NoError(t, tx.RunSuccessListeners())
 		})
 		t.Run("wrong transaction", func(t *testing.T) {
-			sqlTx, err := pg3.DB.Begin()
+			sqlTx, err := pg3.DB.Begin(ctx)
 			require.NoError(t, err)
 			tx := &Tx{Tx: sqlTx}
 			err = eir.Report(context.Background(), []*types.PUReportedMetric{
@@ -469,14 +475,20 @@ func TestErrorIndexReporter(t *testing.T) {
 				},
 			}, tx)
 			require.Error(t, err)
-			require.NoError(t, tx.Commit())
+			require.NoError(t, tx.RunSuccessListeners())
 		})
 
 		<-syncersDone
 	})
 
 	t.Run("sync data", func(t *testing.T) {
-		postgresContainer, err := postgres.Setup(pool, t)
+		postgresContainer, err := postgres.SetupPgx(pool, t)
+		t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+		t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
+		t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
+		t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+		t.Setenv("JOBS_DB_USER", postgresContainer.User)
+		t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 		require.NoError(t, err)
 		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
@@ -565,13 +577,13 @@ func TestErrorIndexReporter(t *testing.T) {
 			syncer()
 		}()
 
-		sqlTx, err := postgresContainer.DB.Begin()
+		sqlTx, err := postgresContainer.DB.Begin(ctx)
 		require.NoError(t, err)
 
 		tx := &Tx{Tx: sqlTx}
 		err = eir.Report(context.Background(), reports, tx)
 		require.NoError(t, err)
-		require.NoError(t, tx.Commit())
+		require.NoError(t, tx.RunSuccessListeners())
 
 		db, err := eir.resolveJobsDB(tx)
 		require.NoError(t, err)

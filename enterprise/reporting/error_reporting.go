@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
@@ -173,21 +173,15 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 		return nil
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
-	if err != nil {
-		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return fmt.Errorf("preparing statement: %v", err)
-	}
-	defer func() { _ = stmt.Close() }()
-
 	reportedAt := time.Now().UTC().Unix() / 60
-	for _, metric := range metrics {
-		if !shouldReport(metric) {
-			continue
+
+	rows := pgx.CopyFromRows(lo.FilterMap(metrics, func(m *types.PUReportedMetric, _ int) ([]any, bool) {
+		if !shouldReport(m) {
+			return nil, false
 		}
 
-		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
-		metric := *metric
+		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(m.ConnectionDetails.SourceID)
+		metric := *m
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
 		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
@@ -202,7 +196,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
 
-		_, err = stmt.Exec(
+		return []any{
 			workspaceID,
 			edr.namespace,
 			edr.instanceID,
@@ -218,17 +212,16 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventType,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
-		)
-		if err != nil {
-			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
-			return fmt.Errorf("executing statement: %v", err)
-		}
-	}
+		}, true
+	}))
 
-	_, err = stmt.ExecContext(ctx)
-	if err != nil {
-		edr.log.Errorf("Failed during statement preparation: %v", err)
-		return fmt.Errorf("executing final statement: %v", err)
+	if _, err := txn.CopyFrom(
+		ctx,
+		pgx.Identifier{ErrorDetailReportsTable},
+		ErrorDetailReportsColumns,
+		rows,
+	); err != nil {
+		return fmt.Errorf("copying reports: %w", err)
 	}
 
 	return nil

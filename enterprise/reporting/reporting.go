@@ -19,7 +19,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -577,41 +578,12 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	if len(metrics) == 0 {
 		return nil
 	}
-
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ReportsTable,
-		"workspace_id", "namespace", "instance_id",
-		"source_definition_id",
-		"source_category",
-		"source_id",
-		"destination_definition_id",
-		"destination_id",
-		"source_task_run_id",
-		"source_job_id",
-		"source_job_run_id",
-		"transformation_id",
-		"transformation_version_id",
-		"tracking_plan_id",
-		"tracking_plan_version",
-		"in_pu", "pu",
-		"reported_at",
-		"status",
-		"count", "violation_count",
-		"terminal_state", "initial_state",
-		"status_code",
-		"sample_response", "sample_event",
-		"event_name", "event_type",
-		"error_type",
-	))
-	if err != nil {
-		return fmt.Errorf("preparing statement: %v", err)
-	}
-	defer func() { _ = stmt.Close() }()
-
-	eventNameMaxLength := config.GetInt("Reporting.eventNameMaxLength", 0)
 	reportedAt := time.Now().UTC().Unix() / 60
-	for _, metric := range metrics {
-		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
-		metric := *metric
+	eventNameMaxLength := config.GetInt("Reporting.eventNameMaxLength", 0)
+
+	rows := pgx.CopyFromRows(lo.Map(metrics, func(m *types.PUReportedMetric, _ int) []any {
+		workspaceID := r.configSubscriber.WorkspaceIDFromSource(m.ConnectionDetails.SourceID)
+		metric := *m
 
 		if slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
 			metric.StatusDetail.EventName = metric.StatusDetail.EventType
@@ -624,8 +596,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		if eventNameMaxLength > 0 && len(metric.StatusDetail.EventName) > eventNameMaxLength {
 			metric.StatusDetail.EventName = types.MaxLengthExceeded
 		}
-
-		_, err = stmt.Exec(
+		return []any{
 			workspaceID, r.namespace, r.instanceID,
 			metric.ConnectionDetails.SourceDefinitionId,
 			metric.ConnectionDetails.SourceCategory,
@@ -648,13 +619,38 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorType,
-		)
-		if err != nil {
-			return fmt.Errorf("executing statement: %v", err)
 		}
-	}
-	if _, err = stmt.ExecContext(ctx); err != nil {
-		return fmt.Errorf("executing final statement: %v", err)
+	}))
+	if _, err := txn.CopyFrom(
+		ctx,
+		pgx.Identifier{ReportsTable},
+		[]string{
+			"workspace_id", "namespace", "instance_id",
+			"source_definition_id",
+			"source_category",
+			"source_id",
+			"destination_definition_id",
+			"destination_id",
+			"source_task_run_id",
+			"source_job_id",
+			"source_job_run_id",
+			"transformation_id",
+			"transformation_version_id",
+			"tracking_plan_id",
+			"tracking_plan_version",
+			"in_pu", "pu",
+			"reported_at",
+			"status",
+			"count", "violation_count",
+			"terminal_state", "initial_state",
+			"status_code",
+			"sample_response", "sample_event",
+			"event_name", "event_type",
+			"error_type",
+		},
+		rows,
+	); err != nil {
+		return fmt.Errorf("copying reports: %w", err)
 	}
 
 	return nil

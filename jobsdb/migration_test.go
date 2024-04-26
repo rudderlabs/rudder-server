@@ -17,6 +17,7 @@ import (
 
 func TestMigration(t *testing.T) {
 	t.Run("main", func(t *testing.T) {
+		ctx := context.Background()
 		config.Reset()
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
@@ -131,7 +132,7 @@ func TestMigration(t *testing.T) {
 				`status update failed in 3rd DS`,
 			)
 		}
-		_, err = jobDB.dbHandle.Exec(
+		_, err = jobDB.pgxPool.Exec(ctx,
 			fmt.Sprintf(
 				`ANALYZE %[1]s_jobs_1, %[1]s_jobs_2, %[1]s_jobs_3,
 				%[1]s_job_status_1, %[1]s_job_status_2, %[1]s_job_status_3`,
@@ -151,7 +152,7 @@ func TestMigration(t *testing.T) {
 		dsList := jobDB.getDSList()
 		require.Equal(t, `1_1`, dsList[0].Index)
 		var count int64
-		err = jobDB.dbHandle.QueryRow(
+		err = jobDB.pgxPool.QueryRow(ctx,
 			fmt.Sprintf(
 				`SELECT COUNT(*) FROM %[1]s_jobs_1_1 WHERE %[1]s_jobs_1_1.custom_val = $1`,
 				tablePrefix,
@@ -163,7 +164,7 @@ func TestMigration(t *testing.T) {
 
 		// second DS must be untouched by this migrationLoop
 		require.Equal(t, `2`, dsList[1].Index)
-		err = jobDB.dbHandle.QueryRow(
+		err = jobDB.pgxPool.QueryRow(ctx,
 			fmt.Sprintf(
 				`SELECT COUNT(*) FROM %[1]s_jobs_2 WHERE %[1]s_jobs_2.custom_val = $1`,
 				tablePrefix,
@@ -173,7 +174,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 10, count)
 
-		err = jobDB.dbHandle.QueryRow(
+		err = jobDB.pgxPool.QueryRow(ctx,
 			fmt.Sprintf(
 				`SELECT COUNT(*) FROM %[1]s_job_status_2`,
 				tablePrefix,
@@ -184,7 +185,7 @@ func TestMigration(t *testing.T) {
 
 		// third DS's status table must've been cleaned up
 		require.Equal(t, `3`, dsList[2].Index)
-		err = jobDB.dbHandle.QueryRow(
+		err = jobDB.pgxPool.QueryRow(ctx,
 			fmt.Sprintf(
 				`SELECT COUNT(*) FROM %[1]s_jobs_3 WHERE %[1]s_jobs_3.custom_val = $1`,
 				tablePrefix,
@@ -194,7 +195,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 10, count)
 
-		err = jobDB.dbHandle.QueryRow(
+		err = jobDB.pgxPool.QueryRow(ctx,
 			fmt.Sprintf(
 				`SELECT COUNT(*) FROM %[1]s_job_status_3 where job_state = 'failed';`,
 				tablePrefix,
@@ -205,6 +206,7 @@ func TestMigration(t *testing.T) {
 	})
 
 	t.Run("cleanup status tables", func(t *testing.T) {
+		ctx := context.Background()
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
@@ -251,7 +253,7 @@ func TestMigration(t *testing.T) {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
 		}
 		var count int
-		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1 `, tablePrefix)).Scan(&count))
+		require.NoError(t, jobDB.pgxPool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1 `, tablePrefix)).Scan(&count))
 		require.EqualValues(t, 5*10, count)
 
 		// 2nd ds 10 statuses each
@@ -262,18 +264,18 @@ func TestMigration(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
 		}
-		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2 `, tablePrefix)).Scan(&count))
+		require.NoError(t, jobDB.pgxPool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2 `, tablePrefix)).Scan(&count))
 		require.EqualValues(t, 10*10, count)
 
 		getTableSizes := func(dsList []dataSetT) map[string]int64 {
 			for _, ds := range dsList { // first analyze all tables so that we get correct table sizes
-				_, err := jobDB.dbHandle.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
+				_, err := jobDB.pgxPool.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 				require.NoError(t, err)
-				_, err = jobDB.dbHandle.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
+				_, err = jobDB.pgxPool.Exec(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 				require.NoError(t, err)
 			}
 			tableSizes := make(map[string]int64)
-			rows, err := jobDB.dbHandle.QueryContext(context.Background(),
+			rows, err := jobDB.pgxPool.Query(ctx,
 				`SELECT relname, pg_table_size(oid) AS size
 				FROM pg_class
 				where relname = ANY(
@@ -285,7 +287,7 @@ func TestMigration(t *testing.T) {
 				tablePrefix+"_job_status%",
 			)
 			require.NoError(t, err)
-			defer func() { _ = rows.Close() }()
+			defer rows.Close()
 			for rows.Next() {
 				var (
 					tableName string
@@ -312,12 +314,12 @@ func TestMigration(t *testing.T) {
 		newTableSizes := getTableSizes(jobDB.getDSList())
 
 		// 1st DS should have 10 jobs with 1 status each
-		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1`, tablePrefix)).Scan(&count))
+		require.NoError(t, jobDB.pgxPool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_1`, tablePrefix)).Scan(&count))
 		require.EqualValues(t, 10, count)
 		require.GreaterOrEqual(t, newTableSizes[fmt.Sprintf("%s_job_status_1", tablePrefix)], originalTableSizes[fmt.Sprintf("%s_job_status_1", tablePrefix)])
 
 		// 2nd DS should have 10 jobs with 1 status each
-		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2`, tablePrefix)).Scan(&count))
+		require.NoError(t, jobDB.pgxPool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2`, tablePrefix)).Scan(&count))
 		require.EqualValues(t, 10, count)
 		require.Less(t, newTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)], originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)])
 

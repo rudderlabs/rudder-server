@@ -2,7 +2,6 @@ package rsources
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,7 +28,7 @@ import (
 
 type postgresResource struct {
 	resource    *dockertest.Resource
-	db          *sql.DB
+	db          *pgxpool.Pool
 	internalDSN string
 	externalDSN string
 }
@@ -602,6 +602,7 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("should be able to execute the cleanup loop", func() {
+			ctx := context.Background()
 			jobRunId := newJobRunId()
 			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
 			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
@@ -609,15 +610,10 @@ var _ = Describe("Using sources handler", func() {
 				{Record: []byte(`{"record-2": "id-2"}`)},
 			})
 			ts := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+1) * time.Hour)
-			stmt, err := resource.db.Prepare(`update "rsources_stats" set ts = $1`)
+			_, err := resource.db.Exec(ctx, `update "rsources_stats" set ts = $1`, ts)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = stmt.Exec(ts)
+			_, err = resource.db.Exec(ctx, `update "rsources_failed_keys_v2_records" set ts = $1`, ts)
 			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = stmt.Close() }()
-			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys_v2_records" set ts = $1`)
-			Expect(err).NotTo(HaveOccurred())
-			_, err = stmt2.Exec(ts)
-			defer func() { _ = stmt2.Close() }()
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -632,12 +628,12 @@ var _ = Describe("Using sources handler", func() {
 				case <-time.After(1 * time.Second):
 					sqlStatement := `select count(*) from "rsources_stats" where job_run_id = $1`
 					var statCount int
-					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
+					err = resource.db.QueryRow(ctx, sqlStatement, jobRunId).Scan(&statCount)
 					Expect(err).NotTo(HaveOccurred())
 
 					sqlStatement = `select count(*) from "rsources_failed_keys_v2" k join "rsources_failed_keys_v2_records" v on v.id = k.id where k.job_run_id = $1`
 					var failedRecordCount int
-					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
+					err = resource.db.QueryRow(ctx, sqlStatement, jobRunId).Scan(&failedRecordCount)
 					Expect(err).NotTo(HaveOccurred())
 
 					if statCount == 0 && failedRecordCount == 0 {
@@ -648,19 +644,20 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("should be able to add failed concurrently", func() {
+			ctx := context.Background()
 			jobRunId := newJobRunId()
-			tx0, err := resource.db.Begin()
+			tx0, err := resource.db.Begin(ctx)
 			Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
 			// Create a record in the rsources_failed_keys_v2 table without committing the transaction
-			_, err = tx0.Exec("INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES ($1, $2, $3, $4, $5)",
+			_, err = tx0.Exec(ctx, "INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES ($1, $2, $3, $4, $5)",
 				ksuid.New().String(), jobRunId, defaultJobTargetKey.TaskRunID, defaultJobTargetKey.SourceID, defaultJobTargetKey.DestinationID)
 			Expect(err).ShouldNot(HaveOccurred(), "it should be able to insert a record in the rsources_failed_keys_v2 table")
 			// Start 2 goroutines both trying to add failed records for the same job target key
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 			defer cancel()
 			g, ctx := errgroup.WithContext(ctx)
 			g.Go(func() error {
-				tx1, err := resource.db.BeginTx(ctx, nil)
+				tx1, err := resource.db.Begin(ctx)
 				if err != nil {
 					return fmt.Errorf("beginning tx1: %w", err)
 				}
@@ -670,13 +667,13 @@ var _ = Describe("Using sources handler", func() {
 				}); err != nil {
 					return fmt.Errorf("adding failed records during tx1: %w", err)
 				}
-				if err := tx1.Commit(); err != nil {
+				if err := tx1.Commit(ctx); err != nil {
 					return fmt.Errorf("committing tx1: %w", err)
 				}
 				return nil
 			})
 			g.Go(func() error {
-				tx2, err := resource.db.Begin()
+				tx2, err := resource.db.Begin(ctx)
 				if err != nil {
 					return fmt.Errorf("beginning tx2: %w", err)
 				}
@@ -686,7 +683,7 @@ var _ = Describe("Using sources handler", func() {
 				}); err != nil {
 					return fmt.Errorf("adding failed records during tx2: %w", err)
 				}
-				if err := tx2.Commit(); err != nil {
+				if err := tx2.Commit(ctx); err != nil {
 					return fmt.Errorf("committing tx2: %w", err)
 				}
 				return nil
@@ -696,7 +693,7 @@ var _ = Describe("Using sources handler", func() {
 			time.Sleep(1 * time.Second)
 
 			// rollback tx0 so that the goroutines can continue
-			Expect(tx0.Rollback()).ShouldNot(HaveOccurred(), "it should be able to rollback tx0")
+			Expect(tx0.Rollback(ctx)).ShouldNot(HaveOccurred(), "it should be able to rollback tx0")
 			Expect(g.Wait()).ShouldNot(HaveOccurred(), "it should be able to add failed records concurrently")
 
 			jobFilters := JobFilter{
@@ -1092,11 +1089,11 @@ var _ = Describe("Using sources handler", func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer func() { _ = databaseA.Close() }()
+			defer databaseA.Close()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer func() { _ = databaseB.Close() }()
+			defer databaseB.Close()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer func() { _ = databaseC.Close() }()
+			defer databaseC.Close()
 
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname, log)
@@ -1115,33 +1112,33 @@ var _ = Describe("Using sources handler", func() {
 			// setup logical replication(only stats tables as previously done)
 			publicationQueryA := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
 			publicationQueryB := `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys`
-			_, err = databaseA.ExecContext(context.TODO(), publicationQueryA)
+			_, err = databaseA.Exec(context.TODO(), publicationQueryA)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseA.ExecContext(context.TODO(), publicationQueryB)
+			_, err = databaseA.Exec(context.TODO(), publicationQueryB)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseB.ExecContext(context.TODO(), publicationQueryA)
+			_, err = databaseB.Exec(context.TODO(), publicationQueryA)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseB.ExecContext(context.TODO(), publicationQueryB)
+			_, err = databaseB.Exec(context.TODO(), publicationQueryB)
 			Expect(err).NotTo(HaveOccurred())
 
 			subscriptionQuery := `CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`
 
 			normalizedHostnameA := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_")
 			subscriptionAName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameA)
-			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
+			_, err = databaseC.Exec(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
 
 			normalizedHostnameB := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configB.LocalHostname), "_")
 			subscriptionBName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameB)
-			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
+			_, err = databaseC.Exec(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fill some data in the tables to verify migration
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_stats (job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1',2,1,1)`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_stats (job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1',2,1,1)`)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_failed_keys (job_run_id, task_run_id, source_id, destination_id, record_id) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1','"migrated-1"')`)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Now setup the handlers
@@ -1149,9 +1146,9 @@ var _ = Describe("Using sources handler", func() {
 			serviceB := createService(configB)
 
 			// make sure previous table is gone
-			for _, db := range []*sql.DB{databaseA, databaseB, databaseA} {
+			for _, db := range []*pgxpool.Pool{databaseA, databaseB, databaseA} {
 				var exists bool
-				err = db.QueryRow(`SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`).Scan(&exists)
+				err = db.QueryRow(context.TODO(), `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`).Scan(&exists)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(exists).To(BeFalse())
 			}
@@ -1330,14 +1327,14 @@ var _ = Describe("Using sources handler", func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer func() { _ = databaseA.Close() }()
+			defer databaseA.Close()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer func() { _ = databaseB.Close() }()
+			defer databaseB.Close()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer func() { _ = databaseC.Close() }()
+			defer databaseC.Close()
 
-			dropColumn := func(db *sql.DB) {
-				_, err := db.Exec("alter table rsources_failed_keys_v2_records drop column code")
+			dropColumn := func(db *pgxpool.Pool) {
+				_, err := db.Exec(context.TODO(), "alter table rsources_failed_keys_v2_records drop column code")
 				Expect(err).NotTo(HaveOccurred())
 			}
 			// create tables
@@ -1361,11 +1358,11 @@ var _ = Describe("Using sources handler", func() {
 			dropColumn(databaseC)
 
 			// Fill some data in the tables to verify migration
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_stats (job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1',2,1,1)`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_stats (job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count) VALUES ('migrated-1','migrated-1','migrated-1','migrated-1',2,1,1)`)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys_v2 (id, db_name, job_run_id, task_run_id, source_id, destination_id) VALUES ('1', 'db', 'migrated-1','migrated-1','migrated-1','migrated-1')`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_failed_keys_v2 (id, db_name, job_run_id, task_run_id, source_id, destination_id) VALUES ('1', 'db', 'migrated-1','migrated-1','migrated-1','migrated-1')`)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseA.ExecContext(context.TODO(), `INSERT INTO rsources_failed_keys_v2_records (id, record_id) VALUES ('1','"migrated-1"')`)
+			_, err = databaseA.Exec(context.TODO(), `INSERT INTO rsources_failed_keys_v2_records (id, record_id) VALUES ('1','"migrated-1"')`)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create services again to add the column
@@ -1529,21 +1526,21 @@ func createService(config JobServiceConfig) JobService {
 	return service
 }
 
-func addFailedRecords(db *sql.DB, jobRunId string, jobTargetKey JobTargetKey, sh JobService, records []FailedRecord) {
-	tx, err := db.Begin()
+func addFailedRecords(db *pgxpool.Pool, jobRunId string, jobTargetKey JobTargetKey, sh JobService, records []FailedRecord) {
+	tx, err := db.Begin(context.TODO())
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
 	err = sh.AddFailedRecords(context.Background(), tx, jobRunId, jobTargetKey, records)
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to add failed records")
-	err = tx.Commit()
+	err = tx.Commit(context.TODO())
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to commit the transaction")
 }
 
-func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
-	tx, err := db.Begin()
+func increment(db *pgxpool.Pool, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
+	tx, err := db.Begin(context.TODO())
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
 	err = sh.IncrementStats(context.Background(), tx, jobRunId, key, stat)
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to increment stats")
-	err = tx.Commit()
+	err = tx.Commit(context.TODO())
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to commit the transaction")
 	if wg != nil {
 		wg.Done()
@@ -1584,16 +1581,17 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	externalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@localhost:%[3]s/%[4]s?sslmode=disable", username, password, port, database)
 	internalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@%[3]s:5432/%[4]s?sslmode=disable", username, password, hostname, database)
 	var (
-		db  *sql.DB
-		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable options='-c idle_in_transaction_session_timeout=300000' ", port, username, password, database)
+		db  *pgxpool.Pool
+		dsn = fmt.Sprintf("host=localhost port=%[1]s user=%[2]s password=%[3]s dbname=%[4]s sslmode=disable", port, username, password, database)
 	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	ctx := context.TODO()
 	if err := pool.Retry(func() (err error) {
-		db, err = sql.Open("postgres", dsn)
+		db, err = pgxpool.New(ctx, dsn)
 		if err != nil {
 			return err
 		}
-		return db.Ping()
+		return db.Ping(ctx)
 	}); err != nil {
 		Expect(err).NotTo(HaveOccurred(), dsn)
 	}
@@ -1613,9 +1611,11 @@ func purgeResources(pool *dockertest.Pool, resources ...*dockertest.Resource) {
 	}
 }
 
-func getDB(conn string, maxOpenConns int) *sql.DB {
-	db, err := sql.Open("postgres", conn)
-	db.SetMaxOpenConns(maxOpenConns)
+func getDB(conn string, maxOpenConns int) *pgxpool.Pool {
+	conf, err := pgxpool.ParseConfig(conn)
+	Expect(err).NotTo(HaveOccurred())
+	conf.MaxConns = int32(maxOpenConns)
+	db, err := pgxpool.NewWithConfig(context.TODO(), conf)
 	Expect(err).NotTo(HaveOccurred())
 	return db
 }
