@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	jsoniter "github.com/json-iterator/go"
+
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
