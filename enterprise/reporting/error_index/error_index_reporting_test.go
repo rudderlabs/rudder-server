@@ -214,15 +214,15 @@ func TestErrorIndexReporter(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				postgresContainer, err := postgres.SetupPgx(pool, t)
-				t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-				t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
-				t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
-				t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-				t.Setenv("JOBS_DB_USER", postgresContainer.User)
-				t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 				require.NoError(t, err)
 
 				c := config.New()
+				c.Set("JOBS_DB_DB_NAME", postgresContainer.Database)
+				c.Set("JOBS_DB_NAME", postgresContainer.Database)
+				c.Set("JOBS_DB_HOST", postgresContainer.Host)
+				c.Set("JOBS_DB_PORT", postgresContainer.Port)
+				c.Set("JOBS_DB_USER", postgresContainer.User)
+				c.Set("JOBS_DB_PASSWORD", postgresContainer.Password)
 
 				ctx, cancel := context.WithCancel(ctx)
 				defer cancel()
@@ -483,12 +483,6 @@ func TestErrorIndexReporter(t *testing.T) {
 
 	t.Run("sync data", func(t *testing.T) {
 		postgresContainer, err := postgres.SetupPgx(pool, t)
-		t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-		t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
-		t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
-		t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-		t.Setenv("JOBS_DB_USER", postgresContainer.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 		require.NoError(t, err)
 		minioResource, err := minio.Setup(pool, t)
 		require.NoError(t, err)
@@ -547,6 +541,12 @@ func TestErrorIndexReporter(t *testing.T) {
 		}
 
 		c := config.New()
+		c.Set("JOBS_DB_DB_NAME", postgresContainer.Database)
+		c.Set("JOBS_DB_NAME", postgresContainer.Database)
+		c.Set("JOBS_DB_HOST", postgresContainer.Host)
+		c.Set("JOBS_DB_PORT", postgresContainer.Port)
+		c.Set("JOBS_DB_USER", postgresContainer.User)
+		c.Set("JOBS_DB_PASSWORD", postgresContainer.Password)
 		c.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
 		c.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
 		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)

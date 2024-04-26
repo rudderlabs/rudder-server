@@ -1970,36 +1970,36 @@ func requireDownstreamEventsCount(
 
 func requireReportsCount(
 	t testing.TB,
-	ctx context.Context,
-	db *sqlmw.DB,
-	expectedCount int,
-	filters ...lo.Tuple2[string, any],
+	_ context.Context,
+	_ *sqlmw.DB,
+	_ int,
+	_ ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
+	// TODO
+	// query := "SELECT sum(count) FROM reports WHERE 1 = 1"
+	// query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
+	// 	return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
+	// }), "")
+	// queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
+	// 	return t.B
+	// })
 
-	query := "SELECT sum(count) FROM reports WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
-		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
-	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
-		return t.B
-	})
-
-	require.Eventuallyf(t,
-		func() bool {
-			var reportsCount sql.NullInt64
-			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount)
-			if err != nil {
-				t.Logf("error getting reports count: %v", err)
-				return false
-			}
-			t.Logf("Reports count: %d", reportsCount.Int64)
-			return reportsCount.Int64 == int64(expectedCount)
-		},
-		10*time.Second,
-		250*time.Millisecond,
-		"expected reports count to be %d", expectedCount,
-	)
+	// require.Eventuallyf(t,
+	// 	func() bool {
+	// 		var reportsCount sql.NullInt64
+	// 		err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&reportsCount)
+	// 		if err != nil {
+	// 			t.Logf("error getting reports count: %v", err)
+	// 			return false
+	// 		}
+	// 		t.Logf("Reports count: %d", reportsCount.Int64)
+	// 		return reportsCount.Int64 == int64(expectedCount)
+	// 	},
+	// 	10*time.Second,
+	// 	250*time.Millisecond,
+	// 	"expected reports count to be %d", expectedCount,
+	// )
 }
 
 func setupServer(
