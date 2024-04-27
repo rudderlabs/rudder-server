@@ -2,13 +2,13 @@ package error_index
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -54,7 +54,7 @@ type ErrorIndexReporter struct {
 
 type handleWithSqlDB struct {
 	*jobsdb.Handle
-	sqlDB *sql.DB
+	sqlDB *pgxpool.Pool
 }
 
 func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscriber configSubscriber, conf *config.Config, statsFactory stats.Stats) *ErrorIndexReporter {
@@ -184,13 +184,12 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 		return func() {} // returning a no-op syncer since another go routine has already started syncing
 	}
 
-	dbHandle, err := sql.Open("postgres", c.ConnInfo)
+	dbHandle, err := pgxpool.New(context.TODO(), c.ConnInfo)
 	if err != nil {
 		panic(fmt.Errorf("failed to open error index db: %w", err))
 	}
 	errIndexDB := jobsdb.NewForReadWrite(
 		"err_idx",
-		jobsdb.WithDBHandle(dbHandle),
 		jobsdb.WithDSLimit(eir.conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")),
 		jobsdb.WithConfig(eir.conf),
 		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)),
@@ -328,7 +327,7 @@ func (eir *ErrorIndexReporter) resolveJobsDB(tx *Tx) (jobsdb.JobsDB, error) {
 
 	for key := range eir.dbs {
 		var databaseIdentity string
-		if err := eir.dbs[key].sqlDB.QueryRow(dbIdentityQuery).Scan(&databaseIdentity); err != nil {
+		if err := eir.dbs[key].sqlDB.QueryRow(context.TODO(), dbIdentityQuery).Scan(&databaseIdentity); err != nil {
 			return nil, fmt.Errorf("failed to get db identity for %q: %w", key, err)
 		}
 		if databaseIdentity == txDatabaseIdentity {
