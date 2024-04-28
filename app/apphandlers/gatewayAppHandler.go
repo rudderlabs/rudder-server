@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-schemas/go/stream"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -18,11 +21,9 @@ import (
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -33,15 +34,12 @@ type gatewayApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		gatewayDSLimit misc.ValueLoader[int]
+		gatewayDSLimit config.ValueLoader[int]
 	}
 }
 
-func (a *gatewayApp) Setup(options *app.Options) error {
+func (a *gatewayApp) Setup() error {
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY); err != nil {
-		return err
-	}
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -125,8 +123,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return err
 	}
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
@@ -140,18 +138,14 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		defer drainConfigManager.Stop()
 		drainConfigHttpHandler = drainConfigManager.DrainConfigHttpHandler()
 	}
-
-	err = gw.Setup(
-		ctx,
-		config, logger.NewLogger().Child("gateway"), stats.Default,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
-		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		gateway.WithInternalHttpHandlers(
+	streamMsgValidator := stream.NewMessageValidator()
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+		gatewayDB, errDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigHttpHandler,
 			},
-		),
-	)
+		))
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)
 	}

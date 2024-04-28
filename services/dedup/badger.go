@@ -6,7 +6,10 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -15,11 +18,10 @@ type badgerDB struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
-	window   misc.ValueLoader[time.Duration]
+	window   config.ValueLoader[time.Duration]
 	close    chan struct{}
 	gcDone   chan struct{}
 	path     string
-	clearDB  bool
 	opts     badger.Options
 }
 
@@ -76,12 +78,6 @@ func (d *badgerDB) start() {
 	d.badgerDB, err = badger.Open(d.opts)
 	if err != nil {
 		panic(err)
-	}
-	if d.clearDB {
-		err = d.badgerDB.DropAll()
-		if err != nil {
-			panic(err)
-		}
 	}
 	rruntime.Go(func() {
 		d.gcLoop()

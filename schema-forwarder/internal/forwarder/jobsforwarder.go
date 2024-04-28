@@ -36,11 +36,11 @@ type JobsForwarder struct {
 	pulsarClient   *pulsar.Client          // pulsar client used to create producers
 	pulsarProducer pulsar.ProducerAdapter  // pulsar producer used to forward jobs to pulsar
 
-	topic                string                          // topic to which jobs are forwarded
-	maxSampleSize        misc.ValueLoader[int64]         // max payload size for the samples to include in the schema messages
-	initialRetryInterval misc.ValueLoader[time.Duration] // initial retry interval for the backoff mechanism
-	maxRetryInterval     misc.ValueLoader[time.Duration] // max retry interval for the backoff mechanism
-	maxRetryElapsedTime  misc.ValueLoader[time.Duration] // max retry elapsed time for the backoff mechanism
+	topic                string                            // topic to which jobs are forwarded
+	maxSampleSize        config.ValueLoader[int64]         // max payload size for the samples to include in the schema messages
+	initialRetryInterval config.ValueLoader[time.Duration] // initial retry interval for the backoff mechanism
+	maxRetryInterval     config.ValueLoader[time.Duration] // max retry interval for the backoff mechanism
+	maxRetryElapsedTime  config.ValueLoader[time.Duration] // max retry elapsed time for the backoff mechanism
 }
 
 // NewJobsForwarder returns a new, properly initialized, JobsForwarder

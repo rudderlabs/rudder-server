@@ -11,6 +11,8 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff"
@@ -22,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -129,8 +132,8 @@ type Notifier struct {
 		maxOpenConnections         int
 		shouldForceSetLowerVersion bool
 		trackBatchInterval         time.Duration
-		maxPollSleep               misc.ValueLoader[time.Duration]
-		jobOrphanTimeout           misc.ValueLoader[time.Duration]
+		maxPollSleep               config.ValueLoader[time.Duration]
+		jobOrphanTimeout           config.ValueLoader[time.Duration]
 		queryTimeout               time.Duration
 	}
 	stats struct {
@@ -529,6 +532,16 @@ func (n *Notifier) UpdateClaim(
 		n.stats.claimUpdateFailed.Increment()
 		n.logger.Errorf("update claimed: on claimed success: %v", err)
 	}
+}
+
+func (n *Notifier) Monitor(ctx context.Context) {
+	sqlutil.MonitorDatabase(
+		ctx,
+		n.conf,
+		n.statsFactory,
+		n.db.DB,
+		"notifier",
+	)
 }
 
 // RunMaintenance re-triggers zombie jobs which were left behind by dead workers in executing state

@@ -726,7 +726,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	if subscriptionConn == "" {
 		subscriptionConn = sh.config.LocalConn
 	}
-	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn) // skipcq: GO-R4002
+	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION %s PUBLICATION "rsources_stats_pub"`, subscriptionName, pq.QuoteLiteral(subscriptionConn)) // skipcq: GO-R4002
 	if _, err := sh.sharedDB.ExecContext(ctx, subscriptionQuery); err != nil {
 		pqError, ok := err.(*pq.Error)
 		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate

@@ -13,12 +13,11 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -34,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
@@ -98,6 +96,19 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	if err != nil {
 		r.logger.Errorf("failed to get deployment type: %v", err)
 		return 1
+	}
+
+	path, err := config.Default.ConfigFileUsed()
+	if err != nil {
+		r.logger.Warnf("Config: Failed to parse config file from path %q, using default values: %v", path, err)
+	} else {
+		r.logger.Infof("Config: Using config file: %s", path)
+	}
+
+	if err := config.Default.DotEnvLoaded(); err != nil {
+		r.logger.Infof("Config: No .env file loaded: %v", err)
+	} else {
+		r.logger.Infof("Config: Loaded .env file")
 	}
 
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
@@ -181,7 +192,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
-		if err := r.appHandler.Setup(options); err != nil {
+		if err := r.appHandler.Setup(); err != nil {
 			r.logger.Errorf("Unable to prepare rudder-core database: %s", err)
 			return 1
 		}
@@ -218,8 +229,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			return profiler.StartServer(ctx, config.GetInt("Profiler.Port", 7777))
 		})
 	}
-
-	misc.AppStartTime = time.Now().Unix()
 
 	// Start rudder core
 	if r.canStartServer() {
@@ -309,7 +318,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 func runAllInit() {
 	admin.Init()
 	misc.Init()
-	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()

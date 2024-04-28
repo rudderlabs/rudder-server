@@ -25,9 +25,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -61,12 +61,12 @@ type DefaultReporter struct {
 	instanceID                           string
 	whActionsOnly                        bool
 	region                               string
-	sleepInterval                        misc.ValueLoader[time.Duration]
-	mainLoopSleepInterval                misc.ValueLoader[time.Duration]
+	sleepInterval                        config.ValueLoader[time.Duration]
+	mainLoopSleepInterval                config.ValueLoader[time.Duration]
 	dbQueryTimeout                       *config.Reloadable[time.Duration]
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
-	maxConcurrentRequests                misc.ValueLoader[int]
+	maxConcurrentRequests                config.ValueLoader[int]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement

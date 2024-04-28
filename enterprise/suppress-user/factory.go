@@ -189,7 +189,7 @@ func (m *Factory) retryIndefinitely(ctx context.Context, f func() error, wait ti
 	}
 }
 
-func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (io.ReadCloser, error), maxSeedWaitTime time.Duration, identity identity.Identifier, pollInterval misc.ValueLoader[time.Duration]) (*Syncer, Repository, error) {
+func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (io.ReadCloser, error), maxSeedWaitTime time.Duration, identity identity.Identifier, pollInterval config.ValueLoader[time.Duration]) (*Syncer, Repository, error) {
 	repo, err := NewBadgerRepository(
 		repoPath,
 		m.Log,

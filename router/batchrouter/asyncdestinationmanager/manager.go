@@ -19,7 +19,8 @@ func NewRegularManager(destination *backendconfig.DestinationT, backendConfig ba
 		return marketobulkupload.NewManager(destination)
 	case "ELOQUA":
 		return eloqua.NewManager(destination)
-
+	case "YANDEX_METRICA_OFFLINE_EVENTS":
+		return yandexmetrica.NewManager(destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }

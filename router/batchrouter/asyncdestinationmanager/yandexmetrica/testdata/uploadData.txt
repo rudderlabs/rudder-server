@@ -1,0 +1,4 @@
+{"message":{"DateTime":"361519255","Price":894.7297191082301,"Target":"1234","UserId":"221312"},"metadata":{"job_id":5}}
+{"message":{"DateTime":"361789255","Price":894.729,"Target":"1234","UserId":"221232"},"metadata":{"job_id":6}}
+{"message":{"DateTime":"361511235","Price":23,"Target":"1234","UserId":"221652"},"metadata":{"job_id":7}}
+{"message":{"DateTime":"361545655","Price":65,"Target":"1234","UserId":"289712"},"metadata":{"job_id":8}}

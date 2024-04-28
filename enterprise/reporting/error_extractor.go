@@ -11,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -69,7 +68,7 @@ var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ int, 
 type ExtractorHandle struct {
 	log                              logger.Logger
 	ErrorMessageKeys                 []string // the keys where in we may have error message
-	versionDeprecationThresholdScore misc.ValueLoader[int]
+	versionDeprecationThresholdScore config.ValueLoader[int]
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {

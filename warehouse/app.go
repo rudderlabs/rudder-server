@@ -11,41 +11,38 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 
 	"github.com/cenkalti/backoff/v4"
-
-	"github.com/rudderlabs/rudder-server/warehouse/api"
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/router"
-	"github.com/rudderlabs/rudder-server/warehouse/slave"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
+	"github.com/rudderlabs/rudder-server/warehouse/api"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -301,12 +298,6 @@ func (a *App) migrate() error {
 
 // Run runs the warehouse service
 func (a *App) Run(ctx context.Context) error {
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.mode) && !db.IsNormalMode() {
-		a.logger.Info("Skipping start of warehouse service...")
-		return nil
-	}
-
 	a.logger.Info("Starting Warehouse service...")
 
 	defer func() {
@@ -325,6 +316,16 @@ func (a *App) Run(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		a.bcManager.Start(gCtx)
+		return nil
+	})
+	g.Go(func() error {
+		sqlutil.MonitorDatabase(
+			gCtx,
+			a.conf,
+			a.statsFactory,
+			a.db.DB,
+			"warehouse",
+		)
 		return nil
 	})
 
@@ -422,6 +423,10 @@ func (a *App) Run(ctx context.Context) error {
 		return a.api.Start(gCtx)
 	})
 	g.Go(func() error {
+		a.notifier.Monitor(gCtx)
+		return nil
+	})
+	g.Go(func() error {
 		<-gCtx.Done()
 		return a.notifier.Shutdown()
 	})
@@ -432,30 +437,23 @@ func (a *App) Run(ctx context.Context) error {
 // Gets the config from config backend and extracts enabled write keys
 func (a *App) monitorDestRouters(ctx context.Context) error {
 	dstToWhRouter := make(map[string]*router.Router)
-
+	g, ctx := errgroup.WithContext(ctx)
 	ch := a.tenantManager.WatchConfig(ctx)
 	for configData := range ch {
-		err := a.onConfigDataEvent(ctx, configData, dstToWhRouter)
-		if err != nil {
-			return fmt.Errorf("config data event error: %v", err)
+		diffRouters := a.onConfigDataEvent(configData, dstToWhRouter)
+		for _, r := range diffRouters {
+			g.Go(func() error { return r.Start(ctx) })
 		}
-	}
-
-	g, _ := errgroup.WithContext(context.Background())
-	for _, r := range dstToWhRouter {
-		r := r
-		g.Go(r.Shutdown)
 	}
 	return g.Wait()
 }
 
 func (a *App) onConfigDataEvent(
-	ctx context.Context,
 	configMap map[string]backendconfig.ConfigT,
 	dstToWhRouter map[string]*router.Router,
-) error {
+) map[string]*router.Router {
 	enabledDestinations := make(map[string]bool)
-
+	diffRouters := make(map[string]*router.Router)
 	for _, wConfig := range configMap {
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
@@ -465,17 +463,15 @@ func (a *App) onConfigDataEvent(
 					continue
 				}
 
-				r, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+				_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if ok {
 					a.logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-					r.Enable()
 					continue
 				}
 
 				a.logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 
-				r, err := router.New(
-					ctx,
+				r := router.New(
 					a.reporting,
 					destination.DestinationDefinition.Name,
 					a.conf,
@@ -490,24 +486,10 @@ func (a *App) onConfigDataEvent(
 					a.triggerStore,
 					a.createUploadAlways,
 				)
-				if err != nil {
-					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
-				}
 				dstToWhRouter[destination.DestinationDefinition.Name] = r
+				diffRouters[destination.DestinationDefinition.Name] = r
 			}
 		}
 	}
-
-	keys := lo.Keys(dstToWhRouter)
-	for _, key := range keys {
-		if _, ok := enabledDestinations[key]; !ok {
-			if wh, ok := dstToWhRouter[key]; ok {
-				a.logger.Info("Disabling a existing warehouse destination: ", key)
-
-				wh.Disable()
-			}
-		}
-	}
-
-	return nil
+	return diffRouters
 }

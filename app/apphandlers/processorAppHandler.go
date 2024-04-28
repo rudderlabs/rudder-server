@@ -9,8 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -30,7 +31,6 @@ import (
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
-	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -49,10 +49,10 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		processorDSLimit   misc.ValueLoader[int]
-		routerDSLimit      misc.ValueLoader[int]
-		batchRouterDSLimit misc.ValueLoader[int]
-		gatewayDSLimit     misc.ValueLoader[int]
+		processorDSLimit   config.ValueLoader[int]
+		routerDSLimit      config.ValueLoader[int]
+		batchRouterDSLimit config.ValueLoader[int]
+		gatewayDSLimit     config.ValueLoader[int]
 		http               struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
@@ -64,7 +64,7 @@ type processorApp struct {
 	}
 }
 
-func (a *processorApp) Setup(options *app.Options) error {
+func (a *processorApp) Setup() error {
 	a.config.http.ReadTimeout = config.GetDurationVar(0, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
 	a.config.http.ReadHeaderTimeout = config.GetDurationVar(0, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	a.config.http.WriteTimeout = config.GetDurationVar(10, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
@@ -75,9 +75,6 @@ func (a *processorApp) Setup(options *app.Options) error {
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR); err != nil {
-		return err
-	}
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -92,6 +89,7 @@ func (a *processorApp) Setup(options *app.Options) error {
 }
 
 func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	config := config.Default
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
@@ -108,7 +106,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
-	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config.Default, "reporting")})
+	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
 	g.Go(misc.WithBugsnag(func() error {
 		syncer()
 		return nil
@@ -139,8 +137,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return err
 	}
 
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
@@ -213,14 +211,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
-		client, err := pulsar.NewClient(config.Default)
+		client, err := pulsar.NewClient(config)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -230,18 +228,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config.Default, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
 
 	defer func() {
 		for _, enricher := range enrichers {
-			enricher.Close()
+			_ = enricher.Close()
 		}
 	}()
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config.Default, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
@@ -273,7 +271,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		enrichers,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.NewFactory(config.Default, stats.Default)
+	throttlerFactory, err := throttler.NewFactory(config, stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
@@ -317,7 +315,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Archiver: archiver.New(
 			archivalDB,
 			fileUploaderProvider,
-			config.Default,
+			config,
 			stats.Default,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),

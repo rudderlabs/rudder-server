@@ -5,8 +5,10 @@ package transformer
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/rruntime"
 )
@@ -16,7 +18,7 @@ const (
 	V1 = "v1"
 )
 
-type FeaturesServiceConfig struct {
+type FeaturesServiceOptions struct {
 	PollInterval             time.Duration
 	TransformerURL           string
 	FeaturesRetryMaxAttempts int
@@ -38,12 +40,21 @@ var defaultTransformerFeatures = `{
 	"regulations": ["AM"],
   }`
 
-func NewFeaturesService(ctx context.Context, config FeaturesServiceConfig) FeaturesService {
+func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
 	handler := &featuresService{
 		features: json.RawMessage(defaultTransformerFeatures),
 		logger:   logger.NewLogger().Child("transformer-features"),
 		waitChan: make(chan struct{}),
-		config:   config,
+		options:  featConfig,
+		client: &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
+				MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
+				MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+				IdleConnTimeout:     config.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second),
+			},
+			Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second),
+		},
 	}
 
 	rruntime.Go(func() { handler.syncTransformerFeatureJson(ctx) })

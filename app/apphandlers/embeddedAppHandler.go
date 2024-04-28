@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-schemas/go/stream"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/archiver"
@@ -27,7 +30,6 @@ import (
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
 	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
-	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -48,24 +50,19 @@ type embeddedApp struct {
 	log            logger.Logger
 	config         struct {
 		enableReplay       bool
-		processorDSLimit   misc.ValueLoader[int]
-		routerDSLimit      misc.ValueLoader[int]
-		batchRouterDSLimit misc.ValueLoader[int]
-		gatewayDSLimit     misc.ValueLoader[int]
+		processorDSLimit   config.ValueLoader[int]
+		routerDSLimit      config.ValueLoader[int]
+		batchRouterDSLimit config.ValueLoader[int]
+		gatewayDSLimit     config.ValueLoader[int]
 	}
 }
 
-func (a *embeddedApp) Setup(options *app.Options) error {
+func (a *embeddedApp) Setup() error {
 	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-
-	if err := db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED); err != nil {
-		return err
-	}
-
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -132,8 +129,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return err
 	}
 
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, transformer.FeaturesServiceConfig{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 1, time.Second),
+	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
@@ -247,7 +244,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	defer func() {
 		for _, enricher := range enrichers {
-			enricher.Close()
+			_ = enricher.Close()
 		}
 	}()
 
@@ -335,18 +332,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	g.Go(misc.WithBugsnag(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
+	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
-	err = gw.Setup(
-		ctx,
-		config, logger.NewLogger().Child("gateway"), stats.Default,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
-		rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
-		gateway.WithInternalHttpHandlers(
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),
 			},
-		),
-	)
+		))
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
 	}

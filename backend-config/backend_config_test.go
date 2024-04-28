@@ -23,10 +23,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -331,7 +331,7 @@ func TestWaitForConfig(t *testing.T) {
 		defer ctrl.Finish()
 
 		pkgLogger = logger.NOP
-		pollInterval = misc.SingleValueLoader(time.Millisecond)
+		pollInterval = config.SingleValueLoader(time.Millisecond)
 		bc := &backendConfigImpl{initialized: false}
 
 		var done int32

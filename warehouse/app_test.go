@@ -8,22 +8,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/hashicorp/yamux"
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/golang/mock/gomock"
+	"github.com/hashicorp/yamux"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	bcConfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -31,7 +32,6 @@ import (
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -86,8 +86,6 @@ func TestApp(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			subTestCases := []struct {
 				name        string
 				runningMode string
@@ -103,8 +101,6 @@ func TestApp(t *testing.T) {
 			}
 
 			for _, subTC := range subTestCases {
-				subTC := subTC
-
 				t.Run(tc.name+" with "+subTC.name, func(t *testing.T) {
 					pgResource, err := postgres.Setup(pool, t)
 					require.NoError(t, err)
@@ -296,7 +292,7 @@ func TestApp(t *testing.T) {
 		webPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		ctx := context.Background()
+		ctx, cancel := context.WithCancel(context.Background())
 
 		c := config.New()
 		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
@@ -368,14 +364,10 @@ func TestApp(t *testing.T) {
 
 		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
-		require.NoError(t, a.monitorDestRouters(ctx))
+		cancel()
+		require.Contains(t, a.monitorDestRouters(ctx).Error(), "reset in progress: context canceled")
 	})
 	t.Run("rudder core recovery mode", func(t *testing.T) {
-		db.CurrentMode = "degraded"
-		t.Cleanup(func() {
-			db.CurrentMode = "normal"
-		})
-
 		t.Run("stand alone", func(t *testing.T) {
 			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
@@ -411,40 +403,6 @@ func TestApp(t *testing.T) {
 				return nil
 			})
 			require.NoError(t, g.Wait())
-		})
-		t.Run("not stand alone", func(t *testing.T) {
-			pgResource, err := postgres.Setup(pool, t)
-			require.NoError(t, err)
-
-			webPort, err := kithelper.GetFreePort()
-			require.NoError(t, err)
-
-			ctx := context.Background()
-
-			c := config.New()
-			c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-			c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
-			c.Set("WAREHOUSE_JOBS_DB_USER", pgResource.User)
-			c.Set("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
-			c.Set("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
-			c.Set("Warehouse.mode", config.EmbeddedMode)
-			c.Set("Warehouse.webPort", webPort)
-
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockLogger := mock_logger.NewMockLogger(ctrl)
-			mockLogger.EXPECT().Child(gomock.Any()).AnyTimes().Return(mockLogger)
-			mockLogger.EXPECT().Info("Skipping start of warehouse service...").Times(1)
-			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any()).AnyTimes()
-
-			a := New(mockApp, c, mockLogger, stats.NOP, &bcConfig.NOOP{}, filemanager.New)
-			err = a.Setup(ctx)
-			require.NoError(t, err)
-
-			err = a.Run(ctx)
-			require.NoError(t, err)
 		})
 	})
 }

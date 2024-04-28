@@ -21,12 +21,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -380,8 +380,8 @@ func TestProxyRequest(t *testing.T) {
 				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 				defer srv.Close()
 
-				isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-				expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+				isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+				expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
@@ -404,8 +404,8 @@ func TestProxyRequest(t *testing.T) {
 			srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 			defer srv.Close()
 			var tr Transformer
-			isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+			isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
 				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
@@ -500,7 +500,8 @@ var oauthDests = []backendconfig.DestinationT{
 			Name: "SALESFORCE_OAUTH",
 			Config: map[string]interface{}{
 				"auth": map[string]interface{}{
-					"type": "OAuth",
+					"type":         "OAuth",
+					"rudderScopes": []interface{}{"delivery"},
 				},
 			},
 		},
@@ -673,7 +674,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 
 			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
 
-			isOAuthV2EnabledLoader := misc.SingleValueLoader(true)
+			isOAuthV2EnabledLoader := config.SingleValueLoader(true)
 			defer svr.Close()
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
@@ -681,7 +682,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			config.Set("Processor.maxRetry", 1) // no retries
 
 			backendconfig.Init()
-			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
 			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
 
@@ -1151,7 +1152,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `reading response body post RoundTrip: unexpected EOF`, // not full error message
+			ProxyRequestResponseBody: `reading response body post roundTrip: unexpected EOF`, // not full error message
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1207,8 +1208,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
-			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1258,8 +1259,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
-			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1364,14 +1365,14 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
 
-			isOAuthV2EnabledLoader := misc.SingleValueLoader(true)
+			isOAuthV2EnabledLoader := config.SingleValueLoader(true)
 			defer svr.Close()
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
 
 			backendconfig.Init()
-			expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
 			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
 
@@ -1434,10 +1435,10 @@ func TestTransformNoValidationErrors(t *testing.T) {
 		_, err = w.Write(b)
 		require.NoError(t, err)
 	}))
-	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
@@ -1469,8 +1470,8 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
@@ -1511,8 +1512,8 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
@@ -1552,8 +1553,8 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformMessage := types.TransformMessageT{
@@ -1601,8 +1602,8 @@ func TestDehydrateHydrate(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
-	isOAuthV2EnabledLoader := misc.SingleValueLoader(false)
-	expTimeDiff := misc.SingleValueLoader(1 * time.Minute)
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)

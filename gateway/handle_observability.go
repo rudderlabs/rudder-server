@@ -32,3 +32,13 @@ func (gw *Handle) newSourceStatTagsWithReason(arctx *gwtypes.AuthRequestContext,
 	}
 	return tags
 }
+
+func (gw *Handle) newReqTypeStatsTagsWithReason(reqType, reason string) stats.Tags {
+	tags := stats.Tags{
+		"req_type": reqType,
+	}
+	if reason != "" {
+		tags["reason"] = reason
+	}
+	return tags
+}
