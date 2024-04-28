@@ -15,9 +15,11 @@ type destConfig struct {
 	AuthMethod string `json:"authMethod"`
 	Username   string `json:"username"`
 	Host       string `json:"host"`
-	Port       int    `json:"port,string"`
-	Password   string `json:"password,omitempty"`
-	PrivateKey string `json:"privateKey,omitempty"`
+	Port       string `json:"port"`
+	Password   string `json:"password"`
+	PrivateKey string `json:"privateKey"`
+	FileFormat string `json:"fileFormat"`
+	FilePath   string `json:"filePath"`
 }
 
 // Record represents a single JSON record.

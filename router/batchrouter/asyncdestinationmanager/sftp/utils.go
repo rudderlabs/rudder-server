@@ -6,16 +6,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -32,18 +35,14 @@ func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, 
 		return nil, err
 	}
 
-	if config.AuthMethod == "passwordAuth" && config.Password == "" {
-		return nil, errors.New("password is required for password authentication")
+	if err := validate(config); err != nil {
+		return nil, err
 	}
-
-	if config.AuthMethod == "keyAuth" && config.PrivateKey == "" {
-		return nil, errors.New("private key is required for key authentication")
-	}
-
+	port, _ := strconv.Atoi(config.Port)
 	sshConfig := &sftp.SSHConfig{
 		User:       config.Username,
 		HostName:   config.Host,
-		Port:       config.Port,
+		Port:       port,
 		AuthMethod: config.AuthMethod,
 		Password:   config.Password,
 		PrivateKey: config.PrivateKey,
@@ -92,35 +91,31 @@ func parseRecords(filePath string) ([]record, error) {
 	return records, nil
 }
 
-func generateFile(filePath string, format string, fileName string) (string, error) {
+func generateFile(filePath string, format string) (string, error) {
 	switch strings.ToLower(format) {
 	case "json":
-		return generateJSONFile(filePath, fileName)
+		return generateJSONFile(filePath)
 	case "csv":
-		return generateCSVFile(filePath, fileName)
+		return generateCSVFile(filePath)
 	default:
-		return "", errors.New("unsupported format")
+		return "", errors.New("unsupported file format")
 	}
 }
-func generateJSONFile(filePath string, fileName string) (string, error) {
-	// Open the input file
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	var data interface{}
-	err = json.NewDecoder(file).Decode(&data)
+func generateJSONFile(filePath string) (string, error) {
+	// Parse JSON records
+	records, err := parseRecords(filePath)
 	if err != nil {
 		return "", err
 	}
 
-	// Generate the desired file path
-	desiredFilePath := filepath.Join(os.TempDir(), fileName)
+	tmpFilePath, err := getTempFilePath()
+	if err != nil {
+		return "", err
+	}
+	tmpFilePath = fmt.Sprintf(`%v.json`, tmpFilePath)
 
 	// Create a temporary CSV file
-	tempFile, err := os.Create(desiredFilePath)
+	tempFile, err := os.Create(tmpFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -129,21 +124,15 @@ func generateJSONFile(filePath string, fileName string) (string, error) {
 	// Write JSON data to the temporary file
 	encoder := json.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
-	err = encoder.Encode(data)
+	err = encoder.Encode(records)
 	if err != nil {
 		return "", err
 	}
 
-	// Get the absolute path of the temporary file
-	absPath, err := filepath.Abs(tempFile.Name())
-	if err != nil {
-		return "", err
-	}
-
-	return absPath, nil
+	return tmpFilePath, nil
 }
 
-func generateCSVFile(filePath string, fileName string) (string, error) {
+func generateCSVFile(filePath string) (string, error) {
 	// Parse JSON records
 	records, err := parseRecords(filePath)
 	if err != nil {
@@ -156,11 +145,14 @@ func generateCSVFile(filePath string, fileName string) (string, error) {
 		return "", err
 	}
 
-	// Generate the desired file path
-	desiredFilePath := filepath.Join(os.TempDir(), fileName)
+	tmpFilePath, err := getTempFilePath()
+	if err != nil {
+		return "", err
+	}
+	tmpFilePath = fmt.Sprintf(`%v.csv`, tmpFilePath)
 
 	// Create a temporary CSV file
-	tempFile, err := os.Create(desiredFilePath)
+	tempFile, err := os.Create(tmpFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -200,16 +192,25 @@ func generateCSVFile(filePath string, fileName string) (string, error) {
 		return "", err
 	}
 
-	// Get the absolute path of the temporary file
-	absPath, err := filepath.Abs(tempFile.Name())
+	return tmpFilePath, nil
+}
+
+func getTempFilePath() (string, error) {
+	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
+	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return "", err
 	}
-
-	return absPath, nil
+	folderPath := path.Join(tmpDirPath, localTmpDirName)
+	_, e := os.Stat(folderPath)
+	if os.IsNotExist(e) {
+		folderPath, _ = os.MkdirTemp(folderPath, "")
+	}
+	tmpFilePath := filepath.Join(folderPath, uuid.NewString())
+	return tmpFilePath, nil
 }
 
-func getUploadFilePath(path string) (string, error) {
+func getUploadFilePath(path string) string {
 	// Define a regular expression to match dynamic variables
 	re := regexp.MustCompile(`{([^}]+)}`)
 
@@ -234,7 +235,7 @@ func getUploadFilePath(path string) (string, error) {
 			return fmt.Sprintf("%03d", now.Nanosecond()/1e6)
 		case "{timestampInSec}":
 			return strconv.FormatInt(now.Unix(), 10)
-		case "{timestampInMs}":
+		case "{timestampInMS}":
 			return strconv.FormatInt(now.UnixNano()/1e6, 10)
 		default:
 			// If the dynamic variable is not recognized, keep it unchanged
@@ -242,7 +243,7 @@ func getUploadFilePath(path string) (string, error) {
 		}
 	})
 
-	return result, nil
+	return result
 }
 
 func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -252,4 +253,61 @@ func generateErrorOutput(err string, importingJobIds []int64, destinationID stri
 		AbortJobIDs:   importingJobIds,
 		AbortReason:   err,
 	}
+}
+
+func validate(d destConfig) error {
+	if d.AuthMethod == "" {
+		return errors.New("authMethod cannot be empty")
+	}
+
+	if d.Username == "" {
+		return errors.New("username cannot be empty")
+	}
+
+	if d.Host == "" {
+		return errors.New("host cannot be empty")
+	}
+
+	if err := isValidPort(d.Port); err != nil {
+		return err
+	}
+
+	if d.AuthMethod == "passwordAuth" && d.Password == "" {
+		return errors.New("password is required for password authentication")
+	}
+
+	if d.AuthMethod == "keyAuth" && d.PrivateKey == "" {
+		return errors.New("private key is required for key authentication")
+	}
+
+	if err := isValidFileFormat(d.FileFormat); err != nil {
+		return err
+	}
+
+	if d.FilePath == "" {
+		return errors.New("filePath cannot be empty")
+	}
+
+	return nil
+}
+
+func isValidPort(p string) error {
+	if p == "" {
+		return errors.New("port cannot be empty")
+	}
+	port, err := strconv.Atoi(p)
+	if err != nil {
+		return err
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port: %d", port)
+	}
+	return nil
+}
+
+func isValidFileFormat(format string) error {
+	if format != "json" && format != "csv" {
+		return fmt.Errorf("invalid file format: %s", format)
+	}
+	return nil
 }

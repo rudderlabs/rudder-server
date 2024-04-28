@@ -3,7 +3,6 @@ package sftp
 import (
 	stdjson "encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
@@ -22,7 +21,7 @@ func (d *DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
 // Upload uploads the data to the destination and marks all jobs to be completed
 func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	filePath := asyncDestStruct.FileName
+	textFilePath := asyncDestStruct.FileName
 	destinationID := destination.ID
 	destConfigJSON, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -30,16 +29,11 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 
 	uploadFilePath := gjson.Get(string(destConfigJSON), "filePath").String()
-	uploadFilePath, err = getUploadFilePath(uploadFilePath)
-	if err != nil {
-		return generateErrorOutput(fmt.Sprintf("error getting upload file path: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
-	}
+	uploadFilePath = getUploadFilePath(uploadFilePath)
 	fileFormat := gjson.Get(string(destConfigJSON), "fileFormat").String()
-	uploadDir := filepath.Dir(uploadFilePath)
-	uploadFileName := filepath.Base(uploadFilePath)
 
 	// Generate temporary file based on the destination's file format
-	path, err := generateFile(filePath, fileFormat, uploadFileName)
+	jsonOrCSVFilePath, err := generateFile(textFilePath, fileFormat)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 
@@ -48,7 +42,7 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	d.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destination.DestinationDefinition.Name)
 
 	// Upload file
-	err = d.FileManager.Upload(path, uploadDir)
+	err = d.FileManager.Upload(jsonOrCSVFilePath, uploadFilePath)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error uploading file to destination: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
@@ -59,6 +53,13 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		DestinationID:   destinationID,
 		SucceededJobIDs: asyncDestStruct.ImportingJobIDs,
 		SuccessResponse: "File Upload Success",
+	}
+}
+
+func NewDefaultManager(fileManager sftp.FileManager) *DefaultManager {
+	return &DefaultManager{
+		FileManager: fileManager,
+		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("DefaultManager"),
 	}
 }
 
@@ -79,10 +80,7 @@ func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUp
 		return nil, err
 	}
 
-	return &DefaultManager{
-		FileManager: fileManager,
-		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("Manager"),
-	}, nil
+	return NewDefaultManager(fileManager), nil
 }
 
 func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
