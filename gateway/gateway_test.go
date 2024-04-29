@@ -1652,7 +1652,7 @@ var _ = Describe("Gateway", func() {
 			srcDebugger           *mockSrcDebugger.MockSourceDebugger
 		)
 
-		createInternalBatchPayload := func(userID, sourceID, workspaceID string) []byte {
+		createInternalBatchPayload := func(userID, sourceID string) []byte {
 			validData := fmt.Sprintf(
 				`{"userId":%q,"data":{"string":"valid-json","nested":{"child":1}},%s}`,
 				userID, sdkContext,
@@ -1671,7 +1671,7 @@ var _ = Describe("Gateway", func() {
 				"traceID": "traceID"
 			},
 			"payload": %s
-			}]`, workspaceID, userID, sourceID, validData)
+			}]`, WorkspaceID, userID, sourceID, validData)
 			return []byte(internalBatchPayload)
 		}
 
@@ -1756,7 +1756,7 @@ var _ = Describe("Gateway", func() {
 		It("Successful request, with debugger", func() {
 			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
-			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled, WorkspaceID)
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
 			Expect(err).To(BeNil())
 			resp, err := client.Do(req)
@@ -1766,7 +1766,7 @@ var _ = Describe("Gateway", func() {
 
 		It("Successful request, without debugger", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
-			payload := createInternalBatchPayload(NormalUserID, writeKeyNotPresentInSource, WorkspaceID)
+			payload := createInternalBatchPayload(NormalUserID, writeKeyNotPresentInSource)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
 			Expect(err).To(BeNil())
 			resp, err := client.Do(req)
@@ -1811,7 +1811,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("request success - suppressed user", func() {
-			payload := createInternalBatchPayload(SuppressedUserID, SourceIDEnabled, WorkspaceID)
+			payload := createInternalBatchPayload(SuppressedUserID, SourceIDEnabled)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
 			Expect(err).To(BeNil())
 			resp, err := client.Do(req)
@@ -1832,7 +1832,7 @@ var _ = Describe("Gateway", func() {
 
 		It("request failed db error", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Return(fmt.Errorf("db error"))
-			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled, WorkspaceID)
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
 			Expect(err).To(BeNil())
 			resp, err := client.Do(req)

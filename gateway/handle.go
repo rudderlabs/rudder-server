@@ -766,8 +766,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
-		sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
+			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
@@ -776,7 +776,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReasonForSource(sourceConfig, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReason(sourceConfig, reqType, errEventSuppressed.Error()),
 			).Increment()
 			continue
 		}
