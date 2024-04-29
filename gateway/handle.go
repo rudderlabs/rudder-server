@@ -670,6 +670,17 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				stats.CountType,
 				gw.newReqTypeStatsTagsWithReason(reqType, ""),
 			).Count(len(jobs))
+
+			// Sending events to config backend
+			for _, job := range jobs {
+				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+				sourceConfig := gw.getSourceConfigFromSourceID(sourceID)
+				if sourceConfig.WriteKey == "" {
+					gw.logger.Errorn("unable to get writeKey for job", logger.NewStringField("uuid", job.UUID.String()))
+					continue
+				}
+				gw.sourcehandle.RecordEvent(sourceConfig.WriteKey, job.EventPayload)
+			}
 		}
 
 		status = http.StatusOK
@@ -755,17 +766,17 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
+		sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
 				logger.NewStringField("userIDFromReq", msg.Properties.UserID),
 			)
-			arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReason(arctx, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReasonForSource(sourceConfig, reqType, errEventSuppressed.Error()),
 			).Increment()
 			continue
 		}
@@ -801,9 +812,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if err != nil {
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
-
+		jobUUID := uuid.New()
 		jobs = append(jobs, &jobsdb.JobT{
-			UUID:         uuid.New(),
+			UUID:         jobUUID,
 			UserID:       msg.Properties.RoutingKey,
 			Parameters:   marshalledParams,
 			CustomVal:    customVal,
@@ -817,6 +828,15 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return jobs, nil
+}
+
+func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s
+	}
+	return backendconfig.SourceT{}
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
