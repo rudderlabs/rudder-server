@@ -3,7 +3,7 @@ package common
 import "slices"
 
 var (
-	asyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "ELOQUA"}
+	asyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS"}
 	sftpDestinations  = []string{"SFTP"}
 )
 
