@@ -48,6 +48,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	mockSrcDebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -77,6 +78,8 @@ const (
 	RETLSourceType   = "retl"
 	sdkLibrary       = "sdkLibrary"
 	sdkVersion       = "v1.2.3"
+
+	writeKeyNotPresentInSource = "write-key-not-present-for-source"
 )
 
 var (
@@ -140,6 +143,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name:     SourceIDEnabled,
 				Category: RETLSourceType,
+			},
+			WorkspaceID: WorkspaceID,
+		},
+		{
+			ID:         writeKeyNotPresentInSource,
+			WriteKey:   "",
+			Enabled:    true,
+			OriginalID: writeKeyNotPresentInSource,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name:     writeKeyNotPresentInSource,
+				Category: sourceType2,
 			},
 			WorkspaceID: WorkspaceID,
 		},
@@ -1635,6 +1649,7 @@ var _ = Describe("Gateway", func() {
 			ctx                   context.Context
 			cancel                func()
 			wait                  chan struct{}
+			srcDebugger           *mockSrcDebugger.MockSourceDebugger
 		)
 
 		createInternalBatchPayload := func(userID, sourceID, workspaceID string) []byte {
@@ -1695,6 +1710,7 @@ var _ = Describe("Gateway", func() {
 			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
 				CreatedAt: time.Now(),
 			}).AnyTimes()
+			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, writeKeyNotPresentInSource).Return(nil).AnyTimes()
 
 			conf = config.New()
 			conf.Set("Gateway.enableRateLimit", false)
@@ -1708,7 +1724,8 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			srcDebugger = mockSrcDebugger.NewMockSourceDebugger(c.mockCtrl)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -1736,9 +1753,20 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("Successful request", func() {
+		It("Successful request, with debugger", func() {
+			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
 			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled, WorkspaceID)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("Successful request, without debugger", func() {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+			payload := createInternalBatchPayload(NormalUserID, writeKeyNotPresentInSource, WorkspaceID)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
 			Expect(err).To(BeNil())
 			resp, err := client.Do(req)
@@ -1792,6 +1820,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("request success - multiple messages", func() {
+			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(2)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
 			payload := createInternalBatchPayloadWithMultipleEvents(NormalUserID, SourceIDEnabled, WorkspaceID)
 			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
