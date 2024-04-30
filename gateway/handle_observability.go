@@ -20,13 +20,14 @@ func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType strin
 	}
 }
 
-func (gw *Handle) newSourceStatTagsWithReason(s backendconfig.SourceT, reqType, reason string) stats.Tags {
+func (gw *Handle) newSourceStatTagsWithReason(s *backendconfig.SourceT, reqType, reason string) stats.Tags {
 	tags := stats.Tags{
 		"source":       misc.GetTagName(s.WriteKey, s.Name),
 		"source_id":    s.ID,
 		"write_key":    s.WriteKey,
 		"req_type":     reqType,
 		"workspace_id": s.WorkspaceID,
+		"source_type":  s.SourceDefinition.Category,
 	}
 	if reason != "" {
 		tags["reason"] = reason

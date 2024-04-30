@@ -674,12 +674,14 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			// Sending events to config backend
 			for _, job := range jobs {
 				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				sourceConfig := gw.getSourceConfigFromSourceID(sourceID)
-				if sourceConfig.WriteKey == "" {
-					gw.logger.Errorn("unable to get writeKey for job", logger.NewStringField("uuid", job.UUID.String()))
+				writeKey, ok := gw.getWriteKeyFromSourceID(sourceID)
+				if !ok {
+					gw.logger.Warnn("unable to get writeKey for job",
+						logger.NewStringField("uuid", job.UUID.String()),
+						obskit.SourceID(sourceID))
 					continue
 				}
-				gw.sourcehandle.RecordEvent(sourceConfig.WriteKey, job.EventPayload)
+				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
 			}
 		}
 
@@ -776,7 +778,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReason(sourceConfig, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReason(&sourceConfig, reqType, errEventSuppressed.Error()),
 			).Increment()
 			continue
 		}
@@ -837,6 +839,15 @@ func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.Sou
 		return s
 	}
 	return backendconfig.SourceT{}
+}
+
+func (gw *Handle) getWriteKeyFromSourceID(sourceID string) (string, bool) {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s.WriteKey, true
+	}
+	return "", false
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {

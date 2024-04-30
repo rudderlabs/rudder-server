@@ -48,7 +48,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-	mockSrcDebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
+	mocksrcdebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -1649,7 +1649,7 @@ var _ = Describe("Gateway", func() {
 			ctx                   context.Context
 			cancel                func()
 			wait                  chan struct{}
-			srcDebugger           *mockSrcDebugger.MockSourceDebugger
+			srcDebugger           *mocksrcdebugger.MockSourceDebugger
 		)
 
 		createInternalBatchPayload := func(userID, sourceID string) []byte {
@@ -1724,7 +1724,7 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			srcDebugger = mockSrcDebugger.NewMockSourceDebugger(c.mockCtrl)
+			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
 			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
