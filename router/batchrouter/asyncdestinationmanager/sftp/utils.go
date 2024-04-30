@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -36,7 +37,7 @@ func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, 
 	}
 
 	if err := validate(config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid sftp configuration: %w", err)
 	}
 	port, _ := strconv.Atoi(config.Port)
 	sshConfig := &sftp.SSHConfig{
@@ -91,7 +92,7 @@ func parseRecords(filePath string) ([]record, error) {
 	return records, nil
 }
 
-func generateFile(filePath string, format string) (string, error) {
+func generateFile(filePath, format string) (string, error) {
 	switch strings.ToLower(format) {
 	case "json":
 		return generateJSONFile(filePath)
@@ -101,6 +102,7 @@ func generateFile(filePath string, format string) (string, error) {
 		return "", errors.New("unsupported file format")
 	}
 }
+
 func generateJSONFile(filePath string) (string, error) {
 	// Parse JSON records
 	records, err := parseRecords(filePath)

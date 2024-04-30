@@ -272,7 +272,7 @@ func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err
 }
 
 func (b *YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(job), nil
+	return common.GetMarshalledData(job)
 }
 
 func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

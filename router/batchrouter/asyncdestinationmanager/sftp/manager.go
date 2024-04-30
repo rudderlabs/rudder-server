@@ -4,18 +4,19 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/tidwall/gjson"
 )
 
 func (d *DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(job, func(payload stdjson.RawMessage) string {
 		return string(payload)
-	}), nil
+	})
 }
 
 // Upload uploads the data to the destination and marks all jobs to be completed
@@ -36,7 +37,6 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	jsonOrCSVFilePath, err := generateFile(textFilePath, fileFormat)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
-
 	}
 
 	d.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destination.DestinationDefinition.Name)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -193,7 +194,6 @@ var _ = Describe("SFTP test", func() {
 			received := manager.Upload(&asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
-
 	})
 
 	Context("createSSHConfig", func() {
@@ -209,25 +209,25 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			sshConfig, err := createSSHConfig(&destinations[1])
 			Expect(sshConfig).To(BeNil())
-			Expect(err).To(MatchError("password is required for password authentication"))
+			Expect(err).To(MatchError("invalid sftp configuration: password is required for password authentication"))
 		})
 
 		It("TestInvalidFileFormat", func() {
 			initSFTP()
 			sshConfig, err := createSSHConfig(&destinations[2])
 			Expect(sshConfig).To(BeNil())
-			Expect(err).To(MatchError("invalid file format: txt"))
+			Expect(err).To(MatchError("invalid sftp configuration: invalid file format: txt"))
 		})
 
 		It("TestInvalidPort", func() {
 			initSFTP()
 			sshConfig, err := createSSHConfig(&destinations[3])
 			Expect(sshConfig).To(BeNil())
-			Expect(err).To(MatchError("port cannot be empty"))
+			Expect(err).To(MatchError("invalid sftp configuration: port cannot be empty"))
 
 			sshConfig, err = createSSHConfig(&destinations[4])
 			Expect(sshConfig).To(BeNil())
-			Expect(err).To(MatchError("invalid port: 0"))
+			Expect(err).To(MatchError("invalid sftp configuration: invalid port: 0"))
 		})
 
 		It("TestSuccessfulSSHConfig", func() {
@@ -266,6 +266,48 @@ var _ = Describe("SFTP test", func() {
 			path, err := generateFile(filepath.Join(currentDir, "testdata/uploadDataRecord.txt"), "csv")
 			Expect(err).To(BeNil())
 			Expect(path).ToNot(BeNil())
+		})
+	})
+
+	Context("getUploadFilePath", func() {
+		BeforeEach(func() {
+			config.Reset()
+		})
+
+		AfterEach(func() {
+			config.Reset()
+		})
+
+		It("TestReplaceDynamicVariables", func() {
+			initSFTP()
+			input := "/path/to/{YYYY}/{MM}/{DD}/{hh}/{mm}/{ss}/{ms}/{timestampInSec}/{timestampInMS}"
+			expected := fmt.Sprintf("/path/to/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d", time.Now().Year(), time.Now().Month(), time.Now().Day(), time.Now().Hour(), time.Now().Minute(), time.Now().Second(), time.Now().Nanosecond()/1e6, time.Now().Unix(), time.Now().UnixNano()/1e6)
+			received := getUploadFilePath(input)
+			Expect(received).To(Equal(expected))
+		})
+
+		It("TestNoDynamicVariables", func() {
+			initSFTP()
+			input := "/path/to/file.txt"
+			expected := "/path/to/file.txt"
+			received := getUploadFilePath(input)
+			Expect(received).To(Equal(expected))
+		})
+
+		It("TestEmptyInputPath", func() {
+			initSFTP()
+			input := ""
+			expected := ""
+			received := getUploadFilePath(input)
+			Expect(received).To(Equal(expected))
+		})
+
+		It("TestInvalidDynamicVariables", func() {
+			initSFTP()
+			input := "/path/to/{invalid}/file.txt"
+			expected := "/path/to/{invalid}/file.txt"
+			received := getUploadFilePath(input)
+			Expect(received).To(Equal(expected))
 		})
 	})
 })

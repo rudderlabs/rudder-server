@@ -31,7 +31,7 @@ func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, clien
 }
 
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(job), nil
+	return common.GetMarshalledData(job)
 }
 
 /*
