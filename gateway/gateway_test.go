@@ -146,17 +146,6 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 			WorkspaceID: WorkspaceID,
 		},
-		{
-			ID:         writeKeyNotPresentInSource,
-			WriteKey:   "",
-			Enabled:    true,
-			OriginalID: writeKeyNotPresentInSource,
-			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name:     writeKeyNotPresentInSource,
-				Category: sourceType2,
-			},
-			WorkspaceID: WorkspaceID,
-		},
 	},
 }
 
