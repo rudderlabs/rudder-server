@@ -15,6 +15,9 @@ type KVStoreManager interface {
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
 	HGetAll(key string) (result map[string]string, err error)
+
+	SendDataAsJSON(jsonData json.RawMessage) (interface{}, error)
+	ShouldSendDataAsJSON(config map[string]interface{}) bool
 }
 
 type SettingsT struct {

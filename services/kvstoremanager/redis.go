@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -149,4 +151,38 @@ func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
 		_, err = m.client.HSet(ctx, hash, key, value).Result()
 	}
 	return err
+}
+
+func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) (string, string, interface{}) {
+	// JSON.SET <key> <path> <value>
+	key := gjson.GetBytes(jsonData, "message.key").String()
+	path := gjson.GetBytes(jsonData, "message.path").String()
+	value := gjson.GetBytes(jsonData, valuePath).Value()
+
+	if strings.TrimSpace(path) == "" {
+		path = "."
+	}
+
+	return key, path, value
+}
+
+func (m *redisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
+	key, path, value := m.ExtractJSONSetArgs(jsonData)
+	var jsonSetStatusCmd *redis.StatusCmd
+	if m.clusterMode {
+		jsonSetStatusCmd = m.clusterClient.JSONSet(context.Background(), key, path, value)
+	} else {
+		jsonSetStatusCmd = m.client.JSONSet(context.Background(), key, path, value)
+	}
+	return jsonSetStatusCmd.Result()
+}
+
+func (_ *redisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+	var dataAsJSON bool
+	if dataAsJSONI, ok := config["shouldSendDataAsJSON"]; ok {
+		if dataAsJSON, ok = dataAsJSONI.(bool); ok {
+			return dataAsJSON
+		}
+	}
+	return dataAsJSON
 }

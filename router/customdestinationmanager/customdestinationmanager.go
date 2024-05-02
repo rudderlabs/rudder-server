@@ -133,13 +133,20 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 	case KV:
 		var err error
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-		// if the event supports HSET operation then use HSET
-		if kvstoremanager.IsHSETCompatibleEvent(jsonData) {
+
+		switch {
+		case kvManager.ShouldSendDataAsJSON(config):
+			_, err = kvManager.SendDataAsJSON(jsonData)
+			break
+		case kvstoremanager.IsHSETCompatibleEvent(jsonData):
+			// if the event supports HSET operation then use HSET
 			hash, key, value := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
 			err = kvManager.HSet(hash, key, value)
-		} else {
+			break
+		default:
 			key, fields := kvstoremanager.EventToKeyValue(jsonData)
 			err = kvManager.HMSet(key, fields)
+			break
 		}
 
 		statusCode = kvManager.StatusCode(err)
