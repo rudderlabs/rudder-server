@@ -26,7 +26,7 @@ func NewRegularManager(destination *backendconfig.DestinationT, backendConfig ba
 	return nil, errors.New("invalid destination type")
 }
 
-func NewSFTPManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
+func NewSFTPManager(destination *backendconfig.DestinationT, _ backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "SFTP":
 		return sftp.NewManager(destination)

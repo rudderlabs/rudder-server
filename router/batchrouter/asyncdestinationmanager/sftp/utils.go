@@ -15,8 +15,9 @@ import (
 
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
-	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -57,14 +58,15 @@ func getFieldNames(records []record) ([]string, error) {
 	if len(records) == 0 {
 		return nil, fmt.Errorf("no records found")
 	}
-	fields, ok := records[0]["message"].(map[string]interface{})["fields"].(map[string]interface{})
+	result, ok := records[0]["message"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("message not found in the first record")
+	}
+	fields, ok := result["fields"].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("fields not found in the first record")
 	}
-	var header []string
-	for key := range fields {
-		header = append(header, key)
-	}
+	header := lo.Keys(fields)
 	header = append(header, "action")
 	return header, nil
 }
@@ -171,10 +173,16 @@ func generateCSVFile(filePath string) (string, error) {
 	// Write records to the CSV file
 	for _, record := range records {
 		var row []string
-		fields, ok := record["message"].(map[string]interface{})["fields"].(map[string]interface{})
+		result, ok := record["message"].(map[string]interface{})
+		if !ok {
+			return "", fmt.Errorf("message not found in a record")
+		}
+
+		fields, ok := result["fields"].(map[string]interface{})
 		if !ok {
 			return "", fmt.Errorf("fields not found in a record")
 		}
+
 		action, ok := record["message"].(map[string]interface{})["action"].(string)
 		if !ok {
 			return "", fmt.Errorf("action not found in a record")

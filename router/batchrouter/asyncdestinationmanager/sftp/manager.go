@@ -7,7 +7,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -29,9 +29,10 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
-	uploadFilePath := gjson.Get(string(destConfigJSON), "filePath").String()
+	result := gjson.ParseBytes(destConfigJSON)
+	uploadFilePath := result.Get("filePath").String()
 	uploadFilePath = getUploadFilePath(uploadFilePath)
-	fileFormat := gjson.Get(string(destConfigJSON), "fileFormat").String()
+	fileFormat := result.Get("fileFormat").String()
 
 	// Generate temporary file based on the destination's file format
 	jsonOrCSVFilePath, err := generateFile(textFilePath, fileFormat)

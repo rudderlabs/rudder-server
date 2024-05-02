@@ -16,5 +16,5 @@ func IsAsyncRegularDestination(destination string) bool {
 }
 
 func IsAsyncDestination(destination string) bool {
-	return IsAsyncRegularDestination(destination) || IsSFTPDestination(destination)
+	return slices.Contains(append(asyncDestinations, sftpDestinations...), destination)
 }

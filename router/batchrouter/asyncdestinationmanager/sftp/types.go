@@ -2,7 +2,7 @@ package sftp
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	sftp "github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/sftp"
 )
 
 // DefaultManager is the default manager for SFTP
