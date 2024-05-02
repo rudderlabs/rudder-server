@@ -1408,18 +1408,6 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		}
 	}
 
-	// TODO : Evaluate a way to handle indexes only for particular tables
-	if jd.tablePrefix == "rt" {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv_ws" ON %[1]q (custom_val,workspace_id)`, newDS.JobTable)); err != nil {
-			return err
-		}
-	}
-	if jd.tablePrefix == "batch_rt" { // for retrieving active partitions filtered by destination type when workspace isolation is enabled
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws_cv" ON %[1]q (workspace_id,custom_val)`, newDS.JobTable)); err != nil {
-			return err
-		}
-	}
-
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
 		job_id BIGINT REFERENCES %q(job_id),
