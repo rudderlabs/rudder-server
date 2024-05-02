@@ -18,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	async_common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -312,7 +312,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	if !async_common.IsAsyncDestination(brt.destType) {
+	if !asynccommon.IsAsyncDestination(brt.destType) {
 		return
 	}
 

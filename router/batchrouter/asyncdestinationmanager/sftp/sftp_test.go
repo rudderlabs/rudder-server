@@ -142,7 +142,7 @@ var _ = Describe("SFTP test", func() {
 			}
 			expected := common.AsyncUploadOutput{
 				DestinationID: "destination_id_1",
-				AbortReason:   "error generating temporary file: open dir/someWrongFilePath: no such file or directory",
+				AbortReason:   "error generating temporary file: opening file: open dir/someWrongFilePath: no such file or directory",
 				AbortJobIDs:   []int64{1014, 1015, 1016, 1017},
 				AbortCount:    4,
 			}
@@ -223,7 +223,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			sshConfig, err := createSSHConfig(&destinations[3])
 			Expect(sshConfig).To(BeNil())
-			Expect(err).To(MatchError("invalid sftp configuration: port cannot be empty"))
+			Expect(err).To(MatchError("invalid sftp configuration: strconv.Atoi: parsing \"\": invalid syntax"))
 
 			sshConfig, err = createSSHConfig(&destinations[4])
 			Expect(sshConfig).To(BeNil())
@@ -259,6 +259,7 @@ var _ = Describe("SFTP test", func() {
 			path, err := generateFile(filepath.Join(currentDir, "testdata/uploadDataRecord.txt"), "json")
 			Expect(err).To(BeNil())
 			Expect(path).ToNot(BeNil())
+			Expect(os.Remove(path)).To(BeNil())
 		})
 
 		It("TestCSVFileGeneration", func() {
@@ -266,6 +267,7 @@ var _ = Describe("SFTP test", func() {
 			path, err := generateFile(filepath.Join(currentDir, "testdata/uploadDataRecord.txt"), "csv")
 			Expect(err).To(BeNil())
 			Expect(path).ToNot(BeNil())
+			Expect(os.Remove(path)).To(BeNil())
 		})
 	})
 

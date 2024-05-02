@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func (d *DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
+func (*DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(job, func(payload stdjson.RawMessage) string {
 		return string(payload)
 	})
@@ -67,20 +67,20 @@ func NewDefaultManager(fileManager sftp.FileManager) *DefaultManager {
 func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUploadAndTransformManager, error) {
 	sshConfig, err := createSSHConfig(destination)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating SSH config: %w", err)
 	}
-
 	sshClient, err := sftp.NewSSHClient(sshConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating SSH client: %w", err)
 	}
+	defer func() {
+		_ = sshClient.Close()
+	}()
 
 	fileManager, err := sftp.NewFileManager(sshClient)
 	if err != nil {
-		sshClient.Close()
-		return nil, err
+		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
-
 	return NewDefaultManager(fileManager), nil
 }
 

@@ -29,12 +29,11 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
 	destinationConfigJson, err := json.Marshal(destination.Config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshalling destination config: %w", err)
 	}
-
 	var config destConfig
 	if err := json.Unmarshal(destinationConfigJson, &config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshalling destination config: %w", err)
 	}
 
 	if err := validate(config); err != nil {
@@ -56,15 +55,15 @@ func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, 
 // getFieldNames extracts the field names from the first JSON record.
 func getFieldNames(records []record) ([]string, error) {
 	if len(records) == 0 {
-		return nil, fmt.Errorf("no records found")
+		return nil, errors.New("no records found")
 	}
-	result, ok := records[0]["message"].(map[string]interface{})
+	result, ok := records[0]["message"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("message not found in the first record")
+		return nil, errors.New("message not found in the first record")
 	}
-	fields, ok := result["fields"].(map[string]interface{})
+	fields, ok := result["fields"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("fields not found in the first record")
+		return nil, errors.New("fields not found in the first record")
 	}
 	header := lo.Keys(fields)
 	header = append(header, "action")
@@ -75,7 +74,7 @@ func getFieldNames(records []record) ([]string, error) {
 func parseRecords(filePath string) ([]record, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening file: %w", err)
 	}
 	defer file.Close()
 
@@ -173,19 +172,19 @@ func generateCSVFile(filePath string) (string, error) {
 	// Write records to the CSV file
 	for _, record := range records {
 		var row []string
-		result, ok := record["message"].(map[string]interface{})
+		result, ok := record["message"].(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("message not found in a record")
+			return "", errors.New("message not found in a record")
 		}
 
-		fields, ok := result["fields"].(map[string]interface{})
+		fields, ok := result["fields"].(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("fields not found in a record")
+			return "", errors.New("fields not found in a record")
 		}
 
-		action, ok := record["message"].(map[string]interface{})["action"].(string)
+		action, ok := record["message"].(map[string]any)["action"].(string)
 		if !ok {
-			return "", fmt.Errorf("action not found in a record")
+			return "", errors.New("action not found in a record")
 		}
 		fields["action"] = action
 		for _, key := range fieldNames {
@@ -302,9 +301,6 @@ func validate(d destConfig) error {
 }
 
 func isValidPort(p string) error {
-	if p == "" {
-		return errors.New("port cannot be empty")
-	}
 	port, err := strconv.Atoi(p)
 	if err != nil {
 		return err

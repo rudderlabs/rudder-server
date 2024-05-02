@@ -24,7 +24,7 @@ func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, er
 	}
 }
 
-func (b *EloquaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+func (*EloquaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(job)
 }
 

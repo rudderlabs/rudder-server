@@ -27,7 +27,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
-	async_common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -185,7 +185,7 @@ func (brt *Handle) Setup(
 		return nil
 	}))
 
-	if async_common.IsAsyncDestination(destType) {
+	if asynccommon.IsAsyncDestination(destType) {
 		brt.startAsyncDestinationManager()
 	}
 
@@ -226,9 +226,9 @@ func (brt *Handle) startAsyncDestinationManager() {
 	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
 	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 
-	brt.asyncDestinationStruct = make(map[string]*async_common.AsyncDestinationStruct)
+	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
 
-	if async_common.IsAsyncRegularDestination(brt.destType) {
+	if asynccommon.IsAsyncRegularDestination(brt.destType) {
 		brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 			brt.pollAsyncStatus(brt.backgroundCtx)
 			return nil
@@ -267,17 +267,17 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &async_common.InvalidManager{}
+		manager = &asynccommon.InvalidManager{}
 	}
 	if !ok {
-		brt.asyncDestinationStruct[destination.ID] = &async_common.AsyncDestinationStruct{}
+		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
 	}
 	brt.asyncDestinationStruct[destination.ID].Destination = destination
 	brt.asyncDestinationStruct[destination.ID].Manager = manager
 }
 
 func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
-	if async_common.IsAsyncDestination(destination.DestinationDefinition.Name) {
+	if asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
 		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
 		if ok && asyncDestStruct.Destination != nil &&
 			asyncDestStruct.Destination.RevisionID == destination.RevisionID {

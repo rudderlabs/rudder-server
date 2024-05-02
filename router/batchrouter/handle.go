@@ -29,7 +29,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	async_common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -133,7 +133,7 @@ type Handle struct {
 
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
-	asyncDestinationStruct   map[string]*async_common.AsyncDestinationStruct
+	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
 	asyncPollTimeStat       stats.Measurement
 	asyncFailedJobsTimeStat stats.Measurement
@@ -796,7 +796,7 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 
 // skipFetchingJobs returns true if the destination type is async and the there are still jobs in [importing] state for this destination type
 func (brt *Handle) skipFetchingJobs(partition string) bool {
-	if async_common.IsAsyncDestination(brt.destType) {
+	if asynccommon.IsAsyncDestination(brt.destType) {
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        1,

@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	async_common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -246,7 +246,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
 					destUploadStat.Since(destUploadStart)
-				case async_common.IsAsyncDestination(brt.destType):
+				case asynccommon.IsAsyncDestination(brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchedJobs)

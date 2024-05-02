@@ -271,7 +271,7 @@ func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err
 	}
 }
 
-func (b *YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+func (*YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(job)
 }
 
