@@ -157,10 +157,10 @@ func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) (string, st
 	// JSON.SET <key> <path> <value>
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	path := gjson.GetBytes(jsonData, "message.path").String()
-	value := gjson.GetBytes(jsonData, valuePath).Value()
+	value := gjson.GetBytes(jsonData, valuePath).String()
 
 	if strings.TrimSpace(path) == "" {
-		path = "."
+		path = "$"
 	}
 
 	return key, path, value
