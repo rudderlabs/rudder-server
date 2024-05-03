@@ -36,14 +36,14 @@ func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationS
 	return m.UploaderAndTransformer.Upload(asyncDestStruct)
 }
 
-func (m SimpleAsyncDestinationManager) Poll(pollInput AsyncPoll) PollStatusResponse {
+func (m SimpleAsyncDestinationManager) Poll(AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
 		StatusCode: http.StatusOK,
 		Complete:   true,
 	}
 }
 
-func (m SimpleAsyncDestinationManager) GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse {
+func (m SimpleAsyncDestinationManager) GetUploadStats(GetUploadStatsInput) GetUploadStatsResponse {
 	return GetUploadStatsResponse{
 		StatusCode: http.StatusOK,
 	}
