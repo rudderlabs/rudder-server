@@ -172,6 +172,7 @@ func TestKVManagerInvocations(t *testing.T) {
 		`)
 		ctrl := gomock.NewController(t)
 		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().ShouldSendDataAsJSON(someDestination.Config).Return(false).Times(1)
 		mockKVStoreManager.EXPECT().HSet("someHash", "someKey", "someValue").Times(1)
 		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
 		customManager.send(event, mockKVStoreManager, someDestination.Config)
@@ -189,6 +190,7 @@ func TestKVManagerInvocations(t *testing.T) {
 		  }
 		`)
 		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().ShouldSendDataAsJSON(someDestination.Config).Return(false).Times(1)
 		mockKVStoreManager.EXPECT().HMSet("someKey", map[string]interface{}{
 			"field1": "value1",
 			"field2": "value2",
