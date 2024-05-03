@@ -223,7 +223,6 @@ func getTempFilePath() (string, error) {
 }
 
 func getUploadFilePath(path string) string {
-
 	// Get the current date and time
 	now := time.Now()
 	// Replace dynamic variables with their actual values
