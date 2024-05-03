@@ -2,6 +2,7 @@ package common
 
 import (
 	stdjson "encoding/json"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -37,14 +38,14 @@ func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationS
 
 func (m SimpleAsyncDestinationManager) Poll(pollInput AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Complete:   true,
 	}
 }
 
 func (m SimpleAsyncDestinationManager) GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse {
 	return GetUploadStatsResponse{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 	}
 }
 

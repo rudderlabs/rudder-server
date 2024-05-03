@@ -5,8 +5,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sftp"
 )
 
-// DefaultManager is the default manager for SFTP
-type DefaultManager struct {
+// defaultManager is the default manager for SFTP
+type defaultManager struct {
 	FileManager sftp.FileManager
 	logger      logger.Logger
 }

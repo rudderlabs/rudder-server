@@ -13,12 +13,12 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func (*DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
+func (*defaultManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
 // Upload uploads the data to the destination and marks all jobs to be completed
-func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	textFilePath := asyncDestStruct.FileName
 	destinationID := destination.ID
@@ -60,10 +60,10 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 }
 
-func newDefaultManager(fileManager sftp.FileManager) *DefaultManager {
-	return &DefaultManager{
+func newDefaultManager(fileManager sftp.FileManager) *defaultManager {
+	return &defaultManager{
 		FileManager: fileManager,
-		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("DefaultManager"),
+		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("Manager"),
 	}
 }
 

@@ -148,6 +148,10 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 
 func IsAsyncDestinationLimitNotReached(brt *Handle, destinationID string) bool {
 	asyncDest := brt.asyncDestinationStruct[destinationID]
-	return (asynccommon.IsSFTPDestination(brt.destType) && asyncDest.Size < brt.maxPayloadSizeInBytes && !asyncDest.UploadInProgress) ||
-		(asyncDest.Count < brt.maxEventsInABatch && !asyncDest.UploadInProgress && asyncDest.Size < brt.maxPayloadSizeInBytes)
+	isSFTP := asynccommon.IsSFTPDestination(brt.destType)
+	maxPayloadSizeReached := asyncDest.Size < brt.maxPayloadSizeInBytes
+	maxEventsReached := asyncDest.Count < brt.maxEventsInABatch
+	uploadNotInProgress := !asyncDest.UploadInProgress
+	return (isSFTP && maxPayloadSizeReached && uploadNotInProgress) ||
+		(maxEventsReached && maxPayloadSizeReached && uploadNotInProgress)
 }
