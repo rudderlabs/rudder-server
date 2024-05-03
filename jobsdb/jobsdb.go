@@ -1216,11 +1216,10 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 		sqlStatement := fmt.Sprintf(`SELECT created_at FROM %q ORDER BY job_id ASC LIMIT 1`, ds.JobTable)
 		row := tx.QueryRow(sqlStatement)
 		err := row.Scan(&minJobCreatedAt)
-		if err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return false, err
-			}
+		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
+		} else if err != nil {
+			return false, err
 		}
 		if minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
