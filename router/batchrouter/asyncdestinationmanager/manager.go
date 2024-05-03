@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
 )
 
-func NewRegularManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
+func newRegularManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
 		return bingads.NewManager(destination, backendConfig)
@@ -26,7 +26,7 @@ func NewRegularManager(destination *backendconfig.DestinationT, backendConfig ba
 	return nil, errors.New("invalid destination type")
 }
 
-func NewSFTPManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
+func newSFTPManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "SFTP":
 		return sftp.NewManager(destination)
@@ -37,9 +37,9 @@ func NewSFTPManager(destination *backendconfig.DestinationT) (common.AsyncDestin
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (common.AsyncDestinationManager, error) {
 	switch {
 	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
-		return NewRegularManager(destination, backendConfig)
+		return newRegularManager(destination, backendConfig)
 	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
-		return NewSFTPManager(destination)
+		return newSFTPManager(destination)
 	}
 	return nil, errors.New("invalid destination type")
 }

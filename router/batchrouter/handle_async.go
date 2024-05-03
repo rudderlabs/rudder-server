@@ -464,31 +464,33 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	var overFlownJobs []*jobsdb.JobT
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	for _, job := range batchJobs.Jobs {
-		if IsAsyncDestinationLimitNotReached(brt, destinationID) {
-			fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
-			if err != nil {
-				failedAsyncJobs := BatchedJobs{
-					Jobs:       []*jobsdb.JobT{job},
-					Connection: batchJobs.Connection,
-					TimeWindow: batchJobs.TimeWindow,
-				}
-				brt.updateJobStatus(&failedAsyncJobs, false, err, false)
-				continue
-			}
-
-			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
-			_, err = file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
-			if err != nil {
-				panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
-			}
-			writeAtBytes += len([]byte(fileData + "\n"))
-			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
-			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
-			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
-		} else {
+		if !IsAsyncDestinationLimitNotReached(brt, destinationID) {
 			overFlow = true
 			overFlownJobs = append(overFlownJobs, job)
+			continue
 		}
+
+		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
+		if err != nil {
+			failedAsyncJobs := BatchedJobs{
+				Jobs:       []*jobsdb.JobT{job},
+				Connection: batchJobs.Connection,
+				TimeWindow: batchJobs.TimeWindow,
+			}
+			brt.updateJobStatus(&failedAsyncJobs, false, err, false)
+			continue
+		}
+
+		brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
+		_, err = file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
+		if err != nil {
+			panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
+		}
+		writeAtBytes += len([]byte(fileData + "\n"))
+		brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
+		brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
+		brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
+
 	}
 
 	if len(overFlownJobs) > 0 {

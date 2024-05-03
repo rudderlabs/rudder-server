@@ -23,7 +23,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	json = jsoniter.ConfigCompatibleWithStandardLibrary
+	re   = regexp.MustCompile(`{([^}]+)}`)
+)
 
 // createSSHConfig creates SSH configuration based on destination
 func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
@@ -220,8 +223,6 @@ func getTempFilePath() (string, error) {
 }
 
 func getUploadFilePath(path string) string {
-	// Define a regular expression to match dynamic variables
-	re := regexp.MustCompile(`{([^}]+)}`)
 
 	// Get the current date and time
 	now := time.Now()

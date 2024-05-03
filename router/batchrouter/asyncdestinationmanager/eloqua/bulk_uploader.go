@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -25,7 +26,7 @@ func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, er
 }
 
 func (*EloquaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(job)
+	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

@@ -1,22 +1,20 @@
 package sftp
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sftp"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 func (*DefaultManager) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(job, func(payload stdjson.RawMessage) string {
-		return string(payload)
-	})
+	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
 // Upload uploads the data to the destination and marks all jobs to be completed
@@ -40,15 +38,20 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
-	d.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destination.DestinationDefinition.Name)
+	d.logger.Debugn("File Upload Started", obskit.DestinationID(destinationID))
 
 	// Upload file
 	err = d.FileManager.Upload(jsonOrCSVFilePath, uploadFilePath)
 	if err != nil {
-		return generateErrorOutput(fmt.Sprintf("error uploading file to destination: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
+		return common.AsyncUploadOutput{
+			DestinationID: destinationID,
+			FailedCount:   len(asyncDestStruct.ImportingJobIDs),
+			FailedJobIDs:  asyncDestStruct.ImportingJobIDs,
+			FailedReason:  fmt.Sprintf("error uploading file to destination: %v", err.Error()),
+		}
 	}
 
-	d.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destination.DestinationDefinition.Name)
+	d.logger.Debugn("File Upload Finished", obskit.DestinationID(destinationID))
 
 	return common.AsyncUploadOutput{
 		DestinationID:   destinationID,
@@ -57,7 +60,7 @@ func (d *DefaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 }
 
-func NewDefaultManager(fileManager sftp.FileManager) *DefaultManager {
+func newDefaultManager(fileManager sftp.FileManager) *DefaultManager {
 	return &DefaultManager{
 		FileManager: fileManager,
 		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("DefaultManager"),
@@ -73,15 +76,14 @@ func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUp
 	if err != nil {
 		return nil, fmt.Errorf("creating SSH client: %w", err)
 	}
-	defer func() {
-		_ = sshClient.Close()
-	}()
 
 	fileManager, err := sftp.NewFileManager(sshClient)
 	if err != nil {
+		sshClient.Close()
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
-	return NewDefaultManager(fileManager), nil
+
+	return newDefaultManager(fileManager), nil
 }
 
 func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {

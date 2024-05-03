@@ -168,25 +168,18 @@ type GetUploadStatsResponse struct {
 	Error      string        `json:"error"`
 }
 
-type TransformationFunc func(payload stdjson.RawMessage) string
-
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.GetBytes(payload, "body.JSON").String()
 }
 
-func GetMarshalledData(job *jobsdb.JobT, transformFn ...TransformationFunc) (string, error) {
-	fn := GetTransformedData
-	if len(transformFn) > 0 {
-		fn = transformFn[0]
-	}
-	payload := fn(job.EventPayload)
+func GetMarshalledData(payload string, jobID int64) (string, error) {
 	var asyncJob AsyncJob
 	err := json.Unmarshal([]byte(payload), &asyncJob.Message)
 	if err != nil {
 		return "", err
 	}
 	asyncJob.Metadata = make(map[string]interface{})
-	asyncJob.Metadata["job_id"] = job.JobID
+	asyncJob.Metadata["job_id"] = jobID
 	responsePayload, err := json.Marshal(asyncJob)
 	if err != nil {
 		return "", err
