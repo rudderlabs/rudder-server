@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samber/lo"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/tidwall/gjson"
 
@@ -153,28 +155,25 @@ func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) (string, string, interface{}) {
-	// JSON.SET <key> <path> <value>
-	key := gjson.GetBytes(jsonData, "message.key").String()
-	path := gjson.GetBytes(jsonData, "message.path").String()
-	value := gjson.GetBytes(jsonData, valuePath).String()
-
-	if strings.TrimSpace(path) == "" {
-		path = "$"
-	}
-
-	return key, path, value
+func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) []interface{} {
+	msg := gjson.GetBytes(jsonData, "message").Map()
+	nmSetArgs := lo.Flatten(
+		lo.MapToSlice(msg, func(k string, v gjson.Result) []interface{} {
+			return []interface{}{k, "$", v.String()}
+		}),
+	)
+	return nmSetArgs
 }
 
 func (m *redisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
-	key, path, value := m.ExtractJSONSetArgs(jsonData)
-	var jsonSetStatusCmd *redis.StatusCmd
+	nmSetArgs := m.ExtractJSONSetArgs(jsonData)
+	var jsonMSetStatusCmd *redis.StatusCmd
 	if m.clusterMode {
-		jsonSetStatusCmd = m.clusterClient.JSONSet(context.Background(), key, path, value)
+		jsonMSetStatusCmd = m.clusterClient.JSONMSet(context.Background(), nmSetArgs...)
 	} else {
-		jsonSetStatusCmd = m.client.JSONSet(context.Background(), key, path, value)
+		jsonMSetStatusCmd = m.client.JSONMSet(context.Background(), nmSetArgs...)
 	}
-	return jsonSetStatusCmd.Result()
+	return jsonMSetStatusCmd.Result()
 }
 
 func (_ *redisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
