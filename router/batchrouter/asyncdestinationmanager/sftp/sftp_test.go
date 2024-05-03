@@ -132,7 +132,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := NewDefaultManager(fileManager)
+			defaultManager := newDefaultManager(fileManager)
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017},
@@ -154,7 +154,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := NewDefaultManager(fileManager)
+			defaultManager := newDefaultManager(fileManager)
 			fileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(fmt.Errorf("root directory does not exists"))
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			asyncDestination := common.AsyncDestinationStruct{
@@ -177,7 +177,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := NewDefaultManager(fileManager)
+			defaultManager := newDefaultManager(fileManager)
 			fileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(nil)
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			asyncDestination := common.AsyncDestinationStruct{
