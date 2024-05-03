@@ -1,12 +1,19 @@
 package common
 
 import (
+	"errors"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type InvalidManager struct{}
 
-func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+func (*InvalidManager) Transform(job *jobsdb.JobT) (string, error) {
+	return "", errors.New("invalid job")
+}
+
+func (*InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	abortedJobIDs := append(asyncDestStruct.ImportingJobIDs, asyncDestStruct.FailedJobIDs...)
 	return AsyncUploadOutput{
 		AbortJobIDs: abortedJobIDs,
@@ -17,13 +24,13 @@ func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUp
 	}
 }
 
-func (f *InvalidManager) Poll(_ AsyncPoll) PollStatusResponse {
+func (*InvalidManager) Poll(_ AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
 		StatusCode: 400,
 	}
 }
 
-func (f *InvalidManager) GetUploadStats(_ GetUploadStatsInput) GetUploadStatsResponse {
+func (*InvalidManager) GetUploadStats(_ GetUploadStatsInput) GetUploadStatsResponse {
 	return GetUploadStatsResponse{
 		StatusCode: 400,
 	}
