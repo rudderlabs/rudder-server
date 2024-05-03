@@ -43,12 +43,7 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	// Upload file
 	err = d.FileManager.Upload(jsonOrCSVFilePath, uploadFilePath)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			DestinationID: destinationID,
-			FailedCount:   len(asyncDestStruct.ImportingJobIDs),
-			FailedJobIDs:  asyncDestStruct.ImportingJobIDs,
-			FailedReason:  fmt.Sprintf("error uploading file to destination: %v", err.Error()),
-		}
+		return generateErrorOutput(fmt.Sprintf("error uploading file to destination: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
 	d.logger.Debugn("File Upload Finished", obskit.DestinationID(destinationID))
