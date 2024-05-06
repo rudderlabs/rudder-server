@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.25.0](https://github.com/rudderlabs/rudder-server/compare/v1.24.0...v1.25.0) (2024-05-06)
+
+
+### Features
+
+* adding destination id in params ([#4618](https://github.com/rudderlabs/rudder-server/issues/4618)) ([581d5aa](https://github.com/rudderlabs/rudder-server/commit/581d5aa9c84fd0e8508e3f68ec3a211d380e9f9f))
+* monitor warehouse databases ([#4619](https://github.com/rudderlabs/rudder-server/issues/4619)) ([581d5aa](https://github.com/rudderlabs/rudder-server/commit/581d5aa9c84fd0e8508e3f68ec3a211d380e9f9f))
+* monitor warehouse databases ([#4619](https://github.com/rudderlabs/rudder-server/issues/4619)) ([e550a11](https://github.com/rudderlabs/rudder-server/commit/e550a11049256e3fd755979bab0d58f0fc597391))
+* onboard new generic destination sftp ([#4601](https://github.com/rudderlabs/rudder-server/issues/4601)) ([c6a28bb](https://github.com/rudderlabs/rudder-server/commit/c6a28bbdc804727467de967a9fd8d89d0d9219e0))
+* onboard Yandex Metrica Offline Events destination ([#4534](https://github.com/rudderlabs/rudder-server/issues/4534)) ([581d5aa](https://github.com/rudderlabs/rudder-server/commit/581d5aa9c84fd0e8508e3f68ec3a211d380e9f9f))
+* onboard Yandex Metrica Offline Events destination ([#4534](https://github.com/rudderlabs/rudder-server/issues/4534)) ([904d8fb](https://github.com/rudderlabs/rudder-server/commit/904d8fbec48db3bd4d9a1e393e09177ad0e9a8e3))
+
+
+### Miscellaneous
+
+* add support for live events in internal batch endpoint ([#4627](https://github.com/rudderlabs/rudder-server/issues/4627)) ([26ecd98](https://github.com/rudderlabs/rudder-server/commit/26ecd98ecfe7093236471c40e5af4496db7b0096))
+* cleanup *jobsdb.Handle.checkIfFullDSInTx(...) ([#4634](https://github.com/rudderlabs/rudder-server/issues/4634)) ([c64dd3a](https://github.com/rudderlabs/rudder-server/commit/c64dd3a8ddc641a0dbfa2c13a08a262df9ab120d))
+* **deps:** bump golangci/golangci-lint-action from 4 to 5 ([#4620](https://github.com/rudderlabs/rudder-server/issues/4620)) ([566f430](https://github.com/rudderlabs/rudder-server/commit/566f4306a5bb19fce21f92d13d81a0d193d7cbe2))
+* remove composite indices on rt, batch_rt ([#4632](https://github.com/rudderlabs/rudder-server/issues/4632)) ([8828cc2](https://github.com/rudderlabs/rudder-server/commit/8828cc2959fa38c8b67acb8f3e305fd237a2b7fb))
+
 ## [1.24.0](https://github.com/rudderlabs/rudder-server/compare/v1.23.0...v1.24.0) (2024-04-25)
 
 
