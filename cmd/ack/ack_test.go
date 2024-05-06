@@ -28,7 +28,7 @@ func TestCumulativeAck(t *testing.T) {
 
 	log := logger.NOP
 	if testing.Verbose() {
-		// Uncomment the next 2 lines to enable DEBUG logging
+		// Uncomment the next 3 lines to enable DEBUG logging
 		// factory := logger.NewFactory(config.New())
 		// require.NoError(t, factory.SetLogLevel("", "DEBUG"))
 		// log = factory.NewLogger()
