@@ -33,7 +33,6 @@ var (
 	destination = backendconfig.DestinationT{
 		Name: "BingAds",
 		Config: map[string]interface{}{
-			"audienceId":        "audience_id",
 			"customerAccountId": "customer_account_id",
 			"customerId":        "customer_id",
 			"rudderAccountId":   "rudder_account_id",
@@ -51,11 +50,11 @@ func initBingads() {
 	})
 }
 
-var _ = Describe("Bing ads Audience", func() {
+var _ = Describe("Bing ads Offline Conversions", func() {
 	Context("Bing ads", func() {
 		BeforeEach(func() {
 			config.Reset()
-			config.Set("BatchRouter.BING_ADS.MaxUploadLimit", 1*bytesize.KB)
+			config.Set("BatchRouter.BING_ADS_OFFLINE_CONVERSIONS.MaxUploadLimit", 1*bytesize.KB)
 		})
 
 		AfterEach(func() {
@@ -66,8 +65,10 @@ var _ = Describe("Bing ads Audience", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			fmt.Println(Client{})
-			clientI := Client{}
+			clientI := Client{
+				URL:    "http://localhost/upload1",
+				client: &http.Client{},
+			}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
@@ -505,51 +506,6 @@ var _ = Describe("Bing ads Audience", func() {
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
-			Expect(recievedResponse).To(Equal(expectedResp))
-		})
-
-		It("TestBingAdsGetUploadStats for wrong audience Id", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			csvPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.csv"
-			zipPath := "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip"
-			err := ZipCSVFile(csvPath, zipPath)
-			Expect(err).To(BeNil())
-			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/BulkUpload-02-28-2024-c7a38716-4d65-44a7-bf28-8879ab9b1da0-Results.zip") // Path of the source file
-			// Create a test server with a custom handler function
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Set the appropriate headers for a zip file response
-				w.Header().Set("Content-Type", "application/zip")
-				w.Header().Set("Content-Disposition", "attachment; filename='status-wrong-audience.zip'")
-				http.ServeFile(w, r, errorsTemplateFilePath)
-			}))
-			defer ts.Close()
-			client := ts.Client()
-			modifiedURL := ts.URL // Use the test server URL
-			clientI := Client{client: client, URL: modifiedURL}
-			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
-
-			UploadStatsInput := common.GetUploadStatsInput{
-				FailedJobURLs: modifiedURL,
-				ImportingList: []*jobsdb.JobT{
-					{
-						JobID: 1,
-					},
-				},
-			}
-			expectedResp := common.GetUploadStatsResponse{
-				StatusCode: 200,
-				Metadata: common.EventStatMeta{
-					FailedKeys: []int64{1},
-					FailedReasons: map[int64]string{
-						1: "InvalidCustomerListId",
-					},
-					SucceededKeys: []int64{},
-				},
-			}
-			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
-			os.Remove(zipPath)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 

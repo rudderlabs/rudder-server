@@ -1,0 +1,1 @@
+{"message":{"Action":"insert","conversionCurrencyCode":"USD","conversionName":"Test-Integration-Anant","conversionTime":"4/19/2024 5:01:20\u202fAM","conversionValue":"10","email":"90478tyr3fgiwhbjwu98y3ruwhe","microsoftClickId":"48c26bfea7501c71e32a0ddf5dd44599"},"metadata":{"job_id":1}}

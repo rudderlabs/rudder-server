@@ -3,9 +3,7 @@ package bingads
 import (
 	"archive/zip"
 	"bufio"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,32 +12,33 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 )
 
 func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer, error) {
 	var err error
 	csvWriter := csv.NewWriter(csvFile)
-	if actionType == "Insert" {
+	if actionType == "insert" {
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
-	} else if actionType == "Update" {
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+		})
+	} else if actionType == "update" {
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+		})
 	} else {
 		// For deleting conversion
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""}})
+			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+		})
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error in writing csv header: %v", err)
@@ -140,11 +139,11 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line s
 		var err error
 		switch data.Message.Action {
 		case "insert":
-			err = actionFile.CSVWriter.Write([]string{fileType, "", string(jobId), "", "", "", fields.ConversionCurrencyCode, fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, hashEmail(fields.Email), hashString(fields.Phone), fields.ExternalAttributionCredit, fields.ExternalAttributionModel})
+			err = actionFile.CSVWriter.Write([]string{fileType, "", strconv.FormatInt(jobId, 10), "", "", "", fields.ConversionCurrencyCode, fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ExternalAttributionCredit, fields.ExternalAttributionModel})
 		case "update":
-			err = actionFile.CSVWriter.Write([]string{fileType, "Restate", "", string(jobId), "", fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, hashEmail(fields.Email), hashString(fields.Phone), fields.ConversionCurrencyCode, fields.ConversionAdjustedTime})
+			err = actionFile.CSVWriter.Write([]string{fileType, "Restate", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.ConversionValue, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionCurrencyCode, fields.ConversionAdjustedTime})
 		case "delete":
-			err = actionFile.CSVWriter.Write([]string{fileType, "Retract", "", string(jobId), "", fields.ConversionName, fields.ConversionTime, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionAdjustedTime})
+			err = actionFile.CSVWriter.Write([]string{fileType, "Retract", "", strconv.FormatInt(jobId, 10), "", fields.ConversionName, fields.ConversionTime, fields.MicrosoftClickId, fields.Email, fields.Phone, fields.ConversionAdjustedTime})
 		default:
 			return fmt.Errorf("%v action is invalid", data.Message.Action)
 		}
@@ -187,7 +186,6 @@ func (b *BingAdsBulkUploader) createZipFile(filePath string) ([]*ActionFileInfo,
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return nil, err
 		}
-		// TODO: check if data.message.Action would work fine or not
 		actionFile := actionFiles[data.Message.Action]
 		err := b.populateZipFile(actionFile, line, data)
 		if err != nil {
@@ -457,56 +455,4 @@ func validateField(fields map[string]interface{}, field string) (bool, error) {
 		return false, fmt.Errorf("%v field is either not string or an empty string", field)
 	}
 	return true, nil
-}
-
-func hashString(val string) string {
-	// Create a new SHA256 hash
-	hasher := sha256.New()
-
-	// Write the email string to the hasher
-	hasher.Write([]byte(val))
-
-	// Get the hashed bytes
-	hashedBytes := hasher.Sum(nil)
-
-	// Convert the hashed bytes to a hexadecimal string
-	hashedString := hex.EncodeToString(hashedBytes)
-
-	return hashedString
-}
-
-/*
-This function converts the input email into hash email after following rules specified by bingads
-In case email is invalid like @ is missing we will return an empty string
-*/
-func hashEmail(email string) string {
-	// Remove whitespaces from the beginning and end of the email address and convert it into lower case
-	email = strings.TrimSpace(strings.ToLower(email))
-
-	// Remove everything between “+” and “@”
-	re := regexp.MustCompile(`\+.*@`)
-	email = re.ReplaceAllString(email, "@")
-
-	// Remove any periods that come before “@”
-	parts := strings.Split(email, "@")
-	parts[0] = strings.ReplaceAll(parts[0], ".", "")
-	email = strings.Join(parts, "@")
-
-	// Make sure email address contains “@” sign
-	if !strings.Contains(email, "@") {
-		return ""
-	}
-
-	// Remove any spaces
-	email = strings.ReplaceAll(email, " ", "")
-
-	// Make sure there is a period after “@”
-	if !strings.Contains(email, ".") {
-		return ""
-	}
-
-	// Make sure it doesn't start or end with a period
-	email = strings.Trim(email, ".")
-
-	return hashString(email)
 }

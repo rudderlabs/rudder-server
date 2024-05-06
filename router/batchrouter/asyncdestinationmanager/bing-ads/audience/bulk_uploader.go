@@ -31,8 +31,6 @@ func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, clien
 }
 
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	fmt.Println("job to transform. %v", job)
-
 	return common.GetMarshalledData(job), nil
 }
 

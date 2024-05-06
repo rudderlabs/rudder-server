@@ -30,6 +30,18 @@ func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, clien
 	}
 }
 
+/* Microsoft Docs: https://learn.microsoft.com/en-us/advertising/bulk-service/offline-conversion
+returns: A string of object in form 
+{
+	message:{
+		Action: "insert", "update", "delete",
+		fields: {}
+	},
+	metadata:{
+		jobId: "job_id"
+	}
+}
+*/
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Unmarshal the JSON raw message into the record struct
 	var event Record
@@ -39,7 +51,6 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 		fmt.Println("Error during unmarshalling event:", err)
 		return "Error during unmarshalling event:", err
 	}
-
 	err = json.Unmarshal(event.Fields, &fields)
 	if err != nil {
 		fmt.Println("Error during unmarshalling event.fields:", err)
@@ -65,20 +76,22 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			fields["Action"] = "update"
-		} else {
-			fields["Action"] = "delete"
 		}
-	} else {
-		fields["Action"] = "insert"
 	}
-
-	responsePayload, err := stdjson.Marshal(fields)
+	var data = map[string]interface{}{
+        "message": map[string]interface{}{
+			"fields": event.Fields,
+			"Action": event.Action,
+		},
+		"metadata": map[string]interface{}{
+			"jobId": job.JobID,
+		},
+    }
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		fmt.Println("Error during marshalling event.fields:", err)
-		return "Error during marshalling event.fields:", err
+		return "", err
 	}
-	return string(responsePayload), nil
+	return string(jsonData), nil
 }
 
 /*
