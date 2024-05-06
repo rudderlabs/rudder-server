@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 type transformerProxyAdapter interface {
@@ -165,9 +164,6 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 
 	for _, resp := range transformerResponse.Response {
 		routerJobResponseCodes[resp.Metadata.JobID] = resp.StatusCode
-		if transformerResponse.AuthErrorCategory == common.CategoryRefreshToken {
-			routerJobResponseCodes[resp.Metadata.JobID] = respCode
-		}
 		routerJobResponseBodys[resp.Metadata.JobID] = resp.Error
 		routerJobDontBatchDirectives[resp.Metadata.JobID] = resp.Metadata.DontBatch
 	}

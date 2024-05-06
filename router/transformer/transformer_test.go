@@ -813,8 +813,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"REFRESH_TOKEN","response":[{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}},{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes: map[int64]int{
-				1: 401,
-				2: 401,
+				1: 500,
+				2: 500,
 			},
 			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
@@ -892,15 +892,15 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				2: false,
 			},
 			RespBodys: map[int64]string{
-				1: "token has expired",
-				2: "token has expired",
+				1: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
+				2: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes: map[int64]int{
-				1: 401,
-				2: 401,
+				1: 500,
+				2: 500,
 			},
 			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
@@ -985,8 +985,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
 			ProxyRequestStatusCode:   400,
 			RespStatusCodes: map[int64]int{
-				1: 403,
-				2: 403,
+				1: 400,
+				2: 400,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
@@ -1071,8 +1071,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
 			ProxyRequestStatusCode:   400,
 			RespStatusCodes: map[int64]int{
-				1: 403,
-				2: 403,
+				1: 400,
+				2: 400,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
@@ -1312,6 +1312,118 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
 			ProxyRequestStatusCode:   200, // transformer returned response
 			RespStatusCodes:          map[int64]int{},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when there are partial failures, should have respStatus as 200, respBody should have the high-level resp sent by transformer and rest of the parameters should correctly encompass partial failures",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "some message that we got from transformer",
+			Response: []TPDestResponse{
+				{
+					StatusCode: 200,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         2,
+					},
+					Error: "success",
+				},
+				{
+					StatusCode: 400,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         1,
+					},
+					Error: "UserId for matchId: '12324' cannot be found",
+				},
+				{
+					StatusCode: 200,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         4,
+					},
+					Error: "success",
+				},
+				{
+					StatusCode: 400,
+					Metadata: ProxyRequestMetadata{
+						JobID:         6,
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+					Error: "UserId for matchId: '64676493' can not be found",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         2,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         4,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         1,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         6,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				1: false,
+				2: false,
+				4: false,
+				6: false,
+			},
+			RespBodys: map[int64]string{
+				2: "success",
+				1: "UserId for matchId: '12324' cannot be found",
+				6: "UserId for matchId: '64676493' can not be found",
+				4: "success",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"REFRESH_TOKEN","response":[{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}},{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
+			ProxyRequestStatusCode:   200,
+			RespStatusCodes: map[int64]int{
+				2: 200,
+				1: 400,
+				4: 200,
+				6: 400,
+			},
 		},
 		destination: oauthDests[0],
 	},

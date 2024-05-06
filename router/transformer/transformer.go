@@ -435,6 +435,21 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
+	if trans.oAuthV2EnabledLoader.Load() {
+		for _, metadata := range proxyReqParams.ResponseData.Metadata {
+			// Conditions for which InterceptorResponse.Status/Response will not be empty
+			// 1. authErrorCategory == CategoryRefreshToken
+			// 2. authErrorCategory == CategoryAuthStatusInactive
+			// 3. Any error occurred while performing authStatusInactive / RefreshToken
+			// Under these conditions, we will have to propagate the response from interceptor to JobsDB
+			if transportResponse.InterceptorResponse.StatusCode > 0 {
+				transResp.routerJobResponseCodes[metadata.JobID] = transportResponse.InterceptorResponse.StatusCode
+			}
+			if transportResponse.InterceptorResponse.Response != "" {
+				transResp.routerJobResponseBodys[metadata.JobID] = transportResponse.InterceptorResponse.Response
+			}
+		}
+	}
 	if trans.oAuthV2EnabledLoader.Load() && transportResponse.InterceptorResponse.Response != "" {
 		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
