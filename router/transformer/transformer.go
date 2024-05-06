@@ -166,8 +166,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 		if trans.oAuthV2EnabledLoader.Load() {
-			// TODO: Remove later
-			trans.logger.Infon("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
+			trans.logger.Debugn("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
 			destinationInfo := &oauthv2.DestinationInfo{
 				Config:           transformMessageCopy.Data[0].Destination.Config,
 				DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
@@ -534,7 +533,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	httpReqStTime := time.Now()
 	var resp *http.Response
 	if trans.oAuthV2EnabledLoader.Load() {
-		trans.logger.Infon("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
+		trans.logger.Debugn("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
 		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
 		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
