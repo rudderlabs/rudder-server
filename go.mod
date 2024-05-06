@@ -221,6 +221,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/heetch/avro v0.4.4 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
+	github.com/influxdata/tdigest v0.0.1
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
