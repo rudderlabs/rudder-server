@@ -437,7 +437,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 	if trans.oAuthV2EnabledLoader.Load() {
 		for _, metadata := range proxyReqParams.ResponseData.Metadata {
-			// Conditions for which InterceptorResponse.Status/Response will not be empty
+			// Conditions for which InterceptorResponse.StatusCode/Response will not be empty
 			// 1. authErrorCategory == CategoryRefreshToken
 			// 2. authErrorCategory == CategoryAuthStatusInactive
 			// 3. Any error occurred while performing authStatusInactive / RefreshToken

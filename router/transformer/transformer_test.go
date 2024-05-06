@@ -742,7 +742,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -751,7 +751,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "token has expired",
 				},
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -796,7 +796,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// refresh token http request
 			{
-				Code:     200,
+				Code:     http.StatusOK,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
 			},
 		},
@@ -811,10 +811,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"REFRESH_TOKEN","response":[{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}},{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
-			ProxyRequestStatusCode:   500,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes: map[int64]int{
-				1: 500,
-				2: 500,
+				1: http.StatusInternalServerError,
+				2: http.StatusInternalServerError,
 			},
 			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
@@ -828,7 +828,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -837,7 +837,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "token has expired",
 				},
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -882,7 +882,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// refresh token http request
 			{
-				Code:     500,
+				Code:     http.StatusInternalServerError,
 				Response: `Error occurred in downstream rudder service`, // only sample
 			},
 		},
@@ -897,10 +897,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
-			ProxyRequestStatusCode:   500,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes: map[int64]int{
-				1: 500,
-				2: 500,
+				1: http.StatusInternalServerError,
+				2: http.StatusInternalServerError,
 			},
 			OAuthErrorCategory: common.CategoryRefreshToken,
 		},
@@ -914,7 +914,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			AuthErrorCategory: common.CategoryAuthStatusInactive,
 			Response: []TPDestResponse{
 				{
-					StatusCode: 403,
+					StatusCode: http.StatusForbidden,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   oauthDests[0].WorkspaceID,
 						DestinationID: oauthDests[0].ID,
@@ -923,7 +923,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "permission is not present",
 				},
 				{
-					StatusCode: 403,
+					StatusCode: http.StatusForbidden,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   oauthDests[0].WorkspaceID,
 						DestinationID: oauthDests[0].ID,
@@ -968,7 +968,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// auth status inactive http request
 			{
-				Code:     400,
+				Code:     http.StatusBadRequest,
 				Response: `{"body":{"code":"ref_token_invalid_grant"}}`, // only sample
 			},
 		},
@@ -983,10 +983,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
-			ProxyRequestStatusCode:   400,
+			ProxyRequestStatusCode:   http.StatusBadRequest,
 			RespStatusCodes: map[int64]int{
-				1: 400,
-				2: 400,
+				1: http.StatusBadRequest,
+				2: http.StatusBadRequest,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
@@ -1000,7 +1000,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			AuthErrorCategory: common.CategoryAuthStatusInactive,
 			Response: []TPDestResponse{
 				{
-					StatusCode: 403,
+					StatusCode: http.StatusForbidden,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   oauthDests[0].WorkspaceID,
 						DestinationID: oauthDests[0].ID,
@@ -1009,7 +1009,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "permission is not present",
 				},
 				{
-					StatusCode: 403,
+					StatusCode: http.StatusForbidden,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   oauthDests[0].WorkspaceID,
 						DestinationID: oauthDests[0].ID,
@@ -1054,7 +1054,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// auth status inactive http request
 			{
-				Code:     500,
+				Code:     http.StatusInternalServerError,
 				Response: `{"body":"could not complete update"}`, // only sample
 			},
 		},
@@ -1069,10 +1069,10 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"AUTH_STATUS_INACTIVE","response":[{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":2}},{"statusCode":403,"error":"permission is not present","metadata":{"workspaceId":"wsp","destinationId":"d1","jobId":1}}]}`,
-			ProxyRequestStatusCode:   400,
+			ProxyRequestStatusCode:   http.StatusBadRequest,
 			RespStatusCodes: map[int64]int{
-				1: 400,
-				2: 400,
+				1: http.StatusBadRequest,
+				2: http.StatusBadRequest,
 			},
 			OAuthErrorCategory: common.CategoryAuthStatusInactive,
 		},
@@ -1087,7 +1087,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			AuthErrorCategory: common.CategoryRefreshToken,
 			Response: []TPDestResponse{
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -1096,7 +1096,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "token has expired",
 				},
 				{
-					StatusCode: 401,
+					StatusCode: http.StatusUnauthorized,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -1141,7 +1141,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// refresh token http request
 			{
-				Code:     200,
+				Code:     http.StatusOK,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
 			},
 		},
@@ -1153,7 +1153,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
 			ProxyRequestResponseBody: `reading response body post roundTrip: unexpected EOF`, // not full error message
-			ProxyRequestStatusCode:   500,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
@@ -1197,7 +1197,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// refresh token http request
 			{
-				Code:     200,
+				Code:     http.StatusOK,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
 			},
 		},
@@ -1210,7 +1210,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
 			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
-			ProxyRequestStatusCode:   500,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
@@ -1249,7 +1249,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
-				Code:     200,
+				Code:     http.StatusOK,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
 			},
 		},
@@ -1261,7 +1261,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
 			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
-			ProxyRequestStatusCode:   500,
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
@@ -1299,7 +1299,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		cpResponses: []testutils.CpResponseParams{
 			// refresh token http request
 			{
-				Code:     200,
+				Code:     http.StatusOK,
 				Response: `{"secret": {"access_token": "valid_token","refresh_token":"refresh_token"}}`,
 			},
 		},
@@ -1310,7 +1310,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
 			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
-			ProxyRequestStatusCode:   200, // transformer returned response
+			ProxyRequestStatusCode:   http.StatusOK, // transformer returned response
 			RespStatusCodes:          map[int64]int{},
 		},
 		destination: oauthDests[0],
@@ -1322,7 +1322,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			Message: "some message that we got from transformer",
 			Response: []TPDestResponse{
 				{
-					StatusCode: 200,
+					StatusCode: http.StatusOK,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -1331,7 +1331,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "success",
 				},
 				{
-					StatusCode: 400,
+					StatusCode: http.StatusBadRequest,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -1340,7 +1340,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "UserId for matchId: '12324' cannot be found",
 				},
 				{
-					StatusCode: 200,
+					StatusCode: http.StatusOK,
 					Metadata: ProxyRequestMetadata{
 						WorkspaceID:   "workspace_id",
 						DestinationID: "destination_id",
@@ -1349,7 +1349,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 					Error: "success",
 				},
 				{
-					StatusCode: 400,
+					StatusCode: http.StatusBadRequest,
 					Metadata: ProxyRequestMetadata{
 						JobID:         6,
 						WorkspaceID:   "workspace_id",
@@ -1417,12 +1417,12 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespContentType:          "application/json",
 			ProxyRequestResponseBody: `{"message": "some message that we got from transformer","authErrorCategory":"REFRESH_TOKEN","response":[{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":2}},{"statusCode":401,"error":"token has expired","metadata":{"workspaceId":"workspace_id","destinationId":"destination_id","jobId":1}}]}`,
-			ProxyRequestStatusCode:   200,
+			ProxyRequestStatusCode:   http.StatusOK,
 			RespStatusCodes: map[int64]int{
-				2: 200,
-				1: 400,
-				4: 200,
-				6: 400,
+				2: http.StatusOK,
+				1: http.StatusBadRequest,
+				4: http.StatusOK,
+				6: http.StatusBadRequest,
 			},
 		},
 		destination: oauthDests[0],
