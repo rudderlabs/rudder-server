@@ -135,15 +135,17 @@ func TestCumulativeAck(t *testing.T) {
 		lastMsg := batchBuffer[len(batchBuffer)-1]
 		t.Logf("We received %d messages. Acking last ID : %q", len(batchBuffer), lastMsg.ID())
 
-		for _, msg := range batchBuffer {
-			if msg.PublishTime().After(lastMsg.PublishTime()) {
-				t.Logf("Detected a newer message: %q", msg.ID())
-				lastMsg = msg
-			}
-		}
-
 		err = consumer.AckIDCumulative(lastMsg.ID())
 		require.NoError(t, err)
+
+		// Just to be 100% sure, let's see if the batch contains a message that is newer than lastMsg
+		for _, msg := range batchBuffer {
+			if msg.PublishTime().After(lastMsg.PublishTime()) {
+				t.Logf("Detected a newer message, we have to ack again: %q", msg.ID()) // this never happens!!!
+				err = consumer.AckIDCumulative(lastMsg.ID())
+				require.NoError(t, err)
+			}
+		}
 	}
 }
 
