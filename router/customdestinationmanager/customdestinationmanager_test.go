@@ -1,6 +1,7 @@
 package customdestinationmanager
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,14 +11,18 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 var once sync.Once
@@ -146,6 +151,68 @@ func TestSendDataWithStreamDestination(t *testing.T) {
 	customManager.SendData(event, someDestination.ID)
 }
 
+type transformedResponseJSON struct {
+	Message map[string]interface{} `json:"message"`
+	UserId  string                 `json:"userId"`
+}
+
+type sendDataResponse struct {
+	statusCode int
+	err        string
+}
+
+type redisTc struct {
+	description              string
+	transformedResponse      transformedResponseJSON // Response obtained from transformer
+	redisImgRepo             string
+	redisImgTag              string
+	expectedSendDataResponse sendDataResponse
+}
+
+var redisJSONTestCases = []redisTc{
+	{
+		description: "When JSON module is loaded into Redis, should set into redis and fetching the data should be successful",
+		transformedResponse: transformedResponseJSON{
+			Message: map[string]interface{}{
+				"user:myuser-id": map[string]interface{}{
+					"key": "someKey",
+					"fields": map[string]interface{}{
+						"field1": "value1",
+						"field2": 2,
+					},
+				},
+			},
+			UserId: "myuser-id",
+		},
+		redisImgRepo: "redis/redis-stack-server",
+		redisImgTag:  "latest",
+		expectedSendDataResponse: sendDataResponse{
+			statusCode: 200,
+		},
+	},
+	{
+		description: "When JSON module not loaded into Redis, should not be able to set into redis",
+		transformedResponse: transformedResponseJSON{
+			Message: map[string]interface{}{
+				"user:myuser-id": map[string]interface{}{
+					"key": "someKey",
+					"fields": map[string]interface{}{
+						"field1": "value1",
+						"field2": "value2",
+					},
+				},
+			},
+			UserId: "myuser-id",
+		},
+		redisImgRepo: "redis",
+		redisImgTag:  "alpine3.19",
+		expectedSendDataResponse: sendDataResponse{
+			statusCode: 500,
+			err:        "ERR unknown command 'JSON.MSET', with args beginning with:",
+		},
+	},
+}
+
 func TestKVManagerInvocations(t *testing.T) {
 	initCustomerManager()
 	customManager := New("REDIS", Opts{}).(*CustomManagerT)
@@ -198,4 +265,58 @@ func TestKVManagerInvocations(t *testing.T) {
 		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
 		customManager.send(event, mockKVStoreManager, someDestination.Config)
 	})
+}
+
+func TestRedisManagerForJSONStorage(t *testing.T) {
+	initCustomerManager()
+	customManager := New("REDIS", Opts{}).(*CustomManagerT)
+	someDestination := backendconfig.DestinationT{
+		ID: "someDestinationID1",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "REDIS",
+		},
+	}
+	err := customManager.onNewDestination(someDestination)
+	assert.Nil(t, err)
+
+	for _, tc := range redisJSONTestCases {
+		t.Run(tc.description, func(t *testing.T) {
+			redisAddr, destroy := testutils.StartRedis(t, tc.redisImgRepo, tc.redisImgTag)
+			defer destroy()
+			event, err := json.Marshal(tc.transformedResponse)
+			if err != nil {
+				t.Errorf("MarshalError: %v\n", err.Error())
+				return
+			}
+			config := map[string]interface{}{
+				"shouldSendDataAsJSON": true,
+				"address":              redisAddr,
+				"db":                   0,
+				"clusterMode":          false,
+			}
+			kvMgr := &kvstoremanager.RedisManagerT{
+				Config: config,
+			}
+			kvMgr.Connect()
+			db := kvMgr.GetClient()
+
+			stCd, er := customManager.send(event, kvMgr, config)
+			if er != "" {
+				t.Logf("Error: %s\n", er)
+				require.Contains(t, er, tc.expectedSendDataResponse.err)
+				return
+			}
+			msgMap := gjson.GetBytes(event, "message").Map()
+			for key, gjsonRes := range msgMap {
+				res, err := db.JSONGet(context.TODO(), key).Result()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				expected := gjsonRes.String()
+				require.Equal(t, expected, res, fmt.Sprintf("Error in getting %s", key))
+			}
+			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
+		})
+	}
 }

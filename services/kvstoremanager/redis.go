@@ -19,9 +19,9 @@ import (
 
 var abortableErrors = []string{}
 
-type redisManagerT struct {
+type RedisManagerT struct {
 	clusterMode   bool
-	config        types.ConfigT
+	Config        types.ConfigT
 	client        *redis.Client
 	clusterClient *redis.ClusterClient
 }
@@ -30,22 +30,30 @@ func init() {
 	abortableErrors = []string{"connection refused", "invalid password"}
 }
 
-func (m *redisManagerT) Connect() {
+func (m *RedisManagerT) UpdateClient(client *redis.Client) {
+	m.client = client
+}
+
+func (m *RedisManagerT) GetClient() *redis.Client {
+	return m.client
+}
+
+func (m *RedisManagerT) Connect() {
 	var ok bool
-	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
+	if m.clusterMode, ok = m.Config["clusterMode"].(bool); !ok {
 		// setting redis to cluster mode by default if setting missing in config
 		m.clusterMode = true
 	}
-	shouldSecureConn, _ := m.config["secure"].(bool)
-	addr, _ := m.config["address"].(string)
-	password, _ := m.config["password"].(string)
+	shouldSecureConn, _ := m.Config["secure"].(bool)
+	addr, _ := m.Config["address"].(string)
+	password, _ := m.Config["password"].(string)
 
 	tlsConfig := tls.Config{}
 	if shouldSecureConn {
-		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
+		if skipServerCertCheck, ok := m.Config["skipVerify"].(bool); ok && skipServerCertCheck {
 			tlsConfig.InsecureSkipVerify = true
 		}
-		if serverCACert, ok := m.config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
+		if serverCACert, ok := m.Config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
 			caCert := []byte(serverCACert)
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -68,7 +76,7 @@ func (m *redisManagerT) Connect() {
 		m.clusterClient = redis.NewClusterClient(&opts)
 	} else {
 		var db int
-		if dbStr, ok := m.config["database"].(string); ok {
+		if dbStr, ok := m.Config["database"].(string); ok {
 			db, _ = strconv.Atoi(dbStr)
 		}
 		opts := redis.Options{
@@ -83,14 +91,14 @@ func (m *redisManagerT) Connect() {
 	}
 }
 
-func (m *redisManagerT) Close() error {
+func (m *RedisManagerT) Close() error {
 	if m.clusterMode {
 		return m.clusterClient.Close()
 	}
 	return m.client.Close()
 }
 
-func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) (err error) {
+func (m *RedisManagerT) HMSet(key string, fields map[string]interface{}) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HMSet(ctx, key, fields).Result()
@@ -100,7 +108,7 @@ func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) (err er
 	return err
 }
 
-func (*redisManagerT) StatusCode(err error) int {
+func (*RedisManagerT) StatusCode(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
@@ -115,7 +123,7 @@ func (*redisManagerT) StatusCode(err error) int {
 	return statusCode
 }
 
-func (m *redisManagerT) DeleteKey(key string) (err error) {
+func (m *RedisManagerT) DeleteKey(key string) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.Del(ctx, key).Result()
@@ -125,7 +133,7 @@ func (m *redisManagerT) DeleteKey(key string) (err error) {
 	return err
 }
 
-func (m *redisManagerT) HMGet(key string, fields ...string) (result []interface{}, err error) {
+func (m *RedisManagerT) HMGet(key string, fields ...string) (result []interface{}, err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		result, err = m.clusterClient.HMGet(ctx, key, fields...).Result()
@@ -135,7 +143,7 @@ func (m *redisManagerT) HMGet(key string, fields ...string) (result []interface{
 	return result, err
 }
 
-func (m *redisManagerT) HGetAll(key string) (result map[string]string, err error) {
+func (m *RedisManagerT) HGetAll(key string) (result map[string]string, err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		result, err = m.clusterClient.HGetAll(ctx, key).Result()
@@ -145,7 +153,7 @@ func (m *redisManagerT) HGetAll(key string) (result map[string]string, err error
 	return result, err
 }
 
-func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
+func (m *RedisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HSet(ctx, hash, key, value).Result()
@@ -155,7 +163,7 @@ func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) []interface{} {
+func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) []interface{} {
 	msg := gjson.GetBytes(jsonData, "message").Map()
 	nmSetArgs := lo.Flatten(
 		lo.MapToSlice(msg, func(k string, v gjson.Result) []interface{} {
@@ -165,7 +173,7 @@ func (m *redisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) []interface
 	return nmSetArgs
 }
 
-func (m *redisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
+func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
 	nmSetArgs := m.ExtractJSONSetArgs(jsonData)
 	var jsonMSetStatusCmd *redis.StatusCmd
 	if m.clusterMode {
@@ -176,7 +184,7 @@ func (m *redisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, e
 	return jsonMSetStatusCmd.Result()
 }
 
-func (_ *redisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+func (_ *RedisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
 	var dataAsJSON bool
 	if dataAsJSONI, ok := config["shouldSendDataAsJSON"]; ok {
 		if dataAsJSON, ok = dataAsJSONI.(bool); ok {

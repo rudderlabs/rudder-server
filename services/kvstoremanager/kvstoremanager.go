@@ -41,8 +41,8 @@ func New(provider string, config map[string]interface{}) (m KVStoreManager) {
 func newManager(settings SettingsT) (m KVStoreManager) {
 	switch settings.Provider {
 	case "REDIS":
-		m = &redisManagerT{
-			config: settings.Config,
+		m = &RedisManagerT{
+			Config: settings.Config,
 		}
 		m.Connect()
 	}
