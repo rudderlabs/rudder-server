@@ -309,16 +309,15 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				require.Contains(t, er, tc.expectedSendDataResponse.err)
 				return
 			}
-			msgMap := gjson.GetBytes(event, "message").Map()
-			for key, gjsonRes := range msgMap {
-				res, err := db.JSONGet(context.TODO(), key).Result()
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				expected := gjsonRes.String()
-				require.Equal(t, expected, res, fmt.Sprintf("Error in getting %s", key))
+			msgMap := gjson.GetBytes(event, "message.value").String()
+			key := gjson.GetBytes(event, "message.key").String()
+			res, err := db.JSONGet(context.TODO(), key).Result()
+			if err != nil {
+				t.Error(err)
+				return
 			}
+			require.Equal(t, msgMap, res)
+			
 			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
 		})
 	}
