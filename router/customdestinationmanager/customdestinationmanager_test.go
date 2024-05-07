@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -174,7 +175,8 @@ var redisJSONTestCases = []redisTc{
 		description: "When JSON module is loaded into Redis, should set into redis and fetching the data should be successful",
 		transformedResponse: transformedResponseJSON{
 			Message: map[string]interface{}{
-				"user:myuser-id": map[string]interface{}{
+				"key": "user:myuser-id",
+				"value": map[string]interface{}{
 					"key": "someKey",
 					"fields": map[string]interface{}{
 						"field1": "value1",
@@ -194,7 +196,8 @@ var redisJSONTestCases = []redisTc{
 		description: "When JSON module not loaded into Redis, should not be able to set into redis",
 		transformedResponse: transformedResponseJSON{
 			Message: map[string]interface{}{
-				"user:myuser-id": map[string]interface{}{
+				"key": "user:myuser-id",
+				"value": map[string]interface{}{
 					"key": "someKey",
 					"fields": map[string]interface{}{
 						"field1": "value1",
@@ -319,4 +322,102 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
 		})
 	}
+}
+
+func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
+	initCustomerManager()
+	customManager := New("REDIS", Opts{}).(*CustomManagerT)
+	someDestination := backendconfig.DestinationT{
+		ID: "someDestinationID1",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "REDIS",
+		},
+	}
+	err := customManager.onNewDestination(someDestination)
+	assert.Nil(t, err)
+
+	transformedResponse := transformedResponseJSON{
+		Message: map[string]interface{}{
+			"key":  "user:myuser-id",
+			"path": "mode-1",
+			"value": map[string]interface{}{
+				"key": "someKey",
+				"fields": map[string]interface{}{
+					"field1": "value1",
+					"field2": 2,
+				},
+			},
+		},
+		UserId: "myuser-id",
+	}
+
+	t.Run("When JSON module is loaded into Redis, path is mentioned and key is not present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
+		defer destroy()
+		event, err := json.Marshal(transformedResponse)
+		if err != nil {
+			t.Errorf("MarshalError: %v\n", err.Error())
+			return
+		}
+		config := map[string]interface{}{
+			"shouldSendDataAsJSON": true,
+			"address":              redisAddr,
+			"db":                   0,
+			"clusterMode":          false,
+		}
+		kvMgr := &kvstoremanager.RedisManagerT{
+			Config: config,
+		}
+		kvMgr.Connect()
+		db := kvMgr.GetClient()
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		v, err := db.JSONGet(context.TODO(), "user:myuser-id", "$.mode-1").Result()
+
+		require.Nil(t, err)
+		require.NotEqual(t, "", v)
+
+		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
+
+		require.Equal(t, http.StatusOK, stCd)
+	})
+
+	t.Run("When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
+		defer destroy()
+		event, err := json.Marshal(transformedResponse)
+		if err != nil {
+			t.Errorf("MarshalError: %v\n", err.Error())
+			return
+		}
+		config := map[string]interface{}{
+			"shouldSendDataAsJSON": true,
+			"address":              redisAddr,
+			"db":                   0,
+			"clusterMode":          false,
+		}
+		kvMgr := &kvstoremanager.RedisManagerT{
+			Config: config,
+		}
+		kvMgr.Connect()
+		db := kvMgr.GetClient()
+		ctx := context.TODO()
+
+		_, e := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
+		require.Nil(t, e)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
+		require.Nil(t, err)
+		require.NotEqual(t, "", firstVal)
+
+		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
+		require.Nil(t, err2)
+		require.NotEqual(t, "", v)
+
+		require.JSONEq(t, `[{"a":1,"size":"LM"}]`, firstVal)
+		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
+
+		require.Equal(t, http.StatusOK, stCd)
+	})
 }

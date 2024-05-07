@@ -5,11 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/samber/lo"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/tidwall/gjson"
@@ -30,12 +29,17 @@ func init() {
 	abortableErrors = []string{"connection refused", "invalid password"}
 }
 
-func (m *RedisManagerT) UpdateClient(client *redis.Client) {
-	m.client = client
+// Embedded interface for clusterClient & client
+type redisCli interface {
+	redis.Cmdable
 }
 
-func (m *RedisManagerT) GetClient() *redis.Client {
-	return m.client
+func (m *RedisManagerT) GetClient() redisCli {
+	var redisClient redisCli = m.client
+	if m.clusterMode {
+		redisClient = m.clusterClient
+	}
+	return redisClient
 }
 
 func (m *RedisManagerT) Connect() {
@@ -163,28 +167,59 @@ func (m *RedisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) []interface{} {
-	msg := gjson.GetBytes(jsonData, "message").Map()
-	nmSetArgs := lo.Flatten(
-		lo.MapToSlice(msg, func(k string, v gjson.Result) []interface{} {
-			return []interface{}{k, "$", v.String()}
-		}),
-	)
-	return nmSetArgs
+func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]interface{}, error) {
+	key := gjson.GetBytes(jsonData, "message.key").String()
+	path := gjson.GetBytes(jsonData, "message.path").String()
+	jsonVal := gjson.GetBytes(jsonData, "message.value")
+	var redisClient redisCli = m.client
+	if m.clusterMode {
+		redisClient = m.clusterClient
+	}
+
+	actualPath := "$" // root insert
+	if path != "" {
+		actualPath = fmt.Sprintf("$.%s", path)
+	}
+	args := []interface{}{key, actualPath, jsonVal.String()}
+
+	if actualPath != "$" {
+		v, err := redisClient.JSONGet(context.Background(), key).Result()
+		if err != nil {
+			return nil, err
+		}
+		if v == "" {
+			interfaceVal := jsonVal.Value()
+			// key is new one but we need to insert a value other than root
+			// formulate {[path]: value}
+			m := make(map[string]interface{})
+			m[path] = interfaceVal
+			mapStr, err := json.Marshal(m)
+			if err != nil {
+				return nil, err
+			}
+			// data is not present in key
+			args = []interface{}{key, "$", string(mapStr)} // arguments to insert data
+		}
+	}
+	return args, nil
 }
 
 func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
-	nmSetArgs := m.ExtractJSONSetArgs(jsonData)
-	var jsonMSetStatusCmd *redis.StatusCmd
-	if m.clusterMode {
-		jsonMSetStatusCmd = m.clusterClient.JSONMSet(context.Background(), nmSetArgs...)
-	} else {
-		jsonMSetStatusCmd = m.client.JSONMSet(context.Background(), nmSetArgs...)
+	nmSetArgs, err := m.ExtractJSONSetArgs(jsonData)
+	if err != nil {
+		return nil, err
 	}
-	return jsonMSetStatusCmd.Result()
+	redisClient := m.GetClient()
+	ctx := context.Background()
+	val, err := redisClient.JSONMSet(ctx, nmSetArgs...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs[0], nmSetArgs[1], nmSetArgs[2], err)
+	}
+
+	return val, err
 }
 
-func (_ *RedisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+func (*RedisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
 	var dataAsJSON bool
 	if dataAsJSONI, ok := config["shouldSendDataAsJSON"]; ok {
 		if dataAsJSON, ok = dataAsJSONI.(bool); ok {
