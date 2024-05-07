@@ -317,7 +317,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				return
 			}
 			require.Equal(t, msgMap, res)
-			
+
 			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
 		})
 	}
