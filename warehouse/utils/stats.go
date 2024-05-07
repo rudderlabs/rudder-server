@@ -7,6 +7,7 @@ import (
 var statsSupportedTableNames = map[string]struct{}{
 	"tracks":     {},
 	"identifies": {},
+	"users":      {},
 	"pages":      {},
 	"screens":    {},
 	"aliases":    {},
