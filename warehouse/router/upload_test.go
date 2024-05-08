@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -157,7 +158,7 @@ func TestColumnCountStat(t *testing.T) {
 			})
 
 			tags := j.buildTags()
-			tags["tableName"] = tableName
+			tags["tableName"] = warehouseutils.TableNameForStats(tableName)
 
 			j.columnCountStat(tableName)
 
