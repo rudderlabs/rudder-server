@@ -292,10 +292,10 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				return
 			}
 			config := map[string]interface{}{
-				"shouldSendDataAsJSON": true,
-				"address":              redisAddr,
-				"db":                   0,
-				"clusterMode":          false,
+				"useJSONModule": true,
+				"address":       redisAddr,
+				"db":            0,
+				"clusterMode":   false,
 			}
 			kvMgr := &kvstoremanager.RedisManagerT{
 				Config: config,
@@ -359,10 +359,10 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			return
 		}
 		config := map[string]interface{}{
-			"shouldSendDataAsJSON": true,
-			"address":              redisAddr,
-			"db":                   0,
-			"clusterMode":          false,
+			"useJSONModule": true,
+			"address":       redisAddr,
+			"db":            0,
+			"clusterMode":   false,
 		}
 		kvMgr := &kvstoremanager.RedisManagerT{
 			Config: config,
@@ -390,10 +390,10 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			return
 		}
 		config := map[string]interface{}{
-			"shouldSendDataAsJSON": true,
-			"address":              redisAddr,
-			"db":                   0,
-			"clusterMode":          false,
+			"useJSONModule": true,
+			"address":       redisAddr,
+			"db":            0,
+			"clusterMode":   false,
 		}
 		kvMgr := &kvstoremanager.RedisManagerT{
 			Config: config,

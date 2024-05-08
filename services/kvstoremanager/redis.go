@@ -221,7 +221,7 @@ func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, e
 
 func (*RedisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
 	var dataAsJSON bool
-	if dataAsJSONI, ok := config["shouldSendDataAsJSON"]; ok {
+	if dataAsJSONI, ok := config["useJSONModule"]; ok {
 		if dataAsJSON, ok = dataAsJSONI.(bool); ok {
 			return dataAsJSON
 		}
