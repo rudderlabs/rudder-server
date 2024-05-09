@@ -195,7 +195,7 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 		"destType":    ch.Warehouse.Type,
 		"source":      ch.Warehouse.Source.ID,
 		"identifier":  ch.Warehouse.Identifier,
-		"tableName":   tableName,
+		"tableName":   warehouseutils.TableNameForStats(tableName),
 	}
 
 	numRowsLoadFile := ch.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
