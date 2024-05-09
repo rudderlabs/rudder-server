@@ -8,6 +8,8 @@ import (
 	"path"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -153,7 +155,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 		lo.Must(misc.CreateTMPDIR()),
 		"rudder-backups",
 		w.sourceID,
-		fmt.Sprintf("%d_%d_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
+		fmt.Sprintf("%d_%d_%s_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID, uuid.NewString()),
 	)
 
 	for _, job := range jobs {

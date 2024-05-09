@@ -3,6 +3,7 @@ package v2
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -94,7 +95,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	body, err := io.ReadAll(rts.req.Body)
 	if err != nil {
-		t.log.Errorn("reading request body",
+		t.log.Errorn("[preRoundTrip] reading request body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
@@ -106,7 +107,11 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
 		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
-			t.log.Debugn("augmenting the secret",
+			t.log.Errorn("[preRoundTrip] secret augmentation",
+				obskit.DestinationID(rts.destination.ID),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DefinitionName),
+				logger.NewStringField("flow", string(t.flow)),
 				logger.NewErrorField(err))
 			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
 		}
@@ -127,7 +132,14 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading response body post RoundTrip: %w", err)
+		t.log.Errorn("[postRoundTrip] reading response body",
+			obskit.DestinationID(rts.destination.ID),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DefinitionName),
+			logger.NewStringField("flow", string(t.flow)),
+			logger.NewErrorField(err),
+		)
+		return nil, fmt.Errorf("reading response body post roundTrip: %w", err)
 	}
 	interceptorResp := oauth.OAuthInterceptorResponse{}
 	// internal function
@@ -142,14 +154,26 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		return nil, fmt.Errorf("getting auth error category: %s", string(respData))
+		t.log.Errorn("[postRoundTrip] get authErrorCategory",
+			obskit.DestinationID(rts.destination.ID),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DefinitionName),
+			logger.NewStringField("flow", string(t.flow)),
+			logger.NewErrorField(errors.New(string(respData))),
+		)
+		return nil, fmt.Errorf("getting auth error category post roundTrip: %s", string(respData))
 	}
 	if authErrorCategory == common.CategoryRefreshToken {
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
 		if !ok {
-			return nil, fmt.Errorf("getting secret from context")
+			t.log.Errorn("[postRoundTrip] get secret from context",
+				obskit.DestinationID(rts.destination.ID),
+				obskit.WorkspaceID(rts.destination.WorkspaceID),
+				obskit.DestinationType(rts.destination.DefinitionName),
+				logger.NewStringField("flow", string(t.flow)))
+			return nil, fmt.Errorf("getting secret from context post roundTrip")
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
@@ -212,9 +236,11 @@ func (t *OAuthTransport) fireTimerStats(statName string, tags stats.Tags, startT
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	destination, ok := cntx.DestInfoFromCtx(req.Context())
 	if !ok {
-		return httpResponseCreator(http.StatusInternalServerError, []byte("the consent data is not of destinationInfo type")), nil
+		t.log.Errorn("destinationInfo is not present in request context", logger.NewStringField("flow", string(t.flow)))
+		return httpResponseCreator(http.StatusInternalServerError, []byte("request context data is not of destinationInfo type")), nil
 	}
 	if destination == nil {
+		t.log.Errorn("nil destination info in request context", logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
 	}
 
@@ -242,7 +268,9 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
-			logger.NewStringField("flow", string(t.flow)))
+			logger.NewStringField("flow", string(t.flow)),
+			logger.NewErrorField(err),
+		)
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{

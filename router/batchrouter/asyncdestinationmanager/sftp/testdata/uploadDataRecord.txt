@@ -1,0 +1,4 @@
+{"message":{"action":"insert","fields":{"C_Email":"test1@email.com","C_FirstName":"test1"},"type":"record"},"metadata":{"job_id":1}}
+{"message":{"action":"update","fields":{"C_Email":"test2@email.com","C_FirstName":"test2"},"type":"record"},"metadata":{"job_id":2}}
+{"message":{"action":"insert","fields":{"C_Email":"test3@email.com","C_FirstName":"test3"},"type":"record"},"metadata":{"job_id":3}}
+{"message":{"action":"insert","fields":{"C_Email":"test4@email.com","C_FirstName":"test4"},"type":"record"},"metadata":{"job_id":4}}

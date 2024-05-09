@@ -670,6 +670,19 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				stats.CountType,
 				gw.newReqTypeStatsTagsWithReason(reqType, ""),
 			).Count(len(jobs))
+
+			// Sending events to config backend
+			for _, job := range jobs {
+				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+				writeKey, ok := gw.getWriteKeyFromSourceID(sourceID)
+				if !ok {
+					gw.logger.Warnn("unable to get writeKey for job",
+						logger.NewStringField("uuid", job.UUID.String()),
+						obskit.SourceID(sourceID))
+					continue
+				}
+				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
+			}
 		}
 
 		status = http.StatusOK
@@ -722,6 +735,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		SourceTaskRunID string `json:"source_task_run_id"`
 		UserID          string `json:"user_id"`
 		TraceParent     string `json:"traceparent"`
+		DestinationID   string `json:"destination_id,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -755,16 +769,16 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
+			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
 				logger.NewStringField("userIDFromReq", msg.Properties.UserID),
 			)
-			arctx := gw.authRequestContextForSourceID(msg.Properties.SourceID)
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReason(arctx, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReason(&sourceConfig, reqType, errEventSuppressed.Error()),
 			).Increment()
 			continue
 		}
@@ -776,6 +790,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			SourceTaskRunID: msg.Properties.SourceTaskRunID,
 			UserID:          msg.Properties.UserID,
 			TraceParent:     msg.Properties.TraceID,
+			DestinationID:   msg.Properties.DestinationID,
 		}
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
@@ -799,9 +814,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if err != nil {
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
-
+		jobUUID := uuid.New()
 		jobs = append(jobs, &jobsdb.JobT{
-			UUID:         uuid.New(),
+			UUID:         jobUUID,
 			UserID:       msg.Properties.RoutingKey,
 			Parameters:   marshalledParams,
 			CustomVal:    customVal,
@@ -815,6 +830,24 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return jobs, nil
+}
+
+func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s
+	}
+	return backendconfig.SourceT{}
+}
+
+func (gw *Handle) getWriteKeyFromSourceID(sourceID string) (string, bool) {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s.WriteKey, true
+	}
+	return "", false
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
