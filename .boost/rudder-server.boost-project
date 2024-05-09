@@ -1,0 +1,957 @@
+{
+  "dataFormatVersion": "1.9.0",
+  "summary": {
+    "projectName": "rudder-server",
+    "summaryUrl": ".boost/rudder-server.summary.boost-notebook",
+    "filesToAnalyze": 100,
+    "filesAnalyzed": 0,
+    "issues": [
+      "No summary file found at .boost/rudder-server.summary.boost-notebook"
+    ]
+  },
+  "sectionSummary": {
+    "summary": {
+      "analysisType": "summary",
+      "status": "not-started",
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "totalCells": 0,
+      "filesAnalyzed": 0
+    }
+  },
+  "files": {
+    ".deepsource.toml": {
+      "sourceRelFile": ".deepsource.toml",
+      "notebookRelFile": ".boost/.deepsource.toml.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "README.md": {
+      "sourceRelFile": "README.md",
+      "notebookRelFile": ".boost/README.md.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    ".editorconfig": {
+      "sourceRelFile": ".editorconfig",
+      "notebookRelFile": ".boost/.editorconfig.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    ".golangci.yml": {
+      "sourceRelFile": ".golangci.yml",
+      "notebookRelFile": ".boost/.golangci.yml.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "go.sum": {
+      "sourceRelFile": "go.sum",
+      "notebookRelFile": ".boost/go.sum.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "archiver/options.go": {
+      "sourceRelFile": "archiver/options.go",
+      "notebookRelFile": ".boost/archiver/options.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "archiver/worker.go": {
+      "sourceRelFile": "archiver/worker.go",
+      "notebookRelFile": ".boost/archiver/worker.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "archiver/archiver.go": {
+      "sourceRelFile": "archiver/archiver.go",
+      "notebookRelFile": ".boost/archiver/archiver.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "archiver/archiver_test.go": {
+      "sourceRelFile": "archiver/archiver_test.go",
+      "notebookRelFile": ".boost/archiver/archiver_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/migration.go": {
+      "sourceRelFile": "jobsdb/migration.go",
+      "notebookRelFile": ".boost/jobsdb/migration.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "CONTRIBUTING.md": {
+      "sourceRelFile": "CONTRIBUTING.md",
+      "notebookRelFile": ".boost/CONTRIBUTING.md.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/integration_test.go": {
+      "sourceRelFile": "jobsdb/integration_test.go",
+      "notebookRelFile": ".boost/jobsdb/integration_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/ptr.go": {
+      "sourceRelFile": "testhelper/ptr.go",
+      "notebookRelFile": ".boost/testhelper/ptr.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "regulation-worker/cmd/main_test.go": {
+      "sourceRelFile": "regulation-worker/cmd/main_test.go",
+      "notebookRelFile": ".boost/regulation-worker/cmd/main_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "regulation-worker/cmd/main.go": {
+      "sourceRelFile": "regulation-worker/cmd/main.go",
+      "notebookRelFile": ".boost/regulation-worker/cmd/main.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "regulation-worker/README.md": {
+      "sourceRelFile": "regulation-worker/README.md",
+      "notebookRelFile": ".boost/regulation-worker/README.md.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "admin/admin.go": {
+      "sourceRelFile": "admin/admin.go",
+      "notebookRelFile": ".boost/admin/admin.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/dbutils.go": {
+      "sourceRelFile": "utils/misc/dbutils.go",
+      "notebookRelFile": ".boost/utils/misc/dbutils.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/queued_db_request.go": {
+      "sourceRelFile": "jobsdb/queued_db_request.go",
+      "notebookRelFile": ".boost/jobsdb/queued_db_request.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/backendconfigtest/source_builder.go": {
+      "sourceRelFile": "testhelper/backendconfigtest/source_builder.go",
+      "notebookRelFile": ".boost/testhelper/backendconfigtest/source_builder.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/backendconfigtest/value_builder.go": {
+      "sourceRelFile": "testhelper/backendconfigtest/value_builder.go",
+      "notebookRelFile": ".boost/testhelper/backendconfigtest/value_builder.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/asyncinit.go": {
+      "sourceRelFile": "utils/misc/asyncinit.go",
+      "notebookRelFile": ".boost/utils/misc/asyncinit.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/exponential.go": {
+      "sourceRelFile": "utils/misc/exponential.go",
+      "notebookRelFile": ".boost/utils/misc/exponential.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/timeutil/timeutil.go": {
+      "sourceRelFile": "utils/timeutil/timeutil.go",
+      "notebookRelFile": ".boost/utils/timeutil/timeutil.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "internal/drain-config/drainConfig.go": {
+      "sourceRelFile": "internal/drain-config/drainConfig.go",
+      "notebookRelFile": ".boost/internal/drain-config/drainConfig.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/dbutils_test.go": {
+      "sourceRelFile": "utils/misc/dbutils_test.go",
+      "notebookRelFile": ".boost/utils/misc/dbutils_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/utils.go": {
+      "sourceRelFile": "utils/utils.go",
+      "notebookRelFile": ".boost/utils/utils.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/revive/rudderlabs.toml": {
+      "sourceRelFile": "utils/revive/rudderlabs.toml",
+      "notebookRelFile": ".boost/utils/revive/rudderlabs.toml.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tests/oauth-cp-requests.go": {
+      "sourceRelFile": "utils/tests/oauth-cp-requests.go",
+      "notebookRelFile": ".boost/utils/tests/oauth-cp-requests.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/exponential_test.go": {
+      "sourceRelFile": "utils/misc/exponential_test.go",
+      "notebookRelFile": ".boost/utils/misc/exponential_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/template.go": {
+      "sourceRelFile": "testhelper/template.go",
+      "notebookRelFile": ".boost/testhelper/template.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/backup.go": {
+      "sourceRelFile": "jobsdb/backup.go",
+      "notebookRelFile": ".boost/jobsdb/backup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/.env": {
+      "sourceRelFile": "testhelper/.env",
+      "notebookRelFile": ".boost/testhelper/.env.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tx/tx.go": {
+      "sourceRelFile": "utils/tx/tx.go",
+      "notebookRelFile": ".boost/utils/tx/tx.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/retry.go": {
+      "sourceRelFile": "utils/misc/retry.go",
+      "notebookRelFile": ".boost/utils/misc/retry.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "internal/drain-config/http.go": {
+      "sourceRelFile": "internal/drain-config/http.go",
+      "notebookRelFile": ".boost/internal/drain-config/http.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/destination/transformer.go": {
+      "sourceRelFile": "testhelper/destination/transformer.go",
+      "notebookRelFile": ".boost/testhelper/destination/transformer.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tests/matchers.go": {
+      "sourceRelFile": "utils/tests/matchers.go",
+      "notebookRelFile": ".boost/utils/tests/matchers.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tests/chan.go": {
+      "sourceRelFile": "utils/tests/chan.go",
+      "notebookRelFile": ".boost/utils/tests/chan.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tests/async-helper.go": {
+      "sourceRelFile": "utils/tests/async-helper.go",
+      "notebookRelFile": ".boost/utils/tests/async-helper.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "internal/drain-config/drainConfig_test.go": {
+      "sourceRelFile": "internal/drain-config/drainConfig_test.go",
+      "notebookRelFile": ".boost/internal/drain-config/drainConfig_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/destination/common.go": {
+      "sourceRelFile": "testhelper/destination/common.go",
+      "notebookRelFile": ".boost/testhelper/destination/common.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/waitgroup.go": {
+      "sourceRelFile": "utils/misc/waitgroup.go",
+      "notebookRelFile": ".boost/utils/misc/waitgroup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/misc_suite_test.go": {
+      "sourceRelFile": "utils/misc/misc_suite_test.go",
+      "notebookRelFile": ".boost/utils/misc/misc_suite_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/tcpproxy/tcpproxy.go": {
+      "sourceRelFile": "utils/tcpproxy/tcpproxy.go",
+      "notebookRelFile": ".boost/utils/tcpproxy/tcpproxy.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/etcd/etcd.go": {
+      "sourceRelFile": "testhelper/etcd/etcd.go",
+      "notebookRelFile": ".boost/testhelper/etcd/etcd.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/httpclient.go": {
+      "sourceRelFile": "utils/sysUtils/httpclient.go",
+      "notebookRelFile": ".boost/utils/sysUtils/httpclient.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/payload/limiter_test.go": {
+      "sourceRelFile": "utils/payload/limiter_test.go",
+      "notebookRelFile": ".boost/utils/payload/limiter_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/filemanagerutil/filemanagerutil.go": {
+      "sourceRelFile": "utils/filemanagerutil/filemanagerutil.go",
+      "notebookRelFile": ".boost/utils/filemanagerutil/filemanagerutil.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb_test.go": {
+      "sourceRelFile": "jobsdb/jobsdb_test.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/pubsub/pubsub.go": {
+      "sourceRelFile": "utils/pubsub/pubsub.go",
+      "notebookRelFile": ".boost/utils/pubsub/pubsub.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/setup.go": {
+      "sourceRelFile": "schema-forwarder/setup.go",
+      "notebookRelFile": ".boost/schema-forwarder/setup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/pubsub/pubsub_test.go": {
+      "sourceRelFile": "utils/pubsub/pubsub_test.go",
+      "notebookRelFile": ".boost/utils/pubsub/pubsub_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/health/checker.go": {
+      "sourceRelFile": "testhelper/health/checker.go",
+      "notebookRelFile": ".boost/testhelper/health/checker.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb.go": {
+      "sourceRelFile": "jobsdb/jobsdb.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/clone.go": {
+      "sourceRelFile": "testhelper/clone.go",
+      "notebookRelFile": ".boost/testhelper/clone.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/io.go": {
+      "sourceRelFile": "utils/sysUtils/io.go",
+      "notebookRelFile": ".boost/utils/sysUtils/io.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/os.go": {
+      "sourceRelFile": "utils/sysUtils/os.go",
+      "notebookRelFile": ".boost/utils/sysUtils/os.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/default_string.go": {
+      "sourceRelFile": "utils/misc/default_string.go",
+      "notebookRelFile": ".boost/utils/misc/default_string.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/workspaceConfig/workspaceConfig.go": {
+      "sourceRelFile": "testhelper/workspaceConfig/workspaceConfig.go",
+      "notebookRelFile": ".boost/testhelper/workspaceConfig/workspaceConfig.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/cleanup.go": {
+      "sourceRelFile": "testhelper/cleanup.go",
+      "notebookRelFile": ".boost/testhelper/cleanup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/backendconfigtest/server_builder.go": {
+      "sourceRelFile": "testhelper/backendconfigtest/server_builder.go",
+      "notebookRelFile": ".boost/testhelper/backendconfigtest/server_builder.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/backendconfigtest/destination_builder.go": {
+      "sourceRelFile": "testhelper/backendconfigtest/destination_builder.go",
+      "notebookRelFile": ".boost/testhelper/backendconfigtest/destination_builder.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb_backup_test.go": {
+      "sourceRelFile": "jobsdb/jobsdb_backup_test.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb_backup_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/wrk/post.lua": {
+      "sourceRelFile": "utils/wrk/post.lua",
+      "notebookRelFile": ".boost/utils/wrk/post.lua.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb_renameDs_test.go": {
+      "sourceRelFile": "jobsdb/jobsdb_renameDs_test.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb_renameDs_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/log/log.go": {
+      "sourceRelFile": "testhelper/log/log.go",
+      "notebookRelFile": ".boost/testhelper/log/log.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/misc_test.go": {
+      "sourceRelFile": "utils/misc/misc_test.go",
+      "notebookRelFile": ".boost/utils/misc/misc_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/retry_test.go": {
+      "sourceRelFile": "utils/misc/retry_test.go",
+      "notebookRelFile": ".boost/utils/misc/retry_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/workerpool/internal_worker_test.go": {
+      "sourceRelFile": "utils/workerpool/internal_worker_test.go",
+      "notebookRelFile": ".boost/utils/workerpool/internal_worker_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/admin.go": {
+      "sourceRelFile": "jobsdb/admin.go",
+      "notebookRelFile": ".boost/jobsdb/admin.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/workerpool/internal_worker.go": {
+      "sourceRelFile": "utils/workerpool/internal_worker.go",
+      "notebookRelFile": ".boost/utils/workerpool/internal_worker.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/compress.go": {
+      "sourceRelFile": "utils/sysUtils/compress.go",
+      "notebookRelFile": ".boost/utils/sysUtils/compress.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/migration_test.go": {
+      "sourceRelFile": "jobsdb/migration_test.go",
+      "notebookRelFile": ".boost/jobsdb/migration_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/workerpool/worker_pool.go": {
+      "sourceRelFile": "utils/workerpool/worker_pool.go",
+      "notebookRelFile": ".boost/utils/workerpool/worker_pool.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/wrk/README.md": {
+      "sourceRelFile": "utils/wrk/README.md",
+      "notebookRelFile": ".boost/utils/wrk/README.md.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/awsutils/session_test.go": {
+      "sourceRelFile": "utils/awsutils/session_test.go",
+      "notebookRelFile": ".boost/utils/awsutils/session_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/queued_db_request_test.go": {
+      "sourceRelFile": "jobsdb/queued_db_request_test.go",
+      "notebookRelFile": ".boost/jobsdb/queued_db_request_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "controlplane/manager.go": {
+      "sourceRelFile": "controlplane/manager.go",
+      "notebookRelFile": ".boost/controlplane/manager.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/awsutils/session.go": {
+      "sourceRelFile": "utils/awsutils/session.go",
+      "notebookRelFile": ".boost/utils/awsutils/session.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/http.go": {
+      "sourceRelFile": "utils/sysUtils/http.go",
+      "notebookRelFile": ".boost/utils/sysUtils/http.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/setup.go": {
+      "sourceRelFile": "jobsdb/setup.go",
+      "notebookRelFile": ".boost/jobsdb/setup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/workerpool/worker_pool_test.go": {
+      "sourceRelFile": "utils/workerpool/worker_pool_test.go",
+      "notebookRelFile": ".boost/utils/workerpool/worker_pool_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb_utils.go": {
+      "sourceRelFile": "jobsdb/jobsdb_utils.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb_utils.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/internal/batcher/batcher.go": {
+      "sourceRelFile": "schema-forwarder/internal/batcher/batcher.go",
+      "notebookRelFile": ".boost/schema-forwarder/internal/batcher/batcher.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/internal/batcher/batcher_test.go": {
+      "sourceRelFile": "schema-forwarder/internal/batcher/batcher_test.go",
+      "notebookRelFile": ".boost/schema-forwarder/internal/batcher/batcher_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/sysUtils/archive.go": {
+      "sourceRelFile": "utils/sysUtils/archive.go",
+      "notebookRelFile": ".boost/utils/sysUtils/archive.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/jobsdb_suite_test.go": {
+      "sourceRelFile": "jobsdb/jobsdb_suite_test.go",
+      "notebookRelFile": ".boost/jobsdb/jobsdb_suite_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "controlplane/controlplane.go": {
+      "sourceRelFile": "controlplane/controlplane.go",
+      "notebookRelFile": ".boost/controlplane/controlplane.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "testhelper/backendconfigtest/config_builder.go": {
+      "sourceRelFile": "testhelper/backendconfigtest/config_builder.go",
+      "notebookRelFile": ".boost/testhelper/backendconfigtest/config_builder.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/internal/transformer/transformer.go": {
+      "sourceRelFile": "schema-forwarder/internal/transformer/transformer.go",
+      "notebookRelFile": ".boost/schema-forwarder/internal/transformer/transformer.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/internal/transformer/types.go": {
+      "sourceRelFile": "schema-forwarder/internal/transformer/types.go",
+      "notebookRelFile": ".boost/schema-forwarder/internal/transformer/types.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/prebackup/prebackup_test.go": {
+      "sourceRelFile": "jobsdb/prebackup/prebackup_test.go",
+      "notebookRelFile": ".boost/jobsdb/prebackup/prebackup_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/payload/limiter_setup.go": {
+      "sourceRelFile": "utils/payload/limiter_setup.go",
+      "notebookRelFile": ".boost/utils/payload/limiter_setup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "jobsdb/prebackup/prebackup.go": {
+      "sourceRelFile": "jobsdb/prebackup/prebackup.go",
+      "notebookRelFile": ".boost/jobsdb/prebackup/prebackup.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/maputil/maputil.go": {
+      "sourceRelFile": "utils/maputil/maputil.go",
+      "notebookRelFile": ".boost/utils/maputil/maputil.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "schema-forwarder/internal/transformer/transformer_test.go": {
+      "sourceRelFile": "schema-forwarder/internal/transformer/transformer_test.go",
+      "notebookRelFile": ".boost/schema-forwarder/internal/transformer/transformer_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/misc.go": {
+      "sourceRelFile": "utils/misc/misc.go",
+      "notebookRelFile": ".boost/utils/misc/misc.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "utils/misc/asyncinit_test.go": {
+      "sourceRelFile": "utils/misc/asyncinit_test.go",
+      "notebookRelFile": ".boost/utils/misc/asyncinit_test.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    },
+    "controlplane/auth.go": {
+      "sourceRelFile": "controlplane/auth.go",
+      "notebookRelFile": ".boost/controlplane/auth.go.boost-notebook",
+      "totalCells": 0,
+      "completedCells": 0,
+      "errorCells": 0,
+      "issueCells": 0,
+      "sections": {}
+    }
+  },
+  "account": {
+    "refreshed": true,
+    "enabled": true,
+    "status": "active",
+    "trialRemaining": 100,
+    "usageThisMonth": 0,
+    "discountedUsage": 0,
+    "lastOperationCost": 0,
+    "batchOperationCost": 0,
+    "balanceDue": 0,
+    "couponType": "Polyverse Boost Free Trial",
+    "org": "InternityFoundation",
+    "owner": "anantjain45823@gmail.com",
+    "created": "2023-10-04",
+    "creditCardLinked": false
+  },
+  "uiState": {
+    "analysisState": "quiescent",
+    "activityBarState": {
+      "summaryViewState": {
+        "analysisMode": "analyze-all-mode",
+        "analysisTypesState": {
+          "security": true,
+          "compliance": true,
+          "documentation": true
+        }
+      }
+    }
+  },
+  "settings": {
+    "fileLimit": 100
+  }
+}

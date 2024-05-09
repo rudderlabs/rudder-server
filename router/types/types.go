@@ -65,6 +65,7 @@ type JobMetadataT struct {
 	UserID             string          `json:"userId"`
 	JobID              int64           `json:"jobId"`
 	SourceID           string          `json:"sourceId"`
+	SourceCategory     string          `json:"sourceCategory"`
 	DestinationID      string          `json:"destinationId"`
 	AttemptNum         int             `json:"attemptNum"`
 	ReceivedAt         string          `json:"receivedAt"`

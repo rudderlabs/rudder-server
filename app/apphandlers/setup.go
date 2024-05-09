@@ -25,7 +25,7 @@ import (
 // AppHandler starts the app
 type AppHandler interface {
 	// Setup to be called only once before starting the app.
-	Setup(*app.Options) error
+	Setup() error
 	// StartRudderCore starts the app
 	StartRudderCore(context.Context, *app.Options) error
 }

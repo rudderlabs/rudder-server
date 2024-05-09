@@ -78,13 +78,20 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+				UploadUrl: "http://localhost/upload3",
+				RequestId: misc.FastUUID().URN(),
+			}, nil)
 
 			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
 				TrackingId: "randomTrackingId1",
 				RequestId:  "randomRequestId1",
 			}, nil)
 			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
-
+			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
+				TrackingId: "randomTrackingId3",
+				RequestId:  "randomRequestId3",
+			}, nil)
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			if err != nil {
 				fmt.Printf("Failed to create temporary directory: %v\n", err)
@@ -102,18 +109,18 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Add:error in uploading the bulk file: unable to get bulk upload url, check your credentials\"}",
-				ImportingJobIDs:     []int64{3, 4},
-				FailedJobIDs:        []int64{1, 2},
+				FailedReason:        "{\"error\":\"insert:error in uploading the bulk file: unable to get bulk upload url, check your credentials\"}",
+				ImportingJobIDs:     []int64{2, 4, 5, 6},
+				FailedJobIDs:        []int64{1, 3},
 				ImportingParameters: stdjson.RawMessage{},
-				ImportingCount:      2,
+				ImportingCount:      4,
 				FailedCount:         2,
 			}
 
@@ -137,11 +144,13 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
+			errorMsg := "Error in getting bulk upload url"
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
@@ -155,10 +164,10 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				return
 			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{3, 4, 1, 2},
-				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
+				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
+				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: Error in getting bulk upload url,insert:error in getting bulk upload url: Error in getting bulk upload url,delete:error in getting bulk upload url: Error in getting bulk upload url\"}",
 				ImportingCount:      0,
-				FailedCount:         4,
+				FailedCount:         6,
 				AbortCount:          0,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
@@ -190,12 +199,15 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 			ClientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &ClientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			errMsg := "unable to get bulk upload url, check your credentials"
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
+
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
@@ -209,9 +221,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				return
 			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{3, 4, 1, 2},
-				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: unable to get bulk upload url, check your credentials,Add:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
-				FailedCount:         4,
+				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
+				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: unable to get bulk upload url, check your credentials,insert:error in getting bulk upload url: unable to get bulk upload url, check your credentials,delete:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
+				FailedCount:         6,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
@@ -252,8 +264,13 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				UploadUrl: "http://localhost/upload2",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+				UploadUrl: "http://localhost/upload3",
+				RequestId: misc.FastUUID().URN(),
+			}, nil)
 			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload1", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
+			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			if err != nil {
@@ -272,7 +289,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
@@ -286,9 +303,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				return
 			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{3, 4, 1, 2},
-				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
-				FailedCount:         4,
+				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
+				FailedReason:        "{\"error\":\"update:error in uploading the bulk file: Error in uploading bulk file,insert:error in uploading the bulk file: Error in uploading bulk file,delete:error in uploading the bulk file: Error in uploading bulk file\"}",
+				FailedCount:         6,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
@@ -485,24 +502,33 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
+						JobID: 1,
+					},
+					{
+						JobID: 3,
+					},
+					{
+						JobID: 2,
+					},
+					{
+						JobID: 4,
+					},
+					{
 						JobID: 5,
 					},
 					{
 						JobID: 6,
-					},
-					{
-						JobID: 7,
 					},
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
 				StatusCode: 200,
 				Metadata: common.EventStatMeta{
-					FailedKeys: []int64{6},
+					FailedKeys: []int64{2},
 					FailedReasons: map[int64]string{
-						6: "EmailMustBeHashed",
+						2: "OfflineConversionAdjustmentValueRequired",
 					},
-					SucceededKeys: []int64{5, 7},
+					SucceededKeys: []int64{1, 3, 4, 5, 6},
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
@@ -543,67 +569,6 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
 
-		It("TestBingAdsUploadNoTrackingId", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
-				UploadUrl: "http://localhost/upload",
-				RequestId: misc.FastUUID().URN(),
-			}, nil)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
-				UploadUrl: "http://localhost/upload",
-				RequestId: misc.FastUUID().URN(),
-			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
-
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-
-			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
-				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
-				Destination:     &destination,
-				Manager:         bulkUploader,
-			}
-			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: unable to upload bulk file, check your credentials,Add:error in uploading the bulk file: unable to upload bulk file, check your credentials\"}",
-				FailedJobIDs:        []int64{3, 4, 1, 2},
-				ImportingParameters: stdjson.RawMessage{},
-				ImportingCount:      0,
-				FailedCount:         4,
-			}
-
-			// making upload function call
-			received := bulkUploader.Upload(&asyncDestination)
-			received.ImportingParameters = stdjson.RawMessage{}
-
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-
-			Expect(received).To(Equal(expected))
-		})
 	})
 })
 

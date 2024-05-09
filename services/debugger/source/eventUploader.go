@@ -1,5 +1,6 @@
 package sourcedebugger
 
+//go:generate mockgen -destination=./mocks/mock.go -package=mocks github.com/rudderlabs/rudder-server/services/debugger/source SourceDebugger
 import (
 	"context"
 	"encoding/json"

@@ -23,7 +23,7 @@ type BingAdsBulkUploader struct {
 }
 type Message struct {
 	Fields json.RawMessage `json:"fields"`
-	Action string          `json:"Action"`
+	Action string          `json:"action"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`

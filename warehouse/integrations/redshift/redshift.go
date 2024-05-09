@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -153,6 +154,7 @@ type Redshift struct {
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
 	connectTimeout time.Duration
+	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
 
@@ -194,6 +196,7 @@ type connectionCredentials struct {
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs := &Redshift{}
 
+	rs.conf = conf
 	rs.logger = log.Child("integrations").Child("redshift")
 	rs.stats = stat
 
@@ -464,7 +467,7 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.shouldMerge(tableName),
+		logfield.ShouldMerge, rs.ShouldMerge(tableName),
 	)
 	log.Infow("started loading")
 
@@ -519,7 +522,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	var rowsDeleted int64
-	if rs.shouldMerge(tableName) {
+	if rs.ShouldMerge(tableName) {
 		log.Infow("deleting from load table")
 		rowsDeleted, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -728,7 +731,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
-		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.shouldMerge(warehouseutils.UsersTable),
+		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.ShouldMerge(warehouseutils.UsersTable),
 		logfield.TableName, warehouseutils.UsersTable,
 	}
 	rs.logger.Infow("started loading for identifies and users tables", logFields...)
@@ -1342,7 +1345,7 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.connectTimeout = timeout
 }
 
-func (rs *Redshift) shouldMerge(tableName string) bool {
+func (rs *Redshift) ShouldMerge(tableName string) bool {
 	if !rs.config.allowMerge {
 		return false
 	}
@@ -1352,6 +1355,13 @@ func (rs *Redshift) shouldMerge(tableName string) bool {
 		// backwards compatibility.
 		return !slices.Contains(rs.config.skipDedupDestinationIDs, rs.Warehouse.Destination.ID)
 	}
+
+	configKey := "Warehouse.redshift.appendOnlyTables." + rs.Warehouse.Destination.ID
+	appendOnlyTables := rs.conf.GetStringSlice(configKey, nil)
+	if slices.Contains(appendOnlyTables, tableName) {
+		return false
+	}
+
 	// It's important to check the ability to append after skipDedup to make sure that if both
 	// skipDedupDestinationIDs and skipComputingUserLatestTraits are set, we still merge.
 	// see hyperverge user table use case for more details.

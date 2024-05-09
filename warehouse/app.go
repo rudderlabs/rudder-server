@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
+
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,7 +27,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -297,12 +298,6 @@ func (a *App) migrate() error {
 
 // Run runs the warehouse service
 func (a *App) Run(ctx context.Context) error {
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !mode.IsStandAlone(a.config.mode) && !db.IsNormalMode() {
-		a.logger.Info("Skipping start of warehouse service...")
-		return nil
-	}
-
 	a.logger.Info("Starting Warehouse service...")
 
 	defer func() {
@@ -321,6 +316,16 @@ func (a *App) Run(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		a.bcManager.Start(gCtx)
+		return nil
+	})
+	g.Go(func() error {
+		sqlutil.MonitorDatabase(
+			gCtx,
+			a.conf,
+			a.statsFactory,
+			a.db.DB,
+			"warehouse",
+		)
 		return nil
 	})
 
@@ -416,6 +421,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	g.Go(func() error {
 		return a.api.Start(gCtx)
+	})
+	g.Go(func() error {
+		a.notifier.Monitor(gCtx)
+		return nil
 	})
 	g.Go(func() error {
 		<-gCtx.Done()

@@ -11,9 +11,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
+	"reflect"
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -224,11 +224,6 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
 	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "&amp;", "&")
-	outputDir := "/tmp"
-	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		panic(fmt.Errorf("error creating output directory: err: %w", err))
-	}
 
 	// Download the zip file
 	fileLoadResp, err := http.Get(modifiedUrl)
@@ -250,6 +245,21 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	if err != nil {
 		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 	}
+	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(fmt.Errorf("Error while creating tmp directory Err: %w", err))
+	}
+	outputDir := path.Join(tmpDirPath, localTmpDirName)
+	// Create output directory if it doesn't exist
+	_, err = os.Stat(outputDir)
+	if os.IsNotExist(err) {
+		outputDir, err = os.MkdirTemp(outputDir, "")
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			panic(fmt.Errorf("error creating output directory: err: %w", err))
+		}
+	}
+
 	// Extract the contents of the zip file to the output directory
 	filePaths, err := unzip(tempFile.Name(), outputDir)
 	return filePaths, err
@@ -267,7 +277,6 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
-		// Open each file in the zip archive
 		rc, err := f.Open()
 		if err != nil {
 			return nil, err
@@ -275,16 +284,17 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 		defer rc.Close()
 
 		// Create the corresponding file in the target directory
-		path := filepath.Join(targetDir, f.Name)
+		path := filepath.Join(targetDir, uuid.NewString())
+		csvFilePath := fmt.Sprintf(`%s.csv`, path)
 		if f.FileInfo().IsDir() {
 			// Create directories if the file is a directory
-			err = os.MkdirAll(path, f.Mode())
+			err = os.MkdirAll(csvFilePath, f.Mode())
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			// Create the file and copy the contents
-			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			file, err := os.Create(csvFilePath)
 			if err != nil {
 				return nil, err
 			}
@@ -296,7 +306,7 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 			}
 
 			// Append the file path to the list
-			filePaths = append(filePaths, path)
+			filePaths = append(filePaths, csvFilePath)
 		}
 	}
 

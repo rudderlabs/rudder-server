@@ -500,7 +500,8 @@ var oauthDests = []backendconfig.DestinationT{
 			Name: "SALESFORCE_OAUTH",
 			Config: map[string]interface{}{
 				"auth": map[string]interface{}{
-					"type": "OAuth",
+					"type":         "OAuth",
+					"rudderScopes": []interface{}{"delivery"},
 				},
 			},
 		},
@@ -1151,7 +1152,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `reading response body post RoundTrip: unexpected EOF`, // not full error message
+			ProxyRequestResponseBody: `reading response body post roundTrip: unexpected EOF`, // not full error message
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1207,8 +1208,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
-			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1258,8 +1259,8 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
-			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category: LB cannot send to transformer`,
+			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
+			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
 			ProxyRequestStatusCode:   500,
 			RespStatusCodes:          map[int64]int{},
 		},

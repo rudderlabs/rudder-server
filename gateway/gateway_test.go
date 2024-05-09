@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
+
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
@@ -46,6 +48,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	mocksrcdebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -75,6 +78,8 @@ const (
 	RETLSourceType   = "retl"
 	sdkLibrary       = "sdkLibrary"
 	sdkVersion       = "v1.2.3"
+
+	writeKeyNotPresentInSource = "write-key-not-present-for-source"
 )
 
 var (
@@ -273,7 +278,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 
 			waitForBackendConfigInit(gateway)
@@ -398,7 +403,6 @@ var _ = Describe("Gateway", func() {
 		conf.Set("Gateway.enableEventSchemasFeature", false)
 		c = &testContext{}
 		c.Setup()
-		c.initializeAppFeatures()
 	})
 
 	AfterEach(func() {
@@ -407,8 +411,9 @@ var _ = Describe("Gateway", func() {
 
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
+			c.initializeAppFeatures()
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -424,6 +429,7 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			whServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "OK")
@@ -440,7 +446,7 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
@@ -480,7 +486,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
 				switch ep {
-				case "/internal/v1/replay", "/internal/v1/retl", "/internal/v1/batch":
+				case "/internal/v1/replay", "/internal/v1/retl":
 					req.Header.Set("X-Rudder-Source-Id", ReplaySourceID)
 				default:
 					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
@@ -530,11 +536,12 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			statsStore, err = memstats.New()
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -862,12 +869,13 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			statsStore, err = memstats.New()
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
 
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -968,12 +976,13 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			statsStore, err = memstats.New()
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
 			conf.Set("Gateway.enableRateLimit", true)
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1062,11 +1071,12 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			statsStore, err = memstats.New()
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1345,8 +1355,9 @@ var _ = Describe("Gateway", func() {
 		var gateway *Handle
 
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1371,8 +1382,9 @@ var _ = Describe("Gateway", func() {
 			userIDHeader = "userIDHeader"
 		)
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1552,8 +1564,9 @@ var _ = Describe("Gateway", func() {
 	Context("SaveWebhookFailures", func() {
 		var gateway *Handle
 		BeforeEach(func() {
+			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1614,6 +1627,206 @@ var _ = Describe("Gateway", func() {
 			}
 			err := gateway.SaveWebhookFailures(reqs)
 			Expect(err).To(BeNil())
+		})
+	})
+
+	Context("Internal Batch", func() {
+		client := http.Client{}
+		var (
+			gateway               *Handle
+			internalBatchEndpoint string
+			ctx                   context.Context
+			cancel                func()
+			wait                  chan struct{}
+			srcDebugger           *mocksrcdebugger.MockSourceDebugger
+		)
+
+		createInternalBatchPayload := func(userID, sourceID string) []byte {
+			validData := fmt.Sprintf(
+				`{"userId":%q,"data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				userID, sdkContext,
+			)
+			internalBatchPayload := fmt.Sprintf(`[{
+			"properties": {
+				"messageID": "messageID",
+				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				"workspaceID": %q,
+				"userID": %q,
+				"sourceID": %q,
+				"sourceJobRunID": "sourceJobRunID",
+				"sourceTaskRunID": "sourceTaskRunID",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z",
+				"requestIP": "1.1.1.1",
+				"traceID": "traceID"
+			},
+			"payload": %s
+			}]`, WorkspaceID, userID, sourceID, validData)
+			return []byte(internalBatchPayload)
+		}
+
+		createInternalBatchPayloadWithMultipleEvents := func(userID, sourceID, workspaceID string) []byte {
+			validData := fmt.Sprintf(
+				`{"userId":%q,"data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				userID, sdkContext,
+			)
+			internalBatchPayload := func() string {
+				return fmt.Sprintf(`{
+			"properties": {
+				"messageID": %q,
+				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				"workspaceID": %q,
+				"userID": %q,
+				"sourceID": %q,
+				"sourceJobRunID": "sourceJobRunID",
+				"sourceTaskRunID": "sourceTaskRunID",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z",
+				"requestIP": "1.1.1.1",
+				"traceID": "traceID"
+			},
+			"payload": %s
+			}`, uuid.NewString(), workspaceID, userID, sourceID, validData)
+			}
+			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
+		}
+
+		BeforeEach(func() {
+			c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
+			c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
+			c.initializeEnterpriseAppFeatures()
+
+			c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
+			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(nil).AnyTimes()
+			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
+				CreatedAt: time.Now(),
+			}).AnyTimes()
+			c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, writeKeyNotPresentInSource).Return(nil).AnyTimes()
+
+			conf = config.New()
+			conf.Set("Gateway.enableRateLimit", false)
+			conf.Set("Gateway.enableSuppressUserFeature", true)
+			conf.Set("Gateway.enableEventSchemasFeature", false)
+
+			var err error
+			serverPort, err := kithelper.GetFreePort()
+			Expect(err).To(BeNil())
+			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
+			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+
+			gateway = &Handle{}
+			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			Expect(err).To(BeNil())
+			waitForBackendConfigInit(gateway)
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
+			ctx, cancel = context.WithCancel(context.Background())
+			wait = make(chan struct{})
+			go func() {
+				err = gateway.StartWebHandler(ctx)
+				Expect(err).To(BeNil())
+				close(wait)
+			}()
+			Eventually(func() bool {
+				resp, err := http.Get(fmt.Sprintf("http://localhost:%d/version", serverPort))
+				if err != nil {
+					return false
+				}
+				return resp.StatusCode == http.StatusOK
+			}, time.Second*10, time.Second).Should(BeTrue())
+		})
+
+		AfterEach(func() {
+			cancel()
+			<-wait
+			c.Finish()
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("Successful request, with debugger", func() {
+			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("Successful request, without debugger", func() {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+			payload := createInternalBatchPayload(NormalUserID, writeKeyNotPresentInSource)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("request failed 0 messages", func() {
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[]`)))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
+		})
+
+		It("request failed unmarshall error", func() {
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[`)))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
+		})
+
+		It("request failed message validation error", func() {
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[{}]`)))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidStreamMessage))
+		})
+
+		It("request success - suppressed user", func() {
+			payload := createInternalBatchPayload(SuppressedUserID, SourceIDEnabled)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("request success - multiple messages", func() {
+			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(2)
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+			payload := createInternalBatchPayloadWithMultipleEvents(NormalUserID, SourceIDEnabled, WorkspaceID)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("request failed db error", func() {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Return(fmt.Errorf("db error"))
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusInternalServerError, resp.StatusCode)
 		})
 	})
 })
@@ -1711,7 +1924,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
 		"/v1/warehouse/jobs",
-		"/internal/v1/batch",
+		// "/internal/v1/batch", will be tested in new unit test
 	}
 
 	deleteEndpoints := []string{

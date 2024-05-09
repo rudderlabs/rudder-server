@@ -2,10 +2,12 @@ package common
 
 import (
 	stdjson "encoding/json"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -13,14 +15,44 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-type AsyncDestinationManager interface {
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+type AsyncUploadAndTransformManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
+	Transform(job *jobsdb.JobT) (string, error)
+}
+
+type AsyncDestinationManager interface {
+	AsyncUploadAndTransformManager
 	Poll(pollInput AsyncPoll) PollStatusResponse
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 	Transform(job *jobsdb.JobT) (string, error)
 }
 
-var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS", "ELOQUA"}
+type SimpleAsyncDestinationManager struct {
+	UploaderAndTransformer AsyncUploadAndTransformManager
+}
+
+func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+	return m.UploaderAndTransformer.Upload(asyncDestStruct)
+}
+
+func (m SimpleAsyncDestinationManager) Poll(AsyncPoll) PollStatusResponse {
+	return PollStatusResponse{
+		StatusCode: http.StatusOK,
+		Complete:   true,
+	}
+}
+
+func (m SimpleAsyncDestinationManager) GetUploadStats(GetUploadStatsInput) GetUploadStatsResponse {
+	return GetUploadStatsResponse{
+		StatusCode: http.StatusOK,
+	}
+}
+
+func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
+	return m.UploaderAndTransformer.Transform(job)
+}
 
 type PollStatusResponse struct {
 	Complete       bool
@@ -139,23 +171,22 @@ type GetUploadStatsResponse struct {
 }
 
 func GetTransformedData(payload stdjson.RawMessage) string {
-	return gjson.Get(string(payload), "body.JSON").String()
+	return gjson.GetBytes(payload, "body.JSON").String()
 }
 
-func GetMarshalledData(job *jobsdb.JobT) string {
-	payload := GetTransformedData(job.EventPayload)
+func GetMarshalledData(payload string, jobID int64) (string, error) {
 	var asyncJob AsyncJob
-	err := stdjson.Unmarshal([]byte(payload), &asyncJob.Message)
+	err := json.Unmarshal([]byte(payload), &asyncJob.Message)
 	if err != nil {
-		panic("Unmarshalling Transformer Response Failed")
+		return "", err
 	}
 	asyncJob.Metadata = make(map[string]interface{})
-	asyncJob.Metadata["job_id"] = job.JobID
-	responsePayload, err := stdjson.Marshal(asyncJob)
+	asyncJob.Metadata["job_id"] = jobID
+	responsePayload, err := json.Marshal(asyncJob)
 	if err != nil {
-		panic("Marshalling Response Payload Failed")
+		return "", err
 	}
-	return string(responsePayload)
+	return string(responsePayload), nil
 }
 
 func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {

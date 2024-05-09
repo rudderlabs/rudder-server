@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"golang.org/x/sync/errgroup"
 
@@ -12,15 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-)
-
-var (
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE", "BINGADS_OFFLINE_CONVERSIONS", "ELOQUA"}
-	warehouseDestinations     = []string{
-		"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL",
-		"AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
-	}
 )
 
 type LifecycleManager struct {
@@ -114,9 +104,7 @@ loop:
 					for k := range source.Destinations {
 						destination := &source.Destinations[k]
 						// For batch router destinations
-						if slices.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-							slices.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
-							slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+						if batchrouter.IsBatchRouterDestination(destination.DestinationDefinition.Name) {
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								r.logger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)

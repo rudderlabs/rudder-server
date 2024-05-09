@@ -1190,21 +1190,21 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	return nil
 }
 
-func (jd *Handle) getTableRowCount(jobTable string) int {
+func (jd *Handle) getTableRowCount(tx *Tx, jobTable string) int {
 	var count int
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, jobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := tx.QueryRow(sqlStatement)
 	err := row.Scan(&count)
 	jd.assertError(err)
 	return count
 }
 
-func (jd *Handle) getTableSize(jobTable string) int64 {
+func (jd *Handle) getTableSize(tx *Tx, jobTable string) int64 {
 	var tableSize int64
 
 	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := tx.QueryRow(sqlStatement)
 	err := row.Scan(&tableSize)
 	jd.assertError(err)
 	return tableSize
@@ -1213,26 +1213,28 @@ func (jd *Handle) getTableSize(jobTable string) int64 {
 func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
 		var minJobCreatedAt sql.NullTime
-		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
+		sqlStatement := fmt.Sprintf(`SELECT created_at FROM %q ORDER BY job_id ASC LIMIT 1`, ds.JobTable)
 		row := tx.QueryRow(sqlStatement)
 		err := row.Scan(&minJobCreatedAt)
-		if err != nil && err != sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		} else if err != nil {
 			return false, err
 		}
-		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
+		if minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
 		}
 	}
 
-	tableSize := jd.getTableSize(ds.JobTable)
+	tableSize := jd.getTableSize(tx, ds.JobTable)
+	totalCount := jd.getTableRowCount(tx, ds.JobTable)
 	if tableSize > jd.conf.maxTableSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
+		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
 		return true, nil
 	}
 
-	totalCount := jd.getTableRowCount(ds.JobTable)
 	if totalCount > jd.conf.MaxDSSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
+		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
 		return true, nil
 	}
 
@@ -1404,18 +1406,6 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 	for _, param := range cacheParameterFilters {
 		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
-			return err
-		}
-	}
-
-	// TODO : Evaluate a way to handle indexes only for particular tables
-	if jd.tablePrefix == "rt" {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv_ws" ON %[1]q (custom_val,workspace_id)`, newDS.JobTable)); err != nil {
-			return err
-		}
-	}
-	if jd.tablePrefix == "batch_rt" { // for retrieving active partitions filtered by destination type when workspace isolation is enabled
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws_cv" ON %[1]q (workspace_id,custom_val)`, newDS.JobTable)); err != nil {
 			return err
 		}
 	}
