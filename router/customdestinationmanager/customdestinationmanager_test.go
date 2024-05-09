@@ -211,7 +211,7 @@ var redisJSONTestCases = []redisTc{
 		redisImgTag:  "alpine3.19",
 		expectedSendDataResponse: sendDataResponse{
 			statusCode: 500,
-			err:        "ERR unknown command 'JSON.MSET', with args beginning with:",
+			err:        "ERR unknown command 'JSON.SET', with args beginning with:",
 		},
 	},
 }
