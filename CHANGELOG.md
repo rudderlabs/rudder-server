@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.1](https://github.com/rudderlabs/rudder-server/compare/v1.25.0...v1.25.1) (2024-05-09)
+
+
+### Miscellaneous
+
+* **deps:** bump golangci/golangci-lint-action from 5 to 6 ([#4663](https://github.com/rudderlabs/rudder-server/issues/4663)) ([5d54fc5](https://github.com/rudderlabs/rudder-server/commit/5d54fc5b4d935f3a924023b35010e82d46e4c61f))
+* reducing metrics cardinality ([#4662](https://github.com/rudderlabs/rudder-server/issues/4662)) ([565cfbe](https://github.com/rudderlabs/rudder-server/commit/565cfbe0baaaf4b07d68644d95b4922d3e7aeeb9))
+
 ## [1.25.0](https://github.com/rudderlabs/rudder-server/compare/v1.24.0...v1.25.0) (2024-05-06)
 
 
