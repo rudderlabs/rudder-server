@@ -167,7 +167,7 @@ func (m *RedisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]interface{}, error) {
+func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, error) {
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	path := gjson.GetBytes(jsonData, "message.path").String()
 	jsonVal := gjson.GetBytes(jsonData, "message.value")
@@ -180,7 +180,7 @@ func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]interfac
 	if path != "" {
 		actualPath = fmt.Sprintf("$.%s", path)
 	}
-	args := []interface{}{key, actualPath, jsonVal.String()}
+	args := []string{key, actualPath, jsonVal.String()}
 
 	if actualPath != "$" {
 		v, err := redisClient.JSONGet(context.Background(), key).Result()
@@ -198,7 +198,7 @@ func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]interfac
 				return nil, err
 			}
 			// data is not present in key
-			args = []interface{}{key, "$", string(mapStr)} // arguments to insert data
+			args = []string{key, "$", string(mapStr)} // arguments to insert data
 		}
 	}
 	return args, nil
@@ -211,7 +211,7 @@ func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, e
 	}
 	redisClient := m.GetClient()
 	ctx := context.Background()
-	val, err := redisClient.JSONMSet(ctx, nmSetArgs...).Result()
+	val, err := redisClient.JSONSet(ctx, nmSetArgs[0], nmSetArgs[1], nmSetArgs[2]).Result()
 	if err != nil {
 		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs[0], nmSetArgs[1], nmSetArgs[2], err)
 	}
