@@ -80,6 +80,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
 			HasFailed:  true,
+			Error:      string(bodyBytes),
 		}
 	}
 	var asyncResponse common.PollStatusResponse
