@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -348,6 +350,7 @@ func (bcm *BackendConfigManager) persistSSLFileErrorStat(
 		"module":        "warehouse",
 		"destType":      destType,
 		"warehouseID":   misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6)),
+		"sourceID":      sourceID,
 		"destinationID": destID,
 		"errTag":        errTag,
 	}

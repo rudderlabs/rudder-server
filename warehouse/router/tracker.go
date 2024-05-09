@@ -84,6 +84,8 @@ func (r *Router) Track(
 		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
 		"destType":    r.destType,
+		"sourceID":    source.ID,
+		"destID":      destination.ID,
 		"warehouseID": misc.GetTagName(
 			destination.ID,
 			source.Name,

@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -174,6 +175,8 @@ func TestRouter_Track(t *testing.T) {
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,
+				"sourceID":    warehouse.Source.ID,
+				"destID":      warehouse.Destination.ID,
 				"warehouseID": misc.GetTagName(
 					warehouse.Destination.ID,
 					warehouse.Source.Name,

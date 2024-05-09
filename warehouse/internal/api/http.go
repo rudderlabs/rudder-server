@@ -15,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -149,6 +150,8 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		"workspaceId": stagingFile.WorkspaceID,
 		"module":      "warehouse",
 		"destType":    payload.BatchDestination.Destination.DestinationDefinition.Name,
+		"sourceID":    payload.BatchDestination.Source.ID,
+		"destID":      payload.BatchDestination.Destination.ID,
 		"warehouseID": misc.GetTagName(
 			payload.BatchDestination.Destination.ID,
 			payload.BatchDestination.Source.Name,
