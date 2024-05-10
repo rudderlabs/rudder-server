@@ -568,7 +568,6 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
-
 	})
 })
 

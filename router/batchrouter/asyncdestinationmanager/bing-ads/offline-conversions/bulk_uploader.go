@@ -62,26 +62,26 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// validate for conversion time mscklid and conversion name
 	generalRequiredFields := []string{"microsoftClickId", "conversionName", "conversionTime"}
 	for _, field := range generalRequiredFields {
-		_, err := validateField(fields, field)
+		err := validateField(fields, field)
 		if err != nil {
 			return "", err
 		}
 	}
 	if event.Action != "insert" {
 		// validate for adjusted time
-		_, err := validateField(fields, "conversionAdjustedTime")
+		err := validateField(fields, "conversionAdjustedTime")
 		if err != nil {
 			return "", err
 		}
 		if event.Action == "update" {
 			// validate for Adjustment Value
-			_, err := validateField(fields, "conversionValue")
+			err := validateField(fields, "conversionValue")
 			if err != nil {
 				return "", err
 			}
 		}
 	}
-	var data = map[string]interface{}{
+	data := map[string]interface{}{
 		"message": map[string]interface{}{
 			"fields": event.Fields,
 			"Action": event.Action,

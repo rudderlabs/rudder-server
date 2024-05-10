@@ -11,13 +11,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
-	"reflect"
 
 	"github.com/google/uuid"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer, error) {
@@ -255,8 +256,8 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	_, err = os.Stat(outputDir)
 	if os.IsNotExist(err) {
 		outputDir, err = os.MkdirTemp(outputDir, "")
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			panic(fmt.Errorf("error creating output directory: err: %w", err))
+		if err != nil {
+			panic(fmt.Errorf("Error while creating output directory err: %w", err))
 		}
 	}
 
@@ -452,17 +453,17 @@ func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 /*
 This function validates if a `field` is present, not null and have a valid value or not in the `fields“ object
 */
-func validateField(fields map[string]interface{}, field string) (bool, error) {
+func validateField(fields map[string]interface{}, field string) ( error) {
 	val, ok := fields[field]
 	if !ok {
-		return false, fmt.Errorf("%v field not defined", field) // Field not defined
+		return fmt.Errorf("%v field not defined", field) // Field not defined
 	}
 	if val == nil {
-		return false, fmt.Errorf("%v field is null", field) // Field is null
+		return fmt.Errorf("%v field is null", field) // Field is null
 	}
 	// Check if the field value is empty for strings
 	if reflect.TypeOf(val) != reflect.TypeOf("") || val == "" {
-		return false, fmt.Errorf("%v field is either not string or an empty string", field)
+		return fmt.Errorf("%v field is either not string or an empty string", field)
 	}
-	return true, nil
+	return nil
 }
