@@ -26,15 +26,15 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
 
-	token := tokenSource{
-		workspaceID:     destination.WorkspaceID,
-		destinationName: destination.Name,
-		accountID:       destConfig.RudderAccountID,
-		oauthClient:     oauthClient,
-		oauthClientV2:   oauthClientV2,
-		destinationID:   destination.ID,
+	token := TokenSource{
+		WorkspaceID:     destination.WorkspaceID,
+		DestinationName: destination.Name,
+		AccountID:       destConfig.RudderAccountID,
+		OauthClient:     oauthClient,
+		OauthClientV2:   oauthClientV2,
+		DestinationID:   destination.ID,
 	}
-	secret, err := token.generateToken()
+	secret, err := token.GenerateToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
 	}

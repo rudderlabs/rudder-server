@@ -420,6 +420,10 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	return clientIDErrors, nil
 }
 
+// a -> b
+// data validation
+// sha256 ( email and phone)
+
 // GetUploadStats Related utils
 
 // get the list of unique error messages for a particular jobId.
