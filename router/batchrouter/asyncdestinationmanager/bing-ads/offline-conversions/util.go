@@ -255,7 +255,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	// Create output directory if it doesn't exist
 	_, err = os.Stat(outputDir)
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(outputDir, 0755)
+		err = os.MkdirAll(outputDir, 0o755)
 		if err != nil {
 			panic(fmt.Errorf("Error while creating output directory err: %w", err))
 		}
