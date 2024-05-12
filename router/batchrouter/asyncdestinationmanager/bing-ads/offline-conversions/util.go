@@ -255,7 +255,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	// Create output directory if it doesn't exist
 	_, err = os.Stat(outputDir)
 	if os.IsNotExist(err) {
-		outputDir, err = os.MkdirTemp(outputDir, "")
+		err = os.MkdirAll(outputDir, 0755)
 		if err != nil {
 			panic(fmt.Errorf("Error while creating output directory err: %w", err))
 		}
@@ -453,10 +453,10 @@ func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 /*
 This function validates if a `field` is present, not null and have a valid value or not in the `fields“ object
 */
-func validateField(fields map[string]interface{}, field string) ( error) {
+func validateField(fields map[string]interface{}, field string) error {
 	val, ok := fields[field]
 	if !ok {
-		return fmt.Errorf("%v field not defined", field) // Field not defined
+		return fmt.Errorf(" %v field not defined", field) // Field not defined
 	}
 	if val == nil {
 		return fmt.Errorf("%v field is null", field) // Field is null
