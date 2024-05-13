@@ -18,6 +18,7 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -289,39 +290,38 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := io.ReadAll(req.request.Body)
-			_ = req.request.Body.Close()
+			var body []byte
+			if req.request.Body != nil {
+				body, err = io.ReadAll(req.request.Body)
+				_ = req.request.Body.Close()
 
-			if err != nil {
-				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
-				continue
+				if err != nil {
+					req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
+					continue
+				}
+			}
+
+			jsonBody := "{}" // Default to an empty JSON object if no body is present
+			if len(body) > 0 {
+				if !json.Valid(body) {
+					req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+					continue
+				}
+				jsonBody = string(body)
 			}
 
 			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
-				paramsBytes, err := json.Marshal(queryParams)
-				if err != nil {
-					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
-					continue
+				for key, values := range queryParams {
+					jsonBody, err = sjson.Set(jsonBody, key, values[0]) // Just take the first value
+					if err != nil {
+						req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
+						continue
+					}
 				}
-
-				closingBraceIdx := bytes.LastIndexByte(body, '}')
-				if closingBraceIdx == -1 {
-					req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
-					continue
-				}
-				appendData := []byte(`, "query_parameters": `)
-				appendData = append(appendData, paramsBytes...)
-				body = append(body[:closingBraceIdx], appendData...)
-				body = append(body, '}')
 			}
 
-			if !json.Valid(body) {
-				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
-				continue
-			}
-
-			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, body)
+			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, []byte(jsonBody))
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidWebhookSource)}
 				continue
