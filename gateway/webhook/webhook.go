@@ -326,7 +326,6 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
 			}
-
 			if !json.Valid(body) {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
 				continue
