@@ -1427,6 +1427,238 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 		},
 		destination: oauthDests[0],
 	},
+
+	{
+		description:  "[v1proxy] when there are partial failures & no oauth errors, respective jobs should have their statuses",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message: "Request processed successfully",
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         12,
+					},
+					Error: "success",
+				},
+				{
+					StatusCode: http.StatusBadRequest,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         21,
+					},
+					Error: "client sent bad data, please correct it",
+				},
+				{
+					StatusCode: http.StatusBadGateway,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         34,
+					},
+					Error: "Something wrong with platform, please try after sometime",
+				},
+				{
+					StatusCode: http.StatusServiceUnavailable,
+					Metadata: ProxyRequestMetadata{
+						JobID:         46,
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+					Error: "platform has a problem, please try after sometime",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         12,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         21,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         34,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         46,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{},
+		expected: ProxyRequestResponse{
+			DontBatchDirectives: map[int64]bool{
+				12: false,
+				21: false,
+				34: false,
+				46: false,
+			},
+			RespBodys: map[int64]string{
+				12: "success",
+				21: "client sent bad data, please correct it",
+				34: "Something wrong with platform, please try after sometime",
+				46: "platform has a problem, please try after sometime",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: "{\"message\":\"Request processed successfully\",\"response\":[{\"statusCode\":200,\"metadata\":{\"jobId\":12,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"\",\"destinationId\":\"destination_id\",\"workspaceId\":\"workspace_id\",\"secret\":null,\"dontBatch\":false},\"error\":\"success\"},{\"statusCode\":400,\"metadata\":{\"jobId\":21,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"\",\"destinationId\":\"destination_id\",\"workspaceId\":\"workspace_id\",\"secret\":null,\"dontBatch\":false},\"error\":\"client sent bad data, please correct it\"},{\"statusCode\":502,\"metadata\":{\"jobId\":34,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"\",\"destinationId\":\"destination_id\",\"workspaceId\":\"workspace_id\",\"secret\":null,\"dontBatch\":false},\"error\":\"Something wrong with platform, please try after sometime\"},{\"statusCode\":503,\"metadata\":{\"jobId\":46,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"\",\"destinationId\":\"destination_id\",\"workspaceId\":\"workspace_id\",\"secret\":null,\"dontBatch\":false},\"error\":\"platform has a problem, please try after sometime\"}],\"authErrorCategory\":\"\"}",
+			ProxyRequestStatusCode:   http.StatusOK,
+			RespStatusCodes: map[int64]int{
+				12: http.StatusOK,
+				21: http.StatusBadRequest,
+				34: http.StatusBadGateway,
+				46: http.StatusServiceUnavailable,
+			},
+		},
+		destination: oauthDests[0],
+	},
+	{
+		description:  "[v1proxy] when there are partial failures with oauth error for a single job & CP errors out with 500, all jobs will have same status(500) and errored response from CP",
+		proxyVersion: "v1",
+		transformerProxyResponseV1: ProxyResponseV1{
+			Message:           "Request processed successfully",
+			AuthErrorCategory: common.CategoryRefreshToken,
+			Response: []TPDestResponse{
+				{
+					StatusCode: http.StatusOK,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         12,
+					},
+					Error: "success",
+				},
+				{
+					StatusCode: http.StatusBadRequest,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         21,
+					},
+					Error: "client sent bad data, please correct it",
+				},
+				{
+					StatusCode: http.StatusUnauthorized,
+					Metadata: ProxyRequestMetadata{
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+						JobID:         34,
+					},
+					Error: "token expired",
+				},
+				{
+					StatusCode: http.StatusServiceUnavailable,
+					Metadata: ProxyRequestMetadata{
+						JobID:         46,
+						WorkspaceID:   "workspace_id",
+						DestinationID: "destination_id",
+					},
+					Error: "platform has a problem, please try after sometime",
+				},
+			},
+		},
+		destType: "salesforce_oauth", // some destination
+		reqPayload: ProxyRequestPayload{
+			PostParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+			Metadata: []ProxyRequestMetadata{
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         12,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         21,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         34,
+				},
+				{
+					WorkspaceID:   "workspace_id",
+					DestinationID: "destination_id",
+					JobID:         46,
+				},
+			},
+			DestinationConfig: oauthDests[0].Config,
+		},
+		cpResponses: []testutils.CpResponseParams{
+			{
+				Code:     http.StatusInternalServerError,
+				Response: "internal error",
+			},
+		},
+		expected: ProxyRequestResponse{
+			OAuthErrorCategory: common.CategoryRefreshToken,
+			DontBatchDirectives: map[int64]bool{
+				12: false,
+				21: false,
+				34: false,
+				46: false,
+			},
+			RespBodys: map[int64]string{
+				12: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+				21: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+				34: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+				46: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+			},
+			RespContentType:          "application/json",
+			ProxyRequestResponseBody: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+			ProxyRequestStatusCode:   http.StatusInternalServerError,
+			RespStatusCodes: map[int64]int{
+				12: http.StatusInternalServerError,
+				21: http.StatusInternalServerError,
+				34: http.StatusInternalServerError,
+				46: http.StatusInternalServerError,
+			},
+		},
+		destination: oauthDests[0],
+	},
 }
 
 func TestProxyRequestWithOAuthV2(t *testing.T) {
