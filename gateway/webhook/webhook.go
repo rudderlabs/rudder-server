@@ -312,12 +312,21 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
+				// We are going to build a JSON object for the query parameters
+				queryParamJSON := "{}"
 				for key, values := range queryParams {
-					jsonBody, err = sjson.Set(jsonBody, key, values[0]) // Just take the first value
+					// We insert each parameter as an array (since each key could technically have multiple values)
+					queryParamJSON, err = sjson.Set(queryParamJSON, key, values[0])
 					if err != nil {
 						req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
 						continue
 					}
+				}
+				// Now we add the query parameters as a nested object under "query_parameters" in the main body
+				jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", queryParamJSON)
+				if err != nil {
+					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
+					continue
 				}
 			}
 
