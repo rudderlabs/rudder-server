@@ -290,15 +290,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			var body []byte
-			if req.request.Body != nil {
-				body, err = io.ReadAll(req.request.Body)
-				_ = req.request.Body.Close()
+			body, err := io.ReadAll(req.request.Body)
+			_ = req.request.Body.Close()
 
-				if err != nil {
-					req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
-					continue
-				}
+			if err != nil {
+				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
+				continue
 			}
 
 			jsonBody := "{}" // Default to an empty JSON object if no body is present
@@ -312,25 +309,26 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
-				// We are going to build a JSON object for the query parameters
-				queryParamJSON := "{}"
-				for key, values := range queryParams {
-					// We insert each parameter as an array (since each key could technically have multiple values)
-					queryParamJSON, err = sjson.Set(queryParamJSON, key, values[0])
-					if err != nil {
-						req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
-						continue
-					}
-				}
-				// Now we add the query parameters as a nested object under "query_parameters" in the main body
-				jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", queryParamJSON)
+				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {
 					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
+
+				jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", string(paramsBytes))
+				if err != nil {
+					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
+					continue
+				}
+				body = []byte(jsonBody)
 			}
 
-			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, []byte(jsonBody))
+			if !json.Valid(body) {
+				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+				continue
+			}
+
+			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, body)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidWebhookSource)}
 				continue
