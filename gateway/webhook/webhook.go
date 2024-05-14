@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -262,6 +263,36 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
+func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonBody := "{}" // Start with an empty JSON object if no body is present
+	if len(body) > 0 {
+		if !json.Valid(body) {
+			return nil, fmt.Errorf("invalid JSON in request body")
+		}
+		jsonBody = string(body)
+	}
+
+	if includeQueryParams && slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
+		queryParams := req.URL.Query()
+		paramsBytes, err := json.Marshal(queryParams)
+		if err != nil {
+			return nil, err
+		}
+
+		jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", string(paramsBytes))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return []byte(jsonBody), nil
+}
+
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
@@ -290,37 +321,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := io.ReadAll(req.request.Body)
-			_ = req.request.Body.Close()
-
+			body, err := prepareRequestBody(req.request, slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)), breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
-			}
-
-			jsonBody := "{}" // Default to an empty JSON object if no body is present
-			if len(body) > 0 {
-				if !json.Valid(body) {
-					req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
-					continue
-				}
-				jsonBody = string(body)
-			}
-
-			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
-				queryParams := req.request.URL.Query()
-				paramsBytes, err := json.Marshal(queryParams)
-				if err != nil {
-					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
-					continue
-				}
-
-				jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", string(paramsBytes))
-				if err != nil {
-					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
-					continue
-				}
-				body = []byte(jsonBody)
 			}
 
 			if !json.Valid(body) {

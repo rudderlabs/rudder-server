@@ -14,6 +14,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -432,4 +433,58 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 1)
+}
+
+// TestPrepareRequestBodyEmptyRequest tests handling an empty request body and no query parameters.
+func TestPrepareRequestBodyEmptyRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	result, err := prepareRequestBody(req, false, "", nil)
+	if err != nil || string(result) != "{}" {
+		t.Errorf("Expected empty JSON object, got %s, error: %v", string(result), err)
+	}
+}
+
+// TestPrepareRequestBodyValidJSON tests handling a valid JSON body with no query parameters.
+func TestPrepareRequestBodyValidJSON(t *testing.T) {
+	jsonStr := `{"key":"value"}`
+	req := httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(jsonStr))
+	result, err := prepareRequestBody(req, false, "", nil)
+	if err != nil || string(result) != jsonStr {
+		t.Errorf("Expected JSON %s, got %s, error: %v", jsonStr, string(result), err)
+	}
+}
+
+// TestPrepareRequestBodyInvalidJSON tests handling an invalid JSON body.
+func TestPrepareRequestBodyInvalidJSON(t *testing.T) {
+	jsonStr := `"key":"value"`
+	req := httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(jsonStr))
+	_, err := prepareRequestBody(req, false, "", nil)
+	if err == nil {
+		t.Errorf("Expected error for invalid JSON, got nil")
+	}
+}
+
+// TestPrepareRequestBodyIncludeQueryParams tests including query parameters when conditions are met.
+func TestPrepareRequestBodyIncludeQueryParams(t *testing.T) {
+	jsonStr := `{"key":"value"}`
+	req := httptest.NewRequest(http.MethodGet, "http://example.com?param1=value1&param2=value2", strings.NewReader(jsonStr))
+	result, err := prepareRequestBody(req, true, "example", []string{"example"})
+	if err != nil {
+		t.Errorf("Did not expect error, got: %v", err)
+	}
+
+	expectedJSON, _ := sjson.SetRaw(jsonStr, "query_parameters", `{"param1":["value1"],"param2":["value2"]}`)
+	if string(result) != expectedJSON {
+		t.Errorf("Expected JSON %s, got %s", expectedJSON, string(result))
+	}
+}
+
+// TestPrepareRequestBodyExcludeQueryParams tests excluding query parameters.
+func TestPrepareRequestBodyExcludeQueryParams(t *testing.T) {
+	jsonStr := `{"key":"value"}`
+	req := httptest.NewRequest(http.MethodGet, "http://example.com?param1=value1", strings.NewReader(jsonStr))
+	result, err := prepareRequestBody(req, false, "example", []string{"example"})
+	if err != nil || string(result) != jsonStr {
+		t.Errorf("Expected JSON %s, got %s, error: %v", jsonStr, string(result), err)
+	}
 }
