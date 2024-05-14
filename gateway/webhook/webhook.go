@@ -18,6 +18,7 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -297,6 +298,15 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
+			jsonBody := "{}" // Default to an empty JSON object if no body is present
+			if len(body) > 0 {
+				if !json.Valid(body) {
+					req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+					continue
+				}
+				jsonBody = string(body)
+			}
+
 			if slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
@@ -305,24 +315,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					continue
 				}
 
-				jsonBody := "{}" // Default to an empty JSON object if no body is present
-				if len(body) > 0 {
-					if !json.Valid(body) {
-						req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
-						continue
-					}
-					jsonBody = string(body)
-				}
-
-				closingBraceIdx := bytes.LastIndexByte([]byte(jsonBody), '}')
-				if closingBraceIdx == -1 {
-					req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+				jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", string(paramsBytes))
+				if err != nil {
+					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
-				appendData := []byte(`, "query_parameters": `)
-				appendData = append(appendData, paramsBytes...)
-				body = append([]byte(jsonBody[:closingBraceIdx]), appendData...)
-				body = append(body, '}')
+				body = []byte(jsonBody)
 			}
 
 			if !json.Valid(body) {
