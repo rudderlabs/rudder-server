@@ -9,6 +9,7 @@ import (
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
+	klaviyobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
 )
@@ -40,6 +41,8 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return eloqua.NewManager(destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
 		return yandexmetrica.NewManager(destination, backendConfig)
+	case "KLAVIYO_BULK_UPLOAD":
+		return klaviyobulkupload.NewManager(destination)
 	}
 	return nil, errors.New("invalid destination type")
 }
