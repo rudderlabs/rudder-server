@@ -287,7 +287,7 @@ func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType s
 			return nil, errors.New(response.InvalidJSON)
 		}
 	}
-	return []byte(jsonBody), nil
+	return jsonBody, nil
 }
 
 // TODO : return back immediately for blank request body. its waiting till timeout
