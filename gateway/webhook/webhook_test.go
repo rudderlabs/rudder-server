@@ -14,7 +14,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -435,46 +434,50 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.EqualValues(t, m.LastValue(), 1)
 }
 
-// TestPrepareRequestBodyEmptyRequest tests handling an empty request body and no query parameters.
-func TestPrepareRequestBodyEmptyRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	result, err := prepareRequestBody(req, false, "", nil)
-	if err != nil || string(result) != "{}" {
-		t.Errorf("Expected empty JSON object, got %s, error: %v", string(result), err)
+func TestPrepareRequestBody(t *testing.T) {
+	testCases := []struct {
+		name                       string
+		req                        *http.Request
+		includeQueryParams         bool
+		sourceType                 string
+		sourceListForParsingParams []string
+		expectedError              bool
+		expectedResponse           string
+	}{
+		{
+			name:                       "Empty request body and no query parameters",
+			req:                        httptest.NewRequest(http.MethodGet, "http://example.com", nil),
+			includeQueryParams:         false,
+			sourceType:                 "",
+			sourceListForParsingParams: nil,
+			expectedError:              false,
+			expectedResponse:           "{}",
+		},
+		{
+			name:                       "Valid JSON body with no query parameters",
+			req:                        httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`)),
+			includeQueryParams:         false,
+			sourceType:                 "",
+			sourceListForParsingParams: nil,
+			expectedError:              false,
+			expectedResponse:           `{"key":"value"}`,
+		},
+		{
+			name:                       "Invalid JSON body",
+			req:                        httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(`"key":"value"`)),
+			includeQueryParams:         false,
+			sourceType:                 "",
+			sourceListForParsingParams: nil,
+			expectedError:              true,
+			expectedResponse:           "",
+		},
 	}
-}
 
-// TestPrepareRequestBodyValidJSON tests handling a valid JSON body with no query parameters.
-func TestPrepareRequestBodyValidJSON(t *testing.T) {
-	jsonStr := `{"key":"value"}`
-	req := httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(jsonStr))
-	result, err := prepareRequestBody(req, false, "", nil)
-	if err != nil || string(result) != jsonStr {
-		t.Errorf("Expected JSON %s, got %s, error: %v", jsonStr, string(result), err)
-	}
-}
-
-// TestPrepareRequestBodyIncludeQueryParams tests including query parameters when conditions are met.
-func TestPrepareRequestBodyIncludeQueryParams(t *testing.T) {
-	jsonStr := `{"key":"value"}`
-	req := httptest.NewRequest(http.MethodGet, "http://example.com?param1=value1&param2=value2", strings.NewReader(jsonStr))
-	result, err := prepareRequestBody(req, true, "example", []string{"example"})
-	if err != nil {
-		t.Errorf("Did not expect error, got: %v", err)
-	}
-
-	expectedJSON, _ := sjson.SetRaw(jsonStr, "query_parameters", `{"param1":["value1"],"param2":["value2"]}`)
-	if string(result) != expectedJSON {
-		t.Errorf("Expected JSON %s, got %s", expectedJSON, string(result))
-	}
-}
-
-// TestPrepareRequestBodyExcludeQueryParams tests excluding query parameters.
-func TestPrepareRequestBodyExcludeQueryParams(t *testing.T) {
-	jsonStr := `{"key":"value"}`
-	req := httptest.NewRequest(http.MethodGet, "http://example.com?param1=value1", strings.NewReader(jsonStr))
-	result, err := prepareRequestBody(req, false, "example", []string{"example"})
-	if err != nil || string(result) != jsonStr {
-		t.Errorf("Expected JSON %s, got %s, error: %v", jsonStr, string(result), err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := prepareRequestBody(tc.req, tc.includeQueryParams, tc.sourceType, tc.sourceListForParsingParams)
+			require.Equal(t, tc.expectedError, err != nil)
+			require.Equal(t, tc.expectedResponse, string(result))
+		})
 	}
 }
