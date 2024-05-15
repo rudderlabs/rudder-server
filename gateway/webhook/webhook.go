@@ -266,30 +266,26 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(response.RequestBodyReadFailed)
 	}
 
-	jsonBody := "{}" // Start with an empty JSON object if no body is present
+	jsonBody := []byte("{}") // Start with an empty JSON object if no body is present
 	if len(body) > 0 {
-		if !json.Valid(body) {
-			return nil, fmt.Errorf("invalid JSON in request body")
-		}
-		jsonBody = string(body)
+		jsonBody = body
 	}
 
 	if includeQueryParams && slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
 		queryParams := req.URL.Query()
 		paramsBytes, err := json.Marshal(queryParams)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(response.ErrorInMarshal)
 		}
 
-		jsonBody, err = sjson.SetRaw(jsonBody, "query_parameters", string(paramsBytes))
+		jsonBody, err = sjson.SetRawBytes(jsonBody, "query_parameters", paramsBytes)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(response.InvalidJSON)
 		}
 	}
-
 	return []byte(jsonBody), nil
 }
 
@@ -323,7 +319,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		for _, req := range breq.batchRequest {
 			body, err := prepareRequestBody(req.request, slices.Contains(bt.webhook.config.sourceListForParsingParams, breq.sourceType), breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
-				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
+				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
 				continue
 			}
 			if !json.Valid(body) {
