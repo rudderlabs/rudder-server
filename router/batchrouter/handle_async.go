@@ -476,6 +476,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 				Jobs:       []*jobsdb.JobT{job},
 				Connection: batchJobs.Connection,
 				TimeWindow: batchJobs.TimeWindow,
+				JobState:   jobsdb.Aborted.State,
 			}
 			brt.updateJobStatus(&failedAsyncJobs, false, err, false)
 			continue

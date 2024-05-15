@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -47,37 +48,41 @@ returns: A string of object in form
 */
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Unmarshal the JSON raw message into the record struct
+	payload, err := common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
+	if err != nil {
+		return gjson.GetBytes(job.EventPayload, "body.JSON").String(), err
+	}
 	var event Record
 	var fields map[string]interface{}
-	err := json.Unmarshal(job.EventPayload, &event)
+	err = json.Unmarshal(job.EventPayload, &event)
 	if err != nil {
 		fmt.Println("Error during unmarshalling event:", err)
-		return "Error during unmarshalling event:", err
+		return payload, err
 	}
 	err = json.Unmarshal(event.Fields, &fields)
 	if err != nil {
 		fmt.Println("Error during unmarshalling event.fields:", err)
-		return "Error during unmarshalling event.fields:", err
+		return payload, err
 	}
 	// validate for conversion time mscklid and conversion name
 	generalRequiredFields := []string{"microsoftClickId", "conversionName", "conversionTime"}
 	for _, field := range generalRequiredFields {
 		err := validateField(fields, field)
 		if err != nil {
-			return "", err
+			return payload, err
 		}
 	}
 	if event.Action != "insert" {
 		// validate for adjusted time
 		err := validateField(fields, "conversionAdjustedTime")
 		if err != nil {
-			return "", err
+			return payload, err
 		}
 		if event.Action == "update" {
 			// validate for Adjustment Value
 			err := validateField(fields, "conversionValue")
 			if err != nil {
-				return "", err
+				return payload, err
 			}
 		}
 	}
@@ -92,7 +97,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return "", err
+		return payload, err
 	}
 	return string(jsonData), nil
 }
