@@ -321,7 +321,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := prepareRequestBody(req.request, slices.Contains(bt.webhook.config.sourceListForParsingParams, strings.ToLower(breq.sourceType)), breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			body, err := prepareRequestBody(req.request, slices.Contains(bt.webhook.config.sourceListForParsingParams, breq.sourceType), breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
