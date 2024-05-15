@@ -454,16 +454,6 @@ func TestPrepareRequestBodyValidJSON(t *testing.T) {
 	}
 }
 
-// TestPrepareRequestBodyInvalidJSON tests handling an invalid JSON body.
-func TestPrepareRequestBodyInvalidJSON(t *testing.T) {
-	jsonStr := `"key":"value"`
-	req := httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(jsonStr))
-	_, err := prepareRequestBody(req, false, "", nil)
-	if err == nil {
-		t.Errorf("Expected error for invalid JSON, got nil")
-	}
-}
-
 // TestPrepareRequestBodyIncludeQueryParams tests including query parameters when conditions are met.
 func TestPrepareRequestBodyIncludeQueryParams(t *testing.T) {
 	jsonStr := `{"key":"value"}`

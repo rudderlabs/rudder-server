@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -264,6 +263,8 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 }
 
 func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
+	defer req.Body.Close()
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, errors.New(response.RequestBodyReadFailed)
