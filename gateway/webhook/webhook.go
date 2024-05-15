@@ -263,16 +263,17 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 }
 
 func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
-	defer req.Body.Close()
+	defer func() {
+		_ = req.Body.Close()
+	}()
 
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, errors.New(response.RequestBodyReadFailed)
 	}
 
-	jsonBody := []byte("{}") // Start with an empty JSON object if no body is present
-	if len(body) > 0 {
-		jsonBody = body
+	if len(body) == 0 {
+		body = []byte("{}") // If body is empty, set it to an empty JSON object
 	}
 
 	if includeQueryParams && slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
@@ -282,12 +283,12 @@ func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType s
 			return nil, errors.New(response.ErrorInMarshal)
 		}
 
-		jsonBody, err = sjson.SetRawBytes(jsonBody, "query_parameters", paramsBytes)
+		body, err = sjson.SetRawBytes(body, "query_parameters", paramsBytes)
 		if err != nil {
 			return nil, errors.New(response.InvalidJSON)
 		}
 	}
-	return jsonBody, nil
+	return body, nil
 }
 
 // TODO : return back immediately for blank request body. its waiting till timeout
