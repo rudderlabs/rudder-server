@@ -337,7 +337,11 @@ func (trans *handle) transform(
 			trans.guardConcurrency <- struct{}{}
 			go func() {
 				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = trans.request(ctx, url, stage, batch)
+					if trans.config.useGrpcClient.Load() {
+						transformResponse[i] = trans.grpcRequest(ctx, url, stage, batch)
+					} else {
+						transformResponse[i] = trans.request(ctx, url, stage, batch)
+					}
 				})
 				<-trans.guardConcurrency
 				wg.Done()
@@ -691,4 +695,8 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 	}
 
 	return respData, statusCode
+}
+
+func (trans *handle) grpcRequest(ctx context.Context, url, stage string, data []TransformerEvent) []TransformerResponse {
+
 }
