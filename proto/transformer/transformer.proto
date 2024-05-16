@@ -21,7 +21,7 @@ message Response{
   Metadata metadata = 2;
   int32 status_code = 3;
   string error = 4;
-  ValidationError validation_error = 5;
+  repeated ValidationError validation_error = 5;
 }
 
 message ValidationError {

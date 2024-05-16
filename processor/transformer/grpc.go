@@ -10,6 +10,10 @@ import (
 	transformerpb "github.com/rudderlabs/rudder-server/proto/transformer"
 )
 
+// TODO: What should we do with these fields.
+// SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
+// MergedTpConfig      map[string]interface{}
+// RecordID            interface{}                       `json:"recordId"`
 func (trans *handle) grpcRequest(ctx context.Context, data []TransformerEvent) []TransformerResponse {
 	protoRes, err := trans.transformerSvc.Transform(ctx, &transformerpb.TransformRequest{
 		Events: lo.Map(data, func(event TransformerEvent, _ int) *transformerpb.TransformerEvent {
@@ -84,15 +88,64 @@ func convertMetadataToProto(metadata *Metadata) *transformerpb.Metadata {
 }
 
 func convertProtoToTransformerResponse(res *transformerpb.TransformResponse) []TransformerResponse {
-	return lo.Map(res.Response, func(protoRes *transformerpb.Response, _ int) TransformerResponse {
-		return TransformerResponse{} // TODO: implement me
-	})
+	transformerResponses := make([]TransformerResponse, len(res.Response))
+
+	for i, protoRes := range res.Response {
+		transformerResponses[i] = TransformerResponse{
+			Output:     protoRes.Output.AsMap(),
+			Metadata:   convertProtoMetadataToStruct(protoRes.Metadata),
+			StatusCode: int(protoRes.StatusCode),
+			Error:      protoRes.Error,
+			ValidationErrors: lo.Map(protoRes.ValidationError, func(protoValidationError *transformerpb.ValidationError, _ int) ValidationError {
+				return convertProtoValidationErrorToStruct(protoValidationError)
+			}),
+		}
+	}
+
+	return transformerResponses
 }
 
-func ConvertValidationErrorToProto(validationError *ValidationError) *transformerpb.ValidationError {
-	return &transformerpb.ValidationError{
-		Type:    validationError.Type,
-		Message: validationError.Message,
-		Meta:    validationError.Meta,
+// Helper function to convert proto Metadata to Struct
+func convertProtoMetadataToStruct(protoMetadata *transformerpb.Metadata) Metadata {
+	return Metadata{
+		SourceID:                protoMetadata.SourceId,
+		SourceName:              protoMetadata.SourceName,
+		WorkspaceID:             protoMetadata.WorkspaceId,
+		Namespace:               protoMetadata.Namespace,
+		InstanceID:              protoMetadata.InstanceId,
+		SourceType:              protoMetadata.SourceType,
+		SourceCategory:          protoMetadata.SourceCategory,
+		TrackingPlanId:          protoMetadata.TrackingPlanId,
+		TrackingPlanVersion:     int(protoMetadata.TrackingPlanVersion),
+		DestinationID:           protoMetadata.DestinationId,
+		JobID:                   protoMetadata.JobId,
+		SourceJobID:             protoMetadata.SourceJobId,
+		SourceJobRunID:          protoMetadata.SourceJobRunId,
+		SourceTaskRunID:         protoMetadata.SourceTaskRunId,
+		DestinationType:         protoMetadata.DestinationType,
+		MessageID:               protoMetadata.MessageId,
+		OAuthAccessToken:        protoMetadata.OauthAccessToken,
+		TraceParent:             protoMetadata.TraceParent,
+		MessageIDs:              protoMetadata.MessageIds,
+		RudderID:                protoMetadata.RudderId,
+		ReceivedAt:              protoMetadata.ReceivedAt,
+		EventName:               protoMetadata.EventName,
+		EventType:               protoMetadata.EventType,
+		SourceDefinitionID:      protoMetadata.SourceDefinitionId,
+		DestinationDefinitionID: protoMetadata.DestinationDefinitionId,
+		TransformationID:        protoMetadata.TransformationId,
+		TransformationVersionID: protoMetadata.TransformationVersionId,
+	}
+}
+
+// Helper function to convert proto ValidationError to Struct
+func convertProtoValidationErrorToStruct(protoValidationError *transformerpb.ValidationError) ValidationError {
+	if protoValidationError == nil {
+		return ValidationError{}
+	}
+	return ValidationError{
+		Type:    protoValidationError.Type,
+		Message: protoValidationError.Message,
+		Meta:    protoValidationError.Meta,
 	}
 }
