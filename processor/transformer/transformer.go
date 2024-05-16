@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	transformerPb "github.com/rudderlabs/rudder-server/proto/transformer"
+	transformerpb "github.com/rudderlabs/rudder-server/proto/transformer"
 
 	"github.com/valyala/fasthttp"
 
@@ -186,7 +186,7 @@ type handle struct {
 
 	client         *http.Client
 	fasthttpClient *fasthttp.Client
-	transformerSvc transformerPb.TransformerServiceClient
+	grpcClient     transformerpb.TransformerServiceClient
 
 	guardConcurrency chan struct{}
 
@@ -258,11 +258,14 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	}
 
 	conn, err := grpc.NewClient(
-		conf.GetString("TRANSFORM_GRPC_URL", fmt.Sprintf("localhost:%d", 7567)), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conf.GetString("TRANSFORM_GRPC_URL", fmt.Sprintf("localhost:%d", 7567)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
 		panic(err)
 	}
-	trans.transformerSvc = transformerPb.NewTransformerServiceClient(conn)
+	trans.grpcClient = transformerpb.NewTransformerServiceClient(conn)
+
 	for _, opt := range opts {
 		opt(&trans)
 	}

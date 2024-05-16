@@ -4,30 +4,12 @@ import "google/protobuf/struct.proto";
 
 option go_package = ".;proto";
 
-service TransformerService{
+service TransformerService {
   rpc Transform(TransformRequest) returns (TransformResponse);
 }
 
 message TransformRequest{
   repeated TransformerEvent events = 1;
-}
-
-message TransformResponse{
-  repeated Response response = 1;
-}
-
-message Response{
-  google.protobuf.Struct output = 1;
-  Metadata metadata = 2;
-  int32 status_code = 3;
-  string error = 4;
-  repeated ValidationError validation_error = 5;
-}
-
-message ValidationError {
-  string type = 1;
-  string message = 2;
-  map<string, string> meta = 3;
 }
 
 message TransformerEvent{
@@ -47,35 +29,73 @@ message Metadata {
   string source_category = 7;
   string tracking_plan_id = 8;
   int32 tracking_plan_version = 9;
-  string destination_id = 10;
-  int64 job_id = 11;
-  string source_job_id = 12;
-  string source_job_run_id = 13;
-  string source_task_run_id = 14;
-  string destination_type = 15;
-  string message_id = 16;
-  string oauth_access_token = 17;
-  string trace_parent = 18;
-  repeated string message_ids = 19;
-  string rudder_id = 20;
-  string received_at = 21;
-  string event_name = 22;
-  string event_type = 23;
-  string source_definition_id = 24;
-  string destination_definition_id = 25;
-  string transformation_id = 26;
-  string transformation_version_id = 27;
+  map<string, google.protobuf.Struct> source_tp_config = 10;
+  google.protobuf.Struct merged_tp_config = 11;
+  string destination_id = 12;
+  int64 job_id = 13;
+  string source_job_id = 14;
+  string source_job_run_id = 15;
+  string source_task_run_id = 16;
+  google.protobuf.Value RecordID = 17;
+  string destination_type = 18;
+  string message_id = 19;
+  string oauth_access_token = 20;
+  string trace_parent = 21;
+  repeated string message_ids = 22;
+  string rudder_id = 23;
+  string received_at = 24;
+  string event_name = 25;
+  string event_type = 26;
+  string source_definition_id = 27;
+  string destination_definition_id = 28;
+  string transformation_id = 29;
+  string transformation_version_id = 30;
 }
 
 message Destination {
   string id = 1;
   string name = 2;
-  bool enabled = 3;
-  string workspace_id = 4;
-  bool is_processor_enabled = 5;
-  string revision_id = 6;
+  DestinationDefinition destination_definition = 3;
+  google.protobuf.Struct config = 4;
+  bool enabled = 5;
+  string workspace_id = 6;
+  repeated Transformation transformation = 7;
+  bool is_processor_enabled = 8;
+  string revision_id = 9;
+}
+
+message DestinationDefinition {
+  string id = 1;
+  string name = 2;
+  string display_name = 3;
+  google.protobuf.Struct config = 4;
+  google.protobuf.Struct response_rules = 5;
+}
+
+message Transformation {
+  string version_id = 1;
+  string id = 2;
+  google.protobuf.Struct config = 3;
 }
 
 message Library{
   string version_id = 1;
+}
+
+message TransformResponse{
+  repeated Response response = 1;
+}
+
+message Response{
+  google.protobuf.Struct output = 1;
+  Metadata metadata = 2;
+  int32 status_code = 3;
+  string error = 4;
+  repeated ValidationError validation_error = 5;
+}
+
+message ValidationError {
+  string type = 1;
+  string message = 2;
+  map<string, string> meta = 3;
 }
