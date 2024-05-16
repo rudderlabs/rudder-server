@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/lib/pq"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -181,24 +181,25 @@ func New(
 }
 
 func (r *Router) Start(ctx context.Context) error {
-	g, _ := errgroup.WithContext(ctx)
-	r.backgroundGroup = g
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return err
 	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+	r.backgroundGroup = g
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.backendConfigSubscriber(ctx)
+		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.runUploadJobAllocator(ctx)
+		return r.runUploadJobAllocator(gCtx)
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.mainLoop(ctx)
+		r.mainLoop(gCtx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.CronTracker(ctx)
+		return r.CronTracker(gCtx)
 	}))
 	return g.Wait()
 }
@@ -344,6 +345,14 @@ func (r *Router) checkInProgressMap(jobID int64, identifier string) (int, bool) 
 }
 
 func (r *Router) runUploadJobAllocator(ctx context.Context) error {
+	defer func() {
+		r.workerChannelMapLock.RLock()
+		for _, workerChannel := range r.workerChannelMap {
+			close(workerChannel)
+		}
+		r.workerChannelMapLock.RUnlock()
+	}()
+
 loop:
 	for {
 		select {
@@ -397,12 +406,6 @@ loop:
 		case <-time.After(r.config.uploadAllocatorSleep):
 		}
 	}
-
-	r.workerChannelMapLock.RLock()
-	for _, workerChannel := range r.workerChannelMap {
-		close(workerChannel)
-	}
-	r.workerChannelMapLock.RUnlock()
 	return nil
 }
 
