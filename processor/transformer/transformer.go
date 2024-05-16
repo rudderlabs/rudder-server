@@ -15,6 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	transformerPb "github.com/rudderlabs/rudder-server/proto/transformer"
+
 	"github.com/valyala/fasthttp"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -181,6 +186,7 @@ type handle struct {
 
 	client         *http.Client
 	fasthttpClient *fasthttp.Client
+	transformerSvc transformerPb.TransformerServiceClient
 
 	guardConcurrency chan struct{}
 
@@ -197,6 +203,7 @@ type handle struct {
 		maxRetry                   config.ValueLoader[int]
 		failOnUserTransformTimeout config.ValueLoader[bool]
 		failOnError                config.ValueLoader[bool]
+		useGrpcClient              config.ValueLoader[bool]
 
 		destTransformationURL string
 		userTransformationURL string
@@ -228,6 +235,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
+	trans.config.useGrpcClient = conf.GetReloadableBoolVar(false, "Processor.Transformer.useGrpcClient")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -249,6 +257,12 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		}
 	}
 
+	conn, err := grpc.NewClient(
+		conf.GetString("TRANSFORM_GRPC_URL", fmt.Sprintf("localhost:%d", 7567)), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	trans.transformerSvc = transformerPb.NewTransformerServiceClient(conn)
 	for _, opt := range opts {
 		opt(&trans)
 	}
