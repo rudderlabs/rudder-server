@@ -181,24 +181,24 @@ func New(
 }
 
 func (r *Router) Start(ctx context.Context) error {
-	g, _ := errgroup.WithContext(ctx)
+	g, gCtx := errgroup.WithContext(ctx)
 	r.backgroundGroup = g
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return err
 	}
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.backendConfigSubscriber(ctx)
+		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.runUploadJobAllocator(ctx)
+		return r.runUploadJobAllocator(gCtx)
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.mainLoop(ctx)
+		r.mainLoop(gCtx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.CronTracker(ctx)
+		return r.CronTracker(gCtx)
 	}))
 	return g.Wait()
 }
