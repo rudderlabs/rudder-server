@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -435,49 +437,65 @@ func TestRecordWebhookErrors(t *testing.T) {
 }
 
 func TestPrepareRequestBody(t *testing.T) {
+	createRequest := func(method, target string, body io.Reader, params map[string]string) *http.Request {
+		r := httptest.NewRequest(method, target, body)
+		q := r.URL.Query()
+		for k, v := range params {
+			q.Add(k, v)
+		}
+		r.URL.RawQuery = q.Encode()
+		return r
+	}
+
 	testCases := []struct {
-		name                       string
-		req                        *http.Request
-		includeQueryParams         bool
-		sourceType                 string
-		sourceListForParsingParams []string
-		expectedError              bool
-		expectedResponse           string
+		name               string
+		req                *http.Request
+		includeQueryParams bool
+		wantError          bool
+		expectedResponse   []byte
 	}{
 		{
-			name:                       "Empty request body and no query parameters",
-			req:                        httptest.NewRequest(http.MethodGet, "http://example.com", nil),
-			includeQueryParams:         false,
-			sourceType:                 "",
-			sourceListForParsingParams: nil,
-			expectedError:              false,
-			expectedResponse:           "{}",
+			name:               "Empty request body with no query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", nil, nil),
+			includeQueryParams: false,
+			expectedResponse:   []byte("{}"),
 		},
 		{
-			name:                       "Valid JSON body with no query parameters",
-			req:                        httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`)),
-			includeQueryParams:         false,
-			sourceType:                 "",
-			sourceListForParsingParams: nil,
-			expectedError:              false,
-			expectedResponse:           `{"key":"value"}`,
+			name:               "Empty request body with query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key": "value"}),
+			includeQueryParams: true,
+			expectedResponse:   []byte(`{"query_parameters":{"key":["value"]}}`),
 		},
 		{
-			name:                       "Invalid JSON body",
-			req:                        httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(`"key":"value"`)),
-			includeQueryParams:         false,
-			sourceType:                 "",
-			sourceListForParsingParams: nil,
-			expectedError:              true,
-			expectedResponse:           "",
+			name:               "Error reading request body",
+			req:                createRequest(http.MethodPost, "http://example.com", iotest.ErrReader(errors.New("some error")), nil),
+			includeQueryParams: false,
+			wantError:          true,
+			expectedResponse:   nil,
+		},
+		{
+			name:               "Some payload with no query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`), nil),
+			includeQueryParams: false,
+			expectedResponse:   []byte(`{"key":"value"}`),
+		},
+		{
+			name:               "Some payload with query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key1":"value1"}`), map[string]string{"key2": "value2"}),
+			includeQueryParams: true,
+			expectedResponse:   []byte(`{"key1":"value1","query_parameters":{"key2":["value2"]}}`),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req, tc.includeQueryParams, tc.sourceType, tc.sourceListForParsingParams)
-			require.Equal(t, tc.expectedError, err != nil)
-			require.Equal(t, tc.expectedResponse, string(result))
+			result, err := prepareRequestBody(tc.req, tc.includeQueryParams, "webhook", []string{"webhook"})
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedResponse, result)
 		})
 	}
 }

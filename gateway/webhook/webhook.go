@@ -274,12 +274,6 @@ func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType s
 
 	if len(body) == 0 {
 		body = []byte("{}") // If body is empty, set it to an empty JSON object
-	} else {
-		// Validate the JSON
-		var temp interface{}
-		if json.Unmarshal(body, &temp) != nil {
-			return nil, errors.New(response.InvalidJSON)
-		}
 	}
 
 	if includeQueryParams && slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
