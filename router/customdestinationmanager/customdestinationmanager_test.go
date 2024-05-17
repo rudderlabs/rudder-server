@@ -280,7 +280,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 		},
 	}
 	err := customManager.onNewDestination(someDestination)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	for _, tc := range redisJSONTestCases {
 		t.Run(tc.description, func(t *testing.T) {
@@ -306,16 +306,14 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				require.Contains(t, er, tc.expectedSendDataResponse.err)
 				return
 			}
+			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
+
 			msgMap := gjson.GetBytes(event, "message.value").String()
 			key := gjson.GetBytes(event, "message.key").String()
 			res, err := db.JSONGet(context.TODO(), key).Result()
-			if err != nil {
-				t.Error(err)
-				return
-			}
+			require.NoError(t, err)
 			require.Equal(t, msgMap, res)
 
-			require.Equal(t, tc.expectedSendDataResponse.statusCode, stCd)
 		})
 	}
 }
@@ -365,14 +363,11 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		db := kvMgr.GetClient()
 
 		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
 		v, err := db.JSONGet(context.TODO(), "user:myuser-id", "$.mode-1").Result()
-
-		require.Nil(t, err)
-		require.NotEqual(t, "", v)
-
+		require.NoError(t, err)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 
-		require.Equal(t, http.StatusOK, stCd)
 	})
 
 	t.Run("When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
@@ -393,21 +388,19 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		db := kvMgr.GetClient()
 		ctx := context.TODO()
 
-		_, e := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
-		require.Nil(t, e)
+		_, setErr := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
+		require.Nil(t, setErr)
 
 		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
 		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
-		require.Nil(t, err)
-		require.NotEqual(t, "", firstVal)
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"a":1,"size":"LM"}]`, firstVal)
 
 		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
-		require.Nil(t, err2)
-		require.NotEqual(t, "", v)
-
-		require.JSONEq(t, `[{"a":1,"size":"LM"}]`, firstVal)
+		require.NoError(t, err2)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 
-		require.Equal(t, http.StatusOK, stCd)
 	})
 }
