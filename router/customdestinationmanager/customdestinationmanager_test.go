@@ -310,7 +310,6 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 			res, err := db.JSONGet(context.TODO(), key).Result()
 			require.NoError(t, err)
 			require.Equal(t, msgMap, res)
-
 		})
 	}
 }
@@ -361,7 +360,6 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		v, err := db.JSONGet(context.TODO(), "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
-
 	})
 
 	t.Run("When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
@@ -392,6 +390,5 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err2)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
-
 	})
 }
