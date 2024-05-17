@@ -297,10 +297,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				"db":            0,
 				"clusterMode":   false,
 			}
-			kvMgr := &kvstoremanager.RedisManagerT{
-				Config: config,
-			}
-			kvMgr.Connect()
+			kvMgr := kvstoremanager.NewRedisManager(config)
 			db := kvMgr.GetClient()
 
 			stCd, er := customManager.send(event, kvMgr, config)
@@ -364,10 +361,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := &kvstoremanager.RedisManagerT{
-			Config: config,
-		}
-		kvMgr.Connect()
+		kvMgr := kvstoremanager.NewRedisManager(config)
 		db := kvMgr.GetClient()
 
 		stCd, _ := customManager.send(event, kvMgr, config)
@@ -395,10 +389,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := &kvstoremanager.RedisManagerT{
-			Config: config,
-		}
-		kvMgr.Connect()
+		kvMgr := kvstoremanager.NewRedisManager(config)
 		db := kvMgr.GetClient()
 		ctx := context.TODO()
 

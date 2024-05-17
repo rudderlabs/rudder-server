@@ -20,7 +20,7 @@ var abortableErrors = []string{}
 
 type RedisManagerT struct {
 	clusterMode   bool
-	Config        types.ConfigT
+	config        types.ConfigT
 	client        *redis.Client
 	clusterClient *redis.ClusterClient
 }
@@ -34,30 +34,37 @@ type redisCli interface {
 	redis.Cmdable
 }
 
-func (m *RedisManagerT) GetClient() redisCli {
-	var redisClient redisCli = m.client
-	if m.clusterMode {
-		redisClient = m.clusterClient
+func NewRedisManager(config types.ConfigT) *RedisManagerT {
+	redisMgr := &RedisManagerT{
+		config: config,
 	}
-	return redisClient
+	redisMgr.Connect()
+	return redisMgr
+}
+
+func (m *RedisManagerT) GetClient() redisCli {
+	if m.clusterMode {
+		return m.clusterClient
+	}
+	return m.client
 }
 
 func (m *RedisManagerT) Connect() {
 	var ok bool
-	if m.clusterMode, ok = m.Config["clusterMode"].(bool); !ok {
+	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
 		// setting redis to cluster mode by default if setting missing in config
 		m.clusterMode = true
 	}
-	shouldSecureConn, _ := m.Config["secure"].(bool)
-	addr, _ := m.Config["address"].(string)
-	password, _ := m.Config["password"].(string)
+	shouldSecureConn, _ := m.config["secure"].(bool)
+	addr, _ := m.config["address"].(string)
+	password, _ := m.config["password"].(string)
 
 	tlsConfig := tls.Config{}
 	if shouldSecureConn {
-		if skipServerCertCheck, ok := m.Config["skipVerify"].(bool); ok && skipServerCertCheck {
+		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
 			tlsConfig.InsecureSkipVerify = true
 		}
-		if serverCACert, ok := m.Config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
+		if serverCACert, ok := m.config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
 			caCert := []byte(serverCACert)
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -80,7 +87,7 @@ func (m *RedisManagerT) Connect() {
 		m.clusterClient = redis.NewClusterClient(&opts)
 	} else {
 		var db int
-		if dbStr, ok := m.Config["database"].(string); ok {
+		if dbStr, ok := m.config["database"].(string); ok {
 			db, _ = strconv.Atoi(dbStr)
 		}
 		opts := redis.Options{
@@ -171,10 +178,6 @@ func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, 
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	path := gjson.GetBytes(jsonData, "message.path").String()
 	jsonVal := gjson.GetBytes(jsonData, "message.value")
-	var redisClient redisCli = m.client
-	if m.clusterMode {
-		redisClient = m.clusterClient
-	}
 
 	actualPath := "$" // root insert
 	if path != "" {
@@ -183,7 +186,7 @@ func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, 
 	args := []string{key, actualPath, jsonVal.String()}
 
 	if actualPath != "$" {
-		v, err := redisClient.JSONGet(context.Background(), key).Result()
+		v, err := m.GetClient().JSONGet(context.Background(), key).Result()
 		if err != nil {
 			return nil, err
 		}
