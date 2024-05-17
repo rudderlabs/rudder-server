@@ -307,7 +307,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 
 			msgMap := gjson.GetBytes(event, "message.value").String()
 			key := gjson.GetBytes(event, "message.key").String()
-			res, err := db.JSONGet(context.TODO(), key).Result()
+			res, err := db.JSONGet(context.Background(), key).Result()
 			require.NoError(t, err)
 			require.Equal(t, msgMap, res)
 		})
@@ -357,7 +357,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 
 		stCd, _ := customManager.send(event, kvMgr, config)
 		require.Equal(t, http.StatusOK, stCd)
-		v, err := db.JSONGet(context.TODO(), "user:myuser-id", "$.mode-1").Result()
+		v, err := db.JSONGet(context.Background(), "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 	})
@@ -375,7 +375,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		}
 		kvMgr := kvstoremanager.NewRedisManager(config)
 		db := kvMgr.GetClient()
-		ctx := context.TODO()
+		ctx := context.Background()
 
 		_, setErr := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
 		require.Nil(t, setErr)
