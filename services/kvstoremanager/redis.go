@@ -29,11 +29,6 @@ func init() {
 	abortableErrors = []string{"connection refused", "invalid password"}
 }
 
-// Embedded interface for clusterClient & client
-type redisCli interface {
-	redis.Cmdable
-}
-
 func NewRedisManager(config types.ConfigT) *RedisManagerT {
 	redisMgr := &RedisManagerT{
 		config: config,
@@ -42,7 +37,7 @@ func NewRedisManager(config types.ConfigT) *RedisManagerT {
 	return redisMgr
 }
 
-func (m *RedisManagerT) GetClient() redisCli {
+func (m *RedisManagerT) GetClient() redis.Cmdable {
 	if m.clusterMode {
 		return m.clusterClient
 	}
