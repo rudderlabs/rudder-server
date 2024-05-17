@@ -161,6 +161,7 @@ func TestTransformer(t *testing.T) {
 		tr.fasthttpClient = &fasthttp.Client{}
 		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
 		tr.config.failOnError = config.SingleValueLoader(true)
+		tr.config.useGrpcClient = config.SingleValueLoader(false)
 
 		tr.config.maxRetry = config.SingleValueLoader(1)
 

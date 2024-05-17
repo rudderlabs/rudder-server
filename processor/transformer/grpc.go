@@ -133,7 +133,7 @@ func convertProtoMetadataToStruct(protoMetadata *transformerpb.Metadata) Metadat
 		SourceJobID:             protoMetadata.SourceJobId,
 		SourceJobRunID:          protoMetadata.SourceJobRunId,
 		SourceTaskRunID:         protoMetadata.SourceTaskRunId,
-		RecordID:                protoMetadata.RecordID,
+		RecordID:                protoMetadata.RecordID.GetStringValue(),
 		DestinationType:         protoMetadata.DestinationType,
 		MessageID:               protoMetadata.MessageId,
 		OAuthAccessToken:        protoMetadata.OauthAccessToken,
