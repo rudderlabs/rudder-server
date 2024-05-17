@@ -287,10 +287,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 			redisAddr, destroy := testutils.StartRedis(t, tc.redisImgRepo, tc.redisImgTag)
 			defer destroy()
 			event, err := json.Marshal(tc.transformedResponse)
-			if err != nil {
-				t.Errorf("MarshalError: %v\n", err.Error())
-				return
-			}
+			require.NoError(t, err)
 			config := map[string]interface{}{
 				"useJSONModule": true,
 				"address":       redisAddr,
@@ -349,10 +346,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
 		defer destroy()
 		event, err := json.Marshal(transformedResponse)
-		if err != nil {
-			t.Errorf("MarshalError: %v\n", err.Error())
-			return
-		}
+		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
 			"address":       redisAddr,
@@ -374,10 +368,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
 		defer destroy()
 		event, err := json.Marshal(transformedResponse)
-		if err != nil {
-			t.Errorf("MarshalError: %v\n", err.Error())
-			return
-		}
+		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
 			"address":       redisAddr,

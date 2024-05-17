@@ -18,7 +18,7 @@ import (
 
 var abortableErrors = []string{}
 
-type RedisManagerT struct {
+type RedisManager struct {
 	clusterMode   bool
 	config        types.ConfigT
 	client        *redis.Client
@@ -29,22 +29,22 @@ func init() {
 	abortableErrors = []string{"connection refused", "invalid password"}
 }
 
-func NewRedisManager(config types.ConfigT) *RedisManagerT {
-	redisMgr := &RedisManagerT{
+func NewRedisManager(config types.ConfigT) *RedisManager {
+	redisMgr := &RedisManager{
 		config: config,
 	}
 	redisMgr.Connect()
 	return redisMgr
 }
 
-func (m *RedisManagerT) GetClient() redis.Cmdable {
+func (m *RedisManager) GetClient() redis.Cmdable {
 	if m.clusterMode {
 		return m.clusterClient
 	}
 	return m.client
 }
 
-func (m *RedisManagerT) Connect() {
+func (m *RedisManager) Connect() {
 	var ok bool
 	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
 		// setting redis to cluster mode by default if setting missing in config
@@ -97,14 +97,14 @@ func (m *RedisManagerT) Connect() {
 	}
 }
 
-func (m *RedisManagerT) Close() error {
+func (m *RedisManager) Close() error {
 	if m.clusterMode {
 		return m.clusterClient.Close()
 	}
 	return m.client.Close()
 }
 
-func (m *RedisManagerT) HMSet(key string, fields map[string]interface{}) (err error) {
+func (m *RedisManager) HMSet(key string, fields map[string]interface{}) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HMSet(ctx, key, fields).Result()
@@ -114,7 +114,7 @@ func (m *RedisManagerT) HMSet(key string, fields map[string]interface{}) (err er
 	return err
 }
 
-func (*RedisManagerT) StatusCode(err error) int {
+func (*RedisManager) StatusCode(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
@@ -129,7 +129,7 @@ func (*RedisManagerT) StatusCode(err error) int {
 	return statusCode
 }
 
-func (m *RedisManagerT) DeleteKey(key string) (err error) {
+func (m *RedisManager) DeleteKey(key string) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.Del(ctx, key).Result()
@@ -139,7 +139,7 @@ func (m *RedisManagerT) DeleteKey(key string) (err error) {
 	return err
 }
 
-func (m *RedisManagerT) HMGet(key string, fields ...string) (result []interface{}, err error) {
+func (m *RedisManager) HMGet(key string, fields ...string) (result []interface{}, err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		result, err = m.clusterClient.HMGet(ctx, key, fields...).Result()
@@ -149,7 +149,7 @@ func (m *RedisManagerT) HMGet(key string, fields ...string) (result []interface{
 	return result, err
 }
 
-func (m *RedisManagerT) HGetAll(key string) (result map[string]string, err error) {
+func (m *RedisManager) HGetAll(key string) (result map[string]string, err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		result, err = m.clusterClient.HGetAll(ctx, key).Result()
@@ -159,7 +159,7 @@ func (m *RedisManagerT) HGetAll(key string) (result map[string]string, err error
 	return result, err
 }
 
-func (m *RedisManagerT) HSet(hash, key string, value interface{}) (err error) {
+func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HSet(ctx, hash, key, value).Result()
@@ -169,7 +169,7 @@ func (m *RedisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, error) {
+func (m *RedisManager) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, error) {
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	path := gjson.GetBytes(jsonData, "message.path").String()
 	jsonVal := gjson.GetBytes(jsonData, "message.value")
@@ -202,7 +202,7 @@ func (m *RedisManagerT) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, 
 	return args, nil
 }
 
-func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
+func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
 	nmSetArgs, err := m.ExtractJSONSetArgs(jsonData)
 	if err != nil {
 		return nil, err
@@ -217,7 +217,7 @@ func (m *RedisManagerT) SendDataAsJSON(jsonData json.RawMessage) (interface{}, e
 	return val, err
 }
 
-func (*RedisManagerT) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+func (*RedisManager) ShouldSendDataAsJSON(config map[string]interface{}) bool {
 	var dataAsJSON bool
 	if dataAsJSONI, ok := config["useJSONModule"]; ok {
 		if dataAsJSON, ok = dataAsJSONI.(bool); ok {
