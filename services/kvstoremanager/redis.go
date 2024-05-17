@@ -186,12 +186,11 @@ func (m *RedisManager) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, e
 			return nil, err
 		}
 		if v == "" {
-			interfaceVal := jsonVal.Value()
 			// key is new one but we need to insert a value other than root
 			// formulate {[path]: value}
-			m := make(map[string]interface{})
-			m[path] = interfaceVal
-			mapStr, err := json.Marshal(m)
+			mapStr, err := json.Marshal(map[string]interface{}{
+				path: jsonVal.Value(),
+			})
 			if err != nil {
 				return nil, err
 			}
