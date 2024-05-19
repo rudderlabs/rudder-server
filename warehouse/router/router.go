@@ -181,11 +181,12 @@ func New(
 }
 
 func (r *Router) Start(ctx context.Context) error {
-	g, gCtx := errgroup.WithContext(ctx)
-	r.backgroundGroup = g
 	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return err
 	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+	r.backgroundGroup = g
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		r.backendConfigSubscriber(gCtx)
 		return nil
