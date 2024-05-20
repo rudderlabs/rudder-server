@@ -143,7 +143,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		})
 
 		startTime := time.Now()
-		// error in upload bulk file as some tim es upload url is getting expired and throwing error but we are currently unabel to catch it
 		uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, actionFile.ZipFilePath)
 		uploadTimeStat.Since(startTime)
 
