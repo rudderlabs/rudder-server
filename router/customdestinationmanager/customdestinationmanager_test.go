@@ -11,19 +11,20 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 var once sync.Once
@@ -167,6 +168,7 @@ type redisTc struct {
 	transformedResponse      transformedResponseJSON // Response obtained from transformer
 	redisImgRepo             string
 	redisImgTag              string
+	supportJsonModule        bool
 	expectedSendDataResponse sendDataResponse
 }
 
@@ -186,8 +188,9 @@ var redisJSONTestCases = []redisTc{
 			},
 			UserId: "myuser-id",
 		},
-		redisImgRepo: "redis/redis-stack-server",
-		redisImgTag:  "latest",
+		redisImgRepo:      "redis/redis-stack-server",
+		supportJsonModule: true,
+		redisImgTag:       "latest",
 		expectedSendDataResponse: sendDataResponse{
 			statusCode: 200,
 		},
@@ -284,13 +287,26 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 
 	for _, tc := range redisJSONTestCases {
 		t.Run(tc.description, func(t *testing.T) {
-			redisAddr, destroy := testutils.StartRedis(t, tc.redisImgRepo, tc.redisImgTag)
-			defer destroy()
+			opts := []redis.Option{
+				redis.WithRepository(tc.redisImgRepo),
+				redis.WithTag(tc.redisImgTag),
+				redis.WithCmdArg("--protected-mode", "no"),
+			}
+			if tc.supportJsonModule {
+				opts = append(opts, redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"))
+			}
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			redisRsrc, err := redis.Setup(context.Background(), pool, t, opts...)
+			require.NoError(t, err)
+			// redisAddr, destroy := testutils.StartRedis(t, tc.redisImgRepo, tc.redisImgTag)
+			// defer destroy()
 			event, err := json.Marshal(tc.transformedResponse)
 			require.NoError(t, err)
 			config := map[string]interface{}{
 				"useJSONModule": true,
-				"address":       redisAddr,
+				"address":       redisRsrc.Addr,
 				"db":            0,
 				"clusterMode":   false,
 			}
@@ -342,13 +358,20 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 	}
 
 	t.Run("When JSON module is loaded into Redis, path is mentioned and key is not present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
-		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
-		defer destroy()
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
-			"address":       redisAddr,
+			"address":       redisRsrc.Addr,
 			"db":            0,
 			"clusterMode":   false,
 		}
@@ -363,13 +386,21 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 	})
 
 	t.Run("When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
-		redisAddr, destroy := testutils.StartRedis(t, "redis/redis-stack-server", "latest")
-		defer destroy()
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
-			"address":       redisAddr,
+			"address":       redisRsrc.Addr,
 			"db":            0,
 			"clusterMode":   false,
 		}
