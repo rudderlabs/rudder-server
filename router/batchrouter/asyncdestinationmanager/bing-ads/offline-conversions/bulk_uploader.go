@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -48,13 +47,10 @@ returns: A string of object in form
 */
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Unmarshal the JSON raw message into the record struct
-	payload, err := common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
-	if err != nil {
-		return gjson.GetBytes(job.EventPayload, "body.JSON").String(), err
-	}
+	payload := string(job.EventPayload)
 	var event Record
 	var fields map[string]interface{}
-	err = json.Unmarshal(job.EventPayload, &event)
+	err := json.Unmarshal(job.EventPayload, &event)
 	if err != nil {
 		fmt.Println("Error during unmarshalling event:", err)
 		return payload, err
@@ -126,6 +122,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
+	// var requestIdToJobIdMap map[string][]int64
 	for _, actionFile := range actionFiles {
 		uploadRetryableStat.Count(len(actionFile.FailedJobIDs))
 		_, err := os.Stat(actionFile.ZipFilePath)
@@ -146,6 +143,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		})
 
 		startTime := time.Now()
+		// error in upload bulk file as some tim es upload url is getting expired and throwing error but we are currently unabel to catch it
 		uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, actionFile.ZipFilePath)
 		uploadTimeStat.Since(startTime)
 
@@ -165,6 +163,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		importIds = append(importIds, uploadBulkFileResp.RequestId)
 		failedJobs = append(failedJobs, actionFile.FailedJobIDs...)
 		successJobs = append(successJobs, actionFile.SuccessfulJobIDs...)
+		// requestIdToJobIdMap[uploadBulkFileResp.RequestId] = successJobs
 	}
 
 	var parameters common.ImportParameters
@@ -190,6 +189,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:       destination.ID,
+		// RequestIdToJobIdMap: requestIdToJobIdMap,
 	}
 }
 

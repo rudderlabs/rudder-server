@@ -26,7 +26,7 @@ type Message struct {
 	Action string          `json:"action"`
 }
 type Metadata struct {
-	JobID int64 `json:"job_id"`
+	JobID int64 `json:"jobId"`
 }
 
 // This struct represent each line of the text file created by the batchrouter

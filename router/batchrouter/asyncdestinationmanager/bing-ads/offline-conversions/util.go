@@ -32,13 +32,13 @@ func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer,
 	} else if actionType == "update" {
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+			{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
 		})
 	} else {
 		// For deleting conversion
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
-			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
+			{"Format Version", "", "", "", "6.0", "", "", "", "", "", ""},
 		})
 	}
 	if err != nil {
