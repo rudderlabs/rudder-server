@@ -48,16 +48,16 @@ func (mr *MockKVStoreManagerMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockKVStoreManager)(nil).Close))
 }
 
-// Connect mocks base method.
-func (m *MockKVStoreManager) Connect() {
+// CreateClient mocks base method.
+func (m *MockKVStoreManager) CreateClient() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Connect")
+	m.ctrl.Call(m, "CreateClient")
 }
 
-// Connect indicates an expected call of Connect.
-func (mr *MockKVStoreManagerMockRecorder) Connect() *gomock.Call {
+// CreateClient indicates an expected call of CreateClient.
+func (mr *MockKVStoreManagerMockRecorder) CreateClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Connect", reflect.TypeOf((*MockKVStoreManager)(nil).Connect))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateClient", reflect.TypeOf((*MockKVStoreManager)(nil).CreateClient))
 }
 
 // DeleteKey mocks base method.

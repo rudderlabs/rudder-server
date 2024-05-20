@@ -33,7 +33,7 @@ func NewRedisManager(config types.ConfigT) *RedisManager {
 	redisMgr := &RedisManager{
 		config: config,
 	}
-	redisMgr.Connect()
+	redisMgr.CreateClient()
 	return redisMgr
 }
 
@@ -44,7 +44,7 @@ func (m *RedisManager) GetClient() redis.Cmdable {
 	return m.client
 }
 
-func (m *RedisManager) Connect() {
+func (m *RedisManager) CreateClient() {
 	var ok bool
 	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
 		// setting redis to cluster mode by default if setting missing in config

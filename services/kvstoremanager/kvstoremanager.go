@@ -7,7 +7,7 @@ import (
 )
 
 type KVStoreManager interface {
-	Connect()
+	CreateClient()
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	HSet(key, field string, value interface{}) error
