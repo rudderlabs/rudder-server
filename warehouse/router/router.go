@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/lib/pq"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -345,6 +345,14 @@ func (r *Router) checkInProgressMap(jobID int64, identifier string) (int, bool) 
 }
 
 func (r *Router) runUploadJobAllocator(ctx context.Context) error {
+	defer func() {
+		r.workerChannelMapLock.RLock()
+		for _, workerChannel := range r.workerChannelMap {
+			close(workerChannel)
+		}
+		r.workerChannelMapLock.RUnlock()
+	}()
+
 loop:
 	for {
 		select {
@@ -398,12 +406,6 @@ loop:
 		case <-time.After(r.config.uploadAllocatorSleep):
 		}
 	}
-
-	r.workerChannelMapLock.RLock()
-	for _, workerChannel := range r.workerChannelMap {
-		close(workerChannel)
-	}
-	r.workerChannelMapLock.RUnlock()
 	return nil
 }
 
