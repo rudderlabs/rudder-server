@@ -961,6 +961,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.EventType = commonMetadata.EventType
 	metadata.SourceDefinitionID = commonMetadata.SourceDefinitionID
 	metadata.DestinationID = destination.ID
+	metadata.DestinationName = destination.Name
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
@@ -1942,6 +1943,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
+					shallowEventCopy.Metadata.DestinationName = destination.Name
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
 					if len(destination.Transformations) > 0 {
 						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
