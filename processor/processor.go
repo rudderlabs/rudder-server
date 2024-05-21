@@ -1642,6 +1642,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
+				singularEvent["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
 				if err != nil {
 					return nil
