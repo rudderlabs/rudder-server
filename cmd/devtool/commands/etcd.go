@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 	etcd "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -62,9 +61,7 @@ func Mode(c *cli.Context) error {
 	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
-		DialOptions: []grpc.DialOption{
-			grpc.WithBlock(), // block until the underlying connection is up
-		},
+		Context:   c.Context,
 	})
 	if err != nil {
 		return err
@@ -105,9 +102,7 @@ func List(c *cli.Context) error {
 	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
-		DialOptions: []grpc.DialOption{
-			grpc.WithBlock(), // block until the underlying connection is up
-		},
+		Context:   c.Context,
 	})
 	if err != nil {
 		return err

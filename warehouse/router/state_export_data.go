@@ -11,6 +11,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
@@ -747,7 +748,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 			"destID":         job.warehouse.Destination.ID,
 			"destType":       job.warehouse.Destination.DestinationDefinition.Name,
 			"workspaceId":    job.warehouse.WorkspaceID,
-			"tableName":      tName,
+			"tableName":      whutils.TableNameForStats(tName),
 		}).Count(int(loadTableStat.RowsUpdated))
 	}
 
@@ -756,8 +757,11 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		return alteredSchema, fmt.Errorf("get table upload: %w", errEventCount)
 	}
 
-	job.guageStat(`post_load_table_rows_estimate`, whutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(tableUpload.TotalEvents))
-	job.guageStat(`post_load_table_rows`, whutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(loadTableStat.RowsInserted))
+	tags := []whutils.Tag{
+		{Name: "tableName", Value: whutils.TableNameForStats(tName)},
+	}
+	job.guageStat(`post_load_table_rows_estimate`, tags...).Gauge(int(tableUpload.TotalEvents))
+	job.guageStat(`post_load_table_rows`, tags...).Gauge(int(loadTableStat.RowsInserted))
 
 	status = model.TableUploadExported
 	_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tName, repo.TableUploadSetOptions{
@@ -793,7 +797,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	}
 
 	tags := []whutils.Tag{
-		{Name: "tableName", Value: strings.ToLower(tableName)},
+		{Name: "tableName", Value: whutils.TableNameForStats(tableName)},
 	}
 	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
 

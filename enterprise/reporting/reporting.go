@@ -613,7 +613,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
-		if slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
+		if metric.ConnectionDetails.SourceCategory == "warehouse" || slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
 			metric.StatusDetail.EventName = metric.StatusDetail.EventType
 		}
 

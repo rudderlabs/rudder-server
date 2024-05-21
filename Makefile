@@ -87,7 +87,7 @@ install-tools:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 	go install gotest.tools/gotestsum@v1.11.0
 	go install golang.org/x/tools/cmd/goimports@latest
-	bash ./scripts/install-golangci-lint.sh v1.57.1
+	bash ./scripts/install-golangci-lint.sh v1.58.2
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
