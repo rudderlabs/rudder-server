@@ -48,7 +48,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.5.4
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/docker/docker v26.0.1+incompatible
+	github.com/docker/docker v24.0.9+incompatible
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -98,7 +98,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.1
 	github.com/tidwall/sjson v1.2.5
-	github.com/trinodb/trino-go-client v0.315.0
+	github.com/trinodb/trino-go-client v0.314.0
 	github.com/urfave/cli/v2 v2.27.2
 	github.com/valyala/fasthttp v1.53.0
 	github.com/viney-shih/go-lock v1.1.2
