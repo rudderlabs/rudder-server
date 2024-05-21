@@ -67,6 +67,7 @@ type Metadata struct {
 	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
 	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
+	DestinationName     string                            `json:"destinationName"`
 	MessageID           string                            `json:"messageId"`
 	OAuthAccessToken    string                            `json:"oauthAccessToken"`
 	TraceParent         string                            `json:"traceparent"`
