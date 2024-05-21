@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -28,7 +29,7 @@ func TestValidator(t *testing.T) {
 		provider = "MINIO"
 		table    = "test_table"
 		sslMode  = "disable"
-		bucket   = "s3-datalake-test"
+		bucket   = "some-bucket"
 		region   = "us-east-1"
 	)
 
