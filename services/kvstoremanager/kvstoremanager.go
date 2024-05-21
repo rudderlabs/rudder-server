@@ -7,7 +7,7 @@ import (
 )
 
 type KVStoreManager interface {
-	Connect()
+	CreateClient()
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	HSet(key, field string, value interface{}) error
@@ -15,6 +15,9 @@ type KVStoreManager interface {
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
 	HGetAll(key string) (result map[string]string, err error)
+
+	SendDataAsJSON(jsonData json.RawMessage) (interface{}, error)
+	ShouldSendDataAsJSON(config map[string]interface{}) bool
 }
 
 type SettingsT struct {
@@ -38,10 +41,7 @@ func New(provider string, config map[string]interface{}) (m KVStoreManager) {
 func newManager(settings SettingsT) (m KVStoreManager) {
 	switch settings.Provider {
 	case "REDIS":
-		m = &redisManagerT{
-			config: settings.Config,
-		}
-		m.Connect()
+		m = NewRedisManager(settings.Config)
 	}
 	return m
 }

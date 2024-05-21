@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"os"
 	"testing"
