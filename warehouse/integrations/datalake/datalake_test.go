@@ -24,7 +24,9 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/rudderlabs/compose-test/testcompose"
+
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
@@ -80,7 +82,7 @@ func TestIntegration(t *testing.T) {
 	gcsSourceID := warehouseutils.RandHex()
 
 	azContainerName := "azure-datalake-test"
-	s3BucketName := "s3-datalake-test"
+	s3BucketName := "some-bucket"
 	gcsBucketName := "gcs-datalake-test"
 	azAccountName := "MYACCESSKEY"
 	azAccountKey := "TVlTRUNSRVRLRVk="
@@ -487,7 +489,7 @@ func TestIntegration(t *testing.T) {
 			  	uuid_ts timestamp
 			)
 			STORED AS PARQUET
-			location "s3a://s3-datalake-test/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";
+			location "s3a://some-bucket/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";
 		`,
 			"-S",
 		)
