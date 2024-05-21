@@ -422,4 +422,112 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.NoError(t, err2)
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 	})
+
+	t.Run("When JSON module is loaded into Redis, path is mentioned and with child property on existing JSON key, should set into redis and fetching the data should be successful", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:myuser-id",
+				"path": "mode-in.childKey_1",
+				"value": map[string]interface{}{
+					"someKey": "someVal",
+					"fields": map[string]interface{}{
+						"field1": "value1",
+						"field2": 2,
+					},
+				},
+			},
+			UserId: "myuser-id",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvstoremanager.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate the JSON value in parentKey
+		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"a":1,"size":"LM","childKey_1":{"someKey":"someVal","fields":{"field1":"value1","field2":2}}}]`, firstVal)
+
+		// validate the JSON value in childKey
+		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-in.childKey_1").Result()
+		require.NoError(t, err2)
+		require.JSONEq(t, `[{"someKey":"someVal","fields":{"field1":"value1","field2":2}}]`, v)
+	})
+
+	t.Run("When JSON module is loaded into Redis, path is mentioned and with child property on new JSON key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:myuser-id",
+				"path": "mode-1.childKey_1", // mode-1 doesn't already exist in redis & we want to insert data into mode-1.childKey_1
+				"value": map[string]interface{}{
+					"someKey": "someVal",
+					"fields": map[string]interface{}{
+						"field1": "value1",
+						"field2": 2,
+					},
+				},
+			},
+			UserId: "myuser-id",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvstoremanager.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:myuser-id", "$", `{"mode-in":{"a":1,"size":"LM"}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusInternalServerError, stCd)
+
+		// validate if existing value is not manipulated
+		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"a":1,"size":"LM"}]`, firstVal)
+
+		// validate if value is not inserted
+		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
+		require.NoError(t, err2)
+		require.JSONEq(t, "[]", v)
+	})
 }
