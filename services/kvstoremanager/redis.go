@@ -180,6 +180,18 @@ func (m *RedisManager) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, e
 	}
 	args := []string{key, actualPath, jsonVal.String()}
 
+	// Insert a value into a path for a key
+	// 1. Validate if key is present
+	// 2. If key is not present, then insert value into the path
+	//    Execute the following command:
+	//    > JSON.SET key $ {[path]: value}
+	// Limitation: It can only insert values at a single level
+	// Example of limitation:
+	//    - JSON.SET key $.k1.k2.k3 '{"A":1}' cannot be done and would be converted to
+	//      JSON.SET key $ '{"k1.k2.k3": {"A": 1}}'
+	// Example of correct usage:
+	//    - JSON.SET key $.k1 '{"A":1}' can be done and would be converted to
+	//      JSON.SET key $ '{"k1": {"A": 1}}'
 	if actualPath != "$" {
 		v, err := m.GetClient().JSONGet(context.Background(), key).Result()
 		if err != nil {
