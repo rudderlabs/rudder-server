@@ -1,4 +1,4 @@
-package bingads
+package bingads_offline_conversions
 
 import (
 	"archive/zip"
