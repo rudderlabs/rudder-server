@@ -1,4 +1,4 @@
-package bingads_offline_conversions
+package offline_conversions
 
 import (
 	"archive/zip"
@@ -567,6 +567,26 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			bingAdsUploader, err := newManagerInternal(&destination, oauthService, nil)
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
+		})
+		It("Transform() Test -> successfull ", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+		})
+
+		It("Transform() Test -> conversionAdjustedTime not available", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf(" conversionAdjustedTime field not defined")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
 	})
 })

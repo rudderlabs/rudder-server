@@ -1,4 +1,4 @@
-package bingads_offline_conversions
+package offline_conversions
 
 import (
 	"archive/zip"
@@ -133,8 +133,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line s
 		var fields RecordFields
 		unmarshallingErr := json.Unmarshal(data.Message.Fields, &fields)
 		if unmarshallingErr != nil {
-			fmt.Println("Error during unmarshalling fields:", unmarshallingErr)
-			return unmarshallingErr
+			return fmt.Errorf("unmarshalling event %w:", unmarshallingErr)
 		}
 
 		var err error

@@ -1,4 +1,4 @@
-package bingads_audience
+package audience
 
 import (
 	"archive/zip"

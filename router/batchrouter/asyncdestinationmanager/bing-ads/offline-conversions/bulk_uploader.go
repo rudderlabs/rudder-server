@@ -1,4 +1,4 @@
-package bingads_offline_conversions
+package offline_conversions
 
 import (
 	"encoding/json"
@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -52,13 +51,11 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	var fields map[string]interface{}
 	err := json.Unmarshal(job.EventPayload, &event)
 	if err != nil {
-		fmt.Println("Error during unmarshalling event:", err)
-		return payload, err
+		return payload, fmt.Errorf("unmarshalling event %w:", err)
 	}
 	err = json.Unmarshal(event.Fields, &fields)
 	if err != nil {
-		fmt.Println("Error during unmarshalling event.fields:", err)
-		return payload, err
+		return payload, fmt.Errorf("unmarshalling event.fields: %w", err)
 	}
 	// validate for conversion time mscklid and conversion name
 	generalRequiredFields := []string{"microsoftClickId", "conversionName", "conversionTime"}
@@ -82,13 +79,13 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 			}
 		}
 	}
-	data := map[string]interface{}{
-		"message": map[string]interface{}{
-			"fields": event.Fields,
-			"Action": event.Action,
+	data := Data{
+		Message: Message{
+			Fields: event.Fields,
+			Action: event.Action,
 		},
-		"metadata": map[string]interface{}{
-			"jobId": job.JobID,
+		Metadata: Metadata{
+			JobID: job.JobID,
 		},
 	}
 	jsonData, err := json.Marshal(data)
@@ -122,7 +119,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
-	// var requestIdToJobIdMap map[string][]int64
 	for _, actionFile := range actionFiles {
 		uploadRetryableStat.Count(len(actionFile.FailedJobIDs))
 		_, err := os.Stat(actionFile.ZipFilePath)
@@ -162,7 +158,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		importIds = append(importIds, uploadBulkFileResp.RequestId)
 		failedJobs = append(failedJobs, actionFile.FailedJobIDs...)
 		successJobs = append(successJobs, actionFile.SuccessfulJobIDs...)
-		// requestIdToJobIdMap[uploadBulkFileResp.RequestId] = successJobs
 	}
 
 	var parameters common.ImportParameters
@@ -171,8 +166,13 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
-	allErrors := router_utils.EnhanceJSON([]byte(`{}`), "error", strings.Join(errors, commaSeparator))
-
+	errorMap := map[string]string{
+		"error": strings.Join(errors, commaSeparator),
+	}
+	allErrors, err := json.Marshal(errorMap)
+	if err != nil {
+		b.logger.Error("Error while marshalling error")
+	}
 	for _, actionFile := range actionFiles {
 		err = os.Remove(actionFile.ZipFilePath)
 		if err != nil {
@@ -188,7 +188,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:       destination.ID,
-		// RequestIdToJobIdMap: requestIdToJobIdMap,
 	}
 }
 

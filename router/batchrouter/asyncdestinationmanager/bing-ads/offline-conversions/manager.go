@@ -1,4 +1,4 @@
-package bingads_offline_conversions
+package offline_conversions
 
 import (
 	stdjson "encoding/json"
