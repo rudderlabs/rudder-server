@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -552,8 +553,10 @@ type dummyUploader struct {
 	dest *backendconfig.DestinationT
 }
 
-func (*dummyUploader) IsWarehouseSchemaEmpty() bool                          { return true }
-func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error)  { return nil, nil }
+func (*dummyUploader) IsWarehouseSchemaEmpty() bool { return true }
+func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
 func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }

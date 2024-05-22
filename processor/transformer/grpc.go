@@ -3,6 +3,7 @@ package transformer
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -12,11 +13,15 @@ import (
 )
 
 func (trans *handle) grpcRequest(ctx context.Context, data []TransformerEvent) []TransformerResponse {
+	requestStartTime := time.Now()
+	tags := statsTags(&data[0])
+	tags["method"] = "grpcRequest"
 	protoRes, err := trans.grpcClient.Transform(ctx, &transformerpb.TransformRequest{
 		Events: lo.Map(data, func(event TransformerEvent, _ int) *transformerpb.TransformerEvent {
 			return event.AsProto()
 		}),
 	})
+	trans.requestTime(tags, time.Since(requestStartTime))
 	if err != nil {
 		panic(err)
 	}

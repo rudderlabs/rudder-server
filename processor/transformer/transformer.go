@@ -519,6 +519,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 				resp, reqErr = trans.client.Do(req)
 			})
+			tags["method"] = "httpPost"
 			trans.requestTime(tags, time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr
@@ -645,6 +646,8 @@ func (trans *handle) doFasthttpPost(ctx context.Context, rawJSON []byte, url, st
 					trans.config.timeoutDuration,
 				)
 			})
+
+			tags["method"] = "FasthttpPost"
 			trans.requestTime(tags, time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr
