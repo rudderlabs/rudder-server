@@ -5,6 +5,7 @@
 package mock_kvstoremanager
 
 import (
+	json "encoding/json"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -47,16 +48,16 @@ func (mr *MockKVStoreManagerMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockKVStoreManager)(nil).Close))
 }
 
-// Connect mocks base method.
-func (m *MockKVStoreManager) Connect() {
+// CreateClient mocks base method.
+func (m *MockKVStoreManager) CreateClient() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Connect")
+	m.ctrl.Call(m, "CreateClient")
 }
 
-// Connect indicates an expected call of Connect.
-func (mr *MockKVStoreManagerMockRecorder) Connect() *gomock.Call {
+// CreateClient indicates an expected call of CreateClient.
+func (mr *MockKVStoreManagerMockRecorder) CreateClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Connect", reflect.TypeOf((*MockKVStoreManager)(nil).Connect))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateClient", reflect.TypeOf((*MockKVStoreManager)(nil).CreateClient))
 }
 
 // DeleteKey mocks base method.
@@ -134,6 +135,35 @@ func (m *MockKVStoreManager) HSet(key, field string, value interface{}) error {
 func (mr *MockKVStoreManagerMockRecorder) HSet(key, field, value interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HSet", reflect.TypeOf((*MockKVStoreManager)(nil).HSet), key, field, value)
+}
+
+// SendDataAsJSON mocks base method.
+func (m *MockKVStoreManager) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendDataAsJSON", jsonData)
+	ret0, _ := ret[0].(interface{})
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SendDataAsJSON indicates an expected call of SendDataAsJSON.
+func (mr *MockKVStoreManagerMockRecorder) SendDataAsJSON(jsonData interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).SendDataAsJSON), jsonData)
+}
+
+// ShouldSendDataAsJSON mocks base method.
+func (m *MockKVStoreManager) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ShouldSendDataAsJSON", config)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// ShouldSendDataAsJSON indicates an expected call of ShouldSendDataAsJSON.
+func (mr *MockKVStoreManagerMockRecorder) ShouldSendDataAsJSON(config interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShouldSendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).ShouldSendDataAsJSON), config)
 }
 
 // StatusCode mocks base method.
