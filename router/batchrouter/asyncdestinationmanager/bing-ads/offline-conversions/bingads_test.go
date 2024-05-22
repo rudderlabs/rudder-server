@@ -568,7 +568,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
-		It("Transform() Test -> successfull ", func() {
+		It("Transform() Test -> successful ", func() {
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"insert\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
