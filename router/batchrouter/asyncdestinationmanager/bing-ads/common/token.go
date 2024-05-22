@@ -1,4 +1,4 @@
-package bingads_token
+package common
 
 import (
 	"encoding/json"

@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	bingads_token "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
@@ -27,7 +27,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
 
-	token := bingads_token.TokenSource{
+	token := common.TokenSource{
 		WorkspaceID:     destination.WorkspaceID,
 		DestinationName: destination.Name,
 		AccountID:       destConfig.RudderAccountID,
