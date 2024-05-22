@@ -7,11 +7,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/k0kubun/pp"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -30,16 +28,19 @@ type KlaviyoBulkUploader struct {
 }
 
 type UploadResp struct {
-	data struct {
-		id string `json:"id"`
-	}
+	Data struct {
+		Id string `json:"id"`
+	} `json:"data"`
 }
 
 type PollResp struct {
-	data struct {
-		id         string `json:"id"`
-		attributes struct {
-			failed_count int `json:"failed_count"`
+	Data struct {
+		Id         string `json:"id"`
+		Attributes struct {
+			Total_count     int    `json:"total_count"`
+			Completed_count int    `json:"completed_count"`
+			Failed_count    int    `json:"failed_count"`
+			Status          string `json:"status"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
@@ -53,22 +54,28 @@ func NewManager(destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, 
 }
 
 func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+	client := &http.Client{}
 	destConfig := kbu.destinationConfig
 	privateApiKey, _ := destConfig["privateApiKey"].(string)
-	importIds := strings.Split(pollInput.ImportId, ":")
-	pp.Println(importIds)
-	pollUrl := "https://a.klaviyo.com/api/profile-bulk-import-jobs/" + importIds[0]
+	importId := pollInput.ImportId
+	// pp.Println("ImportId: ", importId)
+	// pp.Println("PrivateApiKey: ", privateApiKey)
+	pollUrl := "https://a.klaviyo.com/api/profile-bulk-import-jobs/" + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
-		return common.PollStatusResponse{}
+		// pp.Println("inside error")
+		return common.PollStatusResponse{
+			Complete:   false,
+			InProgress: false,
+			HasFailed:  true,
+			Error:      err.Error(),
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization",
 		"Klaviyo-API-Key "+privateApiKey)
 	req.Header.Set("revision", "2024-05-15")
-	resp, err := kbu.Client.Do(req)
-
-	// if ()
+	resp, err := client.Do(req)
 	if err != nil {
 		return common.PollStatusResponse{
 			Complete:   false,
@@ -79,46 +86,79 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 			HasWarning: false,
 		}
 	}
-	var bodyBytes []byte
-	var uploadresp PollResp
-	bodyBytes, _ = io.ReadAll(resp.Body)
-	pp.Println("Response Status:", resp.Status)
-	pp.Println("Response Body:", string(bodyBytes))
-	err = json.Unmarshal(bodyBytes, &uploadresp)
-	if err != nil {
+
+	var pollBodyBytes []byte
+	var pollresp PollResp
+	pollBodyBytes, _ = io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+
+	pollRespErr := json.Unmarshal(pollBodyBytes, &pollresp)
+	if pollRespErr != nil {
 		return common.PollStatusResponse{
 			Complete:   false,
 			InProgress: false,
 			StatusCode: 0,
 			HasFailed:  true,
-			Error:      err.Error(),
+			Error:      pollRespErr.Error(),
 			HasWarning: false,
 		}
 	}
-	failCount := uploadresp.data.attributes.failed_count
-
-	if failCount > 0 {
-		return common.PollStatusResponse{
-			Complete:   true,
-			InProgress: false,
-			StatusCode: 200,
-			HasFailed:  true,
-			HasWarning: false,
-		}
-	}
+	// totalCount := uploadresp.data.attributes.total_count
+	// completedCount := uploadresp.data.attributes.completed_count
+	// pp.Println("Attributes: ", pollresp.Data.Attributes)
+	failCount := pollresp.Data.Attributes.Failed_count
+	status := pollresp.Data.Attributes.Status
+	// fmt.Println("Status: ", status)
+	// fmt.Println("FailCount: ", failCount)
 
 	defer func() { _ = resp.Body.Close() }()
-	// pp.Println(resp)
-	return common.PollStatusResponse{
-		Complete:   true,
-		InProgress: false,
-		StatusCode: 200,
-		HasFailed:  false,
-		HasWarning: false,
+
+	switch status {
+	case "queued", "processing":
+		// pp.Print("inside processing")
+		return common.PollStatusResponse{
+			Complete:   false,
+			InProgress: true,
+		}
+	case "complete":
+		// pp.Print("inside complete")
+		if failCount > 0 {
+			return common.PollStatusResponse{
+				Complete:      true,
+				InProgress:    false,
+				StatusCode:    200,
+				HasFailed:     true,
+				HasWarning:    false,
+				FailedJobURLs: importId,
+			}
+		} else {
+			// pp.Print("inside success")
+			return common.PollStatusResponse{
+				Complete:   true,
+				InProgress: false,
+				StatusCode: 200,
+				HasFailed:  false,
+				HasWarning: false,
+			}
+		}
+	default:
+		// pp.Print("inside default")
+		return common.PollStatusResponse{
+			Complete:   false,
+			StatusCode: 500,
+			InProgress: true,
+		}
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common.GetUploadStatsResponse {
+func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	// destConfig := kbu.destinationConfig
+	// privateApiKey, _ := destConfig["privateApiKey"].(string)
+	// importId := UploadStatsInput.ImportingList
+	// pp.Println(privateApiKey)
+	// pp.Println(importId)
+
+	// var uploadStatusResponse common.GetUploadStatsResponse
 	return common.GetUploadStatsResponse{}
 }
 func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, err error, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -127,7 +167,7 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 		"destType": "KLAVIYO_BULK_UPLOAD",
 	})
 	eventsAbortedStat.Count(len(importingJobIds))
-	pp.Println("importingJobIds: ", importingJobIds, len(importingJobIds))
+	// pp.Println("importingJobIds: ", importingJobIds, len(importingJobIds))
 	return common.AsyncUploadOutput{
 		AbortCount:    len(importingJobIds),
 		DestinationID: destinationID,
@@ -179,6 +219,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
+	// pp.Println("Importing Job IDs: ", importingJobIDs)
 	destType := destination.DestinationDefinition.Name
 	destinationID := destination.ID
 	// var failedJobs []int64
@@ -310,8 +351,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	var bodyBytes []byte
 	bodyBytes, _ = io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
-	pp.Println("Response Status:", resp.Status)
-	pp.Println("Response Body:", string(bodyBytes))
+	// pp.Println("Response Status:", resp.Status)
+	// pp.Println("Response Body:", string(bodyBytes))
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != 202 {
@@ -319,12 +360,14 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	}
 	var parameters common.ImportParameters
 	var uploadresp UploadResp
-	err = json.UnmarshalFromString(string(bodyBytes), &uploadresp)
+	uploadRespErr := json.Unmarshal([]byte(bodyBytes), &uploadresp)
 	// pp.Println("Error: ", err)
-	if err == nil {
-		parameters.ImportId = uploadresp.data.id
+	if uploadRespErr != nil {
+		return kbu.generateKlaviyoErrorOutput("Error while unmarshaling response.", uploadRespErr, importingJobIDs, destinationID)
 	}
+	parameters.ImportId = uploadresp.Data.Id
 	importParameters, err := json.Marshal(parameters)
+	// println("Import Parameters: ", string(importParameters))
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)
 	}
@@ -332,7 +375,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	return common.AsyncUploadOutput{
 		ImportingParameters: importParameters,
 		ImportingJobIDs:     importingJobIDs,
-		SucceededJobIDs:     importingJobIDs,
 		SuccessResponse:     string(bodyBytes),
 		DestinationID:       destination.ID,
 	}
