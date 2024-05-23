@@ -31,7 +31,6 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	metadata := map[string]any{
 		"destinationID":  destinationID,
 		"sourceJobRunID": jobRunID,
-		"partFileNumber": asyncDestStruct.PartFileNumber,
 	}
 
 	result := gjson.ParseBytes(destConfigJSON)

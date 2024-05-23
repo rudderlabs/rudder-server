@@ -284,11 +284,10 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			now := time.Now()
 			input := "/path/to/{destinationID}_{jobRunID}/{YYYY}/{MM}/{DD}/{hh}/{mm}/{ss}/{ms}/{timestampInSec}/{timestampInMS}"
-			expected := fmt.Sprintf("/path/to/%s_%s/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d_1", "some_destination_id", "some_source_job_run_id", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, now.Unix(), now.UnixNano()/1e6)
+			expected := fmt.Sprintf("/path/to/%s_%s/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d", "some_destination_id", "some_source_job_run_id", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, now.Unix(), now.UnixNano()/1e6)
 			metadata := map[string]any{
 				"destinationID":  "some_destination_id",
 				"sourceJobRunID": "some_source_job_run_id",
-				"partFileNumber": 1,
 			}
 			received := getUploadFilePath(input, metadata)
 			Expect(received).To(Equal(expected))
