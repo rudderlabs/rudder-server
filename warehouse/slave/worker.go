@@ -3,13 +3,14 @@ package slave
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"strconv"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
@@ -33,6 +34,7 @@ import (
 var (
 	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
 	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
+	json                            = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 
 type uploadProcessingResult struct {

@@ -9,7 +9,6 @@ import (
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 
 	jsoniter "github.com/json-iterator/go"
 
@@ -96,9 +95,6 @@ func (manager *ETCDManager) init() error {
 			DialTimeout:          manager.Config.dialTimeout,
 			DialKeepAliveTime:    manager.Config.dialKeepAliveTime,
 			DialKeepAliveTimeout: manager.Config.dialKeepAliveTimeout,
-			DialOptions: []grpc.DialOption{
-				grpc.WithBlock(), // block until the underlying connection is up
-			},
 		})
 		if err != nil {
 			endpoints := strings.Join(manager.Config.Endpoints, `,`)

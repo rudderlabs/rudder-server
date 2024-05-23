@@ -67,14 +67,9 @@ func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUp
 	if err != nil {
 		return nil, fmt.Errorf("creating SSH config: %w", err)
 	}
-	sshClient, err := sftp.NewSSHClient(sshConfig)
-	if err != nil {
-		return nil, fmt.Errorf("creating SSH client: %w", err)
-	}
 
-	fileManager, err := sftp.NewFileManager(sshClient)
+	fileManager, err := sftp.NewFileManager(sshConfig, sftp.WithRetryOnIdleConnection())
 	if err != nil {
-		sshClient.Close()
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 
