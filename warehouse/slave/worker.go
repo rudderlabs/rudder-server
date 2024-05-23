@@ -34,7 +34,7 @@ import (
 var (
 	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
 	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
-	json                            = jsoniter.ConfigFastest
+	json                            = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 
 type uploadProcessingResult struct {
