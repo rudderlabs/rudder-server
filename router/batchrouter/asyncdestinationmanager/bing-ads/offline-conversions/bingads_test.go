@@ -93,17 +93,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				RequestId:  "randomRequestId3",
 			}, nil)
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
 
 			subDir := filepath.Join(dir, "rudder-async-destination-logs")
 			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 
 			Expect(err).To(BeNil())
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
@@ -130,10 +124,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 
 			Expect(received).To(Equal(expected))
 		})
@@ -159,10 +150,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := stdjson.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "unmarshalling parameters")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: Error in getting bulk upload url,insert:error in getting bulk upload url: Error in getting bulk upload url,delete:error in getting bulk upload url: Error in getting bulk upload url\"}",
@@ -172,24 +160,15 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
 
 			subDir := filepath.Join(dir, "rudder-async-destination-logs")
 			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 			received := bulkUploader.Upload(&asyncDestination)
 			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			Expect(received).To(Equal(expected))
 		})
 
@@ -216,10 +195,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := stdjson.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: unable to get bulk upload url, check your credentials,insert:error in getting bulk upload url: unable to get bulk upload url, check your credentials,delete:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
@@ -229,24 +205,16 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
+
+			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
 
 			subDir := filepath.Join(dir, "rudder-async-destination-logs")
 			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 			received := bulkUploader.Upload(&asyncDestination)
 			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			Expect(received).To(Equal(expected))
 		})
 
@@ -273,17 +241,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload3", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
 
 			subDir := filepath.Join(dir, "rudder-async-destination-logs")
 			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 
 			Expect(err).To(BeNil())
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
@@ -298,10 +260,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
 			importParameters, err := stdjson.Marshal(parameters)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in uploading the bulk file: Error in uploading bulk file,insert:error in uploading the bulk file: Error in uploading bulk file,delete:error in uploading the bulk file: Error in uploading bulk file\"}",
@@ -313,10 +272,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			Expect(received).To(Equal(expected))
 		})
 
