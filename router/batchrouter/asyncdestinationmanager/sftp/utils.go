@@ -222,7 +222,7 @@ func getTempFilePath() (string, error) {
 	return tmpFilePath, nil
 }
 
-func getUploadFilePath(path string) string {
+func getUploadFilePath(path string, metadata map[string]any) string {
 	// Get the current date and time
 	now := time.Now()
 	// Replace dynamic variables with their actual values
@@ -246,6 +246,10 @@ func getUploadFilePath(path string) string {
 			return strconv.FormatInt(now.Unix(), 10)
 		case "{timestampInMS}":
 			return strconv.FormatInt(now.UnixNano()/1e6, 10)
+		case "{destinationID}":
+			return metadata["destinationID"].(string)
+		case "{jobRunID}":
+			return metadata["sourceJobRunID"].(string)
 		default:
 			// If the dynamic variable is not recognized, keep it unchanged
 			return match

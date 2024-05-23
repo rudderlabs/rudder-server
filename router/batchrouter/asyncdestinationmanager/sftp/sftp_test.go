@@ -282,9 +282,14 @@ var _ = Describe("SFTP test", func() {
 
 		It("TestReplaceDynamicVariables", func() {
 			initSFTP()
-			input := "/path/to/{YYYY}/{MM}/{DD}/{hh}/{mm}/{ss}/{ms}/{timestampInSec}/{timestampInMS}"
-			expected := fmt.Sprintf("/path/to/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d", time.Now().Year(), time.Now().Month(), time.Now().Day(), time.Now().Hour(), time.Now().Minute(), time.Now().Second(), time.Now().Nanosecond()/1e6, time.Now().Unix(), time.Now().UnixNano()/1e6)
-			received := getUploadFilePath(input)
+			now := time.Now()
+			input := "/path/to/{destinationID}_{jobRunID}/{YYYY}/{MM}/{DD}/{hh}/{mm}/{ss}/{ms}/{timestampInSec}/{timestampInMS}"
+			expected := fmt.Sprintf("/path/to/%s_%s/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d", "some_destination_id", "some_source_job_run_id", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, now.Unix(), now.UnixNano()/1e6)
+			metadata := map[string]any{
+				"destinationID":  "some_destination_id",
+				"sourceJobRunID": "some_source_job_run_id",
+			}
+			received := getUploadFilePath(input, metadata)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -292,7 +297,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			input := "/path/to/file.txt"
 			expected := "/path/to/file.txt"
-			received := getUploadFilePath(input)
+			received := getUploadFilePath(input, nil)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -300,7 +305,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			input := ""
 			expected := ""
-			received := getUploadFilePath(input)
+			received := getUploadFilePath(input, nil)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -308,7 +313,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			input := "/path/to/{invalid}/file.txt"
 			expected := "/path/to/{invalid}/file.txt"
-			received := getUploadFilePath(input)
+			received := getUploadFilePath(input, nil)
 			Expect(received).To(Equal(expected))
 		})
 	})
