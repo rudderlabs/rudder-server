@@ -543,7 +543,11 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
 		default:
 			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", errOccurred, batchJobs.Connection.Source.ID)
-			batchJobState = jobsdb.Failed.State
+			if batchJobs.JobState != "" {
+				batchJobState = batchJobs.JobState
+			} else {
+				batchJobState = jobsdb.Failed.State
+			}
 			errorResp, _ = json.Marshal(ErrorResponse{Error: errOccurred.Error()})
 			batchReqMetric.batchRequestFailed = 1
 			// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats

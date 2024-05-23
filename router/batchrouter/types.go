@@ -57,4 +57,5 @@ type BatchedJobs struct {
 	Jobs       []*jobsdb.JobT
 	Connection *Connection
 	TimeWindow time.Time
+	JobState   string // ENUM waiting, executing, succeeded, waiting_retry, filtered, failed, aborted, migrating, migrated, wont_migrate
 }
