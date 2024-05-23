@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -432,4 +434,68 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 1)
+}
+
+func TestPrepareRequestBody(t *testing.T) {
+	createRequest := func(method, target string, body io.Reader, params map[string]string) *http.Request {
+		r := httptest.NewRequest(method, target, body)
+		q := r.URL.Query()
+		for k, v := range params {
+			q.Add(k, v)
+		}
+		r.URL.RawQuery = q.Encode()
+		return r
+	}
+
+	testCases := []struct {
+		name               string
+		req                *http.Request
+		includeQueryParams bool
+		wantError          bool
+		expectedResponse   []byte
+	}{
+		{
+			name:               "Empty request body with no query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", nil, nil),
+			includeQueryParams: false,
+			expectedResponse:   []byte("{}"),
+		},
+		{
+			name:               "Empty request body with query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key": "value"}),
+			includeQueryParams: true,
+			expectedResponse:   []byte(`{"query_parameters":{"key":["value"]}}`),
+		},
+		{
+			name:               "Error reading request body",
+			req:                createRequest(http.MethodPost, "http://example.com", iotest.ErrReader(errors.New("some error")), nil),
+			includeQueryParams: false,
+			wantError:          true,
+			expectedResponse:   nil,
+		},
+		{
+			name:               "Some payload with no query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`), nil),
+			includeQueryParams: false,
+			expectedResponse:   []byte(`{"key":"value"}`),
+		},
+		{
+			name:               "Some payload with query parameters",
+			req:                createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key1":"value1"}`), map[string]string{"key2": "value2"}),
+			includeQueryParams: true,
+			expectedResponse:   []byte(`{"key1":"value1","query_parameters":{"key2":["value2"]}}`),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := prepareRequestBody(tc.req, tc.includeQueryParams, "webhook", []string{"webhook"})
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedResponse, result)
+		})
+	}
 }
