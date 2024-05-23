@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -289,7 +288,6 @@ func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType s
 			return nil, errors.New(response.InvalidJSON)
 		}
 	}
-	fmt.Print("body is:", body)
 	return body, nil
 }
 
