@@ -50,10 +50,8 @@ func Setup(pool *dockertest.Pool, cln cleaner) (*Resource, error) {
 	etcdHosts = []string{"http://localhost:" + etcdPortStr}
 	err = pool.Retry(func() (err error) {
 		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints: etcdHosts,
-			DialOptions: []grpc.DialOption{
-				grpc.WithBlock(), // block until the underlying connection is up
-			},
+			Endpoints:   etcdHosts,
+			DialOptions: []grpc.DialOption{},
 			DialTimeout: 10 * time.Second,
 		})
 		return err

@@ -80,6 +80,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
 			HasFailed:  true,
+			Error:      string(bodyBytes),
 		}
 	}
 	var asyncResponse common.PollStatusResponse
@@ -225,6 +226,10 @@ func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, sta
 		}
 	}
 	return succesfulJobIDs, failedJobIDsTrans
+}
+
+func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
 func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

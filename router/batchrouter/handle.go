@@ -29,7 +29,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -133,7 +133,7 @@ type Handle struct {
 
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
-	asyncDestinationStruct   map[string]*common.AsyncDestinationStruct
+	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
 	asyncPollTimeStat       stats.Measurement
 	asyncFailedJobsTimeStat stats.Measurement
@@ -543,7 +543,11 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
 		default:
 			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", errOccurred, batchJobs.Connection.Source.ID)
-			batchJobState = jobsdb.Failed.State
+			if batchJobs.JobState != "" {
+				batchJobState = batchJobs.JobState
+			} else {
+				batchJobState = jobsdb.Failed.State
+			}
 			errorResp, _ = json.Marshal(ErrorResponse{Error: errOccurred.Error()})
 			batchReqMetric.batchRequestFailed = 1
 			// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
@@ -796,7 +800,7 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 
 // skipFetchingJobs returns true if the destination type is async and the there are still jobs in [importing] state for this destination type
 func (brt *Handle) skipFetchingJobs(partition string) bool {
-	if slices.Contains(asyncDestinations, brt.destType) {
+	if asynccommon.IsAsyncDestination(brt.destType) {
 		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{brt.destType},
 			JobsLimit:        1,

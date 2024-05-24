@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -22,6 +23,12 @@ func IsObjectStorageDestination(destType string) bool {
 
 func IsWarehouseDestination(destType string) bool {
 	return slices.Contains(warehouseutils.WarehouseDestinations, destType)
+}
+
+func IsBatchRouterDestination(destination string) bool {
+	return IsObjectStorageDestination(destination) ||
+		IsWarehouseDestination(destination) ||
+		asynccommon.IsAsyncDestination(destination)
 }
 
 func connectionIdentifier(batchDestination Connection) string {
@@ -137,4 +144,14 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 		}
 	}
 	return
+}
+
+func IsAsyncDestinationLimitNotReached(brt *Handle, destinationID string) bool {
+	asyncDest := brt.asyncDestinationStruct[destinationID]
+	isSFTP := asynccommon.IsSFTPDestination(brt.destType)
+	maxPayloadSizeReached := asyncDest.Size < brt.maxPayloadSizeInBytes
+	maxEventsReached := asyncDest.Count < brt.maxEventsInABatch
+	uploadNotInProgress := !asyncDest.UploadInProgress
+	return (isSFTP && maxPayloadSizeReached && uploadNotInProgress) ||
+		(maxEventsReached && maxPayloadSizeReached && uploadNotInProgress)
 }

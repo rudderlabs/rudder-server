@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica/augmenter"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -268,6 +269,10 @@ func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err
 		AbortJobIDs:   importingJobIds,
 		AbortReason:   fmt.Sprintf("%s %v", errorString, err.Error()),
 	}
+}
+
+func (*YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
 func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

@@ -1,4 +1,4 @@
-package bingads
+package sftp
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestBingads(t *testing.T) {
+func TestSFTP(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Bingads Suite")
+	RunSpecs(t, "SFTP Suite")
 }

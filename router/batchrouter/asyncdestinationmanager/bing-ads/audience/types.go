@@ -1,4 +1,4 @@
-package bingads
+package audience
 
 import (
 	"encoding/csv"
