@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/types"
 )
 
 type networkContext struct {
@@ -68,7 +69,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 			},
 		}
 
-		resp := network.SendPost(context.Background(), structData)
+		resp := network.SendPost(context.Background(), structData, types.DestinationInfo{})
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, string(resp.ResponseBody), eventData)
 	})
@@ -88,7 +89,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 			},
 		}
 
-		resp := network.SendPost(context.Background(), structData)
+		resp := network.SendPost(context.Background(), structData, types.DestinationInfo{})
 		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
 		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
 	})
@@ -160,7 +161,7 @@ var _ = Describe("Network", func() {
 				Body:       r,
 			}, nil)
 
-			network.SendPost(context.Background(), structData)
+			network.SendPost(context.Background(), structData, types.DestinationInfo{})
 		})
 
 		It("should respect ctx cancelation", func() {
@@ -176,7 +177,7 @@ var _ = Describe("Network", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			resp := network.SendPost(ctx, structData)
+			resp := network.SendPost(ctx, structData, types.DestinationInfo{})
 			Expect(resp.StatusCode).To(Equal(http.StatusGatewayTimeout))
 			fmt.Println(string(resp.ResponseBody))
 			Expect(string(resp.ResponseBody)).To(Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled"))
@@ -226,7 +227,7 @@ var _ = Describe("Network", func() {
 		DescribeTable("depending on the content type",
 			func(contentType string, altered bool) {
 				mockResponseContentType(contentType)
-				resp := network.SendPost(context.Background(), requestParams)
+				resp := network.SendPost(context.Background(), requestParams, types.DestinationInfo{})
 				if altered {
 					Expect(resp.ResponseBody).To(Equal([]byte("redacted due to unsupported content-type")))
 				} else {

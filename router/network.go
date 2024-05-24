@@ -17,8 +17,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -34,9 +37,15 @@ type netHandle struct {
 	logger        logger.Logger
 }
 
+type responseLogDetails struct {
+	statusCode int
+	body       []byte
+	headers    http.Header
+}
+
 // NetHandle interface
 type NetHandle interface {
-	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
+	SendPost(ctx context.Context, structData integrations.PostParametersT, destination types.DestinationInfo) *utils.SendPostResponse
 }
 
 // temp solution for handling complex query params
@@ -59,7 +68,7 @@ func handleQueryParam(param interface{}) string {
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 // this returns the statusCode, status and response body from the response of the destination call
-func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT, destInfo types.DestinationInfo) *utils.SendPostResponse {
 	if network.disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
@@ -208,6 +217,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
+		network.doResponseLogging(responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}, destInfo)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -240,6 +250,47 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	return &utils.SendPostResponse{
 		StatusCode:   200,
 		ResponseBody: []byte{},
+	}
+}
+
+func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.DestinationInfo) {
+	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
+	if !isEnabled {
+		return
+	}
+
+	destID := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.destinationID").Load()
+	destType := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.destType").Load()
+	workspaceID := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.workspaceID").Load()
+
+	headerBytes, err := json.Marshal(resp.headers)
+	if err != nil {
+		n.logger.Debugn(fmt.Sprintf("header marshal failure: %s", err.Error()),
+			obskit.DestinationID(destInfo.ID),
+			obskit.DestinationType(destInfo.DefinitionName),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
+		)
+	}
+	var loggerFields []logger.Field
+	for _, m := range []string{destID, destType, workspaceID} {
+		switch {
+		case m == destInfo.DefinitionName:
+			loggerFields = append(loggerFields, obskit.DestinationType(destInfo.DefinitionName))
+		case m == destInfo.ID:
+			loggerFields = append(loggerFields, obskit.DestinationID(destInfo.ID))
+		case m == destInfo.WorkspaceID:
+			loggerFields = append(loggerFields, obskit.WorkspaceID(destInfo.WorkspaceID))
+		}
+	}
+	if len(loggerFields) > 0 {
+		loggerFields = append(loggerFields,
+			logger.NewStringField("resHeaders", string(headerBytes)),
+			logger.NewStringField("resBody", string(resp.body)),
+			logger.NewIntField("resStatusCode", int64(resp.statusCode)),
+		)
+		n.logger.Infon("delivery response",
+			loggerFields...,
+		)
 	}
 }
 
