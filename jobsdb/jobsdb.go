@@ -1272,15 +1272,6 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	return nil
 }
 
-func (jd *Handle) addDSInTx(tx *Tx, ds dataSetT) error {
-	defer jd.getTimerStat(
-		"add_new_ds",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	).RecordDuration()()
-	jd.logger.Infof("Creating DS %+v", ds)
-	return jd.createDSInTx(tx, ds)
-}
-
 func (jd *Handle) computeNewIdxForAppend(l lock.LockToken) string {
 	dList, err := jd.doRefreshDSList(l)
 	jd.assertError(err)
@@ -1325,7 +1316,22 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 
 	// Create the jobs and job_status tables
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if err = jd.createDSTablesInTx(ctx, tx, newDS); err != nil {
+		return err
+	}
+	if err = jd.createDSIndicesInTx(ctx, tx, newDS); err != nil {
+		return err
+	}
+
+	err = jd.journalMarkDoneInTx(tx, opID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
 		uuid UUID NOT NULL,
@@ -1338,21 +1344,9 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
-		return err
-	}
-	for _, param := range cacheParameterFilters {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
-			return err
-		}
-	}
-
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
-		job_id BIGINT REFERENCES %q(job_id),
+		job_id BIGINT,
 		job_state VARCHAR(64),
 		attempt SMALLINT,
 		exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -1360,17 +1354,40 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
 		parameters JSONB DEFAULT '{}'::JSONB,
-		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)); err != nil {
+		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+	return nil
+}
+
+func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
 		return err
 	}
-	err = jd.journalMarkDoneInTx(tx, opID)
-	if err != nil {
+	for _, param := range cacheParameterFilters {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		fmt.Sprintf(
+			`ALTER TABLE %[1]q
+			ADD CONSTRAINT "fk_%[1]s_job_id"
+			FOREIGN KEY (job_id)
+			REFERENCES %[2]q (job_id)`,
+			newDS.JobStatusTable,
+			newDS.JobTable,
+		)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
 	return nil
