@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -94,6 +95,7 @@ type Handle struct {
 	// other state
 
 	backendConfigInitialised bool
+	inFlightRequestsCount    *atomic.Uint64
 
 	trackCounterMu    sync.Mutex // protects trackSuccessCount and trackFailureCount
 	trackSuccessCount int

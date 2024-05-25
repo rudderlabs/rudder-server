@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
@@ -68,6 +69,7 @@ func (gw *Handle) Setup(
 	gw.versionHandler = versionHandler
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
+	gw.inFlightRequestsCount = new(atomic.Uint64)
 
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
@@ -383,6 +385,18 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		gw.logger.Child("rsources_failed_keys"),
 	)
 	srvMux.Use(
+		func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = gw.inFlightRequestsCount.Add(1)
+				h.ServeHTTP(w, r)
+				for {
+					prev := gw.inFlightRequestsCount.Load()
+					if gw.inFlightRequestsCount.CompareAndSwap(prev, prev-1) {
+						break
+					}
+				}
+			})
+		},
 		chiware.StatMiddleware(ctx, stats.Default, component),
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
 		middleware.UncompressMiddleware,
@@ -480,6 +494,10 @@ func (gw *Handle) Shutdown() error {
 	gw.backgroundCancel()
 	if err := gw.webhook.Shutdown(); err != nil {
 		return err
+	}
+
+	for gw.inFlightRequestsCount.Load() != 0 {
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	// UserWebRequestWorkers
