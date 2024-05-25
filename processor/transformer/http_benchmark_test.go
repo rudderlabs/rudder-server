@@ -31,7 +31,7 @@ func BenchmarkHTTP(b *testing.B) {
 		tr.stat = stats.NOP
 		tr.logger = logger.NOP
 		tr.conf = config.New()
-		tr.config.useFasthttpClient = func() bool { return true }
+		tr.config.useFasthttpClient = config.SingleValueLoader(true)
 		tr.fasthttpClient = &fasthttp.Client{
 			MaxConnsPerHost:     1000,
 			MaxIdleConnDuration: 30 * time.Second,
@@ -64,7 +64,7 @@ func BenchmarkHTTP(b *testing.B) {
 		tr.stat = stats.NOP
 		tr.logger = logger.NOP
 		tr.conf = config.New()
-		tr.config.useFasthttpClient = func() bool { return false }
+		tr.config.useFasthttpClient = config.SingleValueLoader(false)
 		tr.client = &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:        1000,

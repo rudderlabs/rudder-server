@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -184,7 +185,11 @@ type handle struct {
 	guardConcurrency chan struct{}
 
 	config struct {
-		useFasthttpClient      func() bool
+		useFasthttpClient config.ValueLoader[bool]
+		useGzip           config.ValueLoader[bool]
+		retryAllNon200    config.ValueLoader[bool]
+		reValidateJSON    config.ValueLoader[bool]
+
 		maxConcurrency         int
 		maxHTTPConnections     int
 		maxHTTPIdleConnections int
@@ -214,7 +219,11 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.receivedStat = stat.NewStat("processor.transformer_received", stats.CountType)
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
-	trans.config.useFasthttpClient = func() bool { return conf.GetBool("Transformer.Client.useFasthttp", true) }
+	trans.config.useFasthttpClient = conf.GetReloadableBoolVar(false, "Transformer.Client.useFasthttp")
+	trans.config.useGzip = conf.GetReloadableBoolVar(false, "Transformer.Client.useGzip")
+	trans.config.retryAllNon200 = conf.GetReloadableBoolVar(false, "Transformer.Client.retryAllNon200")
+	trans.config.reValidateJSON = conf.GetReloadableBoolVar(false, "Transformer.Client.reValidateJSON")
+
 	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
@@ -389,6 +398,10 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 		return nil
 	}
 
+	if trans.config.reValidateJSON.Load() && !json.Valid(rawJSON) {
+		panic("invalid json")
+	}
+
 	var (
 		respData   []byte
 		statusCode int
@@ -399,7 +412,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
 
 	var postFunc func(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int)
-	if trans.config.useFasthttpClient() {
+	if trans.config.useFasthttpClient.Load() {
 		postFunc = trans.doFasthttpPost
 	} else {
 		postFunc = trans.doPost
@@ -484,13 +497,39 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			requestStartTime := time.Now()
 
 			trace.WithRegion(ctx, "request/post", func() {
-				var req *http.Request
-				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+				var (
+					req *http.Request
+					buf bytes.Buffer
+				)
+
+				if trans.config.useGzip.Load() {
+					zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+					if err != nil {
+						panic(err)
+					}
+
+					_, err = zw.Write(rawJSON)
+					if err != nil {
+						panic(err)
+					}
+
+					if err := zw.Close(); err != nil {
+						panic(err)
+					}
+				} else {
+					buf.Write(rawJSON)
+				}
+
+				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, &buf)
 				if reqErr != nil {
 					return
 				}
 
-				req.Header.Set("Content-Type", "application/json; charset=utf-8")
+				if trans.config.useGzip.Load() {
+					req.Header.Set("Content-Encoding", "gzip")
+				} else {
+					req.Header.Set("Content-Type", "application/json; charset=utf-8")
+				}
 				req.Header.Set("X-Feature-Gzip-Support", "?1")
 				// Header to let transformer know that the client understands event filter code
 				req.Header.Set("X-Feature-Filter-Code", "?1")
@@ -503,6 +542,10 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			}
 
 			defer func() { httputil.CloseResponse(resp) }()
+
+			if trans.config.retryAllNon200.Load() && resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
+			}
 
 			if !isJobTerminated(resp.StatusCode) && resp.StatusCode != StatusCPDown {
 				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
