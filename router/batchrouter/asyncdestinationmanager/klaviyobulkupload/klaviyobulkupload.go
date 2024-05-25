@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -534,4 +535,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 func (kbu *KlaviyoBulkUploader) GetErrorStats() map[string]interface{} {
 	return nil
+}
+
+func (kbu *KlaviyoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
