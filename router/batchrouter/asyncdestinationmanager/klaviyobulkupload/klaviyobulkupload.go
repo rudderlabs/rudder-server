@@ -23,6 +23,22 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
+type Uploader interface {
+	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
+}
+
+type HttpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type Poller interface {
+	Poll(input common.AsyncPoll) common.PollStatusResponse
+}
+
+type UploadStats interface {
+	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
+}
+
 type KlaviyoBulkUploader struct {
 	destName             string
 	destinationConfig    map[string]interface{}
