@@ -529,7 +529,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	}
 	var parameters common.ImportParameters
 	var uploadresp UploadResp
-	uploadRespErr := json.Unmarshal([]byte(bodyBytes), &uploadresp)
+	uploadRespErr := json.Unmarshal((bodyBytes), &uploadresp)
 	// pp.Println("Error: ", err)
 	if uploadRespErr != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while unmarshaling response.", uploadRespErr, importingJobIDs, destinationID)
