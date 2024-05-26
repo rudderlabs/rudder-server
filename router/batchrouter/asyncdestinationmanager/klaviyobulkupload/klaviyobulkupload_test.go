@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocks "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
@@ -14,20 +15,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	destination = &backendconfig.DestinationT{
-		ID:   "1",
+var destination = &backendconfig.DestinationT{
+	ID:   "1",
+	Name: "KLAVIYO_BULK_UPLOAD",
+	DestinationDefinition: backendconfig.DestinationDefinitionT{
 		Name: "KLAVIYO_BULK_UPLOAD",
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "KLAVIYO_BULK_UPLOAD",
-		},
-		Config: map[string]interface{}{
-			"privateApiKey": "1234",
-		},
-		Enabled:     true,
-		WorkspaceID: "1",
-	}
-)
+	},
+	Config: map[string]interface{}{
+		"privateApiKey": "1234",
+	},
+	Enabled:     true,
+	WorkspaceID: "1",
+}
 
 func TestNewManagerSuccess(t *testing.T) {
 	manager, err := klaviyobulkupload.NewManager(destination)
@@ -55,7 +54,6 @@ func TestUpload(t *testing.T) {
 	if !reflect.DeepEqual(output, expectedOutput) {
 		t.Errorf("Expected %v but got %v", expectedOutput, output)
 	}
-
 }
 
 // File is successfully opened and read line by line
