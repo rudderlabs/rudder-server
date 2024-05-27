@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.26.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.25.0...v1.26.0-rc.1) (2024-05-27)
+
+
+### Features
+
+* add json-data type support in redis ([#4633](https://github.com/rudderlabs/rudder-server/issues/4633)) ([73f7275](https://github.com/rudderlabs/rudder-server/commit/73f7275521b33d58a4e3c4437a18a3645d4dd436))
+* add sync metadata to sftp destination file path ([#4701](https://github.com/rudderlabs/rudder-server/issues/4701)) ([18fc5f9](https://github.com/rudderlabs/rudder-server/commit/18fc5f9b29ad711c586738434a660d889605d41d))
+* enable retry on idle connections for sftp batch router destination ([#4689](https://github.com/rudderlabs/rudder-server/issues/4689)) ([bc5aec1](https://github.com/rudderlabs/rudder-server/commit/bc5aec1e5e63365dec08cbdc60bb9ffd246231d6))
+* onboard new destination bing_ads_offline_conversion ([12d3b1a](https://github.com/rudderlabs/rudder-server/commit/12d3b1a8411bcb9b4fd85db60947d4d567316f85))
+* onboard new destination bing_ads_offline_conversion destination ([#4674](https://github.com/rudderlabs/rudder-server/issues/4674)) ([c3563af](https://github.com/rudderlabs/rudder-server/commit/c3563afefbe885d3f2c97e90495e83d6c7583213))
+
+
+### Bug Fixes
+
+* error handling in marketo bulk upload ([#4666](https://github.com/rudderlabs/rudder-server/issues/4666)) ([5090a8d](https://github.com/rudderlabs/rudder-server/commit/5090a8d25614626a36633a7cf4bb5958897c0b3a))
+* file create mode change ([a3ee956](https://github.com/rudderlabs/rudder-server/commit/a3ee9567f9da0c329a14e9cf885b6a2923df508c))
+* job_id to jobId ([1284dc0](https://github.com/rudderlabs/rudder-server/commit/1284dc05fb39e023d72d43d0287314a627a4c124))
+* removed extra comment ([3cc8ef6](https://github.com/rudderlabs/rudder-server/commit/3cc8ef64d44e6144aec2e6bb752db729a1645cf7))
+* router processing error ([#4687](https://github.com/rudderlabs/rudder-server/issues/4687)) ([e2aa86c](https://github.com/rudderlabs/rudder-server/commit/e2aa86c0122b48e94701e978efbd1cf2a60b86c5))
+* source payloads with query params to be allowed without body ([#4677](https://github.com/rudderlabs/rudder-server/issues/4677)) ([affd6bc](https://github.com/rudderlabs/rudder-server/commit/affd6bcafa60e071b3252901241fafc71d5d64ce))
+* test cases ([2da6605](https://github.com/rudderlabs/rudder-server/commit/2da66058457610a803c6420c27643161241c3a12))
+* test cases using should not in case of err ([0c04207](https://github.com/rudderlabs/rudder-server/commit/0c042071e5308468230df9386e0249fba575aa10))
+* validation error ([462ceef](https://github.com/rudderlabs/rudder-server/commit/462ceef573e0e67e1c14f479196774e9d261952c))
+* warehouse tests ([#4694](https://github.com/rudderlabs/rudder-server/issues/4694)) ([6db2c1a](https://github.com/rudderlabs/rudder-server/commit/6db2c1a4d8ea39ba061337481b6ede661fef5e61))
+
+
+### Miscellaneous
+
+* action for automatically creating sync to main pr after a release ([c5705bd](https://github.com/rudderlabs/rudder-server/commit/c5705bd4cacaac3b79b218ebe3c6b2b90b6ace80))
+* action for automatically creating sync to main pr after a release ([#4698](https://github.com/rudderlabs/rudder-server/issues/4698)) ([b5cd9bd](https://github.com/rudderlabs/rudder-server/commit/b5cd9bdca8c667a1b0b65724ddf2e9f4c9c04395))
+* add destName to metadata ([91958c5](https://github.com/rudderlabs/rudder-server/commit/91958c503a48338a8baf22bbf28d222f753a1728))
+* add destName to metadata ([#4686](https://github.com/rudderlabs/rudder-server/issues/4686)) ([1c76338](https://github.com/rudderlabs/rudder-server/commit/1c76338cdf4ce5165a630ce51252bd0f4223276f))
+* address comments ([97b88e6](https://github.com/rudderlabs/rudder-server/commit/97b88e65f0a822c0b62082afea1813cc6a4f5f76))
+* address comments+1 ([0296c64](https://github.com/rudderlabs/rudder-server/commit/0296c64673d3bf38f85a6e28c4fc712203036db6))
+* bindads token code ([53ec0be](https://github.com/rudderlabs/rudder-server/commit/53ec0be85ac674389b996cbc97f2544fc94bd934))
+* **deps:** bump github.com/sony/gobreaker from 0.5.0 to 1.0.0 ([#4696](https://github.com/rudderlabs/rudder-server/issues/4696)) ([96a0180](https://github.com/rudderlabs/rudder-server/commit/96a018036c3760f3dd4372e9dc2b2eef08468dde))
+* **deps:** bump golangci/golangci-lint-action from 5 to 6 ([#4663](https://github.com/rudderlabs/rudder-server/issues/4663)) ([5d54fc5](https://github.com/rudderlabs/rudder-server/commit/5d54fc5b4d935f3a924023b35010e82d46e4c61f))
+* **deps:** bump golangci/golangci-lint-action from 5 to 6 (https://github.com/rudderlabs/rudder-server/pull/4663) ([bd1f61a](https://github.com/rudderlabs/rudder-server/commit/bd1f61a960d37b0182d6a08464cd96a1431de150))
+* **deps:** bump the go-deps group across 1 directory with 24 updates ([#4690](https://github.com/rudderlabs/rudder-server/issues/4690)) ([1393cdb](https://github.com/rudderlabs/rudder-server/commit/1393cdb72693847dccbe0a02772af6d582492a96))
+* disable event name tracking for retl connections ([#4661](https://github.com/rudderlabs/rudder-server/issues/4661)) ([be306e3](https://github.com/rudderlabs/rudder-server/commit/be306e3bd1526146053b22e1aa24ddd1dbd96563))
+* fix lint errors ([dc8f105](https://github.com/rudderlabs/rudder-server/commit/dc8f105cfbb7fc79312860e7963e7a31fdcb56ac))
+* reducing metrics cardinality ([#4662](https://github.com/rudderlabs/rudder-server/issues/4662)) ([565cfbe](https://github.com/rudderlabs/rudder-server/commit/565cfbe0baaaf4b07d68644d95b4922d3e7aeeb9))
+* reducing metrics cardinality (https://github.com/rudderlabs/rudder-server/pull/4662) ([bd1f61a](https://github.com/rudderlabs/rudder-server/commit/bd1f61a960d37b0182d6a08464cd96a1431de150))
+* **tooling:** add go vuln and tidy tool packages ([#4705](https://github.com/rudderlabs/rudder-server/issues/4705)) ([99d085d](https://github.com/rudderlabs/rudder-server/commit/99d085d92fc0c61f10c50299c52c209430899c6e))
+* update bingads_test.go ([46407bc](https://github.com/rudderlabs/rudder-server/commit/46407bc34ce213f4f880f4623040144517ee91fc))
+* use json-iterator in backend config cache ([#4704](https://github.com/rudderlabs/rudder-server/issues/4704)) ([f6001ea](https://github.com/rudderlabs/rudder-server/commit/f6001ea8b67e8106a3f5b62310a332b0249dc8d5))
+* use jsoniter in warehouse slave ([#4693](https://github.com/rudderlabs/rudder-server/issues/4693)) ([6a90d73](https://github.com/rudderlabs/rudder-server/commit/6a90d73c1f5c04caf4a00196077bdd8e47590a76))
+* use jsoniter.ConfigCompatibleWithStandardLibrary ([#4700](https://github.com/rudderlabs/rudder-server/issues/4700)) ([a274f6b](https://github.com/rudderlabs/rudder-server/commit/a274f6b6fcaa7d0a1141d9a9747798cb39f64468))
+* use uuid for archival files to avoid conflicts (https://github.com/rudderlabs/rudder-server/pull/4631) ([bd1f61a](https://github.com/rudderlabs/rudder-server/commit/bd1f61a960d37b0182d6a08464cd96a1431de150))
+
 ## [1.25.0](https://github.com/rudderlabs/rudder-server/compare/v1.24.0...v1.25.0) (2024-05-06)
 
 
