@@ -271,25 +271,14 @@ func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.De
 			obskit.WorkspaceID(destInfo.WorkspaceID),
 		)
 	}
-	var loggerFields []logger.Field
-	for _, m := range []string{destID, destType, workspaceID} {
-		switch {
-		case m == destInfo.DefinitionName:
-			loggerFields = append(loggerFields, obskit.DestinationType(destInfo.DefinitionName))
-		case m == destInfo.ID:
-			loggerFields = append(loggerFields, obskit.DestinationID(destInfo.ID))
-		case m == destInfo.WorkspaceID:
-			loggerFields = append(loggerFields, obskit.WorkspaceID(destInfo.WorkspaceID))
-		}
-	}
-	if len(loggerFields) > 0 {
-		loggerFields = append(loggerFields,
+	if destID == destInfo.ID || workspaceID == destInfo.WorkspaceID || destType == destInfo.DefinitionName {
+		n.logger.Infon("delivery response",
+			obskit.DestinationType(destInfo.DefinitionName),
+			obskit.DestinationID(destInfo.ID),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
 			logger.NewStringField("resHeaders", string(headerBytes)),
 			logger.NewStringField("resBody", string(resp.body)),
 			logger.NewIntField("resStatusCode", int64(resp.statusCode)),
-		)
-		n.logger.Infon("delivery response",
-			loggerFields...,
 		)
 	}
 }
