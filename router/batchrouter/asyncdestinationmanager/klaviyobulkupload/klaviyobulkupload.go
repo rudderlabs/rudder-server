@@ -336,7 +336,17 @@ func (kbu *KlaviyoBulkUploader) ExtractProfiles(input map[string]interface{}) ([
 		return nil, fmt.Errorf("message field not found or not a map")
 	}
 
-	data, ok := message["data"].(map[string]interface{})
+	body, ok := message["body"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("body field not found or not a map")
+	}
+
+	json, ok := body["JSON"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("data field not found or not a map")
+	}
+
+	data, ok := json["data"].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("data field not found or not a map")
 	}
@@ -432,7 +442,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	for scanner.Scan() {
 		var input map[string]interface{}
 		line := scanner.Text()
-		if err := json.Unmarshal([]byte(line), &input); err != nil {
+		err := json.Unmarshal([]byte(line), &input)
+		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
 		}
 		profiles, err := kbu.ExtractProfiles(input)
@@ -485,6 +496,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 	// Convert combined payload to JSON
 	outputJSON, err := json.MarshalIndent(combinedPayload, "", "  ")
+	fmt.Println("Output JSON: ", outputJSON)
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling combined JSON.", err, importingJobIDs, destinationID)
 	}
