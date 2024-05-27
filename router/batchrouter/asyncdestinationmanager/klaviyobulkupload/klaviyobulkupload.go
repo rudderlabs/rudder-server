@@ -94,6 +94,65 @@ type UploadStatusResp struct {
 	} `json:"links"`
 }
 
+type Payload struct {
+	Data Data `json:"data"`
+}
+
+type Data struct {
+	Type          string         `json:"type"`
+	Attributes    Attributes     `json:"attributes"`
+	Relationships *Relationships `json:"relationships,omitempty"`
+}
+
+type Attributes struct {
+	Profiles Profiles `json:"profiles"`
+}
+
+type Profiles struct {
+	Data []map[string]interface{} `json:"data"`
+}
+
+type Relationships struct {
+	Lists Lists `json:"lists"`
+}
+
+type Lists struct {
+	Data []List `json:"data"`
+}
+
+type List struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+func createFinalPayload(combinedProfiles []map[string]interface{}, listId string) Payload {
+	payload := Payload{
+		Data: Data{
+			Type: "profile-bulk-import-job",
+			Attributes: Attributes{
+				Profiles: Profiles{
+					Data: combinedProfiles,
+				},
+			},
+		},
+	}
+
+	if listId != "" {
+		payload.Data.Relationships = &Relationships{
+			Lists: Lists{
+				Data: []List{
+					{
+						Type: "list",
+						ID:   listId,
+					},
+				},
+			},
+		}
+	}
+
+	return payload
+}
+
 func NewManager(destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
 	return &KlaviyoBulkUploader{
 		destName:          destination.DestinationDefinition.Name,
@@ -107,12 +166,9 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 	destConfig := kbu.destinationConfig
 	privateApiKey, _ := destConfig["privateApiKey"].(string)
 	importId := pollInput.ImportId
-	// pp.Println("ImportId: ", importId)
-	// pp.Println("PrivateApiKey: ", privateApiKey)
 	pollUrl := "https://a.klaviyo.com/api/profile-bulk-import-jobs/" + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
-		// pp.Println("inside error")
 		return common.PollStatusResponse{
 			Complete:   false,
 			InProgress: false,
@@ -152,15 +208,8 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 			HasWarning: false,
 		}
 	}
-	// totalCount := pollresp.Data.Attributes.Total_count
-	// completedCount := pollresp.Data.Attributes.Completed_count
 	failCount := pollresp.Data.Attributes.Failed_count
 	status := pollresp.Data.Attributes.Status
-	// fmt.Println("Status: ", status)
-	// fmt.Println("TotalCount: ", totalCount)
-	// fmt.Println("CompletedCount: ", completedCount)
-	// fmt.Println("FailCount: ", failCount)
-
 	defer func() { _ = resp.Body.Close() }()
 
 	switch status {
@@ -217,13 +266,8 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 	}
-	// pp.Println("JobIDs: ", jobIDs)
 
-	// pp.Println(privateApiKey)
-	// pp.Println(pollResult)
-	// pp.Println(importingList)
 	ErrorMap := kbu.jobIdToIdentifierMap
-	// pp.Println("ErrorMap: ", ErrorMap)
 
 	importErrorUrl := "https://a.klaviyo.com/api/profile-bulk-import-jobs/" + pollResultImportId + "/import-errors"
 	req, err := http.NewRequest("GET", importErrorUrl, nil)
@@ -235,7 +279,6 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		"Klaviyo-API-Key "+privateApiKey)
 	req.Header.Set("revision", "2024-05-15")
 	resp, err := client.Do(req)
-	// pp.Print("Response: ", string(resp.Body))
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: 400,
@@ -247,10 +290,6 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	var failedJobIds []int64
 	var uploadStatsResp UploadStatusResp
 	uploadStatsBodyBytes, _ = io.ReadAll(resp.Body)
-	// pp.Println("Response Body: ", string(uploadStatsBodyBytes))
-
-	// uploadStatsBodyBytes -> original_payload>id
-	// map -> jobId
 	defer func() { _ = resp.Body.Close() }()
 
 	uploadStatsBodyBytesErr := json.Unmarshal(uploadStatsBodyBytes, &uploadStatsResp)
@@ -264,9 +303,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	// Iterate over the Data array and get the jobId and error detail and store in jobIdToErrorMap
 	x := 1
 	for _, item := range uploadStatsResp.Data {
-		// pp.Println("loop counter", x)
 		x++
-		// pp.Println("Item: ", item)
 		orgPayload := item.Attributes.OriginalPayload
 		var identifierId string
 		if orgPayload.Id != "" {
@@ -277,33 +314,10 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		jobId := ErrorMap[identifierId]
 		failedJobIds = append(failedJobIds, jobId)
 		errorDetail := item.Attributes.Detail
-		// fmt.Print("JobId: ", jobId)
-		// fmt.Println("--Error Detail: ", errorDetail)
-
-		// Store the jobId and errorDetail in the map
 		jobIdToErrorMap[jobId] = errorDetail
 	}
-
-	// orgPayload := uploadStatsResp.Data[0].Attributes.OriginalPayload
-	// errDetail := uploadStatsResp.Data[0].Attributes.Detail
-	// identifierId := orgPayload.Id
-	// parsedIdentifierId, _ := strconv.ParseInt(identifierId, 10, 64)
-	// jobId := ErrorMap[parsedIdentifierId]
-	// parsedJobId, _ := strconv.ParseInt(jobId, 10, 64)
-	// failedJobIds = append(failedJobIds, parsedJobId)
-	// jobIdToErrorMap[parsedJobId] = errDetail
-
 	successKeys, _ := lo.Difference(jobIDs, failedJobIds)
 
-	// pp.Println(uploadStatsBodyBytesErr)
-
-	// get all the jobIds from the jobIdToIdentifierMap and store in failedJobIds array
-	// pp.Println("Failed Job Ids: ", failedJobIds)
-
-	// var uploadStatusResponse common.GetUploadStatsResponse
-	// fmt.Println("Failed Job Ids: ", failedJobIds)
-	// fmt.Println("JobIdToErrorMap: ", jobIdToErrorMap)
-	// fmt.Println("SucceededKeys: ", successKeys)
 	return common.GetUploadStatsResponse{
 		StatusCode: 200,
 		Error:      "The import job failed",
@@ -321,7 +335,6 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 		"destType": "KLAVIYO_BULK_UPLOAD",
 	})
 	eventsAbortedStat.Count(len(importingJobIds))
-	// pp.Println("importingJobIds: ", importingJobIds, len(importingJobIds))
 	return common.AsyncUploadOutput{
 		AbortCount:    len(importingJobIds),
 		DestinationID: destinationID,
@@ -367,13 +380,13 @@ func (kbu *KlaviyoBulkUploader) ExtractProfiles(input map[string]interface{}) ([
 	}
 
 	var profileMaps []map[string]interface{}
-	// var metadataMap map[string]interface{}
 	for _, profile := range profiles {
 		profileMap, ok := profile.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("profile is not a map")
 		}
 		attributes, _ := profileMap["attributes"].(map[string]interface{})
+		fmt.Println("Attributes: ", attributes)
 		jobIdentifier := attributes["jobIdentifier"].(string)
 		// pp.Println("Job Identifier:", jobIdentifier)
 		// split the jobIdentifier by : and store before : into jobId and after : into Identifier into the jobIdToIdentifierMap
@@ -398,45 +411,19 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
-	// pp.Println("Importing Job IDs: ", importingJobIDs)
 	destType := destination.DestinationDefinition.Name
 	destinationID := destination.ID
-	// var failedJobs []int64
-	// var successJobs []int64
-	// var importIds []string
-	// var errors []string
 	listId, _ := destination.Config["listId"].(string)
 	statLabels := stats.Tags{
 		"module":   "batch_router",
 		"destType": destType,
 	}
-	// destConfig, err := json.Marshal(destination.Config)
-	// if err != nil {
-	// 	return kbu.generateKlaviyoErrorOutput("Error while marshalling destination config. ", err, asyncDestStruct.ImportingJobIDs, destinationID)
-	// }
 	file, err := os.Open(filePath)
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while opening file. ", err, asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 	defer file.Close()
-	// var input []common.AsyncJob
 	var combinedProfiles []map[string]interface{}
-	// decoder := json.NewDecoder(file)
-
-	// for {
-	// 	var input map[string]interface{}
-	// 	if err := decoder.Decode(&input); err != nil {
-	// 		if err == io.EOF {
-	// 			break
-	// 		}
-	// 		return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
-	// 	}
-	// 	profiles, err := extractProfiles(input)
-	// 	if err != nil {
-	// 		return kbu.generateKlaviyoErrorOutput("Error while extracting profiles.", err, importingJobIDs, destinationID)
-	// 	}
-	// 	combinedProfiles = append(combinedProfiles, profiles...)
-	// }
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -457,46 +444,10 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		return kbu.generateKlaviyoErrorOutput("Error while reading file.", err, importingJobIDs, destinationID)
 	}
 
-	// Create the combined payload
-	// check if listId is present in the destination config
-	var combinedPayload map[string]interface{}
-	if listId == "" {
-		combinedPayload = map[string]interface{}{
-			"data": map[string]interface{}{
-				"type": "profile-bulk-import-job",
-				"attributes": map[string]interface{}{
-					"data": map[string]interface{}{
-						"profiles": combinedProfiles,
-					},
-				},
-			},
-		}
-	} else {
-		combinedPayload = map[string]interface{}{
-			"data": map[string]interface{}{
-				"type": "profile-bulk-import-job",
-				"attributes": map[string]interface{}{
-					"profiles": map[string]interface{}{
-						"data": combinedProfiles,
-					},
-				},
-				"relationships": map[string]interface{}{
-					"lists": map[string]interface{}{
-						"data": []map[string]interface{}{
-							{
-								"type": "list",
-								"id":   listId,
-							},
-						},
-					},
-				},
-			},
-		}
-	}
+	combinedPayload := createFinalPayload(combinedProfiles, listId)
 
 	// Convert combined payload to JSON
 	outputJSON, err := json.MarshalIndent(combinedPayload, "", "  ")
-	fmt.Println("Output JSON: ", outputJSON)
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling combined JSON.", err, importingJobIDs, destinationID)
 	}
@@ -504,10 +455,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	if err := os.WriteFile(outputFilePath, outputJSON, 0o644); err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while writing JSON to file.", err, importingJobIDs, destinationID)
 	}
-	// pp.Println(filePath)
-	// destConfigJson := string(destConfig)
-	// pp.Println(destConfigJson)
-	// failedJobIDs := asyncDestStruct.FailedJobIDs
 	uploadURL := "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(outputJSON))
@@ -532,8 +479,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	var bodyBytes []byte
 	bodyBytes, _ = io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
-	// pp.Println("Response Status:", resp.Status)
-	// pp.Println("Response Body:", string(bodyBytes))
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != 202 {
@@ -542,7 +487,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	var parameters common.ImportParameters
 	var uploadresp UploadResp
 	uploadRespErr := json.Unmarshal((bodyBytes), &uploadresp)
-	// pp.Println("Error: ", err)
 	if uploadRespErr != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while unmarshaling response.", uploadRespErr, importingJobIDs, destinationID)
 	}
