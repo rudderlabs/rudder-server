@@ -350,7 +350,7 @@ func (bcm *BackendConfigManager) persistSSLFileErrorStat(
 		"module":        "warehouse",
 		"destType":      destType,
 		"warehouseID":   misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6)),
-		"sourceID":      sourceID,
+		"sourceId":      sourceID,
 		"destinationID": destID,
 		"errTag":        errTag,
 	}

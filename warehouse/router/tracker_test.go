@@ -172,11 +172,11 @@ func TestRouter_Track(t *testing.T) {
 			require.NoError(t, err)
 
 			m := statsStore.Get("warehouse_track_upload_missing", stats.Tags{
-				"module":      moduleName,
-				"workspaceId": warehouse.WorkspaceID,
-				"destType":    handle.destType,
-				"sourceID":    warehouse.Source.ID,
-				"destID":      warehouse.Destination.ID,
+				"module":        moduleName,
+				"workspaceId":   warehouse.WorkspaceID,
+				"destType":      handle.destType,
+				"sourceId":      warehouse.Source.ID,
+				"destinationId": warehouse.Destination.ID,
 				"warehouseID": misc.GetTagName(
 					warehouse.Destination.ID,
 					warehouse.Source.Name,
