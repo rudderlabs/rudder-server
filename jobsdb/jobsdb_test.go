@@ -27,8 +27,6 @@ import (
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -265,8 +263,6 @@ func startTestJobsDB(t *testing.T) *Handle {
 			ReadWrite,
 			false,
 			strings.ToLower(rsRand.String(5)),
-			[]prebackup.Handler{},
-			fileuploader.NewDefaultProvider(),
 		),
 	)
 	return jd
@@ -363,7 +359,7 @@ func TestRefreshDSList(t *testing.T) {
 	}
 
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -391,7 +387,7 @@ func TestJobsDBTimeout(t *testing.T) {
 
 	customVal := "MOCKDS"
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -476,7 +472,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		config: c,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB1.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB1.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
 	defer jobsDB1.TearDown()
@@ -489,7 +485,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		config: c,
 	}
-	err = jobsDB2.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err = jobsDB2.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobsDB2.TearDown()
 	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -574,7 +570,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			config: c,
 		}
-		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 		require.NoError(t, err)
 		defer jobsDB.TearDown()
 		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -641,7 +637,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
 		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
-		err := jobsDB1.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDB1.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobsDB1.TearDown()
 		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -657,7 +653,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			config: c,
 		}
-		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
 		defer jobsDB2.TearDown()
 		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -673,7 +669,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			config: c,
 		}
-		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
 		defer jobsDB3.TearDown()
 		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -775,7 +771,7 @@ func TestCacheScenarios(t *testing.T) {
 		}
 
 		prefix := strings.ToLower(rsRand.String(5))
-		err := dbWithOneLimit.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := dbWithOneLimit.Setup(ReadWrite, false, prefix)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
 		defer dbWithOneLimit.TearDown()
@@ -1217,8 +1213,6 @@ func TestMaxAgeCleanup(t *testing.T) {
 		ReadWrite,
 		true,
 		tablePrefix,
-		[]prebackup.Handler{},
-		fileuploader.NewDefaultProvider(),
 	)
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
@@ -1313,7 +1307,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 		},
 		config: c,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -1425,7 +1419,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		},
 		config: c,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
