@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -291,20 +292,24 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 	return regexdMsg
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
-	// version deprecation logic
+func (ext *ExtractorHandle) isVersionDeprecationError(errorMsg string) bool {
 	var score int
-	var errorCode string
-
-	errorMessage = strings.ToLower(errorMessage)
+	errorMsg = strings.ToLower(errorMsg)
 	for keyword, s := range lowercasedDeprecationKeywords {
-		if strings.Contains(errorMessage, keyword) {
+		if strings.Contains(errorMsg, keyword) {
 			score += s
 		}
 	}
-
 	if score > ext.versionDeprecationThresholdScore.Load() {
-		errorCode = "deprecation"
+		return true
 	}
-	return errorCode
+	return false
+}
+
+func (ext *ExtractorHandle) GetErrorCode(metric *types.PUReportedMetric, errorMessage string) string {
+	// version deprecation logic
+	if metric.PU == types.ROUTER && ext.isVersionDeprecationError(errorMessage) {
+		return ERROR_CODE_DEPRECATION
+	}
+	return ""
 }
