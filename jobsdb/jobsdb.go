@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
@@ -372,8 +373,8 @@ type ConnectionDetails struct {
 }
 
 func (r *JobStatusT) sanitizeJson() {
-	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
-	r.Parameters = sanitizeJson(r.Parameters)
+	r.ErrorResponse = sanitizeJSON(r.ErrorResponse)
+	r.Parameters = sanitizeJSON(r.Parameters)
 }
 
 /*
@@ -400,9 +401,9 @@ func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }
 
-func (job *JobT) sanitizeJson() {
-	job.EventPayload = sanitizeJson(job.EventPayload)
-	job.Parameters = sanitizeJson(job.Parameters)
+func (job *JobT) sanitizeJSON() {
+	job.EventPayload = sanitizeJSON(job.EventPayload)
+	job.Parameters = sanitizeJSON(job.Parameters)
 }
 
 // The struct fields need to be exposed to JSON package
@@ -2085,7 +2086,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 				return err
 			}
 			for i := range jobList {
-				jobList[i].sanitizeJson()
+				jobList[i].sanitizeJSON()
 			}
 			return store()
 		}
@@ -3328,12 +3329,15 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	return &job
 }
 
-func sanitizeJson(input json.RawMessage) json.RawMessage {
+// sanitizeJSON makes a json payload safe for writing into postgres.
+// 1. Removes any \u0000 string from the payload
+// 2. Replaces any invalid utf8 characters with the unicode replacement character
+func sanitizeJSON(input json.RawMessage) json.RawMessage {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
-	return v
+	return bytes.ToValidUTF8(v, []byte(string([]rune{unicode.ReplacementChar})))
 }
 
 type smallDS struct {
