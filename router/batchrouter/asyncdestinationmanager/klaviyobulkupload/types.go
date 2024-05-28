@@ -92,8 +92,20 @@ type Attributes struct {
 	Profiles Profiles `json:"profiles"`
 }
 
+type ProfilesAttributes struct {
+	Email         string `json:"email,omitempty"`
+	FirstName     string `json:"first_name,omitempty"`
+	JobIdentifier string `json:"jobIdentifier,omitempty"`
+	LastName      string `json:"last_name,omitempty"`
+	Location      struct {
+		City    string `json:"city,omitempty"`
+		Country string `json:"country,omitempty"`
+		IP      string `json:"ip,omitempty"`
+	} `json:"location,omitempty"`
+}
+
 type Profiles struct {
-	Data []map[string]interface{} `json:"data"`
+	Data []Profile `json:"data"`
 }
 
 type Relationships struct {
@@ -107,4 +119,79 @@ type Lists struct {
 type List struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+}
+
+type Input struct {
+	Message struct {
+		Body struct {
+			Form struct {
+			} `json:"FORM,omitempty"`
+			JSON struct {
+				Data struct {
+					Attributes struct {
+						Profiles struct {
+							Data []struct {
+								Attributes struct {
+									Email         string `json:"email,omitempty"`
+									FirstName     string `json:"first_name,omitempty"`
+									JobIdentifier string `json:"jobIdentifier,omitempty"`
+									LastName      string `json:"last_name,omitempty"`
+									Location      struct {
+										City    string `json:"city,omitempty"`
+										Country string `json:"country,omitempty"`
+										IP      string `json:"ip,omitempty"`
+									} `json:"location,omitempty"`
+								} `json:"attributes,omitempty"`
+								ID   int    `json:"id,omitempty"`
+								Type string `json:"type,omitempty"`
+							} `json:"data,omitempty"`
+						} `json:"profiles,omitempty"`
+					} `json:"attributes,omitempty"`
+					Relationships struct {
+						Lists struct {
+							Data []struct {
+								ID   string `json:"id,omitempty"`
+								Type string `json:"type,omitempty"`
+							} `json:"data,omitempty"`
+						} `json:"lists,omitempty"`
+					} `json:"relationships,omitempty"`
+					Type string `json:"type,omitempty"`
+				} `json:"data,omitempty"`
+			} `json:"JSON,omitempty"`
+			JSONArray struct {
+			} `json:"JSON_ARRAY,omitempty"`
+			XML struct {
+			} `json:"XML,omitempty"`
+		} `json:"body,omitempty"`
+		Endpoint string `json:"endpoint,omitempty"`
+		Files    struct {
+		} `json:"files,omitempty"`
+		Headers struct {
+		} `json:"headers,omitempty"`
+		Method string `json:"method,omitempty"`
+		Params struct {
+		} `json:"params,omitempty"`
+		Type    string `json:"type,omitempty"`
+		UserID  string `json:"userId,omitempty"`
+		Version string `json:"version,omitempty"`
+	} `json:"message,omitempty"`
+	Metadata struct {
+		JobID int `json:"job_id,omitempty"`
+	} `json:"metadata,omitempty"`
+}
+
+type Profile struct {
+	Attributes struct {
+		Email         string `json:"email,omitempty"`
+		FirstName     string `json:"first_name,omitempty"`
+		JobIdentifier string `json:"jobIdentifier,omitempty"`
+		LastName      string `json:"last_name,omitempty"`
+		Location      struct {
+			City    string `json:"city,omitempty"`
+			Country string `json:"country,omitempty"`
+			IP      string `json:"ip,omitempty"`
+		} `json:"location,omitempty"`
+	} `json:"attributes,omitempty"`
+	ID   int    `json:"id,omitempty"`
+	Type string `json:"type,omitempty"`
 }

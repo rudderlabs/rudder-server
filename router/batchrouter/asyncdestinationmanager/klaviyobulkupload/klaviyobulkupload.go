@@ -23,7 +23,7 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func createFinalPayload(combinedProfiles []map[string]interface{}, listId string) Payload {
+func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	payload := Payload{
 		Data: Data{
 			Type: "profile-bulk-import-job",
@@ -112,16 +112,12 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 
 	switch status {
 	case "queued", "processing":
-		// pp.Println("inside processing")
 		return common.PollStatusResponse{
 			Complete:   false,
 			InProgress: true,
 		}
 	case "complete":
-		// pp.Println("inside complete")
 		if failCount > 0 {
-			// pp.Println("inside fail")
-			// pp.Println(importId)
 			return common.PollStatusResponse{
 				Complete:      true,
 				InProgress:    false,
@@ -131,7 +127,6 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				FailedJobURLs: importId,
 			}
 		} else {
-			// pp.Println("inside success")
 			return common.PollStatusResponse{
 				Complete:   true,
 				InProgress: false,
@@ -141,7 +136,6 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 			}
 		}
 	default:
-		// pp.Print("inside default")
 		return common.PollStatusResponse{
 			Complete:   false,
 			StatusCode: 500,
@@ -192,7 +186,6 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 
 	uploadStatsBodyBytesErr := json.Unmarshal(uploadStatsBodyBytes, &uploadStatsResp)
 	if uploadStatsBodyBytesErr != nil {
-		// fmt.Println("Reached here!!!")
 		return common.GetUploadStatsResponse{
 			StatusCode: 400,
 			Error:      uploadStatsBodyBytesErr.Error(),
@@ -241,67 +234,26 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) ExtractProfiles(input map[string]interface{}) ([]map[string]interface{}, error) {
-	message, ok := input["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("message field not found or not a map")
+func (kbu *KlaviyoBulkUploader) ExtractProfile(input Input) (Profile, error) {
+	Message := input.Message
+	Body := Message.Body
+	Json := Body.JSON
+	Data := Json.Data
+	Attributes := Data.Attributes
+	profileObject := Attributes.Profiles.Data[0]
+
+	jobIdentifier := profileObject.Attributes.JobIdentifier
+	jobIdentifierArray := strings.Split(jobIdentifier, ":")
+	jobIdentifierValue, _ := strconv.ParseInt(jobIdentifierArray[1], 10, 64)
+	if kbu.jobIdToIdentifierMap == nil {
+		kbu.jobIdToIdentifierMap = make(map[string]int64)
 	}
+	kbu.jobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
 
-	body, ok := message["body"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("body field not found or not a map")
-	}
+	// delete jobIdentifier from the attributes map as it is not required in the final payload
+	profileObject.Attributes.JobIdentifier = ""
 
-	json, ok := body["JSON"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("data field not found or not a map")
-	}
-
-	data, ok := json["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("data field not found or not a map")
-	}
-
-	attributes, ok := data["attributes"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("attributes field not found or not a map")
-	}
-
-	profilesContainer, ok := attributes["profiles"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("profiles field not found or not a map")
-	}
-
-	profiles, ok := profilesContainer["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("data field in profiles not found or not a slice")
-	}
-
-	var profileMaps []map[string]interface{}
-	for _, profile := range profiles {
-		profileMap, ok := profile.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("profile is not a map")
-		}
-		attributes, _ := profileMap["attributes"].(map[string]interface{})
-		fmt.Println("Attributes: ", attributes)
-		jobIdentifier := attributes["jobIdentifier"].(string)
-		// pp.Println("Job Identifier:", jobIdentifier)
-		// split the jobIdentifier by : and store before : into jobId and after : into Identifier into the jobIdToIdentifierMap
-		jobIdentifierArray := strings.Split(jobIdentifier, ":")
-		jobIdentifierValue, _ := strconv.ParseInt(jobIdentifierArray[1], 10, 64)
-		if kbu.jobIdToIdentifierMap == nil {
-			kbu.jobIdToIdentifierMap = make(map[string]int64)
-		}
-		kbu.jobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
-
-		// delete jobIdentifier from the attributes map as it is not required in the final payload
-		delete(attributes, "jobIdentifier")
-
-		profileMaps = append(profileMaps, profileMap)
-	}
-
-	return profileMaps, nil
+	return profileObject, nil
 }
 
 func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -321,21 +273,20 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		return kbu.generateKlaviyoErrorOutput("Error while opening file. ", err, asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 	defer file.Close()
-	var combinedProfiles []map[string]interface{}
+	var combinedProfiles []Profile
 	scanner := bufio.NewScanner(file)
-
 	for scanner.Scan() {
-		var input map[string]interface{}
+		var input Input
 		line := scanner.Text()
 		err := json.Unmarshal([]byte(line), &input)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
 		}
-		profiles, err := kbu.ExtractProfiles(input)
+		profileStructure, err := kbu.ExtractProfile(input)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while extracting profiles.", err, importingJobIDs, destinationID)
 		}
-		combinedProfiles = append(combinedProfiles, profiles...)
+		combinedProfiles = append(combinedProfiles, profileStructure)
 	}
 
 	if err := scanner.Err(); err != nil {
