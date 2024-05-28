@@ -7,7 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
@@ -69,7 +69,7 @@ func (gw *Handle) Setup(
 	gw.versionHandler = versionHandler
 	gw.rsourcesService = rsourcesService
 	gw.sourcehandle = sourcehandle
-	gw.inFlightRequestsCount = new(atomic.Uint64)
+	gw.inFlightRequests = new(sync.WaitGroup)
 
 	// Port where GW is running
 	gw.conf.webPort = config.GetIntVar(8080, 1, "Gateway.webPort")
@@ -387,14 +387,9 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	srvMux.Use(
 		func(h http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_ = gw.inFlightRequestsCount.Add(1)
+				gw.inFlightRequests.Add(1)
 				h.ServeHTTP(w, r)
-				for {
-					prev := gw.inFlightRequestsCount.Load()
-					if gw.inFlightRequestsCount.CompareAndSwap(prev, prev-1) {
-						break
-					}
-				}
+				gw.inFlightRequests.Done()
 			})
 		},
 		chiware.StatMiddleware(ctx, stats.Default, component),
@@ -496,9 +491,7 @@ func (gw *Handle) Shutdown() error {
 		return err
 	}
 
-	for gw.inFlightRequestsCount.Load() != 0 {
-		time.Sleep(250 * time.Millisecond)
-	}
+	gw.inFlightRequests.Wait()
 
 	// UserWebRequestWorkers
 	for _, worker := range gw.userWebRequestWorkers {
