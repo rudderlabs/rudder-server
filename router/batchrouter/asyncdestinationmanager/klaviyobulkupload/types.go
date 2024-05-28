@@ -124,8 +124,7 @@ type List struct {
 type Input struct {
 	Message struct {
 		Body struct {
-			Form struct {
-			} `json:"FORM,omitempty"`
+			Form struct{} `json:"FORM,omitempty"`
 			JSON struct {
 				Data struct {
 					Attributes struct {
@@ -158,22 +157,17 @@ type Input struct {
 					Type string `json:"type,omitempty"`
 				} `json:"data,omitempty"`
 			} `json:"JSON,omitempty"`
-			JSONArray struct {
-			} `json:"JSON_ARRAY,omitempty"`
-			XML struct {
-			} `json:"XML,omitempty"`
+			JSONArray struct{} `json:"JSON_ARRAY,omitempty"`
+			XML       struct{} `json:"XML,omitempty"`
 		} `json:"body,omitempty"`
-		Endpoint string `json:"endpoint,omitempty"`
-		Files    struct {
-		} `json:"files,omitempty"`
-		Headers struct {
-		} `json:"headers,omitempty"`
-		Method string `json:"method,omitempty"`
-		Params struct {
-		} `json:"params,omitempty"`
-		Type    string `json:"type,omitempty"`
-		UserID  string `json:"userId,omitempty"`
-		Version string `json:"version,omitempty"`
+		Endpoint string   `json:"endpoint,omitempty"`
+		Files    struct{} `json:"files,omitempty"`
+		Headers  struct{} `json:"headers,omitempty"`
+		Method   string   `json:"method,omitempty"`
+		Params   struct{} `json:"params,omitempty"`
+		Type     string   `json:"type,omitempty"`
+		UserID   string   `json:"userId,omitempty"`
+		Version  string   `json:"version,omitempty"`
 	} `json:"message,omitempty"`
 	Metadata struct {
 		JobID int `json:"job_id,omitempty"`
