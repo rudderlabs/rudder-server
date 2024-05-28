@@ -189,4 +189,16 @@ var SampleBackendConfig = backendconfig.ConfigT{
 		},
 		EventAuditEnabled: false,
 	},
+	Credentials: map[string]backendconfig.Credential{
+		"cred1": {
+			Key:      "key1",
+			Value:    "value1",
+			IsSecret: false,
+		},
+		"cred2": {
+			Key:      "key2",
+			Value:    "value2",
+			IsSecret: true,
+		},
+	},
 }

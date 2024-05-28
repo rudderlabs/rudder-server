@@ -144,6 +144,7 @@ type Handle struct {
 		eventSchemaV2Enabled            bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
+		credentials                     map[string][]backendconfig.Credential
 	}
 
 	drainConfig struct {
@@ -797,6 +798,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
+			credentialsMap                  = make(map[string][]backendconfig.Credential)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -819,6 +821,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
+			credentialsMap[workspaceID] = ConvertMapToList(wConfig.Credentials)
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
@@ -828,12 +831,25 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
+		proc.config.credentials = credentialsMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
 			proc.config.asyncInit.Done()
 		}
 	}
+}
+
+func ConvertMapToList(credentialsMap map[string]backendconfig.Credential) []backendconfig.Credential {
+	var credentialsList []backendconfig.Credential
+	for _, credential := range credentialsMap {
+		credentialsList = append(credentialsList, backendconfig.Credential{
+			Key:      credential.Key,
+			Value:    credential.Value,
+			IsSecret: credential.IsSecret,
+		})
+	}
+	return credentialsList
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -1098,6 +1114,7 @@ func (proc *Handle) getTransformerEvents(
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
 			Destination: *destination,
+			Credentials: proc.config.credentials[commonMetaData.WorkspaceID],
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
@@ -1949,6 +1966,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
 						shallowEventCopy.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 					}
+					shallowEventCopy.Credentials = proc.config.credentials[destination.WorkspaceID]
 					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
