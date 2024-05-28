@@ -78,8 +78,9 @@ func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, 
 		return nil, err
 	}
 	return filemanager.New(&filemanager.Settings{
-		Provider: settings.Bucket.Type,
-		Config:   settings.Bucket.Config,
+		Provider:            settings.Bucket.Type,
+		Config:              settings.Bucket.Config,
+		GCSUploadIfNotExist: true,
 	})
 }
 
