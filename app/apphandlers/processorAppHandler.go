@@ -24,7 +24,6 @@ import (
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	proc "github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -126,9 +125,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	defer destinationHandle.Stop()
 
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
-	prebackupHandlers := []prebackup.Handler{
-		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
-	}
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
@@ -146,36 +142,28 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 	)
 	defer batchRouterDB.Close()
 	errDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
 	defer errDBForRead.Close()
@@ -192,7 +180,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer schemaDB.Close()
 
