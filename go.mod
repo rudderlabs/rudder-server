@@ -8,7 +8,6 @@ go 1.22.3
 replace (
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.32
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
-	github.com/docker/docker => github.com/docker/docker v26.1.3+incompatible
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.12
