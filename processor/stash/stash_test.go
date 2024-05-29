@@ -180,7 +180,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 
 	errJobs = st.storeErrorsToObjectStorage(jobsToFail)
 	require.Equal(t, 1, len(errJobs))
-	require.Equal(t, errJobs[0].errorOutput.Error, fileuploader.NoStorageForWorkspaceError)
+	require.Equal(t, errJobs[0].errorOutput.Error, fileuploader.ErrNoStorageForWorkspace)
 }
 
 func countJobsByWorkspace(jobs []*jobsdb.JobT) map[string]int {
