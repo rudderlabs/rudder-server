@@ -1,8 +1,11 @@
 package klaviyobulkupload_test
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/golang/mock/gomock"
 
@@ -11,8 +14,6 @@ import (
 	mocks "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
-
-	"github.com/stretchr/testify/assert"
 )
 
 var destination = &backendconfig.DestinationT{
@@ -152,4 +153,17 @@ func TestGetUploadStats(t *testing.T) {
 	if !reflect.DeepEqual(output, expectedOutput) {
 		t.Errorf("Expected %v but got %v", expectedOutput, output)
 	}
+}
+
+func TestExtractProfileValidInput(t *testing.T) {
+	kbu := klaviyobulkupload.KlaviyoBulkUploader{}
+
+	inputPayloadJSON := `{"message":{"body":{"FORM":{},"JSON":{"data":{"attributes":{"profiles":{"data":[{"attributes":{"anonymous_id":111222334,"email":"qwe122@mail.com","first_name":"Testqwe0122","jobIdentifier":"111222334:1","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"},"phone_number":"+919912000123"},"id":111222334,"type":"profile"}]}},"relationships":{"lists":{"data":[{"id":"UKth4J","type":"list"}]}},"type":"profile-bulk-import-job"}},"JSON_ARRAY":{},"XML":{}},"endpoint":"","files":{},"headers":{},"method":"POST","params":{},"type":"REST","userId":"","version":"1"},"metadata":{"job_id":1}}`
+	var inputPayload klaviyobulkupload.Input
+	json.Unmarshal([]byte(inputPayloadJSON), &inputPayload)
+
+	expectedProfile := `{"attributes":{"email":"qwe122@mail.com","first_name":"Testqwe0122","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"}},"id":111222334,"type":"profile"}`
+	result := kbu.ExtractProfile(inputPayload)
+	profileJson, _ := json.Marshal(result)
+	assert.Equal(t, expectedProfile, string(profileJson))
 }

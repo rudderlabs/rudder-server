@@ -19,6 +19,10 @@ type Poller interface {
 	Poll(input common.AsyncPoll) common.PollStatusResponse
 }
 
+type ProfileExtractor interface {
+	ExtractProfiles(input Input) Profile
+}
+
 type UploadStats interface {
 	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
 }
@@ -105,8 +109,8 @@ type Lists struct {
 }
 
 type List struct {
-	Type string `json:"type"`
-	ID   string `json:"id"`
+	Type string `json:"type,omitempty"`
+	ID   string `json:"id,omitempty"`
 }
 
 type Input struct {
@@ -115,34 +119,9 @@ type Input struct {
 			Form struct{} `json:"FORM,omitempty"`
 			JSON struct {
 				Data struct {
-					Attributes struct {
-						Profiles struct {
-							Data []struct {
-								Attributes struct {
-									Email         string `json:"email,omitempty"`
-									FirstName     string `json:"first_name,omitempty"`
-									JobIdentifier string `json:"jobIdentifier,omitempty"`
-									LastName      string `json:"last_name,omitempty"`
-									Location      struct {
-										City    string `json:"city,omitempty"`
-										Country string `json:"country,omitempty"`
-										IP      string `json:"ip,omitempty"`
-									} `json:"location,omitempty"`
-								} `json:"attributes,omitempty"`
-								ID   int    `json:"id,omitempty"`
-								Type string `json:"type,omitempty"`
-							} `json:"data,omitempty"`
-						} `json:"profiles,omitempty"`
-					} `json:"attributes,omitempty"`
-					Relationships struct {
-						Lists struct {
-							Data []struct {
-								ID   string `json:"id,omitempty"`
-								Type string `json:"type,omitempty"`
-							} `json:"data,omitempty"`
-						} `json:"lists,omitempty"`
-					} `json:"relationships,omitempty"`
-					Type string `json:"type,omitempty"`
+					Attributes    Attributes    `json:"attributes"`
+					Relationships Relationships `json:"relationships,omitempty"`
+					Type          string        `json:"type,omitempty"`
 				} `json:"data,omitempty"`
 			} `json:"JSON,omitempty"`
 			JSONArray struct{} `json:"JSON_ARRAY,omitempty"`

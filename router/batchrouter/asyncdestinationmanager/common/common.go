@@ -28,8 +28,6 @@ type AsyncDestinationManager interface {
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
-var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "KLAVIYO_BULK_UPLOAD"}
-
 type SimpleAsyncDestinationManager struct {
 	UploaderAndTransformer AsyncUploadAndTransformManager
 }
