@@ -531,6 +531,7 @@ var dbInvalidJsonErrors = map[string]struct{}{
 	"22P05": {},
 	"22025": {},
 	"22019": {},
+	"22021": {}, // invalid byte sequence for encoding "UTF8"
 }
 
 // Some helper functions
