@@ -92,18 +92,6 @@ type Attributes struct {
 	Profiles Profiles `json:"profiles"`
 }
 
-type ProfilesAttributes struct {
-	Email         string `json:"email,omitempty"`
-	FirstName     string `json:"first_name,omitempty"`
-	JobIdentifier string `json:"jobIdentifier,omitempty"`
-	LastName      string `json:"last_name,omitempty"`
-	Location      struct {
-		City    string `json:"city,omitempty"`
-		Country string `json:"country,omitempty"`
-		IP      string `json:"ip,omitempty"`
-	} `json:"location,omitempty"`
-}
-
 type Profiles struct {
 	Data []Profile `json:"data"`
 }
