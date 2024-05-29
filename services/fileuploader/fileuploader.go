@@ -2,7 +2,9 @@ package fileuploader
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -16,12 +18,28 @@ type StorageSettings struct {
 	Preferences backendconfig.StoragePreferences
 }
 
-var NoStorageForWorkspaceError = fmt.Errorf("no storage settings found for workspace")
+type FileManager struct {
+	filemanager.FileManager
+}
+
+func (f *FileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadedFile, error) {
+	uploadedFile, err := f.FileManager.Upload(ctx, file, prefixes...)
+	switch {
+	case err == nil:
+		return uploadedFile, nil
+	case errors.Is(err, filemanager.ErrPreConditionFailed):
+		return filemanager.UploadedFile{Location: "already exists, not uploaded"}, nil
+	default:
+		return filemanager.UploadedFile{}, err
+	}
+}
+
+var ErrNoStorageForWorkspace = fmt.Errorf("no storage settings found for workspace")
 
 // Provider is an interface that provides file managers and storage preferences for a given workspace.
 type Provider interface {
 	// Gets a file manager for the given workspace.
-	GetFileManager(workspaceID string) (filemanager.FileManager, error)
+	GetFileManager(workspaceID string) (*FileManager, error)
 	// Gets the storage preferences for the given workspace.
 	GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error)
 }
@@ -67,21 +85,22 @@ func (p *provider) getStorageSettings(workspaceID string) (StorageSettings, erro
 	defer p.mu.RUnlock()
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
-		return StorageSettings{}, NoStorageForWorkspaceError
+		return StorageSettings{}, ErrNoStorageForWorkspace
 	}
 	return settings, nil
 }
 
-func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, error) {
+func (p *provider) GetFileManager(workspaceID string) (*FileManager, error) {
 	settings, err := p.getStorageSettings(workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	return filemanager.New(&filemanager.Settings{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider:            settings.Bucket.Type,
 		Config:              settings.Bucket.Config,
 		GCSUploadIfNotExist: true,
 	})
+	return &FileManager{fm}, err
 }
 
 func (p *provider) GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error) {
@@ -142,12 +161,13 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 
 type defaultProvider struct{}
 
-func (*defaultProvider) GetFileManager(_ string) (filemanager.FileManager, error) {
+func (*defaultProvider) GetFileManager(_ string) (*FileManager, error) {
 	defaultConfig := getDefaultBucket(context.Background(), config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
-	return filemanager.New(&filemanager.Settings{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,
 	})
+	return &FileManager{fm}, err
 }
 
 func (*defaultProvider) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
