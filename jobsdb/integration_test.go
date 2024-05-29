@@ -1027,8 +1027,7 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
 	jobDB := Handle{config: config.New()}
 	ch := func(n int) string {
-		return "�"
-		// return strings.Repeat(string("?"), n)
+		return strings.Repeat(string("?"), n)
 	}
 	toValidUTF8Tests := []struct {
 		in  string
@@ -1036,7 +1035,7 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	}{
 		{`\u0000`, ""},
 		{`\u0000☺\u0000b☺`, "☺b☺"},
-		// TODO: consider handling the following
+		// NOTE: we are not handling the following:
 		// {"\u0000", ""},
 		// {"\u0000☺\u0000b☺", "☺b☺"},
 

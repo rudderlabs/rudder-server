@@ -34,7 +34,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
@@ -43,6 +42,8 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	kitutf8 "github.com/rudderlabs/rudder-go-kit/utf8"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -3140,13 +3141,15 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 
 // sanitizeJSON makes a json payload safe for writing into postgres.
 // 1. Removes any \u0000 string from the payload
-// 2. Replaces any invalid utf8 characters with the unicode replacement character
+// 2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8
 func sanitizeJSON(input json.RawMessage) json.RawMessage {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
-	return bytes.ToValidUTF8(v, []byte(string([]rune{unicode.ReplacementChar})))
+	kitutf8.Sanitize(v)
+
+	return v
 }
 
 type smallDS struct {
