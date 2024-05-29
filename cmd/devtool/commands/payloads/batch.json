@@ -10,6 +10,7 @@
           "namespace": "com.rudderlabs.android.sdk",
           "version": "1.0"
         },
+        "content":"{{.Content}}",
         "device": {
           "id": "49e4bdd1c280bc00",
           "manufacturer": "Google",
