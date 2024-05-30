@@ -32,11 +32,20 @@ import (
 
 var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 
+type loggableInfo struct {
+	enabled        bool
+	destinationIDs []string
+	destTypes      []string
+	workspaceIDs   []string
+	eventNames     []string
+}
+
 // netHandle is the wrapper holding private variables
 type netHandle struct {
 	disableEgress bool
 	httpClient    sysUtils.HTTPClientI
 	logger        logger.Logger
+	loggableInfo  loggableInfo
 }
 
 type responseLogDetails struct {
@@ -219,7 +228,8 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
-		network.doResponseLogging(responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}, destInfo)
+		network.doRequestLog(structData, destInfo)
+		network.doResponseLog(responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}, destInfo)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -255,18 +265,35 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	}
 }
 
-func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.DestinationInfo) {
-	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
-	destTypes := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destTypes").Load()
-	destinationIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destinationIDs").Load()
-	workspaceIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.workspaceIDs").Load()
-	eventNames := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.eventNames").Load()
+func (n *netHandle) shouldLog(destInfo types.DestinationInfo) bool {
+	return n.loggableInfo.enabled && ((lo.Contains(n.loggableInfo.destinationIDs, destInfo.ID) ||
+		lo.Contains(n.loggableInfo.workspaceIDs, destInfo.WorkspaceID) ||
+		lo.Contains(n.loggableInfo.destTypes, destInfo.DefinitionName)) && lo.Contains(n.loggableInfo.eventNames, destInfo.EventName))
+}
 
-	shouldLog := isEnabled && ((lo.Contains(destinationIDs, destInfo.ID) ||
-		lo.Contains(workspaceIDs, destInfo.WorkspaceID) ||
-		lo.Contains(destTypes, destInfo.DefinitionName)) && lo.Contains(eventNames, destInfo.EventName))
+func (n *netHandle) doRequestLog(structData integrations.PostParametersT, destInfo types.DestinationInfo) {
+	if !n.shouldLog(destInfo) {
+		return
+	}
+	transformedEventBytes, err := json.Marshal(structData)
+	if err != nil {
+		n.logger.Warnw("transformed event marshal failure",
+			obskit.Error(err),
+			obskit.DestinationID(destInfo.ID),
+			obskit.DestinationType(destInfo.DefinitionName),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
+		)
+	}
+	n.logger.Infon("delivery request",
+		obskit.DestinationType(destInfo.DefinitionName),
+		obskit.DestinationID(destInfo.ID),
+		obskit.WorkspaceID(destInfo.WorkspaceID),
+		logger.NewStringField("transformedEvent", string(transformedEventBytes)),
+	)
+}
 
-	if !shouldLog {
+func (n *netHandle) doResponseLog(resp responseLogDetails, destInfo types.DestinationInfo) {
+	if !n.shouldLog(destInfo) {
 		return
 	}
 
@@ -321,4 +348,17 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+
+	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
+	destTypes := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destTypes").Load()
+	destinationIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destinationIDs").Load()
+	workspaceIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.workspaceIDs").Load()
+	eventNames := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.eventNames").Load()
+	network.loggableInfo = loggableInfo{
+		enabled:        isEnabled,
+		destinationIDs: destinationIDs,
+		destTypes:      destTypes,
+		workspaceIDs:   workspaceIDs,
+		eventNames:     eventNames,
+	}
 }
