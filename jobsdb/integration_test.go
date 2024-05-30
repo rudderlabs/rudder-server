@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -14,8 +15,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
@@ -72,7 +71,7 @@ func TestJobsDB(t *testing.T) {
 		},
 		config: c,
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -233,7 +232,7 @@ func TestJobsDB(t *testing.T) {
 			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)))
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -319,7 +318,7 @@ func TestJobsDB(t *testing.T) {
 			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)))
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -358,7 +357,7 @@ func TestJobsDB(t *testing.T) {
 			},
 			config: c,
 		}
-		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -391,7 +390,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)))
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -423,7 +422,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)))
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -466,7 +465,7 @@ func TestJobsDB(t *testing.T) {
 
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, tablePrefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -499,7 +498,7 @@ func TestJobsDB(t *testing.T) {
 
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, tablePrefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -585,7 +584,7 @@ func TestJobsDB(t *testing.T) {
 		prefix := strings.ToLower(rand.String(5))
 		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
 		c.Set("JobsDB.jobMinRowsMigrateThreshold", 0.6)
-		err := jobDB.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -706,7 +705,7 @@ func TestJobsDB(t *testing.T) {
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, tablePrefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -816,7 +815,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -897,7 +896,7 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		config: c,
 	}
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := JobT{
@@ -984,7 +983,7 @@ func TestCreateDS(t *testing.T) {
 					return triggerAddNewDS
 				},
 			}
-			err = jobDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+			err = jobDB.Setup(ReadWrite, false, prefix)
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
@@ -1024,48 +1023,72 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 	}
 }
 
-func TestJobsDB_IncompatiblePayload(t *testing.T) {
+func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
-	triggerAddNewDS := make(chan time.Time)
-	c := config.New()
-	c.Set("jobsdb.maxDSSize", 10)
-	jobDB := Handle{
-		config: c,
-		TriggerAddNewDS: func() <-chan time.Time {
-			return triggerAddNewDS
-		},
+	jobDB := Handle{config: config.New()}
+	ch := func(n int) string {
+		return strings.Repeat(string("?"), n)
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	toValidUTF8Tests := []struct {
+		in  string
+		out string
+	}{
+		{`\u0000`, ""},
+		{`\u0000☺\u0000b☺`, "☺b☺"},
+		// NOTE: we are not handling the following:
+		// {"\u0000", ""},
+		// {"\u0000☺\u0000b☺", "☺b☺"},
+
+		{"", ""},
+		{"abc", "abc"},
+		{"\uFDDD", "\uFDDD"},
+		{"a\xffb", "a" + ch(1) + "b"},
+		{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD"},
+		{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1)},
+		{"\xC0\xAF", ch(2)},
+		{"\xE0\x80\xAF", ch(3)},
+		{"\xed\xa0\x80", ch(3)},
+		{"\xed\xbf\xbf", ch(3)},
+		{"\xF0\x80\x80\xaf", ch(4)},
+		{"\xF8\x80\x80\x80\xAF", ch(5)},
+		{"\xFC\x80\x80\x80\x80\xAF", ch(6)},
+	}
+
+	eventPayload := []byte(`{"batch": [{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
+	customVal := "MOCKDS"
+	var jobs []*JobT
+	for _, tt := range toValidUTF8Tests {
+		jobs = append(jobs, &JobT{
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
+			UserID:       uuid.New().String(),
+			UUID:         uuid.New(),
+			CustomVal:    customVal,
+			WorkspaceId:  defaultWorkspaceID,
+			EventCount:   1,
+		})
+	}
+
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 	require.NoError(t, err)
 	defer jobDB.TearDown()
-	customVal := "MOCKDS"
-	sampleTestJob := JobT{
-		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.New(),
-		CustomVal:    customVal,
-		WorkspaceId:  defaultWorkspaceID,
-		EventCount:   1,
-	}
-	errMap := jobDB.StoreEachBatchRetry(context.Background(), [][]*JobT{{&sampleTestJob}})
-	for _, val := range errMap {
-		require.Equal(t, "", val)
-	}
+
+	err = jobDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
 	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
 		CustomValFilters: []string{customVal},
-		JobsLimit:        1,
+		JobsLimit:        100,
 		ParameterFilters: []ParameterFilterT{},
 	})
 	require.NoError(t, err, "should not error")
 
-	unprocessedList := unprocessedJob.Jobs
-	require.Equal(t, 1, len(unprocessedList))
-
-	t.Run("validate fetched event", func(t *testing.T) {
-		require.Equal(t, "MOCKDS", unprocessedList[0].CustomVal)
-		require.Equal(t, defaultWorkspaceID, unprocessedList[0].WorkspaceId)
-	})
+	for i, tt := range toValidUTF8Tests {
+		require.JSONEq(t,
+			string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
+			string(unprocessedJob.Jobs[i].EventPayload),
+		)
+	}
 }
 
 // BenchmarkJobsdb takes time... keep waiting
@@ -1087,7 +1110,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		jobsDb1 := Handle{}
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDb1.Setup(ReadWrite, true, "batch_rt")
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) with reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1099,7 +1122,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_GW_MAX_OPEN_CONNECTIONS", "64")
-		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDb2.Setup(ReadWrite, true, "batch_rt")
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) without reader writer queues", totalJobs, concurrency), func(b *testing.B) {
