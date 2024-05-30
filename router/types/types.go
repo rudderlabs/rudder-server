@@ -149,4 +149,5 @@ type DestinationInfo struct {
 	WorkspaceID    string
 	ID             string
 	DefinitionName string
+	EventName      string
 }

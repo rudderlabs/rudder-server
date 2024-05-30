@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -255,13 +257,18 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 
 func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.DestinationInfo) {
 	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
-	if !isEnabled {
+	destTypes := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destTypes").Load()
+	destinationIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destinationIDs").Load()
+	workspaceIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.workspaceIDs").Load()
+	eventNames := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.eventNames").Load()
+
+	shouldLog := isEnabled && ((lo.Contains(destinationIDs, destInfo.ID) ||
+		lo.Contains(workspaceIDs, destInfo.WorkspaceID) ||
+		lo.Contains(destTypes, destInfo.DefinitionName)) && lo.Contains(eventNames, destInfo.EventName))
+
+	if !shouldLog {
 		return
 	}
-
-	destID := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.destinationID").Load()
-	destType := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.destType").Load()
-	workspaceID := config.GetReloadableStringVar("", "Router.Network.ResponseLogger.workspaceID").Load()
 
 	headerBytes, err := json.Marshal(resp.headers)
 	if err != nil {
@@ -272,16 +279,14 @@ func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.De
 			obskit.WorkspaceID(destInfo.WorkspaceID),
 		)
 	}
-	if destID == destInfo.ID || workspaceID == destInfo.WorkspaceID || destType == destInfo.DefinitionName {
-		n.logger.Infon("delivery response",
-			obskit.DestinationType(destInfo.DefinitionName),
-			obskit.DestinationID(destInfo.ID),
-			obskit.WorkspaceID(destInfo.WorkspaceID),
-			logger.NewStringField("resHeaders", string(headerBytes)),
-			logger.NewStringField("resBody", string(resp.body)),
-			logger.NewIntField("resStatusCode", int64(resp.statusCode)),
-		)
-	}
+	n.logger.Infon("delivery response",
+		obskit.DestinationType(destInfo.DefinitionName),
+		obskit.DestinationID(destInfo.ID),
+		obskit.WorkspaceID(destInfo.WorkspaceID),
+		logger.NewStringField("resHeaders", string(headerBytes)),
+		logger.NewStringField("resBody", string(resp.body)),
+		logger.NewIntField("resStatusCode", int64(resp.statusCode)),
+	)
 }
 
 // Setup initializes the module

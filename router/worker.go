@@ -531,6 +531,7 @@ func (w *worker) processDestinationJobs() {
 										WorkspaceID:    destinationJob.Destination.WorkspaceID,
 										ID:             destinationJob.Destination.ID,
 										DefinitionName: destinationJob.Destination.DestinationDefinition.Name,
+										EventName:      gjson.GetBytes(destinationJob.JobMetadataArray[0].JobT.Parameters, "event_name").String(),
 									}
 									rdlTime := time.Now()
 									resp := w.rt.netHandle.SendPost(sendCtx, val, destInfo)
