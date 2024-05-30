@@ -265,7 +265,7 @@ func (n *netHandle) doResponseLogging(resp responseLogDetails, destInfo types.De
 
 	headerBytes, err := json.Marshal(resp.headers)
 	if err != nil {
-		n.logger.Debugn(fmt.Sprintf("header marshal failure: %s", err.Error()),
+		n.logger.Warnw(fmt.Sprintf("header marshal failure: %s", err.Error()),
 			obskit.DestinationID(destInfo.ID),
 			obskit.DestinationType(destInfo.DefinitionName),
 			obskit.WorkspaceID(destInfo.WorkspaceID),
