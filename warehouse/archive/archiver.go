@@ -198,11 +198,13 @@ func (a *Archiver) Do(ctx context.Context) error {
 		return fmt.Errorf("counting uploads to archive: %w", err)
 	}
 
+	maxLimit := a.config.maxLimit.Load()
+
 	for uploadsToArchive > 0 {
-		if err := a.archiveUploads(ctx); err != nil {
+		if err := a.archiveUploads(ctx, maxLimit); err != nil {
 			return fmt.Errorf("archiving uploads: %w", err)
 		}
-		uploadsToArchive -= a.config.maxLimit.Load()
+		uploadsToArchive -= maxLimit
 	}
 	return nil
 }
@@ -242,7 +244,7 @@ func (a *Archiver) countUploadsToArchive(ctx context.Context) (int, error) {
 	return totalUploads, err
 }
 
-func (a *Archiver) archiveUploads(ctx context.Context) error {
+func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) error {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  id,
@@ -280,7 +282,7 @@ func (a *Archiver) archiveUploads(ctx context.Context) error {
 		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays.Load()),
 		model.ExportedData,
 		pq.Array(skipWorkspaceIDs),
-		a.config.maxLimit.Load(),
+		maxArchiveLimit,
 	)
 	defer func() {
 		if err != nil {
