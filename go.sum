@@ -489,8 +489,8 @@ github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4
 github.com/fsnotify/fsnotify v1.5.1/go.mod h1:T3375wBYaZdLLcVNkcVbzGHY7f1l/uK5T5Ai1i3InKU=
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
-github.com/fsouza/fake-gcs-server v1.49.0 h1:4x1RxKuqoqhZrXogtj5nInQnIjQylxld43tKrkPHnmE=
-github.com/fsouza/fake-gcs-server v1.49.0/go.mod h1:FJYZxdHQk2nGxrczFjLbDv8h6SnYXxSxcnM14eeespA=
+github.com/fsouza/fake-gcs-server v1.49.1 h1:sTK9SyMQdh4YJzQhC4fr4uC9dDKkzP/l2xdLXQhqXpY=
+github.com/fsouza/fake-gcs-server v1.49.1/go.mod h1:7xKHK/cQss9HdbcLZUgCIQyQ6WFYKYqsUjiWEHYOonw=
 github.com/fvbommel/sortorder v1.0.2 h1:mV4o8B2hKboCdkJm+a7uX/SIpZob4JzUpc5GGnM45eo=
 github.com/fvbommel/sortorder v1.0.2/go.mod h1:uk88iVf1ovNn1iLfgUVU2F9o5eO30ui720w+kxuqRs0=
 github.com/gabriel-vasile/mimetype v1.4.3/go.mod h1:d8uq/6HKRL6CGdk+aubisF/M5GcPfT7nKyLpA0lbSSk=
@@ -1099,8 +1099,8 @@ github.com/rudderlabs/compose-test v0.1.3 h1:uyep6jDCIF737sfv4zIaMsKRQKX95IDz5Xb
 github.com/rudderlabs/compose-test v0.1.3/go.mod h1:tuvS1eQdSfwOYv1qwyVAcpdJxPLQXJgy5xGDd/9XmMg=
 github.com/rudderlabs/parquet-go v0.0.2 h1:ZXRdZdimB0PdJtmxeSSxfI0fDQ3kZjwzBxRi6Ut1J8k=
 github.com/rudderlabs/parquet-go v0.0.2/go.mod h1:g6guum7o8uhj/uNhunnt7bw5Vabu/goI5i21/3fnxWQ=
-github.com/rudderlabs/rudder-go-kit v0.34.0 h1:FiYzznBlZuUdivYk8NPHYcQEa0z2vkx1Yf93PnxqZmA=
-github.com/rudderlabs/rudder-go-kit v0.34.0/go.mod h1:v4UsZHJGps9/rg/Xqxd/hYXNcg5u8Qm5B/3aSqoFTT0=
+github.com/rudderlabs/rudder-go-kit v0.34.1 h1:GOqhQxd2NO1Mvb+SIt14NqUEK7qbDbMk5Elt8vxYQ64=
+github.com/rudderlabs/rudder-go-kit v0.34.1/go.mod h1:x+yAEH2aV/07p5SgOSI20Dvfzf82GwXImET0VLSCtm0=
 github.com/rudderlabs/rudder-observability-kit v0.0.3 h1:vZtuZRkGX+6rjaeKtxxFE2YYP6QlmAcVcgecTOjvz+Q=
 github.com/rudderlabs/rudder-observability-kit v0.0.3/go.mod h1:6UjAh3H6rkE0fFLh7z8ZGQEQbKtUkRfhWOf/OUhfqW8=
 github.com/rudderlabs/rudder-schemas v0.4.0 h1:CkpmO8NI0OFMcFyD6WAGN/gIsmqyrC+Bd/htb9eBhpo=
