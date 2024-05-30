@@ -17,11 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/helper"
+	filehelper "github.com/rudderlabs/rudder-server/helper/file"
+	noophelper "github.com/rudderlabs/rudder-server/helper/noop"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/router/utils"
@@ -32,20 +31,12 @@ import (
 
 var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 
-type loggableInfo struct {
-	enabled        bool
-	destinationIDs []string
-	destTypes      []string
-	workspaceIDs   []string
-	eventNames     []string
-}
-
 // netHandle is the wrapper holding private variables
 type netHandle struct {
 	disableEgress bool
 	httpClient    sysUtils.HTTPClientI
 	logger        logger.Logger
-	loggableInfo  loggableInfo
+	debugHelper   helper.Debugger
 }
 
 type responseLogDetails struct {
@@ -228,8 +219,14 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
-		network.doRequestLog(structData, destInfo)
-		network.doResponseLog(responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}, destInfo)
+		metainfo := helper.MetaInfo{
+			DestinationID: destInfo.ID,
+			WorkspaceID:   destInfo.WorkspaceID,
+			DestType:      destInfo.DefinitionName,
+			EventName:     destInfo.EventName,
+		}
+		responseDetails := responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}
+		network.debugHelper.Send(structData, responseDetails, metainfo)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -265,57 +262,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	}
 }
 
-func (n *netHandle) shouldLog(destInfo types.DestinationInfo) bool {
-	return n.loggableInfo.enabled && ((lo.Contains(n.loggableInfo.destinationIDs, destInfo.ID) ||
-		lo.Contains(n.loggableInfo.workspaceIDs, destInfo.WorkspaceID) ||
-		lo.Contains(n.loggableInfo.destTypes, destInfo.DefinitionName)) && lo.Contains(n.loggableInfo.eventNames, destInfo.EventName))
-}
-
-func (n *netHandle) doRequestLog(structData integrations.PostParametersT, destInfo types.DestinationInfo) {
-	if !n.shouldLog(destInfo) {
-		return
-	}
-	transformedEventBytes, err := json.Marshal(structData)
-	if err != nil {
-		n.logger.Warnw("transformed event marshal failure",
-			obskit.Error(err),
-			obskit.DestinationID(destInfo.ID),
-			obskit.DestinationType(destInfo.DefinitionName),
-			obskit.WorkspaceID(destInfo.WorkspaceID),
-		)
-	}
-	n.logger.Infon("delivery request",
-		obskit.DestinationType(destInfo.DefinitionName),
-		obskit.DestinationID(destInfo.ID),
-		obskit.WorkspaceID(destInfo.WorkspaceID),
-		logger.NewStringField("transformedEvent", string(transformedEventBytes)),
-	)
-}
-
-func (n *netHandle) doResponseLog(resp responseLogDetails, destInfo types.DestinationInfo) {
-	if !n.shouldLog(destInfo) {
-		return
-	}
-
-	headerBytes, err := json.Marshal(resp.headers)
-	if err != nil {
-		n.logger.Warnw("header marshal failure",
-			obskit.Error(err),
-			obskit.DestinationID(destInfo.ID),
-			obskit.DestinationType(destInfo.DefinitionName),
-			obskit.WorkspaceID(destInfo.WorkspaceID),
-		)
-	}
-	n.logger.Infon("delivery response",
-		obskit.DestinationType(destInfo.DefinitionName),
-		obskit.DestinationID(destInfo.ID),
-		obskit.WorkspaceID(destInfo.WorkspaceID),
-		logger.NewStringField("resHeaders", string(headerBytes)),
-		logger.NewStringField("resBody", string(resp.body)),
-		logger.NewIntField("resStatusCode", int64(resp.statusCode)),
-	)
-}
-
 // Setup initializes the module
 func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
@@ -349,16 +295,12 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 
-	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
-	destTypes := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destTypes").Load()
-	destinationIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destinationIDs").Load()
-	workspaceIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.workspaceIDs").Load()
-	eventNames := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.eventNames").Load()
-	network.loggableInfo = loggableInfo{
-		enabled:        isEnabled,
-		destinationIDs: destinationIDs,
-		destTypes:      destTypes,
-		workspaceIDs:   workspaceIDs,
-		eventNames:     eventNames,
+	var debugger helper.Debugger
+	var err error
+	debugger, err = filehelper.NewFileDebugger("./router/mydebuglogs", "Router.Network")
+	if err != nil {
+		network.logger.Errorf("init error: %w", err)
+		debugger, _ = noophelper.New()
 	}
+	network.debugHelper = debugger
 }
