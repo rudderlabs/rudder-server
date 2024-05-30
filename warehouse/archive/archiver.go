@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -63,6 +64,7 @@ type Archiver struct {
 		uploadsArchivalTimeInDays   config.ValueLoader[int]
 		archiverTickerTime          config.ValueLoader[time.Duration]
 		backupRowsBatchSize         config.ValueLoader[int]
+		maxLimit                    config.ValueLoader[int]
 	}
 
 	archiveFailedStat stats.Measurement
@@ -89,6 +91,7 @@ func New(
 	a.config.uploadsArchivalTimeInDays = a.conf.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
 	a.config.backupRowsBatchSize = a.conf.GetReloadableIntVar(100, 1, "Warehouse.Archiver.backupRowsBatchSize")
 	a.config.archiverTickerTime = a.conf.GetReloadableDurationVar(360, time.Minute, "Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin") // default 6 hours
+	a.config.maxLimit = a.conf.GetReloadableIntVar(10000, 1, "Warehouse.Archiver.maxLimit")
 
 	a.archiveFailedStat = a.stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType)
 
@@ -189,6 +192,57 @@ func (*Archiver) usedRudderStorage(metadata []byte) bool {
 
 func (a *Archiver) Do(ctx context.Context) error {
 	a.log.Infof(`[Archiver]: Started archiving for warehouse`)
+
+	uploadsToArchive, err := a.countUploadsToArchive(ctx)
+	if err != nil {
+		return fmt.Errorf("counting uploads to archive: %w", err)
+	}
+
+	for uploadsToArchive > 0 {
+		if err := a.archiveUploads(ctx); err != nil {
+			return fmt.Errorf("archiving uploads: %w", err)
+		}
+		uploadsToArchive -= a.config.maxLimit.Load()
+	}
+	return nil
+}
+
+func (a *Archiver) countUploadsToArchive(ctx context.Context) (int, error) {
+	skipWorkspaceIDs := []string{""}
+	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
+
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  count(*)
+		FROM
+		  %s
+		WHERE
+		  (
+			(
+			  metadata ->> 'archivedStagingAndLoadFiles'
+			):: bool IS DISTINCT
+			FROM
+			  TRUE
+		  )
+		  AND created_at < NOW() - $1::interval
+		  AND status = $2
+		  AND NOT workspace_id = ANY ( $3 );`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
+	)
+
+	var totalUploads int
+
+	err := a.db.QueryRowContext(
+		ctx,
+		sqlStatement,
+		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays.Load()),
+		model.ExportedData,
+		pq.Array(skipWorkspaceIDs),
+	).Scan(&totalUploads)
+	return totalUploads, err
+}
+
+func (a *Archiver) archiveUploads(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  id,
@@ -214,7 +268,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		  AND status = $2
 		  AND NOT workspace_id = ANY ( $3 )
 		LIMIT
-		  10000;`,
+		  $4;`,
 		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 	)
 
@@ -226,6 +280,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays.Load()),
 		model.ExportedData,
 		pq.Array(skipWorkspaceIDs),
+		a.config.maxLimit.Load(),
 	)
 	defer func() {
 		if err != nil {
@@ -358,7 +413,6 @@ func (a *Archiver) Do(ctx context.Context) error {
 	}
 
 	a.log.Infof(`[Archiver]: Successfully archived %d uploads`, archivedUploads)
-
 	return nil
 }
 
