@@ -218,11 +218,15 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 		UserID       string          `json:"userId"`
 		EventPayload json.RawMessage `json:"payload"`
 		CreatedAt    time.Time       `json:"createdAt"`
+		ReceivedAt   string          `json:"receivedAt"`
 		MessageID    string          `json:"messageId"`
+		RequestIP    string          `json:"requestIP"`
 	}
 	J.UserID = job.UserID
 	J.EventPayload = job.EventPayload
 	J.CreatedAt = job.CreatedAt
+	J.ReceivedAt = gjson.GetBytes(job.EventPayload, "receivedAt").String()
+	J.RequestIP = gjson.GetBytes(job.EventPayload, "requestIP").String()
 	J.MessageID = gjson.GetBytes(job.EventPayload, "messageId").String()
 	return json.Marshal(J)
 }

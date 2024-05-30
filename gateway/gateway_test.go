@@ -486,7 +486,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
 				switch ep {
-				case "/internal/v1/replay", "/internal/v1/retl":
+				case "/internal/v1/replay", "/internal/v1/retl", "/internal/v2/replay":
 					req.Header.Set("X-Rudder-Source-Id", ReplaySourceID)
 				default:
 					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
@@ -1920,6 +1920,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/internal/v1/extract",
 		"/internal/v1/retl",
 		"/internal/v1/replay",
+		"/internal/v2/replay",
 		"/internal/v1/audiencelist",
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
