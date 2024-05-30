@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.26.1](https://github.com/rudderlabs/rudder-server/compare/v1.26.0...v1.26.1) (2024-05-30)
+
+
+### Bug Fixes
+
+* archival to archive everything whenever it is running ([#4728](https://github.com/rudderlabs/rudder-server/issues/4728)) ([f3532ae](https://github.com/rudderlabs/rudder-server/commit/f3532aee89d1e4e9ac9597fdee2a7a82bbc9ec2e))
+
+
+### Miscellaneous
+
+* sync release v1.26.0 to main branch ([#4729](https://github.com/rudderlabs/rudder-server/issues/4729)) ([443349b](https://github.com/rudderlabs/rudder-server/commit/443349b0ca7e5d1efb32457cc1374f9028bcc53a))
+
 ## [1.26.0](https://github.com/rudderlabs/rudder-server/compare/v1.25.0...v1.26.0) (2024-05-30)
 
 
