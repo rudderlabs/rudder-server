@@ -144,7 +144,7 @@ type Handle struct {
 		eventSchemaV2Enabled            bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
-		credentials                     map[string][]backendconfig.Credential
+		credentials                     map[string][]transformer.Credential
 	}
 
 	drainConfig struct {
@@ -798,7 +798,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
-			credentialsMap                  = make(map[string][]backendconfig.Credential)
+			credentialsMap                  = make(map[string][]transformer.Credential)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -840,10 +840,11 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	}
 }
 
-func ConvertMapToList(credentialsMap map[string]backendconfig.Credential) []backendconfig.Credential {
-	var credentialsList []backendconfig.Credential
-	for _, credential := range credentialsMap {
-		credentialsList = append(credentialsList, backendconfig.Credential{
+func ConvertMapToList(credentialsMap map[string]backendconfig.Credential) []transformer.Credential {
+	var credentialsList []transformer.Credential
+	for id, credential := range credentialsMap {
+		credentialsList = append(credentialsList, transformer.Credential{
+			ID:       id,
 			Key:      credential.Key,
 			Value:    credential.Value,
 			IsSecret: credential.IsSecret,

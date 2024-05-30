@@ -96,7 +96,14 @@ type TransformerEvent struct {
 	Metadata    Metadata                   `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
-	Credentials []backendconfig.Credential `json:"credentials"`
+	Credentials []Credential               `json:"credentials"`
+}
+
+type Credential struct {
+	ID       string `json:"id"`
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
 }
 
 func isJobTerminated(status int) bool {
