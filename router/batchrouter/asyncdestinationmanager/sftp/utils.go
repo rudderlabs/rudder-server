@@ -256,7 +256,14 @@ func getUploadFilePath(path string, metadata map[string]any) string {
 		}
 	})
 
-	return result
+	partFileNumber, ok := metadata["partFileNumber"].(int)
+	if !ok {
+		return result
+	}
+
+	ext := filepath.Ext(result)
+	base := strings.TrimSuffix(result, ext)
+	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext)
 }
 
 func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
