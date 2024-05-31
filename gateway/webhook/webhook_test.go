@@ -450,7 +450,7 @@ func TestPrepareRequestBody(t *testing.T) {
 	testCases := []struct {
 		name               string
 		req                *http.Request
-		secondParam        string
+		sourceType        string
 		includeQueryParams bool
 		wantError          bool
 		expectedResponse   []byte
