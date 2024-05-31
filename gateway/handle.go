@@ -674,6 +674,10 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			// Sending events to config backend
 			for _, job := range jobs {
 				writeKey := gjson.GetBytes(job.EventPayload, "writeKey").String()
+				if writeKey == "" {
+					gw.logger.Errorn("writeKey not found in event payload")
+					continue
+				}
 				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
 			}
 		}
