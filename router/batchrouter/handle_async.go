@@ -338,6 +338,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
+					brt.asyncDestinationStruct[destinationID].PartFileNumber++
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
@@ -365,12 +366,23 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums 
 	if err != nil {
 		panic(err)
 	}
+
+	existingJobRunID := brt.asyncDestinationStruct[destinationID].SourceJobRunID
+	fmt.Println("existingJobRunID : ", existingJobRunID)
+	newJobRunID := getFirstSourceJobRunID(originalJobParameters)
+	fmt.Println("newJobRunID : ", newJobRunID)
+	if newJobRunID != existingJobRunID {
+		brt.asyncDestinationStruct[destinationID].PartFileNumber = 0
+	}
+
 	brt.asyncDestinationStruct[destinationID].Exists = true
 	brt.asyncDestinationStruct[destinationID].AttemptNums = attemptNums
 	brt.asyncDestinationStruct[destinationID].FirstAttemptedAts = firstAttemptedAts
 	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = originalJobParameters
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
+	brt.asyncDestinationStruct[destinationID].SourceJobRunID = newJobRunID
+
 }
 
 func (brt *Handle) asyncStructCleanUp(destinationID string) {
@@ -385,6 +397,13 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].AttemptNums = make(map[int64]int)
 	brt.asyncDestinationStruct[destinationID].FirstAttemptedAts = make(map[int64]time.Time)
 	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = make(map[int64]stdjson.RawMessage)
+}
+
+func getFirstSourceJobRunID(params map[int64]stdjson.RawMessage) string {
+	for key := range params {
+		return gjson.GetBytes(params[key], "source_job_run_id").String()
+	}
+	return ""
 }
 
 func getAttemptNumbers(jobs []*jobsdb.JobT) map[int64]int {

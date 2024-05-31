@@ -26,11 +26,9 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
-
-	jobRunID := gjson.GetBytes(asyncDestStruct.OriginalJobParameters[0], "source_job_run_id").String()
 	metadata := map[string]any{
 		"destinationID":  destinationID,
-		"sourceJobRunID": jobRunID,
+		"sourceJobRunID": asyncDestStruct.SourceJobRunID,
 	}
 
 	result := gjson.ParseBytes(destConfigJSON)
