@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/helper"
-	filehelper "github.com/rudderlabs/rudder-server/helper/file"
-	noophelper "github.com/rudderlabs/rudder-server/helper/noop"
+	ht "github.com/rudderlabs/rudder-server/helper/types"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/router/utils"
@@ -219,14 +219,8 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
-		metainfo := helper.MetaInfo{
-			DestinationID: destInfo.ID,
-			WorkspaceID:   destInfo.WorkspaceID,
-			DestType:      destInfo.DefinitionName,
-			EventName:     destInfo.EventName,
-		}
 		responseDetails := responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}
-		network.debugHelper.Send(structData, responseDetails, metainfo)
+		network.SendForDebug(structData, destInfo, responseDetails)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -262,6 +256,31 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	}
 }
 
+func (h *netHandle) SendForDebug(structData integrations.PostParametersT, destInfo types.DestinationInfo, response responseLogDetails) {
+	headerBytes, err := json.Marshal(response.headers)
+	if err != nil {
+		h.logger.Warnn("header marshal error",
+			obskit.DestinationID(destInfo.ID),
+			obskit.Error(err),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
+			logger.NewField("eventName", destInfo.EventName),
+		)
+		return
+	}
+	metainfo := ht.MetaInfo{
+		DestinationID: destInfo.ID,
+		WorkspaceID:   destInfo.WorkspaceID,
+		DestType:      destInfo.DefinitionName,
+		EventName:     destInfo.EventName,
+	}
+	resp := ht.ResponseLogDetails{
+		Headers:    string(headerBytes),
+		StatusCode: response.statusCode,
+		Body:       string(response.body),
+	}
+	h.debugHelper.Send(structData, resp, metainfo)
+}
+
 // Setup initializes the module
 func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
@@ -295,12 +314,5 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 
-	var debugger helper.Debugger
-	var err error
-	debugger, err = filehelper.NewFileDebugger("./router/mydebuglogs", "Router.Network")
-	if err != nil {
-		network.logger.Errorf("init error: %w", err)
-		debugger, _ = noophelper.New()
-	}
-	network.debugHelper = debugger
+	network.debugHelper = helper.New("Router.Network")
 }
