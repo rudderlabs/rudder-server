@@ -220,7 +220,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			}
 		}
 		responseDetails := responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}
-		network.SendForDebug(structData, destInfo, responseDetails)
+		network.sendForDebug(structData, destInfo, responseDetails)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -256,7 +256,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	}
 }
 
-func (h *netHandle) SendForDebug(structData integrations.PostParametersT, destInfo types.DestinationInfo, response responseLogDetails) {
+func (h *netHandle) sendForDebug(structData integrations.PostParametersT, destInfo types.DestinationInfo, response responseLogDetails) {
 	headerBytes, err := json.Marshal(response.headers)
 	if err != nil {
 		h.logger.Warnn("header marshal error",
