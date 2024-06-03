@@ -19,11 +19,11 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/assert"
@@ -689,7 +689,7 @@ func requireTags(t *testing.T, zipkinTraces []tracemodel.ZipkinTrace, traceName 
 		"service.name":           app.EMBEDDED,
 		"telemetry.sdk.language": "go",
 		"telemetry.sdk.name":     "opentelemetry",
-		"telemetry.sdk.version":  otel.Version(),
+		"telemetry.sdk.version":  stats.OtelVersion(),
 	})
 	filteredTraces := lo.Filter(zipkinTraces, func(trace tracemodel.ZipkinTrace, index int) bool {
 		if trace.Name != traceName {
