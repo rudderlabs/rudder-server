@@ -394,7 +394,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
 		r.Post("/v1/batch", gw.internalBatchHandler())
-		r.Post("/v2/replay", gw.internalReplayHandler())
 
 		// TODO: delete this handler once we are ready to remove support for the v1 api
 		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
