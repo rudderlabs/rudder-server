@@ -6,26 +6,30 @@ import (
 
 var (
 	defaultHistogramBuckets = []float64{
-		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 1m
+		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 1m, 5m
 	}
 	defaultWarehouseHistogramBuckets = []float64{
-		0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 1m, 5m, 10m
+		0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, 1800, 3600, 10800, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 1m, 5m, 10m, 30m, 1h, 3h
 	}
 
 	customBucketsServer = map[string][]float64{
 		"event_delivery_time": {
-			0.5, 1, 2.5, 5, 10, 30, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 0.5 seconds, 1 second, 2.5 seconds, 5 seconds, 10 seconds, 30 seconds, 1 minute, 5 minutes, 10 minutes, 30 minutes, 1 hour, 2 hours, 3 hours, 6 hours, 9 hours, 24 hours
+			0.5, 1, 2.5, 5, 10, 30, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
 		},
 	}
 	customBucketsWarehouse = map[string][]float64{
 		"event_delivery_time": {
-			60, 300, 600, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 1 minute, 5 minutes, 10 minutes, 30 minutes, 1 hour, 1.5 hours, 3.5 hours, 6.5 hours, 12.5 hours, 24.5 hours
+			60, 300, 600, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 1m, 5m, 10m, 30m, 1h, 1.5h, 3.5h, 6.5h, 12.5h, 24.5h
 		},
 	}
 
 	customBuckets = map[string][]float64{
+		"db_wait_duration": {
+			0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
+		},
+
 		"exporting_data": {
-			0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 0.1 seconds, 0.25 seconds, 0.5 seconds, 1 second, 2.5 seconds, 5 seconds, 10 seconds, 30 seconds, 1 minute, 5 minutes, 10 minutes, 30 minutes, 1 hour, 2 hours, 3 hours, 6 hours, 9 hours, 24 hours
+			0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
 		},
 
 		"error_detail_reports_size": {
@@ -61,9 +65,6 @@ var (
 		"gateway.batch_size": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
 		},
-		"router.kafka.batch_size": {
-			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
-		},
 		"gateway.request_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
@@ -94,6 +95,9 @@ var (
 			float64(1 * bytesize.GB),
 		},
 		"processor_db_read_requests": {
+			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
+		},
+		"router.kafka.batch_size": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
 		},
 	}
