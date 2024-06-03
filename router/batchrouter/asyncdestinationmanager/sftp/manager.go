@@ -34,7 +34,10 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 
 	result := gjson.ParseBytes(destConfigJSON)
 	uploadFilePath := result.Get("filePath").String()
-	uploadFilePath = getUploadFilePath(uploadFilePath, metadata)
+	uploadFilePath, err = getUploadFilePath(uploadFilePath, metadata)
+	if err != nil {
+		return generateErrorOutput(fmt.Sprintf("error generating file path: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
+	}
 	fileFormat := result.Get("fileFormat").String()
 
 	// Generate temporary file based on the destination's file format

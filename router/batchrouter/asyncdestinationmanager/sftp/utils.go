@@ -222,7 +222,7 @@ func getTempFilePath() (string, error) {
 	return tmpFilePath, nil
 }
 
-func getUploadFilePath(path string, metadata map[string]any) string {
+func getUploadFilePath(path string, metadata map[string]any) (string, error) {
 	// Get the current date and time
 	now := time.Now()
 	// Replace dynamic variables with their actual values
@@ -258,12 +258,12 @@ func getUploadFilePath(path string, metadata map[string]any) string {
 
 	partFileNumber, ok := metadata["partFileNumber"].(int)
 	if !ok {
-		return result
+		return "", errors.New("part file number is missing")
 	}
 
 	ext := filepath.Ext(result)
 	base := strings.TrimSuffix(result, ext)
-	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext)
+	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext), nil
 }
 
 func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -304,10 +304,21 @@ func validate(d destConfig) error {
 		return err
 	}
 
-	if d.FilePath == "" {
-		return errors.New("filePath cannot be empty")
+	if err := validateFilePath(d.FilePath); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func validateFilePath(path string) error {
+	if !strings.Contains(path, "{destinationID}") {
+		return errors.New("destinationID is missing in upload filePath")
+	}
+
+	if !strings.Contains(path, "{jobRunID}") {
+		return errors.New("jobRunID is missing in upload filePath")
+	}
 	return nil
 }
 
