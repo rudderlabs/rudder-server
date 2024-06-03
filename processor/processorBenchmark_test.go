@@ -13,8 +13,9 @@ import (
 )
 
 func Benchmark_makeCommonMetadataFromSingularEvent(b *testing.B) {
+	proc := &Handle{}
 	for i := 0; i < b.N; i++ {
-		_ = makeCommonMetadataFromSingularEvent(
+		_ = proc.makeCommonMetadataFromSingularEvent(
 			dummySingularEvent, &dummyBatchEvent, time.Now(), &backendconfig.SourceT{
 				WorkspaceID: "test",
 				SourceDefinition: backendconfig.SourceDefinitionT{

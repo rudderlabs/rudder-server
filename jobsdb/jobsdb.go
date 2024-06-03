@@ -42,6 +42,8 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	kitutf8 "github.com/rudderlabs/rudder-go-kit/utf8"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -369,8 +371,8 @@ type ConnectionDetails struct {
 }
 
 func (r *JobStatusT) sanitizeJson() {
-	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
-	r.Parameters = sanitizeJson(r.Parameters)
+	r.ErrorResponse = sanitizeJSON(r.ErrorResponse)
+	r.Parameters = sanitizeJSON(r.Parameters)
 }
 
 /*
@@ -397,9 +399,9 @@ func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }
 
-func (job *JobT) sanitizeJson() {
-	job.EventPayload = sanitizeJson(job.EventPayload)
-	job.Parameters = sanitizeJson(job.Parameters)
+func (job *JobT) sanitizeJSON() {
+	job.EventPayload = sanitizeJSON(job.EventPayload)
+	job.Parameters = sanitizeJSON(job.Parameters)
 }
 
 // The struct fields need to be exposed to JSON package
@@ -529,6 +531,7 @@ var dbInvalidJsonErrors = map[string]struct{}{
 	"22P05": {},
 	"22025": {},
 	"22019": {},
+	"22021": {}, // invalid byte sequence for encoding "UTF8"
 }
 
 // Some helper functions
@@ -1916,7 +1919,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 				return err
 			}
 			for i := range jobList {
-				jobList[i].sanitizeJson()
+				jobList[i].sanitizeJSON()
 			}
 			return store()
 		}
@@ -3137,11 +3140,16 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	return &job
 }
 
-func sanitizeJson(input json.RawMessage) json.RawMessage {
+// sanitizeJSON makes a json payload safe for writing into postgres.
+// 1. Removes any \u0000 string from the payload
+// 2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8
+func sanitizeJSON(input json.RawMessage) json.RawMessage {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
+	kitutf8.Sanitize(v)
+
 	return v
 }
 

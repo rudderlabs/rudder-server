@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
@@ -113,6 +114,7 @@ func TestArchiver(t *testing.T) {
 			t.Setenv("MINIO_SSL", "false")
 			t.Setenv("RUDDER_TMPDIR", t.TempDir())
 			t.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
+			t.Setenv("RSERVER_WAREHOUSE_ARCHIVER_MAX_LIMIT", "1")
 
 			ctrl := gomock.NewController(t)
 			mockStats := mock_stats.NewMockStats(ctrl)
