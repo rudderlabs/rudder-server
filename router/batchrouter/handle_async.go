@@ -368,9 +368,7 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums 
 	}
 
 	existingJobRunID := brt.asyncDestinationStruct[destinationID].SourceJobRunID
-	fmt.Println("existingJobRunID : ", existingJobRunID)
 	newJobRunID := getFirstSourceJobRunID(originalJobParameters)
-	fmt.Println("newJobRunID : ", newJobRunID)
 	if newJobRunID != existingJobRunID {
 		brt.asyncDestinationStruct[destinationID].PartFileNumber = 0
 	}
