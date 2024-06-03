@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.1](https://github.com/rudderlabs/rudder-server/compare/v1.26.0...v1.26.1) (2024-05-30)
+
+
+### Bug Fixes
+
+* archival to archive everything whenever it is running ([#4728](https://github.com/rudderlabs/rudder-server/issues/4728)) ([a7bc9a0](https://github.com/rudderlabs/rudder-server/commit/a7bc9a0d716d75acc2485fa6ee8eba81c7c44552))
+
 ## [1.26.0](https://github.com/rudderlabs/rudder-server/compare/v1.25.0...v1.26.0) (2024-05-30)
 
 
