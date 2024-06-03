@@ -316,12 +316,10 @@ var _ = Describe("SFTP test", func() {
 		It("TestEmptyInputPath", func() {
 			initSFTP()
 			input := ""
-			expected := "_1"
-			received, err := getUploadFilePath(input, map[string]any{
+			_, err := getUploadFilePath(input, map[string]any{
 				"partFileNumber": 1,
 			})
-			Expect(err).To(BeNil())
-			Expect(received).To(Equal(expected))
+			Expect(err).To(MatchError("upload file path can not be empty"))
 		})
 
 		It("TestInvalidDynamicVariables", func() {

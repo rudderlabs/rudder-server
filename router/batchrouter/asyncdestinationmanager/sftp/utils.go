@@ -223,6 +223,10 @@ func getTempFilePath() (string, error) {
 }
 
 func getUploadFilePath(path string, metadata map[string]any) (string, error) {
+	if path == "" {
+		return "", errors.New("upload file path can not be empty")
+	}
+
 	// Get the current date and time
 	now := time.Now()
 	// Replace dynamic variables with their actual values
