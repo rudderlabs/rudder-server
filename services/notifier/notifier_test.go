@@ -131,7 +131,7 @@ func TestNotifier(t *testing.T) {
 			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
-			require.True(t, n.CheckHealth(ctx))
+			require.NoError(t, n.CheckHealth(ctx))
 		})
 		t.Run("context cancelled", func(t *testing.T) {
 			cancelledCtx, cancel := context.WithCancel(ctx)
@@ -140,7 +140,8 @@ func TestNotifier(t *testing.T) {
 			n := notifier.New(config.Default, logger.NOP, stats.Default, workspaceIdentifier)
 			err := n.Setup(ctx, pgResource.DBDsn)
 			require.NoError(t, err)
-			require.False(t, n.CheckHealth(cancelledCtx))
+
+			require.ErrorIs(t, n.CheckHealth(cancelledCtx), context.Canceled)
 		})
 	})
 	t.Run("basic workflow", func(t *testing.T) {
