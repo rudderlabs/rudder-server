@@ -109,8 +109,8 @@ func TestNonRootInsert(t *testing.T) {
 			redisMgr := &RedisManager{}
 			insertRet, err := redisMgr.HandleNonRootInsert(NonRootInsertParams{
 				valueInRedis: tc.userVal,
-				Path: path,
-				JsonVal: jsonVal,
+				Path:         path,
+				JsonVal:      jsonVal,
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expected.setArgsPath, insertRet.SetArgsPath)

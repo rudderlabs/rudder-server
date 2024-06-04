@@ -176,8 +176,8 @@ func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 
 type NonRootInsertParams struct {
 	valueInRedis string
-	Path string
-	JsonVal gjson.Result
+	Path         string
+	JsonVal      gjson.Result
 }
 type NonRootInsertReturn struct {
 	SetArgsPath string
@@ -288,8 +288,8 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) ([]string
 	if !isRootInsert {
 		ret, err := m.HandleNonRootInsert(NonRootInsertParams{
 			valueInRedis: redisValueForKey,
-			Path: path,
-			JsonVal: jsonVal,
+			Path:         path,
+			JsonVal:      jsonVal,
 		})
 		if err != nil {
 			return nil, err
@@ -358,10 +358,11 @@ func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) ([]stri
 }
 
 type setArguments struct {
-	key string
-	path string
+	key     string
+	path    string
 	jsonVal gjson.Result
 }
+
 func (m *RedisManager) ExtractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) ([]string, error) {
 	key := gjson.GetBytes(transformedData, "message.key").String()
 	path := gjson.GetBytes(transformedData, "message.path").String()
@@ -369,14 +370,14 @@ func (m *RedisManager) ExtractJSONSetArgs(transformedData json.RawMessage, confi
 
 	if m.shouldMerge(config) {
 		return m.setArgsForMergeStrategy(setArguments{
-			key: key,
-			path: path,
+			key:     key,
+			path:    path,
 			jsonVal: jsonVal,
 		})
 	}
 	return m.setArgsForReplaceStrategy(setArguments{
-		key: key,
-		path: path,
+		key:     key,
+		path:    path,
 		jsonVal: jsonVal,
 	})
 }

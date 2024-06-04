@@ -574,11 +574,11 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
+			"useJSONModule":  true,
 			"traitsStrategy": "merge",
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 		}
 		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
@@ -606,11 +606,11 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
+			"useJSONModule":  true,
 			"traitsStrategy": "merge",
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 		}
 		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
@@ -660,11 +660,11 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
+			"useJSONModule":  true,
 			"traitsStrategy": "merge",
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 		}
 		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
@@ -715,11 +715,11 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
+			"useJSONModule":  true,
 			"traitsStrategy": "merge",
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 		}
 		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
@@ -769,10 +769,10 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"useJSONModule":  true,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 			"traitsStrategy": "merge",
 		}
 		kvMgr := kvredis.NewRedisManager(config)
@@ -831,10 +831,10 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"useJSONModule":  true,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 			"traitsStrategy": "merge",
 		}
 		kvMgr := kvredis.NewRedisManager(config)
@@ -885,10 +885,10 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"useJSONModule":  true,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 			"traitsStrategy": "merge",
 		}
 		kvMgr := kvredis.NewRedisManager(config)
@@ -937,10 +937,10 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"useJSONModule":  true,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 			"traitsStrategy": "merge",
 		}
 		kvMgr := kvredis.NewRedisManager(config)
@@ -990,10 +990,10 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		event, err := json.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
-			"useJSONModule": true,
-			"address":       redisRsrc.Addr,
-			"db":            0,
-			"clusterMode":   false,
+			"useJSONModule":  true,
+			"address":        redisRsrc.Addr,
+			"db":             0,
+			"clusterMode":    false,
 			"traitsStrategy": "merge",
 		}
 		kvMgr := kvredis.NewRedisManager(config)
