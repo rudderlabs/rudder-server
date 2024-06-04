@@ -43,6 +43,7 @@ type LifecycleManager struct {
 	destDebugger               destinationdebugger.DestinationDebugger
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
+	stats                      stats.Stats
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -151,5 +152,11 @@ type Opts func(l *LifecycleManager)
 func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 	return func(l *LifecycleManager) {
 		l.Handle.adaptiveLimit = adaptiveLimitFunction
+	}
+}
+
+func WithStats(stats stats.Stats) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.statsFactory = stats
 	}
 }
