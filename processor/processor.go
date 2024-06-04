@@ -151,6 +151,9 @@ type Handle struct {
 		jobRunIDs config.ValueLoader[[]string]
 	}
 
+	namespace  string
+	instanceID string
+
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
@@ -396,6 +399,9 @@ func (proc *Handle) Setup(
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
 	proc.storePlocker = *kitsync.NewPartitionLocker()
+
+	proc.namespace = config.GetKubeNamespace()
+	proc.instanceID = misc.GetInstanceID()
 
 	// Stats
 	proc.statsFactory = stats.Default
@@ -934,13 +940,13 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
+func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
-	commonMetadata.Namespace = config.GetKubeNamespace()
-	commonMetadata.InstanceID = misc.GetInstanceID()
+	commonMetadata.Namespace = proc.namespace
+	commonMetadata.InstanceID = proc.instanceID
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
@@ -1695,7 +1701,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				ReceivedAt:    receivedAt,
 			}
 
-			commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
 				singularEvent,
 				batchEvent,
 				receivedAt,
@@ -2444,8 +2450,8 @@ func (proc *Handle) transformSrcDest(
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
-		Namespace:            config.GetKubeNamespace(),
-		InstanceID:           misc.GetInstanceID(),
+		Namespace:            proc.namespace,
+		InstanceID:           proc.instanceID,
 		DestinationID:        destID,
 		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,

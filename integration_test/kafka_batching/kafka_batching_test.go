@@ -23,11 +23,11 @@ import (
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	kafkaClient "github.com/rudderlabs/rudder-go-kit/kafkaclient"
 	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
@@ -280,7 +280,7 @@ func TestKafkaBatching(t *testing.T) {
 		{Name: ptr("instanceName"), Value: &serverInstanceID},
 		{Name: ptr("telemetry_sdk_language"), Value: ptr("go")},
 		{Name: ptr("telemetry_sdk_name"), Value: ptr("opentelemetry")},
-		{Name: ptr("telemetry_sdk_version"), Value: ptr(otel.Version())},
+		{Name: ptr("telemetry_sdk_version"), Value: ptr(stats.OtelVersion())},
 	}
 
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{
