@@ -18,7 +18,7 @@ type KVStoreManager interface {
 	HMGet(key string, fields ...string) (result []interface{}, err error)
 	HGetAll(key string) (result map[string]string, err error)
 
-	SendDataAsJSON(jsonData json.RawMessage) (interface{}, error)
+	SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error)
 	ShouldSendDataAsJSON(config map[string]interface{}) bool
 }
 

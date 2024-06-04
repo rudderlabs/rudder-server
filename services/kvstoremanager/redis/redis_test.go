@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
 )
 
 type nonRootInsertExpectation struct {
@@ -102,11 +103,14 @@ func TestNonRootInsert(t *testing.T) {
 	for _, tc := range nonRootInsertTcs {
 		t.Run(tc.description, func(t *testing.T) {
 			jsonData := json.RawMessage(tc.jsonData)
+			path := gjson.GetBytes(jsonData, "message.path").String()
+			jsonVal := gjson.GetBytes(jsonData, "message.value")
 
 			redisMgr := &RedisManager{}
 			insertRet, err := redisMgr.HandleNonRootInsert(NonRootInsertParams{
 				valueInRedis: tc.userVal,
-				InputData:    jsonData,
+				Path: path,
+				JsonVal: jsonVal,
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expected.setArgsPath, insertRet.SetArgsPath)

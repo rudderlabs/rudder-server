@@ -136,7 +136,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 
 		switch {
 		case kvManager.ShouldSendDataAsJSON(config):
-			_, err = kvManager.SendDataAsJSON(jsonData)
+			_, err = kvManager.SendDataAsJSON(jsonData, config)
 		case kvstoremanager.IsHSETCompatibleEvent(jsonData):
 			// if the event supports HSET operation then use HSET
 			hash, key, value := kvstoremanager.ExtractHashKeyValueFromEvent(jsonData)
