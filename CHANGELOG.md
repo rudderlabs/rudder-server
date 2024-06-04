@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.2](https://github.com/rudderlabs/rudder-server/compare/v1.26.1...v1.26.2) (2024-05-31)
+
+
+### Bug Fixes
+
+* populate singular batch with writeKey in internal handler ([#4738](https://github.com/rudderlabs/rudder-server/issues/4738)) ([4ad8318](https://github.com/rudderlabs/rudder-server/commit/4ad831856f0e19f5c81efc1c0df928c3b88e0d8a))
+* webhook sources name needs to be lower cased ([#4740](https://github.com/rudderlabs/rudder-server/issues/4740)) ([f3b74a5](https://github.com/rudderlabs/rudder-server/commit/f3b74a542eb6dbb9754b0328408d5e317982930c))
+
 ## [1.26.1](https://github.com/rudderlabs/rudder-server/compare/v1.26.0...v1.26.1) (2024-05-30)
 
 
