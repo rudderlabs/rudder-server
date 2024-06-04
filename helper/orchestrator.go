@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/helper/buffer"
 	fh "github.com/rudderlabs/rudder-server/helper/file"
 	"github.com/rudderlabs/rudder-server/helper/noop"
 	ht "github.com/rudderlabs/rudder-server/helper/types"
@@ -81,24 +82,38 @@ func getDebugMeta(parentMod string) (*ht.DebuggableMetaInfo, error) {
 	return debugMetaInfo, nil
 }
 
-func New(parentModule string) Debugger {
+func getDebugger(parentModule string) Debugger {
+	debugType := config.GetReloadableStringVar("noop", fmt.Sprintf("%s.DebugHelper.type", parentModule)).Load()
 	var debugger Debugger
 	var err error
-	debugger, err = fh.New(parentModule, fh.WithDirectory("./router/debuglogs/"))
-	if err != nil {
+	switch {
+	case debugType == "file":
+		debugger, err = fh.New(parentModule, fh.WithDirectory("./router/debuglogs/"))
+		if err != nil {
+			debugger, _ = noop.New()
+		}
+	case debugType == "buffer_file":
+		debugger = buffer.New(parentModule, buffer.WithDirectory("./router/debuglogs/"))
+	default:
 		debugger, _ = noop.New()
 	}
-	var debugConfig *ht.DebugConfig
-	var debugMetaInfo *ht.DebuggableMetaInfo
-	debugMetaInfo, err = getDebugMeta(parentModule)
+	return debugger
+}
+
+func New(parentModule string) Debugger {
+	debugger := getDebugger(parentModule)
+
+	debugMetaInfo, err := getDebugMeta(parentModule)
 	if err != nil {
 		debugger, _ = noop.New()
 	}
 
+	var debugConfig *ht.DebugConfig
 	debugConfig, err = getDebugConfig(parentModule)
 	if err != nil {
 		debugger, _ = noop.New()
 	}
+
 	return &DebugHandle{
 		handler:     debugger,
 		debugConfig: debugConfig,
@@ -118,6 +133,7 @@ func (d *DebugHandle) isDebuggable(metainfo ht.MetaInfo) bool {
 		return false
 	}
 	now := time.Now()
+	// TODO: Think about clean-up activity when endTime > 0 && after-endTime
 	if (!d.debugConfig.StartTime.IsZero() && now.Before(d.debugConfig.StartTime)) || (!d.debugConfig.EndTime.IsZero() && now.After(d.debugConfig.EndTime)) {
 		d.logger.Debugn("before startTime or after endTime", fields...)
 		return false

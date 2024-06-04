@@ -29,3 +29,9 @@ type ResponseLogDetails struct {
 	Body       string `json:"body"`
 	Headers    string `json:"headers"`
 }
+
+type DebugFields struct {
+	Input    any      `json:"request"`
+	Output   any      `json:"response"`
+	Metainfo MetaInfo `json:"metadata"`
+}
