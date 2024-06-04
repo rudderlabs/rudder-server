@@ -398,9 +398,9 @@ func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[strin
 }
 
 func (*RedisManager) shouldMerge(config map[string]interface{}) bool {
-	if traitsStrategyI, ok := config["traitsStrategy"]; ok {
-		if traitsStrategy, ok := traitsStrategyI.(string); ok {
-			return traitsStrategy == "merge"
+	if mergeStrategyI, ok := config["shouldMerge"]; ok {
+		if mergeStrategy, ok := mergeStrategyI.(bool); ok {
+			return mergeStrategy
 		}
 	}
 	return false
