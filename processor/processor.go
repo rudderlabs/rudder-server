@@ -853,19 +853,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	}
 }
 
-func ConvertMapToList(credentialsMap map[string]backendconfig.Credential) []transformer.Credential {
-	var credentialsList []transformer.Credential
-	for id, credential := range credentialsMap {
-		credentialsList = append(credentialsList, transformer.Credential{
-			ID:       id,
-			Key:      credential.Key,
-			Value:    credential.Value,
-			IsSecret: credential.IsSecret,
-		})
-	}
-	return credentialsList
-}
-
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
