@@ -2,11 +2,14 @@ package sftp
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -19,9 +22,11 @@ func (*defaultManager) Transform(job *jobsdb.JobT) (string, error) {
 
 // Upload uploads the data to the destination and marks all jobs to be completed
 func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	textFilePath := asyncDestStruct.FileName
 	destinationID := destination.ID
+	destType := destination.DestinationDefinition.Name
 	destConfigJSON, err := json.Marshal(destination.Config)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
@@ -44,6 +49,20 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
+	fileInfo, err := os.Stat(jsonOrCSVFilePath)
+	if err != nil {
+		return generateErrorOutput(fmt.Sprintf("error getting file info: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
+	}
+	statLabels := stats.Tags{
+		"module":   "batch_router",
+		"destType": destType,
+	}
+
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
+	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
+
+	payloadSizeStat.Observe(float64(fileInfo.Size()))
 	d.logger.Debugn("File Upload Started", obskit.DestinationID(destinationID))
 
 	// Upload file
@@ -53,7 +72,8 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 
 	d.logger.Debugn("File Upload Finished", obskit.DestinationID(destinationID))
-
+	uploadTimeStat.Since(startTime)
+	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 	return common.AsyncUploadOutput{
 		DestinationID:   destinationID,
 		SucceededJobIDs: asyncDestStruct.ImportingJobIDs,
