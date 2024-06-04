@@ -153,6 +153,6 @@ type Profile struct {
 			IP      string `json:"ip,omitempty"`
 		} `json:"location,omitempty"`
 	} `json:"attributes,omitempty"`
-	ID   int    `json:"id,omitempty"`
+	ID   string `json:"id,omitempty"`
 	Type string `json:"type,omitempty"`
 }
