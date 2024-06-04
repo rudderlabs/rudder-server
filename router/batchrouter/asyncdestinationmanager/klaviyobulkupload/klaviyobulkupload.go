@@ -23,9 +23,9 @@ import (
 
 const (
 	KlaviyoAPIURL       = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
-	BATCHSIZE           = 25
+	BATCHSIZE           = 10000
 	MAXPAYLOADSIZE      = 5000000
-	IMPORT_ID_SEPERATOR = ":"
+	IMPORT_ID_SEPARATOR = ":"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -100,7 +100,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 	client := &http.Client{}
 	destConfig := kbu.destinationConfig
 	privateApiKey, _ := destConfig["privateApiKey"].(string)
-	importIds := strings.Split(pollInput.ImportId, IMPORT_ID_SEPERATOR)
+	importIds := strings.Split(pollInput.ImportId, IMPORT_ID_SEPARATOR)
 	importStatuses := make(map[string]string)
 	failedImports := make([]string, 0)
 	for _, importId := range importIds {
@@ -173,7 +173,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 		HasWarning:    false,
 		StatusCode:    200,
 		InProgress:    false,
-		FailedJobURLs: strings.Join(failedImports, IMPORT_ID_SEPERATOR),
+		FailedJobURLs: strings.Join(failedImports, IMPORT_ID_SEPARATOR),
 	}
 }
 
@@ -181,7 +181,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	client := &http.Client{}
 	destConfig := kbu.destinationConfig
 	privateApiKey, _ := destConfig["privateApiKey"].(string)
-	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobURLs, IMPORT_ID_SEPERATOR)
+	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobURLs, IMPORT_ID_SEPARATOR)
 
 	// make a map of jobId to error reason
 	jobIdToErrorMap := make(map[int64]string)
@@ -374,7 +374,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		importIds = append(importIds, uploadresp.Data.Id)
 	}
 	importParameters, err := json.Marshal(common.ImportParameters{
-		ImportId: strings.Join(importIds, IMPORT_ID_SEPERATOR),
+		ImportId: strings.Join(importIds, IMPORT_ID_SEPARATOR),
 	})
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)
