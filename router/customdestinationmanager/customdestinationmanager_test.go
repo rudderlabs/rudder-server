@@ -22,7 +22,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
+	kvredis "github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 )
@@ -310,7 +310,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 				"db":            0,
 				"clusterMode":   false,
 			}
-			kvMgr := kvstoremanager.NewRedisManager(config)
+			kvMgr := kvredis.NewRedisManager(config)
 			db := kvMgr.GetClient()
 
 			stCd, er := customManager.send(event, kvMgr, config)
@@ -357,7 +357,9 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		UserId: "myuser-id",
 	}
 
-	t.Run("When JSON module is loaded into Redis, path is mentioned and key is not present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+	// When JSON module is loaded into Redis, path is mentioned and key is not present in Redis, should set into redis and fetching the data should be successful
+	// path is present and key is not present in redis
+	t.Run("path is present and key is not present in redis, should set into redis", func(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 		redisRsrc, err := redis.Setup(context.Background(), pool, t,
@@ -375,7 +377,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := kvstoremanager.NewRedisManager(config)
+		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
 
 		stCd, _ := customManager.send(event, kvMgr, config)
@@ -385,7 +387,9 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 	})
 
-	t.Run("When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+	// When JSON module is loaded into Redis, path is mentioned and key is present in Redis, should set into redis and fetching the data should be successful
+	// path is present and key us present in redis, first parent path not present
+	t.Run("path is present and key us present in redis, first parent path not present, should set into redis", func(t *testing.T) {
 		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
@@ -404,7 +408,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := kvstoremanager.NewRedisManager(config)
+		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
 		ctx := context.Background()
 
@@ -423,7 +427,8 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.JSONEq(t, `[{"key":"someKey","fields":{"field1":"value1","field2":2}}]`, v)
 	})
 
-	t.Run("When JSON module is loaded into Redis, path is mentioned and with child property on existing JSON key, should set into redis and fetching the data should be successful", func(t *testing.T) {
+	// parent present, insert into parent path with child key empty
+	t.Run("parent present, insert into parent path with child key empty, should merge into the parent key properly", func(t *testing.T) {
 		transformedResponse := transformedResponseJSON{
 			Message: map[string]interface{}{
 				"key":  "user:myuser-id",
@@ -456,7 +461,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := kvstoremanager.NewRedisManager(config)
+		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
 		ctx := context.Background()
 
@@ -477,7 +482,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.JSONEq(t, `[{"someKey":"someVal","fields":{"field1":"value1","field2":2}}]`, v)
 	})
 
-	t.Run("When JSON module is loaded into Redis, path is mentioned and with child property on new JSON key is present in Redis, should set into redis and fetching the data should be successful", func(t *testing.T) {
+	t.Run("path contains child but parent not present, insertion should be successful", func(t *testing.T) {
 		transformedResponse := transformedResponseJSON{
 			Message: map[string]interface{}{
 				"key":  "user:myuser-id",
@@ -510,7 +515,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			"db":            0,
 			"clusterMode":   false,
 		}
-		kvMgr := kvstoremanager.NewRedisManager(config)
+		kvMgr := kvredis.NewRedisManager(config)
 		db := kvMgr.GetClient()
 		ctx := context.Background()
 
@@ -518,7 +523,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.Nil(t, setErr)
 
 		stCd, _ := customManager.send(event, kvMgr, config)
-		require.Equal(t, http.StatusInternalServerError, stCd)
+		require.Equal(t, http.StatusOK, stCd)
 
 		// validate if existing value is not manipulated
 		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
@@ -528,6 +533,276 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		// validate if value is not inserted
 		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err2)
-		require.JSONEq(t, "[]", v)
+		require.JSONEq(t, `[{"childKey_1":{"someKey": "someVal","fields":{"field1": "value1","field2":2}}}]`, v)
+	})
+
+	t.Run("path not present, key already available, merging of traits should be successful", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:myuser-id",
+				"path": "",
+				"value": map[string]interface{}{
+					"trait1": "val1",
+					"trait3": "val3",
+					"field1": "value1",
+					"field2": 2,
+				},
+			},
+			UserId: "myuser-id",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:myuser-id", "$", `{"trait1":"tv1","trait2":"tv2","trait3":"tv3"}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate if existing value are manipulated
+		trait1, err := db.JSONGet(ctx, "user:myuser-id", "$.trait1").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["val1"]`, trait1)
+		trait2, err := db.JSONGet(ctx, "user:myuser-id", "$.trait2").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["tv2"]`, trait2)
+		trait3, err := db.JSONGet(ctx, "user:myuser-id", "$.trait3").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["val3"]`, trait3)
+
+		// validate if other fields are inserted
+		v1, err2 := db.JSONGet(ctx, "user:myuser-id", "$.field1").Result()
+		require.NoError(t, err2)
+		require.JSONEq(t, `["value1"]`, v1)
+		v2, err2 := db.JSONGet(ctx, "user:myuser-id", "$.field2").Result()
+		require.NoError(t, err2)
+		require.JSONEq(t, "[2]", v2)
+	})
+
+	t.Run("userKey exists in redis but a parent(not first) in path is not available, should insert successfully", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:1",
+				"path": "profile.user.details.name",
+				"value": map[string]interface{}{
+					"first": "john",
+					"last":  "wick",
+					"nick":  "babayaga",
+				},
+			},
+			UserId: "1",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:1", "$", `{"profile":{"id": "uiuide1134"},"extra":{"place":"virginia"}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate if existing value are manipulated
+		trait1, err := db.JSONGet(ctx, "user:1", "$.profile.id").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["uiuide1134"]`, trait1)
+		trait2, err := db.JSONGet(ctx, "user:1", "$.extra").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"place":"virginia"}]`, trait2)
+		// validate if new fields are present
+		trait3, err := db.JSONGet(ctx, "user:1", "$.profile.user.details.name").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"first":"john","last":"wick","nick":"babayaga"}]`, trait3)
+	})
+
+	t.Run("path & key not present, should insert new key successfully", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key": "user:1",
+				"value": map[string]interface{}{
+					"first": "john",
+					"last":  "wick",
+					"nick":  "babayaga",
+				},
+			},
+			UserId: "1",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:2", "$", `{"profile":{"id": "uiuide1134"}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate if existing value are manipulated
+		trait1, err := db.JSONGet(ctx, "user:2", "$.profile.id").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["uiuide1134"]`, trait1)
+
+		// validate if new fields are present
+		trait3, err := db.JSONGet(ctx, "user:1", "$").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"first":"john","last":"wick","nick":"babayaga"}]`, trait3)
+	})
+
+	t.Run("path & key not present, should insert new key successfully", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key": "user:1",
+				"value": map[string]interface{}{
+					"first": "john",
+					"last":  "wick",
+					"nick":  "babayaga",
+				},
+			},
+			UserId: "1",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:2", "$", `{"profile":{"id": "uiuide1134"}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate if existing value are manipulated
+		trait1, err := db.JSONGet(ctx, "user:2", "$.profile.id").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["uiuide1134"]`, trait1)
+
+		// validate if new fields are present
+		trait3, err := db.JSONGet(ctx, "user:1", "$").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"first":"john","last":"wick","nick":"babayaga"}]`, trait3)
+	})
+
+	t.Run("path's childKey contains value  & key is present, should insert same key after data-merge successfully", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:1",
+				"path": "profile.user.name",
+				"value": map[string]interface{}{
+					"first": "john",
+					"last":  "wick",
+					"nick":  "babayaga",
+				},
+			},
+			UserId: "1",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:1", "$", `{"profile":{"id": "uiuide1134","user":{"name":{"first":"Nara"}}}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		// validate if existing value are manipulated
+		trait1, err := db.JSONGet(ctx, "user:1", "$.profile.id").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `["uiuide1134"]`, trait1)
+
+		// validate if new fields are present
+		trait3, err := db.JSONGet(ctx, "user:1", "$.profile.user.name").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"first":"john","last":"wick","nick":"babayaga"}]`, trait3)
 	})
 }

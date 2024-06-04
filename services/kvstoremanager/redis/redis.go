@@ -1,4 +1,4 @@
-package kvstoremanager
+package redis
 
 import (
 	"context"
@@ -12,13 +12,17 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var abortableErrors = []string{}
 
 type RedisManager struct {
+	logger        logger.Logger
 	clusterMode   bool
 	config        types.ConfigT
 	client        *redis.Client
@@ -32,6 +36,7 @@ func init() {
 func NewRedisManager(config types.ConfigT) *RedisManager {
 	redisMgr := &RedisManager{
 		config: config,
+		logger: logger.NewLogger().Child("kvstoremgr.redis"),
 	}
 	redisMgr.CreateClient()
 	return redisMgr
@@ -169,48 +174,143 @@ func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *RedisManager) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, error) {
-	key := gjson.GetBytes(jsonData, "message.key").String()
-	path := gjson.GetBytes(jsonData, "message.path").String()
-	jsonVal := gjson.GetBytes(jsonData, "message.value")
+func (m *RedisManager) ExtractJSONSetArgs(transformedData json.RawMessage) ([]string, error) {
+	key := gjson.GetBytes(transformedData, "message.key").String()
+	path := gjson.GetBytes(transformedData, "message.path").String()
+	jsonVal := gjson.GetBytes(transformedData, "message.value")
 
 	actualPath := "$" // root insert
-	if path != "" {
+	isRootInsert := path == ""
+	if !isRootInsert {
 		actualPath = fmt.Sprintf("$.%s", path)
 	}
 	args := []string{key, actualPath, jsonVal.String()}
 
-	// Insert a value into a path for a key
-	// 1. Validate if key is present
-	// 2. If key is not present, then insert value into the path
-	//    Execute the following command:
-	//    > JSON.SET key $ {[path]: value}
-	// Limitation: It can only insert values at a single level
-	// Example of limitation:
-	//    - JSON.SET key $.k1.k2.k3 '{"A":1}' cannot be done and would be converted to
-	//      JSON.SET key $ '{"k1.k2.k3": {"A": 1}}'
-	// Example of correct usage:
-	//    - JSON.SET key $.k1 '{"A":1}' can be done and would be converted to
-	//      JSON.SET key $ '{"k1": {"A": 1}}'
-	if actualPath != "$" {
-		v, err := m.GetClient().JSONGet(context.Background(), key).Result()
+	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	valueToBeInserted := "{}" // value to which the transformed value should be merged which will be inserted into Redis
+	if isRootInsert && redisValueForKey != "" {
+		valueToBeInserted = redisValueForKey
+	}
+	var mergeFrom interface{} = jsonVal.Value() // transformed value
+	if !isRootInsert {
+		ret, err := m.HandleNonRootInsert(NonRootInsertParams{
+			valueInRedis: redisValueForKey,
+			InputData:    transformedData,
+		})
 		if err != nil {
 			return nil, err
 		}
-		if v == "" {
-			// key is new one but we need to insert a value other than root
-			// formulate {[path]: value}
-			mapStr, err := json.Marshal(map[string]interface{}{
-				path: jsonVal.Value(),
-			})
-			if err != nil {
-				return nil, err
+		mergeFrom = ret.MergeFrom
+		valueToBeInserted = ret.MergeTo
+		args[1] = ret.SetArgsPath
+	}
+
+	switch jsonValue := mergeFrom.(type) {
+	case map[string]interface{}:
+		//
+		var setErr error
+		for k, mapV := range jsonValue {
+			valueToBeInserted, setErr = sjson.Set(valueToBeInserted, k, mapV)
+			if setErr != nil {
+				return nil, fmt.Errorf("problem while setting key(%s): %w", k, setErr)
 			}
-			// data is not present in key
-			args = []string{key, "$", string(mapStr)} // arguments to insert data
 		}
 	}
+	args[2] = valueToBeInserted
 	return args, nil
+}
+
+type NonRootInsertParams struct {
+	valueInRedis string
+	InputData    []byte
+}
+type NonRootInsertReturn struct {
+	SetArgsPath string
+	MergeTo     string
+	MergeFrom   interface{}
+}
+
+func (m *RedisManager) HandleNonRootInsert(p NonRootInsertParams) (*NonRootInsertReturn, error) {
+	path := gjson.GetBytes(p.InputData, "message.path").String()
+	insertValue := gjson.GetBytes(p.InputData, "message.value")
+
+	// Case-1: path is not sent, userValue is empty or unavailable in Redis -- Done
+
+	// Case-2.1: path is sent but one of parents is empty, userValue is empty or unavailable in Redis -- not possible
+	// Case-2.2: path is sent but child is empty, userValue is empty or unavailable in Redis -- not possible
+	// Case-2.3: path is sent but child is non-empty, userValue is empty or unavailable in Redis -- not possible
+	// Case-2.4: path is sent but first parent is empty, userValue is empty or unavailable in Redis -- Done
+	// Case 4: path is sent, userValue is empty -- Done
+
+	// Case-3.1: path is sent but one of parents is empty, userValue is non-empty or available in Redis -- Done
+	// Case-3.2: path is sent but child is empty, userValue is non-empty or available in Redis -- Done
+	// Case-3.3: path is sent but child is non-empty, userValue is non-empty or available in Redis -- Done
+	// Case-3.4: path is sent but first parent is empty, userValue is empty or unavailable in Redis -- Done
+
+	paths := strings.Split(path, ".")
+	insertMap := make(map[string]interface{})
+
+	var lastNonEmptyVal interface{}
+	if p.valueInRedis == "" {
+		p.valueInRedis = "{}"
+	}
+
+	err := json.Unmarshal([]byte(p.valueInRedis), &lastNonEmptyVal)
+	if err != nil {
+		return nil, err
+	}
+	var nestedSearchKey string
+	var lastNonEmptyKeyIdx int
+	for i, kp := range paths {
+		nestedSearchKey = strings.Join([]string{nestedSearchKey, kp}, ".")
+		if i == 0 {
+			nestedSearchKey = kp
+		}
+		res := gjson.Get(p.valueInRedis, nestedSearchKey)
+		if !res.Exists() {
+			break
+		}
+		lastNonEmptyKeyIdx += 1
+		lastNonEmptyVal = res.Value()
+	}
+	nonEmptyPaths := paths[:lastNonEmptyKeyIdx]
+	setArgsPath := "$"
+	if len(nonEmptyPaths) > 0 {
+		setArgsPath = strings.Join([]string{setArgsPath, strings.Join(nonEmptyPaths, ".")}, ".")
+	}
+
+	lastNonEmptyValBytes, marshalErr := json.Marshal(lastNonEmptyVal)
+	if marshalErr != nil {
+		m.logger.Error("marshal of non empty value: %+v", marshalErr.Error())
+		return nil, marshalErr
+	}
+
+	var ok bool
+	if path == "" || len(paths[lastNonEmptyKeyIdx:]) == 0 {
+		// when path is not sent at all
+		// when there is value in last child of "path"
+		insertMap, ok = insertValue.Value().(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("cannot be type-casted to map:%s", insertValue.String())
+		}
+		return &NonRootInsertReturn{
+			SetArgsPath: setArgsPath,
+			MergeTo:     string(lastNonEmptyValBytes),
+			MergeFrom:   insertMap,
+		}, nil
+	}
+
+	misc.FormNestedMap(insertMap, paths[lastNonEmptyKeyIdx:], insertValue.Value())
+
+	return &NonRootInsertReturn{
+		SetArgsPath: setArgsPath,
+		MergeTo:     string(lastNonEmptyValBytes),
+		MergeFrom:   insertMap,
+	}, nil
 }
 
 func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
