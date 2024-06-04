@@ -406,6 +406,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 		toSet["rudderId"] = rudderId
+		if _, ok := toSet["receivedAt"]; !ok {
+			toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
+		}
 		toSet["requestIP"] = ipAddr
 		fillMessageID(toSet)
 		if eventTypeFromReq == "audiencelist" {

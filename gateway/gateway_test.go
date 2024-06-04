@@ -1536,6 +1536,35 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
 
+		It("adds requestIP in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z"}]}`),
+			}
+			req.ipAddr = "dummyIP"
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+			Expect(req.requestPayload).To(ContainSubstring(`"receivedAt":"2024-01-01T01:01:01.000000001Z"`))
+			Expect(req.requestPayload).To(ContainSubstring(`"requestIP":""`))
+		})
+
+		It("adds receivedAt in the request payload if it's not already present", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			req.ipAddr = "dummyIP"
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+			Expect(req.requestPayload).To(ContainSubstring(`"receivedAt"`))
+		})
+
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
