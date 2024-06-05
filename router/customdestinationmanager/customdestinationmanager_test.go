@@ -1063,4 +1063,51 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `[{"name":{"first":"john","last":"wick","nick":"babayaga"}}]`, trait3)
 	})
+
+	t.Run("path's 2nd parent key contains map value & key is present, should insert to redis with value(map)", func(t *testing.T) {
+		transformedResponse := transformedResponseJSON{
+			Message: map[string]interface{}{
+				"key":  "user:1",
+				"path": "profile.details.name.types",
+				"value": map[string]interface{}{
+					"first": "john",
+					"last":  "wick",
+					"nick":  "babayaga",
+				},
+			},
+			UserId: "1",
+		}
+		// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+		redisRsrc, err := redis.Setup(context.Background(), pool, t,
+			redis.WithRepository("redis/redis-stack-server"),
+			redis.WithTag("latest"),
+			redis.WithCmdArg("--protected-mode", "no"),
+			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
+		)
+		require.NoError(t, err)
+		event, err := json.Marshal(transformedResponse)
+		require.NoError(t, err)
+		config := map[string]interface{}{
+			"useJSONModule": true,
+			"address":       redisRsrc.Addr,
+			"db":            0,
+			"clusterMode":   false,
+			"shouldMerge":   true,
+		}
+		kvMgr := kvredis.NewRedisManager(config)
+		db := kvMgr.GetClient()
+		ctx := context.Background()
+
+		_, setErr := db.JSONSet(ctx, "user:1", "$", `{"profile":{"details":{"id":"uiuide1134"}}}`).Result()
+		require.Nil(t, setErr)
+
+		stCd, _ := customManager.send(event, kvMgr, config)
+		require.Equal(t, http.StatusOK, stCd)
+
+		trait3, err := db.JSONGet(ctx, "user:1", "$.profile.details").Result()
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"id":"uiuide1134","name":{"types":{"first":"john","last":"wick","nick":"babayaga"}}}]`, trait3)
+	})
 }
