@@ -212,7 +212,10 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.stats.totalRowsSynced = uj.counterStat("total_rows_synced")
 	uj.stats.numStagedEvents = uj.counterStat("num_staged_events")
 	uj.stats.uploadSuccess = uj.counterStat("upload_success")
-	uj.stats.stagingLoadFileEventsCountMismatch = uj.guageStat("warehouse_staging_load_file_events_count_mismatched")
+	uj.stats.stagingLoadFileEventsCountMismatch = uj.gaugeStat(
+		"warehouse_staging_load_file_events_count_mismatched",
+		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
+	)
 
 	return uj
 }
