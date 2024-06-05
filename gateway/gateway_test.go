@@ -1538,7 +1538,7 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
 
-		It("adds requestIP in the request payload", func() {
+		It("adds requestIP in the request payload and don't override if receivedAt already exists in payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1570,7 +1570,6 @@ var _ = Describe("Gateway", func() {
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
 			}
-			req.ipAddr = "dummyIP"
 			jobForm, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
 
