@@ -822,7 +822,7 @@ var _ = Describe("Gateway", func() {
 							"sdkVersion":  "",
 						},
 					)
-					return stat != nil && stat.LastValue() == float64(1)
+					return stat != nil && stat.LastValue() == float64(2)
 				},
 				1*time.Second,
 			).Should(BeTrue())
@@ -1161,12 +1161,14 @@ var _ = Describe("Gateway", func() {
 		It("should reject requests without valid rudder event in request body", func() {
 			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
 			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }).Should(BeTrue())
+			batchCount := 0
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
 					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
 					reqType = "batch"
+					batchCount++
 				}
 				expectHandlerResponse(
 					handler,
@@ -1193,19 +1195,27 @@ var _ = Describe("Gateway", func() {
 								"sdkVersion":  "",
 							},
 						)
-						return stat != nil && stat.LastValue() == float64(1)
+						// multiple `handlerType` are mapped to batch `reqType`
+						count := 1
+						if reqType == "batch" {
+							count = batchCount
+						}
+
+						return stat != nil && stat.LastValue() == float64(count)
 					},
 				).Should(BeTrue())
 			}
 		})
 
 		It("should reject requests with both userId and anonymousId not present", func() {
+			batchCount := 0
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
+					batchCount++
 				}
 				if handlerType != "extract" {
 					expectHandlerResponse(
@@ -1233,7 +1243,12 @@ var _ = Describe("Gateway", func() {
 									"sdkVersion":  "",
 								},
 							)
-							return stat != nil && stat.LastValue() == float64(1)
+							// multiple `handlerType` are mapped to batch `reqType`
+							count := 1
+							if reqType == "batch" {
+								count = batchCount
+							}
+							return stat != nil && stat.LastValue() == float64(count)
 						},
 					).Should(BeTrue())
 				}
