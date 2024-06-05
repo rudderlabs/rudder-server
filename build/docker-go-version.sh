@@ -8,7 +8,9 @@ cleanup() {
   # script cleanup here
 }
 
-DOCKERFILE_PATH="Dockerfile" 
-
 v=`go version | { read _ _ v _; echo ${v#go}; }`
-sed -i '' "s/ARG GO_VERSION=[0-9\.].*/ARG GO_VERSION=$v/" $DOCKERFILE_PATH
+
+for DOCKERFILE_PATH in "$@"
+do
+    sed -i '' "s/ARG GO_VERSION=[0-9\.].*/ARG GO_VERSION=$v/" $DOCKERFILE_PATH
+done
