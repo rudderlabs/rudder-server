@@ -1753,6 +1753,17 @@ var _ = Describe("Gateway", func() {
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
 
+		// a second after receivedAt
+		now, err := time.Parse(time.RFC3339Nano, "2024-01-01T01:01:02.000000001Z")
+		Expect(err).To(BeNil())
+
+		statStore, err := memstats.New(
+			memstats.WithNow(func() time.Time {
+				return now
+			}),
+		)
+		Expect(err).To(BeNil())
+
 		BeforeEach(func() {
 			c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
 			c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
@@ -1770,7 +1781,6 @@ var _ = Describe("Gateway", func() {
 			conf.Set("Gateway.enableSuppressUserFeature", true)
 			conf.Set("Gateway.enableEventSchemasFeature", false)
 
-			var err error
 			serverPort, err := kithelper.GetFreePort()
 			Expect(err).To(BeNil())
 			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
@@ -1778,7 +1788,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -1815,6 +1825,16 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+
+			Expect(statStore.GetByName("gateway.pickup_delivery_lag_seconds")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.pickup_delivery_lag_seconds",
+					Tags: map[string]string{"sourceId": SourceIDEnabled, "workspaceId": WorkspaceID},
+					Durations: []time.Duration{
+						time.Second,
+					},
+				},
+			}))
 		})
 
 		It("Successful request, without debugger", func() {

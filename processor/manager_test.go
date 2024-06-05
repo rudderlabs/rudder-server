@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -270,7 +271,7 @@ func TestProcessorManager(t *testing.T) {
 			require.NoError(t, err)
 			return len(res.Jobs)
 		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
-		
+
 		require.Equal(t,
 			statsStore.GetByName("processor.pickup_delivery_lag_seconds"),
 			[]memstats.Metric{{
@@ -279,9 +280,9 @@ func TestProcessorManager(t *testing.T) {
 					"sourceId":    "sourceID",
 					"workspaceId": "workspaceID",
 				},
-				Durations: []time.Duration{
-					time.Second,
-				},
+				Durations: lo.Times(jobCountPerDS, func(i int) time.Duration {
+					return time.Second
+				}),
 			}},
 			"correctly capture the lag between job's receivedAt and now",
 		)
