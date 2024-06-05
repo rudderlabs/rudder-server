@@ -380,7 +380,6 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums 
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
 	brt.asyncDestinationStruct[destinationID].SourceJobRunID = newJobRunID
-
 }
 
 func (brt *Handle) asyncStructCleanUp(destinationID string) {
