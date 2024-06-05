@@ -1538,13 +1538,36 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
 
-		It("adds requestIP in the request payload and don't override if receivedAt already exists in payload", func() {
+		It("doesn't override if receivedAt or requestIP already exists in payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
-				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z"}]}`),
+				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z", "requestIP": "dummyIPFromPayload"}]}`),
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+		})
+
+		It("adds receivedAt and requestIP in the request payload if it's not already present", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
 			}
 			req.ipAddr = "dummyIP"
 			jobForm, err := gateway.getJobDataFromRequest(req)
@@ -1558,29 +1581,8 @@ var _ = Describe("Gateway", func() {
 			}
 			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
-			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
-			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
-		})
-
-		It("adds receivedAt in the request payload if it's not already present", func() {
-			req := &webRequestT{
-				reqType:        "batch",
-				authContext:    rCtxEnabled,
-				done:           make(chan<- string),
-				userIDHeader:   userIDHeader,
-				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
-			}
-			jobForm, err := gateway.getJobDataFromRequest(req)
-			Expect(err).To(BeNil())
-
-			var job struct {
-				Batch []struct {
-					ReceivedAt string `json:"receivedAt"`
-				} `json:"batch"`
-			}
-			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
-			Expect(err).To(BeNil())
 			Expect(job.Batch[0].ReceivedAt).To(Not(BeEmpty()))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
 		})
 
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
