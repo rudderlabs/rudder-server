@@ -39,11 +39,7 @@ func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) 
 	return job.statsFactory.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
-func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	extraTags = append(extraTags, warehouseutils.Tag{
-		Name:  "sourceCategory",
-		Value: job.warehouse.Source.SourceDefinition.Category,
-	})
+func (job *UploadJob) gaugeStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	return job.statsFactory.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
 }
 

@@ -602,6 +602,8 @@ var _ = Describe("Gateway", func() {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "receivedAt")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "requestIP")
 
 			return strippedPayload
 		}
@@ -822,7 +824,7 @@ var _ = Describe("Gateway", func() {
 							"sdkVersion":  "",
 						},
 					)
-					return stat != nil && stat.LastValue() == float64(1)
+					return stat != nil && stat.LastValue() == float64(2)
 				},
 				1*time.Second,
 			).Should(BeTrue())
@@ -1161,12 +1163,14 @@ var _ = Describe("Gateway", func() {
 		It("should reject requests without valid rudder event in request body", func() {
 			conf.Set("Gateway.allowReqsWithoutUserIDAndAnonymousID", true)
 			Eventually(func() bool { return gateway.conf.allowReqsWithoutUserIDAndAnonymousID.Load() }).Should(BeTrue())
+			batchCount := 0
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
 					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
 					reqType = "batch"
+					batchCount++
 				}
 				expectHandlerResponse(
 					handler,
@@ -1193,19 +1197,27 @@ var _ = Describe("Gateway", func() {
 								"sdkVersion":  "",
 							},
 						)
-						return stat != nil && stat.LastValue() == float64(1)
+						// multiple `handlerType` are mapped to batch `reqType`
+						count := 1
+						if reqType == "batch" {
+							count = batchCount
+						}
+
+						return stat != nil && stat.LastValue() == float64(count)
 					},
 				).Should(BeTrue())
 			}
 		})
 
 		It("should reject requests with both userId and anonymousId not present", func() {
+			batchCount := 0
 			for handlerType, handler := range allHandlers(gateway) {
 				reqType := handlerType
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
+					batchCount++
 				}
 				if handlerType != "extract" {
 					expectHandlerResponse(
@@ -1233,7 +1245,12 @@ var _ = Describe("Gateway", func() {
 									"sdkVersion":  "",
 								},
 							)
-							return stat != nil && stat.LastValue() == float64(1)
+							// multiple `handlerType` are mapped to batch `reqType`
+							count := 1
+							if reqType == "batch" {
+								count = batchCount
+							}
+							return stat != nil && stat.LastValue() == float64(count)
 						},
 					).Should(BeTrue())
 				}
@@ -1534,6 +1551,53 @@ var _ = Describe("Gateway", func() {
 			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
+		})
+
+		It("doesn't override if receivedAt or requestIP already exists in payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z", "requestIP": "dummyIPFromPayload"}]}`),
+			}
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+		})
+
+		It("adds receivedAt and requestIP in the request payload if it's not already present", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			req.ipAddr = "dummyIP"
+			jobForm, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].ReceivedAt).To(Not(BeEmpty()))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
 		})
 
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
