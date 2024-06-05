@@ -10,7 +10,9 @@ cleanup() {
 
 v=`go version | { read _ _ v _; echo ${v#go}; }`
 
+SED="github.com/rwtodd/Go.Sed/cmd/sed-go@bb8ed5d"
+
 for DOCKERFILE_PATH in "$@"
 do
-    sed -i '' "s/ARG GO_VERSION=[0-9\.].*/ARG GO_VERSION=$v/" $DOCKERFILE_PATH
+    go run $SED -i  -e "s/ARG GO_VERSION=.*/ARG GO_VERSION=$v/" "$DOCKERFILE_PATH" 
 done
