@@ -174,15 +174,19 @@ func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-type NonRootInsertReturn struct {
-	SetArgsPath string
-	MergeTo     string
-	MergeFrom   interface{}
+type jsonSetCmdArgs struct {
+	key   string
+	path  string
+	value string
 }
 
-func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) ([]string, error) {
+func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSetCmdArgs, error) {
 	isRootInsert := inputArgs.path == ""
-	args := []string{inputArgs.key, "$", inputArgs.jsonVal.String()}
+	setCmdArgs := &jsonSetCmdArgs{
+		key:   inputArgs.key,
+		path:  "$",
+		value: inputArgs.jsonVal.String(),
+	}
 	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), inputArgs.key).Result()
 	if err != nil {
 		return nil, err
@@ -195,22 +199,22 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) ([]string
 
 	var mergeFrom string = inputArgs.jsonVal.String() // transformed value
 	if !isRootInsert {
-		mergedTo, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
+		nestedJsonVal, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
 		if setErr != nil {
 			return nil, fmt.Errorf("problem while setting value into path: %w", setErr)
 		}
-		mergeFrom = mergedTo
+		mergeFrom = nestedJsonVal
 	}
 	// merge jsons
 	mergedValueToBeInserted, mergedErr := jsonpatch.MergeMergePatches([]byte(valueToBeInserted), []byte(mergeFrom))
 	if mergedErr != nil {
 		return nil, fmt.Errorf("merging process failed: %w", mergedErr)
 	}
-	args[2] = string(mergedValueToBeInserted)
-	return args, nil
+	setCmdArgs.value = string(mergedValueToBeInserted)
+	return setCmdArgs, nil
 }
 
-func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) ([]string, error) {
+func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) (*jsonSetCmdArgs, error) {
 	key := inputArgs.key
 	path := inputArgs.path
 	jsonVal := inputArgs.jsonVal
@@ -219,7 +223,12 @@ func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) ([]stri
 	if path != "" {
 		actualPath = fmt.Sprintf("$.%s", path)
 	}
-	args := []string{key, actualPath, jsonVal.String()}
+
+	setCmdArgs := &jsonSetCmdArgs{
+		key:   key,
+		path:  actualPath,
+		value: jsonVal.String(),
+	}
 
 	// Insert a value into a path for a key
 	// 1. Validate if key is present
@@ -248,10 +257,11 @@ func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) ([]stri
 				return nil, err
 			}
 			// data is not present in key
-			args = []string{key, "$", string(mapStr)} // arguments to insert data
+			setCmdArgs.path = "$"
+			setCmdArgs.value = string(mapStr)
 		}
 	}
-	return args, nil
+	return setCmdArgs, nil
 }
 
 type setArguments struct {
@@ -260,7 +270,7 @@ type setArguments struct {
 	jsonVal gjson.Result
 }
 
-func (m *RedisManager) ExtractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) ([]string, error) {
+func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) (*jsonSetCmdArgs, error) {
 	key := gjson.GetBytes(transformedData, "message.key").String()
 	path := gjson.GetBytes(transformedData, "message.path").String()
 	jsonVal := gjson.GetBytes(transformedData, "message.value")
@@ -280,15 +290,15 @@ func (m *RedisManager) ExtractJSONSetArgs(transformedData json.RawMessage, confi
 }
 
 func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error) {
-	nmSetArgs, err := m.ExtractJSONSetArgs(jsonData, config)
+	nmSetArgs, err := m.extractJSONSetArgs(jsonData, config)
 	if err != nil {
 		return nil, err
 	}
 	redisClient := m.GetClient()
 	ctx := context.Background()
-	val, err := redisClient.JSONSet(ctx, nmSetArgs[0], nmSetArgs[1], nmSetArgs[2]).Result()
+	val, err := redisClient.JSONSet(ctx, nmSetArgs.key, nmSetArgs.path, nmSetArgs.value).Result()
 	if err != nil {
-		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs[0], nmSetArgs[1], nmSetArgs[2], err)
+		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs.key, nmSetArgs.path, nmSetArgs.value, err)
 	}
 
 	return val, err
