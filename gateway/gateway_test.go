@@ -602,6 +602,8 @@ var _ = Describe("Gateway", func() {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "receivedAt")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "requestIP")
 
 			return strippedPayload
 		}
@@ -1545,10 +1547,19 @@ var _ = Describe("Gateway", func() {
 				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z"}]}`),
 			}
 			req.ipAddr = "dummyIP"
-			_, err := gateway.getJobDataFromRequest(req)
+			jobForm, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
-			Expect(req.requestPayload).To(ContainSubstring(`"receivedAt":"2024-01-01T01:01:01.000000001Z"`))
-			Expect(req.requestPayload).To(ContainSubstring(`"requestIP":""`))
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
 		})
 
 		It("adds receivedAt in the request payload if it's not already present", func() {
@@ -1560,9 +1571,17 @@ var _ = Describe("Gateway", func() {
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
 			}
 			req.ipAddr = "dummyIP"
-			_, err := gateway.getJobDataFromRequest(req)
+			jobForm, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
-			Expect(req.requestPayload).To(ContainSubstring(`"receivedAt"`))
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch[0].ReceivedAt).To(Not(BeEmpty()))
 		})
 
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
