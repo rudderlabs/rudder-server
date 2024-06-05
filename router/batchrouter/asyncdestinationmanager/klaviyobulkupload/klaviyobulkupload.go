@@ -116,7 +116,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				req, err := http.NewRequest("GET", pollUrl, nil)
 				if err != nil {
 					return common.PollStatusResponse{
-						Complete:   false,
+						Complete:   true,
 						InProgress: false,
 						HasFailed:  true,
 						Error:      err.Error(),
@@ -128,7 +128,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				resp, err := client.Do(req)
 				if err != nil {
 					return common.PollStatusResponse{
-						Complete:   false,
+						Complete:   true,
 						InProgress: false,
 						StatusCode: 0,
 						HasFailed:  true,
@@ -145,7 +145,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				pollRespErr := json.Unmarshal(pollBodyBytes, &pollresp)
 				if pollRespErr != nil {
 					return common.PollStatusResponse{
-						Complete:   false,
+						Complete:   true,
 						InProgress: false,
 						StatusCode: 0,
 						HasFailed:  true,
@@ -166,7 +166,16 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 			break
 		}
 	}
-
+	if len(failedImports) == 0 {
+		return common.PollStatusResponse{
+			Complete:      true,
+			HasFailed:     false,
+			HasWarning:    false,
+			StatusCode:    200,
+			InProgress:    false,
+			FailedJobURLs: "",
+		}
+	}
 	return common.PollStatusResponse{
 		Complete:      true,
 		HasFailed:     true,
@@ -295,6 +304,8 @@ func (kbu *KlaviyoBulkUploader) ExtractProfile(input Input) Profile {
 func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
+	var failedJobs []int64
+	var successJobs []int64
 	filePath := asyncDestStruct.FileName
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
 	destType := destination.DestinationDefinition.Name
@@ -360,7 +371,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return kbu.generateKlaviyoErrorOutput("Error while sending request.", err, importingJobIDs, destinationID)
+			failedJobs = append(failedJobs, importingJobIDs[idx])
+			kbu.logger.Error("Error while sending request.", err)
 		}
 
 		var bodyBytes []byte
@@ -369,12 +381,14 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		uploadTimeStat.Since(startTime)
 
 		if resp.StatusCode != 202 {
-			return kbu.generateKlaviyoErrorOutput("Got non 202 as statusCode.", fmt.Errorf(string(bodyBytes)), importingJobIDs, destinationID)
+			failedJobs = append(failedJobs, importingJobIDs[idx])
+			kbu.logger.Error("Got non 202 as statusCode.", fmt.Errorf(string(bodyBytes)))
 		}
 		var uploadresp UploadResp
 		uploadRespErr := json.Unmarshal((bodyBytes), &uploadresp)
 		if uploadRespErr != nil {
-			return kbu.generateKlaviyoErrorOutput("Error while unmarshaling response.", uploadRespErr, importingJobIDs, destinationID)
+			failedJobs = append(failedJobs, importingJobIDs[idx])
+			kbu.logger.Error("Error while unmarshaling response.", uploadRespErr)
 		}
 		importIds = append(importIds, uploadresp.Data.Id)
 		fmt.Printf("Time after call %d : %v\n", idx, time.Now())
@@ -385,11 +399,15 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)
 	}
+	successJobs, _ = lo.Difference(importingJobIDs, failedJobs)
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 
 	return common.AsyncUploadOutput{
 		ImportingParameters: importParameters,
-		ImportingJobIDs:     importingJobIDs,
+		SucceededJobIDs:     successJobs,
+		FailedJobIDs:        failedJobs,
+		FailedCount:         len(failedJobs),
+		ImportingJobIDs:     successJobs,
 		SuccessResponse:     DelimitedUploadRespErr,
 		DestinationID:       destination.ID,
 	}
