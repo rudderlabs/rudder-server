@@ -520,7 +520,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.Nil(t, setErr)
 
 		stCd, _ := customManager.send(event, kvMgr, config)
-		require.Equal(t, http.StatusOK, stCd)
+		require.Equal(t, http.StatusInternalServerError, stCd)
 
 		// validate if existing value is not manipulated
 		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
@@ -530,7 +530,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		// validate if value is not inserted
 		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err2)
-		require.JSONEq(t, `[{"childKey_1":{"someKey": "someVal","fields":{"field1":"value1","field2":2}}}]`, v)
+		require.JSONEq(t, `[]`, v)
 	})
 }
 
