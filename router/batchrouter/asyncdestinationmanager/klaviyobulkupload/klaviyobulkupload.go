@@ -326,11 +326,16 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	}
 
 	chunks, _ := chunkBySizeAndElements(combinedProfiles, MAXPAYLOADSIZE, BATCHSIZE)
+	fmt.Println("=============================================")
+	fmt.Println("Number of profiles: ", len(combinedProfiles))
+	fmt.Println("Number of chunks: ", len(chunks))
+	fmt.Println("=============================================")
 	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	var importIds []string // DelimitedImportIds is : seperated importIds
 	var DelimitedUploadRespErr string
-	for _, chunk := range chunks {
+	fmt.Println("Current Time : ", time.Now())
+	for idx, chunk := range chunks {
 		combinedPayload := createFinalPayload(chunk, listId)
 
 		// Convert combined payload to JSON
@@ -372,6 +377,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			return kbu.generateKlaviyoErrorOutput("Error while unmarshaling response.", uploadRespErr, importingJobIDs, destinationID)
 		}
 		importIds = append(importIds, uploadresp.Data.Id)
+		fmt.Printf("Time after call %d : %v\n", idx, time.Now())
 	}
 	importParameters, err := json.Marshal(common.ImportParameters{
 		ImportId: strings.Join(importIds, IMPORT_ID_SEPARATOR),
