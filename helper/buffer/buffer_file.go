@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	ht "github.com/rudderlabs/rudder-server/helper/types"
@@ -16,55 +17,86 @@ import (
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type BufferHandle struct {
-	logger       logger.Logger
-	dir          string
-	counter      int
-	file         *os.File
-	writer       *bufio.Writer
-	maxBatchSize int
+	logger                  logger.Logger
+	dir                     string
+	counter                 int
+	file                    *os.File
+	writer                  *bufio.Writer
+	bufferCapacity          int
+	maxBytesForFileRotation int
+	bytesWritten            int
+	IsInitialised           bool
+	mu                      *sync.RWMutex
 }
 
 func WithDirectory(dir string) func(*BufferHandle) {
 	return func(bh *BufferHandle) {
+		hasSuffix := strings.HasSuffix(dir, "/")
+		if !hasSuffix {
+			dir = dir + "/"
+		}
 		bh.dir = dir
 	}
 }
 
+func WithOptsFromConfig(prefix string, conf *config.Config) func(*BufferHandle) {
+	maxSizeinBKey := fmt.Sprintf("%s.DebugHelper.bufferCapacityInB", prefix)
+	maxBytesFileRotKey := fmt.Sprintf("%s.DebugHelper.maxBytesForFileRotation", prefix)
+
+	maxSizeInB := conf.GetReloadableInt64Var(int64(1), 1, maxSizeinBKey).Load()
+	maxBytesForFileRotation := conf.GetReloadableIntVar(2*1024, 1, maxBytesFileRotKey).Load()
+	return func(bh *BufferHandle) {
+		bh.bufferCapacity = int(maxSizeInB)
+		bh.maxBytesForFileRotation = maxBytesForFileRotation
+	}
+}
+
 func New(parentMod string, opts ...func(*BufferHandle)) *BufferHandle {
-	maxSizeinKBKey := fmt.Sprintf("%s.DebugHelper.maxBatchSizeInKB", parentMod)
-	maxSizeInKBF := config.GetReloadableInt64Var(int64(1), 1, maxSizeinKBKey).Load()
 	bh := &BufferHandle{
-		dir:          "mydebuglogs/",
-		logger:       logger.NewLogger().Child("helper.buffer_file"),
-		maxBatchSize: int(maxSizeInKBF * bytesize.B),
+		dir:                     "mydebuglogs/",
+		logger:                  logger.NewLogger().Child("helper.buffer_file"),
+		bufferCapacity:          1,
+		maxBytesForFileRotation: 2 * 1024,
+		mu:                      &sync.RWMutex{},
 	}
 	for _, opt := range opts {
 		opt(bh)
 	}
+	ready := make(chan bool, 1)
+	var once sync.Once
+	once.Do(func() {
+		// create the directory to store logs
+		if _, err := os.Stat(bh.dir); os.IsNotExist(err) {
+			// file does not exist
+			_ = os.MkdirAll(bh.dir, os.ModePerm)
+		}
+		err := bh.createFile()
+		if err != nil {
+			ready <- false
+			return
+		}
+		ready <- true
+	})
+	bh.IsInitialised = <-ready
+	bh.logger.Info("handle is ready to send information: %v", bh.IsInitialised)
+	defer close(ready)
 	return bh
 }
 
-func (h *BufferHandle) Send(input, output any, metainfo ht.MetaInfo) {
-	if _, err := os.Stat(h.dir); os.IsNotExist(err) {
-		// file does not exist
-		_ = os.MkdirAll(h.dir, os.ModePerm)
+func (bh *BufferHandle) createFile() error {
+	fname := fmt.Sprintf("buffer_file_debug_log_%d.jsonl", bh.counter)
+	file, err := os.Create(bh.dir + fname)
+	if err != nil {
+		bh.logger.Warnf("problem in file creation: %s", err.Error())
+		return err
 	}
-	fname := fmt.Sprintf("buffer_file_debug_log_%d.json", h.counter)
-	_, err := os.Stat(fname)
-	switch {
-	case os.IsNotExist(err):
-		h.file, err = os.Create(h.dir + fname)
-		if err != nil {
-			h.logger.Warnf("problem in file creation: %s", err.Error())
-			return
-		}
-		h.writer = bufio.NewWriterSize(h.file, h.maxBatchSize)
-	case err != os.ErrExist && err != nil:
-		h.logger.Warnf("some problem with file: %s", err.Error())
-		return
-	}
+	bh.file = file
+	bh.writer = bufio.NewWriterSize(bh.file, bh.bufferCapacity)
+	return nil
+}
 
-	h.logger.Infof("marshalling debugFields")
+func (bh *BufferHandle) Send(input, output any, metainfo ht.MetaInfo) {
+	bh.logger.Debugf("marshalling debugFields")
 	debugFields := ht.DebugFields{
 		Input:    input,
 		Output:   output,
@@ -72,37 +104,62 @@ func (h *BufferHandle) Send(input, output any, metainfo ht.MetaInfo) {
 	}
 	debugFieldsBytes, marshalErr := jsonfast.Marshal(debugFields)
 	if marshalErr != nil {
-		h.logger.Warnf("marshal error:%s", marshalErr.Error())
+		bh.logger.Warnf("marshal error:%s", marshalErr.Error())
 		return
 	}
-	h.logger.Infof("write to buffer")
+	bh.logger.Debugf("write to buffer")
 
-	_, wErr := h.writer.Write(debugFieldsBytes)
-	if wErr != nil {
-		h.logger.Warn("write to buffer:%s", wErr.Error())
-		return
-	}
-
-	h.logger.Infof("write to buffer complete")
-
-	if h.writer != nil && h.writer.Available() == 0 {
-		h.logger.Infof("no available buffer space")
-		flushErr := h.writer.Flush()
-		if flushErr != nil {
-			h.logger.Warnf("flusing: %s", flushErr.Error())
+	bh.ReadSyncBlock(func() {
+		debugFieldsBytes = append(debugFieldsBytes, '\n')
+		bytesWritten, wErr := bh.writer.Write(debugFieldsBytes)
+		if wErr != nil {
+			bh.logger.Warn("write to buffer:%s", wErr.Error())
 			return
 		}
-		h.counter += 1
-		defer h.file.Close()
+		bh.bytesWritten += bytesWritten
+	})
+
+	bh.logger.Infof("Bytes written to buffer: %d", bh.bytesWritten)
+	bh.logger.Infof("Max bytes for file rotation: %d", bh.maxBytesForFileRotation)
+
+	bh.WriteSyncBlock(bh.rotateFile)
+}
+
+func (bh *BufferHandle) rotateFile() {
+	if bh.bytesWritten >= bh.maxBytesForFileRotation {
+		// Rotate file
+		flushErr := bh.writer.Flush()
+		if flushErr != nil {
+			bh.logger.Warnf("flush:%v", flushErr.Error())
+			return
+		}
+		defer bh.file.Close()
+		bh.bytesWritten = 0
+		bh.counter += 1
+
+		err := bh.createFile()
+		if err != nil {
+			// error will already get logged
+			return
+		}
 	}
+}
+
+func (bh *BufferHandle) WriteSyncBlock(f func()) {
+	bh.mu.Lock()
+	f()
+	defer bh.mu.Unlock()
+}
+
+func (bh *BufferHandle) ReadSyncBlock(f func()) {
+	bh.mu.RLock()
+	f()
+	defer bh.mu.RUnlock()
 }
 
 func (h *BufferHandle) Shutdown() {
 	if h.writer != nil {
-		// h.writer.Available() == h.writer.Size() // there is no buffer to write
-		if h.writer.Available() < h.writer.Size() {
-			h.writer.Flush()
-			defer h.file.Close()
-		}
+		h.writer.Flush()
+		defer h.file.Close()
 	}
 }
