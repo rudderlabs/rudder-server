@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/tidwall/gjson"
 )
 
 func IsObjectStorageDestination(destType string) bool {
@@ -154,4 +156,11 @@ func IsAsyncDestinationLimitNotReached(brt *Handle, destinationID string) bool {
 	uploadNotInProgress := !asyncDest.UploadInProgress
 	return (isSFTP && maxPayloadSizeReached && uploadNotInProgress) ||
 		(maxEventsReached && maxPayloadSizeReached && uploadNotInProgress)
+}
+
+func getFirstSourceJobRunID(params map[int64]stdjson.RawMessage) string {
+	for key := range params {
+		return gjson.GetBytes(params[key], "source_job_run_id").String()
+	}
+	return ""
 }

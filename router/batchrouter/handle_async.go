@@ -397,13 +397,6 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = make(map[int64]stdjson.RawMessage)
 }
 
-func getFirstSourceJobRunID(params map[int64]stdjson.RawMessage) string {
-	for key := range params {
-		return gjson.GetBytes(params[key], "source_job_run_id").String()
-	}
-	return ""
-}
-
 func getAttemptNumbers(jobs []*jobsdb.JobT) map[int64]int {
 	attemptNums := make(map[int64]int)
 	for _, job := range jobs {
