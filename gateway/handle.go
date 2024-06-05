@@ -406,6 +406,19 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 		toSet["rudderId"] = rudderId
+		if _, ok := toSet["receivedAt"]; !ok {
+			toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
+		}
+		if _, ok := toSet["requestIP"]; ok {
+			var tcOk bool
+			ipAddr, tcOk = toSet["requestIP"].(string)
+			if !tcOk {
+				gw.logger.Warnf("requestIP is not a string: %v", toSet["requestIP"])
+			}
+
+		} else {
+			toSet["requestIP"] = ipAddr
+		}
 		fillMessageID(toSet)
 		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
