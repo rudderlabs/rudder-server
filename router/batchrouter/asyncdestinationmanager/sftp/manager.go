@@ -49,7 +49,7 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
-	fileInfo, err := os.Stat(jsonOrCSVFilePath)
+	fileInfo, err := os.Stat(textFilePath)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error getting file info: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
