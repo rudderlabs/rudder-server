@@ -890,28 +890,6 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapL
 	return lookupWithLevel(m, 0, ks...)
 }
 
-func FormNestedMap(m map[string]interface{}, keys []string, value interface{}) {
-	if len(keys) == 0 {
-		return
-	}
-
-	// Traverse the map and create nested maps as needed
-	for i, key := range keys {
-		if i == len(keys)-1 {
-			// If it's the last key, set the value
-			m[key] = value
-		} else {
-			// If the key doesn't exist or is not a map, create a new map
-			if _, ok := m[key]; !ok {
-				m[key] = make(map[string]interface{})
-			}
-
-			// Move to the next level in the nested map
-			m = m[key].(map[string]interface{})
-		}
-	}
-}
-
 // SleepCtx sleeps for the given duration or until the context is canceled.
 //
 //	the context error is returned if context is canceled.

@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/redis/go-redis/v9"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -174,142 +174,39 @@ func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-type NonRootInsertParams struct {
-	valueInRedis string
-	Path         string
-	JsonVal      gjson.Result
-}
 type NonRootInsertReturn struct {
 	SetArgsPath string
 	MergeTo     string
 	MergeFrom   interface{}
 }
 
-func (m *RedisManager) HandleNonRootInsert(p NonRootInsertParams) (*NonRootInsertReturn, error) {
-	path := p.Path
-	insertValue := p.JsonVal
-
-	// Case-1: path is not sent, userValue is empty or unavailable in Redis -- Done
-
-	// Case-2.1: path is sent but one of parents is empty, userValue is empty or unavailable in Redis -- not possible
-	// Case-2.2: path is sent but child is empty, userValue is empty or unavailable in Redis -- not possible
-	// Case-2.3: path is sent but child is non-empty, userValue is empty or unavailable in Redis -- not possible
-	// Case-2.4: path is sent but first parent is empty, userValue is empty or unavailable in Redis -- Done
-	// Case 4: path is sent, userValue is empty -- Done
-
-	// Case-3.1: path is sent but one of parents is empty, userValue is non-empty or available in Redis -- Done
-	// Case-3.2: path is sent but child is empty, userValue is non-empty or available in Redis -- Done
-	// Case-3.3: path is sent but child is non-empty, userValue is non-empty or available in Redis -- Done
-	// Case-3.4: path is sent but first parent is empty, userValue is empty or unavailable in Redis -- Done
-
-	paths := strings.Split(path, ".")
-	insertMap := make(map[string]interface{})
-
-	var lastNonEmptyVal interface{}
-	if p.valueInRedis == "" {
-		p.valueInRedis = "{}"
-	}
-
-	err := json.Unmarshal([]byte(p.valueInRedis), &lastNonEmptyVal)
-	if err != nil {
-		return nil, err
-	}
-	var nestedSearchKey string
-	var lastNonEmptyKeyIdx int
-	for i, kp := range paths {
-		nestedSearchKey = strings.Join([]string{nestedSearchKey, kp}, ".")
-		if i == 0 {
-			nestedSearchKey = kp
-		}
-		res := gjson.Get(p.valueInRedis, nestedSearchKey)
-		if !res.Exists() {
-			break
-		}
-		lastNonEmptyKeyIdx += 1
-		lastNonEmptyVal = res.Value()
-	}
-	nonEmptyPaths := paths[:lastNonEmptyKeyIdx]
-	setArgsPath := "$"
-	if len(nonEmptyPaths) > 0 {
-		setArgsPath = strings.Join([]string{setArgsPath, strings.Join(nonEmptyPaths, ".")}, ".")
-	}
-
-	lastNonEmptyValBytes, marshalErr := json.Marshal(lastNonEmptyVal)
-	if marshalErr != nil {
-		m.logger.Error("marshal of non empty value: %+v", marshalErr.Error())
-		return nil, marshalErr
-	}
-
-	var ok bool
-	if path == "" || len(paths[lastNonEmptyKeyIdx:]) == 0 {
-		// when path is not sent at all
-		// when there is value in last child of "path"
-		insertMap, ok = insertValue.Value().(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("cannot be type-casted to map:%s", insertValue.String())
-		}
-		return &NonRootInsertReturn{
-			SetArgsPath: setArgsPath,
-			MergeTo:     string(lastNonEmptyValBytes),
-			MergeFrom:   insertMap,
-		}, nil
-	}
-
-	misc.FormNestedMap(insertMap, paths[lastNonEmptyKeyIdx:], insertValue.Value())
-
-	return &NonRootInsertReturn{
-		SetArgsPath: setArgsPath,
-		MergeTo:     string(lastNonEmptyValBytes),
-		MergeFrom:   insertMap,
-	}, nil
-}
-
 func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) ([]string, error) {
-	key := inputArgs.key
-	path := inputArgs.path
-	jsonVal := inputArgs.jsonVal
-
-	actualPath := "$" // root insert
-	isRootInsert := path == ""
-	if !isRootInsert {
-		actualPath = fmt.Sprintf("$.%s", path)
-	}
-	args := []string{key, actualPath, jsonVal.String()}
-	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), key).Result()
+	isRootInsert := inputArgs.path == ""
+	args := []string{inputArgs.key, "$", inputArgs.jsonVal.String()}
+	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), inputArgs.key).Result()
 	if err != nil {
 		return nil, err
 	}
 
-	valueToBeInserted := "{}" // value to which the transformed value should be merged which will be inserted into Redis
-	if isRootInsert && redisValueForKey != "" {
-		valueToBeInserted = redisValueForKey
-	}
-	var mergeFrom interface{} = jsonVal.Value() // transformed value
-	if !isRootInsert {
-		ret, err := m.HandleNonRootInsert(NonRootInsertParams{
-			valueInRedis: redisValueForKey,
-			Path:         path,
-			JsonVal:      jsonVal,
-		})
-		if err != nil {
-			return nil, err
-		}
-		mergeFrom = ret.MergeFrom
-		valueToBeInserted = ret.MergeTo
-		args[1] = ret.SetArgsPath
+	valueToBeInserted := redisValueForKey // value to which the transformed value should be merged which will be inserted into Redis
+	if redisValueForKey == "" {
+		valueToBeInserted = "{}"
 	}
 
-	switch jsonValue := mergeFrom.(type) {
-	case map[string]interface{}:
-		var setErr error
-		for k, mapV := range jsonValue {
-			valueToBeInserted, setErr = sjson.Set(valueToBeInserted, k, mapV)
-			if setErr != nil {
-				return nil, fmt.Errorf("problem while setting key(%s): %w", k, setErr)
-			}
+	var mergeFrom string = inputArgs.jsonVal.String() // transformed value
+	if !isRootInsert {
+		mergedTo, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
+		if setErr != nil {
+			return nil, fmt.Errorf("problem while setting value into path: %w", setErr)
 		}
+		mergeFrom = mergedTo
 	}
-	args[2] = valueToBeInserted
+	// merge jsons
+	mergedValueToBeInserted, mergedErr := jsonpatch.MergeMergePatches([]byte(valueToBeInserted), []byte(mergeFrom))
+	if mergedErr != nil {
+		return nil, fmt.Errorf("merging process failed: %w", mergedErr)
+	}
+	args[2] = string(mergedValueToBeInserted)
 	return args, nil
 }
 

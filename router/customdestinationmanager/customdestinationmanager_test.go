@@ -1017,7 +1017,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 		require.JSONEq(t, `[{"first":"john","last":"wick","nick":"babayaga","pet":"snoopy"}]`, trait3)
 	})
 
-	t.Run("path's 2nd parent key contains non-map value & key is present, should not insert to redis", func(t *testing.T) {
+	t.Run("path's 2nd parent key contains non-map value & key is present, should insert to redis with value(map)", func(t *testing.T) {
 		transformedResponse := transformedResponseJSON{
 			Message: map[string]interface{}{
 				"key":  "user:1",
