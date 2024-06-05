@@ -43,7 +43,6 @@ type LifecycleManager struct {
 	destDebugger               destinationdebugger.DestinationDebugger
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
-	stats                      stats.Stats
 }
 
 // Start starts a processor, this is not a blocking call.
