@@ -273,9 +273,9 @@ func TestProcessorManager(t *testing.T) {
 		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
 
 		require.Equal(t,
-			statsStore.GetByName("processor.pickup_delivery_lag_seconds"),
+			statsStore.GetByName("processor.event_pickup_lag_seconds"),
 			[]memstats.Metric{{
-				Name: "processor.pickup_delivery_lag_seconds",
+				Name: "processor.event_pickup_lag_seconds",
 				Tags: map[string]string{
 					"sourceId":    "sourceID",
 					"workspaceId": "workspaceID",

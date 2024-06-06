@@ -1617,7 +1617,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
-		proc.statsFactory.NewSampledTaggedStat("processor.pickup_delivery_lag_seconds", stats.TimerType, stats.Tags{
+		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
 			"sourceId":    sourceID,
 			"workspaceId": batchEvent.WorkspaceId,
 		}).Since(receivedAt)
