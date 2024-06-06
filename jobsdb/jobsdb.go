@@ -38,11 +38,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	kitutf8 "github.com/rudderlabs/rudder-go-kit/utf8"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
@@ -59,6 +59,7 @@ import (
 )
 
 var errStaleDsList = errors.New("stale dataset list")
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
@@ -370,9 +371,18 @@ type ConnectionDetails struct {
 	DestinationID string
 }
 
-func (r *JobStatusT) sanitizeJson() {
-	r.ErrorResponse = sanitizeJSON(r.ErrorResponse)
-	r.Parameters = sanitizeJSON(r.Parameters)
+func (r *JobStatusT) sanitizeJson() error {
+	var err error
+	r.ErrorResponse, err = sanitizeJSON(r.ErrorResponse)
+	if err != nil {
+		return err
+	}
+
+	r.Parameters, err = sanitizeJSON(r.Parameters)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 /*
@@ -399,9 +409,17 @@ func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }
 
-func (job *JobT) sanitizeJSON() {
-	job.EventPayload = sanitizeJSON(job.EventPayload)
-	job.Parameters = sanitizeJSON(job.Parameters)
+func (job *JobT) sanitizeJSON() error {
+	var err error
+	job.EventPayload, err = sanitizeJSON(job.EventPayload)
+	if err != nil {
+		return err
+	}
+	job.Parameters, err = sanitizeJSON(job.Parameters)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // The struct fields need to be exposed to JSON package
@@ -1919,7 +1937,10 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 				return err
 			}
 			for i := range jobList {
-				jobList[i].sanitizeJSON()
+				err = jobList[i].sanitizeJSON()
+				if err != nil {
+					return fmt.Errorf("sanitizeJSON: %w", err)
+				}
 			}
 			return store()
 		}
@@ -3142,15 +3163,25 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 
 // sanitizeJSON makes a json payload safe for writing into postgres.
 // 1. Removes any \u0000 string from the payload
-// 2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8
-func sanitizeJSON(input json.RawMessage) json.RawMessage {
+// ~2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8~
+// 3. unmashals and marshals the payload to remove any extra keys
+func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
-	kitutf8.Sanitize(v)
 
-	return v
+	var a any
+	err := jsonfast.Unmarshal(v, &a)
+	if err != nil {
+		return nil, err
+	}
+	v, err = jsonfast.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
 }
 
 type smallDS struct {

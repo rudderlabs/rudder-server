@@ -1027,7 +1027,7 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
 	jobDB := Handle{config: config.New()}
 	ch := func(n int) string {
-		return strings.Repeat(string("?"), n)
+		return strings.Repeat("�", n)
 	}
 	toValidUTF8Tests := []struct {
 		in  string
@@ -1052,13 +1052,21 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 		{"\xF0\x80\x80\xaf", ch(4)},
 		{"\xF8\x80\x80\x80\xAF", ch(5)},
 		{"\xFC\x80\x80\x80\x80\xAF", ch(6)},
+
+		// {"\ud800", ""},
+		{`\ud800`, ch(1)},
 	}
 
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
+	require.NoError(t, err)
+	defer jobDB.TearDown()
+
 	eventPayload := []byte(`{"batch": [{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
-	customVal := "MOCKDS"
-	var jobs []*JobT
-	for _, tt := range toValidUTF8Tests {
-		jobs = append(jobs, &JobT{
+	for i, tt := range toValidUTF8Tests {
+
+		customVal := fmt.Sprintf("TEST_%d", i)
+
+		jobs := []*JobT{{
 			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 			EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
 			UserID:       uuid.New().String(),
@@ -1066,27 +1074,23 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 			CustomVal:    customVal,
 			WorkspaceId:  defaultWorkspaceID,
 			EventCount:   1,
+		}}
+
+		err := jobDB.Store(context.Background(), jobs)
+		require.NoError(t, err)
+
+		unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+			ParameterFilters: []ParameterFilterT{},
 		})
-	}
+		require.NoError(t, err, "should not error")
 
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
-	require.NoError(t, err)
-	defer jobDB.TearDown()
+		require.Len(t, unprocessedJob.Jobs, 1)
 
-	err = jobDB.Store(context.Background(), jobs)
-	require.NoError(t, err)
-
-	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
-		CustomValFilters: []string{customVal},
-		JobsLimit:        100,
-		ParameterFilters: []ParameterFilterT{},
-	})
-	require.NoError(t, err, "should not error")
-
-	for i, tt := range toValidUTF8Tests {
 		require.JSONEq(t,
 			string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
-			string(unprocessedJob.Jobs[i].EventPayload),
+			string(unprocessedJob.Jobs[0].EventPayload),
 		)
 	}
 }
