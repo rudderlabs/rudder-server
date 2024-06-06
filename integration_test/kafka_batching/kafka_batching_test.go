@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -286,23 +287,18 @@ func TestKafkaBatching(t *testing.T) {
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{
 		name: "router_kafka_batch_size", count: 1, sum: 10,
 		buckets: []*promClient.Bucket{
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.002)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.005)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.01)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.025)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.05)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.1)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.25)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.5)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(1.0)},
-			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(2.5)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(5.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(10.0)}, // 10 is the number of messages we sent
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(30.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(60.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(300.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(600.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(1800.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(25.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(50.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(100.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(250.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(500.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(1000.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(2500.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(5000.0)},
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(10000.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(math.Inf(1))},
 		},
 		labels: expectedDefaultAttrs,
