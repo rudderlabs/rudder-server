@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.27.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.26.2...v1.27.0-rc.1) (2024-06-06)
+
+
+### Bug Fixes
+
+* jobsdb handle: unicode low surrogate must follow a high surrogate ([#4762](https://github.com/rudderlabs/rudder-server/issues/4762)) ([0c5a6d7](https://github.com/rudderlabs/rudder-server/commit/0c5a6d736d566939a0572e0f90848470a0e15ed0))
+* trino test ([#4746](https://github.com/rudderlabs/rudder-server/issues/4746)) ([d3cc894](https://github.com/rudderlabs/rudder-server/commit/d3cc89419fb69470ed65f9f981b02fa4bfcb3aea))
+
+
+### Miscellaneous
+
+* add receivedAt and requestIP in payload [PIPE-1135] ([#4764](https://github.com/rudderlabs/rudder-server/issues/4764)) ([bc595d5](https://github.com/rudderlabs/rudder-server/commit/bc595d55c4cf3f174eed2ef669a9604cd7f8b340))
+* bucket boundaries ([4568777](https://github.com/rudderlabs/rudder-server/commit/4568777aeaf11855de18c2716066f4f24df3c30d))
+* defining bucket boundaries ([#4744](https://github.com/rudderlabs/rudder-server/issues/4744)) ([4568777](https://github.com/rudderlabs/rudder-server/commit/4568777aeaf11855de18c2716066f4f24df3c30d))
+* **deps:** bump the go-deps group across 1 directory with 4 updates ([#4748](https://github.com/rudderlabs/rudder-server/issues/4748)) ([1857735](https://github.com/rudderlabs/rudder-server/commit/18577356b916d17af0d07070b8a69c17b4c598d8))
+* event lag metric (follow up) ([#4768](https://github.com/rudderlabs/rudder-server/issues/4768)) ([b124ce4](https://github.com/rudderlabs/rudder-server/commit/b124ce43c4b9227babf47ade333ec6e7618b0a01))
+* insert requstIP and receivedAt into the payload [PIPE-1134][PIPE-1135] ([#4736](https://github.com/rudderlabs/rudder-server/issues/4736)) ([d9884fd](https://github.com/rudderlabs/rudder-server/commit/d9884fd5c90ae4f701c12aa704da9e42ab88e5a3))
+* measure delivery lag in gateway and processor ([#4756](https://github.com/rudderlabs/rudder-server/issues/4756)) ([c8ba6d8](https://github.com/rudderlabs/rudder-server/commit/c8ba6d8baedb18c36342431b84606961bfb40381))
+* suggest creation or search for linear ticket ([#4757](https://github.com/rudderlabs/rudder-server/issues/4757)) ([0157b63](https://github.com/rudderlabs/rudder-server/commit/0157b63d87835bf754edc5564ce9b91e8117efc1))
+* sync release v1.26.2 to main branch ([#4745](https://github.com/rudderlabs/rudder-server/issues/4745)) ([2246a6f](https://github.com/rudderlabs/rudder-server/commit/2246a6fc474415b9ddeb5fd12bb135e3b17e0bc6))
+* upgrade to go1.22.4 and rudder-go-kit ([#4758](https://github.com/rudderlabs/rudder-server/issues/4758)) ([e7d0dec](https://github.com/rudderlabs/rudder-server/commit/e7d0decc66a97453f576c4fe9e4241731cb12ac6))
+
 ## [1.26.3](https://github.com/rudderlabs/rudder-server/compare/v1.26.2...v1.26.3) (2024-06-06)
 
 
