@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -683,5 +684,10 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, reportResults, reportingMetrics)
+	actualResults, err := json.Marshal(reportingMetrics)
+	require.NoError(t, err)
+	expectedResults, err := json.Marshal(reportResults)
+	require.NoError(t, err)
+
+	require.JSONEq(t, string(expectedResults), string(actualResults))
 }
