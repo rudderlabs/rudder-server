@@ -683,5 +683,5 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 
-	require.ElementsMatch(t, reportResults, reportingMetrics)
+	require.Equal(t, reportResults, reportingMetrics)
 }

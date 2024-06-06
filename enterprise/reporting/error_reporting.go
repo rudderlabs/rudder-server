@@ -540,13 +540,14 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
+		errs := lo.Map(reportGrpKeys, func(r types.EDErrorDetails, _ int) types.EDErrorDetails {
+			repCount := reportsCountMap[r]
 			return types.EDErrorDetails{
-				StatusCode:   rep.StatusCode,
-				ErrorCode:    rep.ErrorCode,
-				ErrorMessage: rep.ErrorMessage,
-				EventType:    rep.EventType,
-				Count:        count,
+				StatusCode:   r.StatusCode,
+				ErrorCode:    r.ErrorCode,
+				ErrorMessage: r.ErrorMessage,
+				EventType:    r.EventType,
+				Count:        repCount,
 			}
 		})
 		edrSchema.Errors = errs
