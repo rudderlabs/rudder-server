@@ -58,8 +58,10 @@ import (
 	"github.com/lib/pq"
 )
 
-var errStaleDsList = errors.New("stale dataset list")
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	errStaleDsList = errors.New("stale dataset list")
+	jsonfast       = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
@@ -2248,7 +2250,10 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				return
 			}
 			for i := range statusList {
-				statusList[i].sanitizeJson()
+				err = statusList[i].sanitizeJson()
+				if err != nil {
+					return
+				}
 			}
 			err = store()
 		}
