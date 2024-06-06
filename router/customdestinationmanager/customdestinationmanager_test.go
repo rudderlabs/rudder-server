@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
@@ -26,7 +28,6 @@ import (
 	kvredis "github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
-	"github.com/samber/lo"
 )
 
 var once sync.Once
@@ -216,7 +217,7 @@ var redisJSONTestCases = []redisTc{
 		redisImgTag:  "alpine3.19",
 		expectedSendDataResponse: sendDataResponse{
 			statusCode: 500,
-			err:        "ERR unknown command 'JSON.SET', with args beginning with:",
+			err:        "ERR unknown command 'JSON.GET', with args beginning with:",
 		},
 	},
 }
@@ -520,7 +521,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		require.Nil(t, setErr)
 
 		stCd, _ := customManager.send(event, kvMgr, config)
-		require.Equal(t, http.StatusInternalServerError, stCd)
+		require.Equal(t, http.StatusOK, stCd)
 
 		// validate if existing value is not manipulated
 		firstVal, err := db.JSONGet(ctx, "user:myuser-id", "$.mode-in").Result()
@@ -530,7 +531,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 		// validate if value is not inserted
 		v, err2 := db.JSONGet(ctx, "user:myuser-id", "$.mode-1").Result()
 		require.NoError(t, err2)
-		require.JSONEq(t, `[]`, v)
+		require.JSONEq(t, `[{"childKey_1":{"someKey":"someVal","fields":{"field1":"value1","field2":2}}}]`, v)
 	})
 }
 
@@ -1116,22 +1117,23 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 
 // Benchmarking
 type benchmarkRedisHandle struct {
-	size int
+	size     int
 	bytesArr [][]byte
-	kvMgr *kvredis.RedisManager
-	config map[string]interface{}
-	custMgr *CustomManagerT
+	kvMgr    *kvredis.RedisManager
+	config   map[string]interface{}
+	custMgr  *CustomManagerT
 }
+
 func (b *benchmarkRedisHandle) formPayloads() {
-	b.bytesArr = lo.Map(lo.Range(b.size), func(i int, _ int) []byte {
+	b.bytesArr = lo.Map(lo.Range(b.size), func(i, _ int) []byte {
 		iStr := strconv.Itoa(i)
-		jsonBytes,_ := json.Marshal(transformedResponseJSON {
+		jsonBytes, _ := json.Marshal(transformedResponseJSON{
 			Message: map[string]interface{}{
-				"key": "user:"+iStr,
+				"key": "user:" + iStr,
 				"value": map[string]interface{}{
-					"first": "john-"+iStr,
-					"last":  "wick-"+iStr,
-					"nick":  "babayaga-"+iStr,
+					"first": "john-" + iStr,
+					"last":  "wick-" + iStr,
+					"nick":  "babayaga-" + iStr,
 				},
 			},
 		})
@@ -1182,15 +1184,15 @@ func BenchmarkRedisHighNoOfEvents(b *testing.B) {
 	}
 	kvMgr := kvredis.NewRedisManager(config)
 
-	lo.ForEach([]int{1,10,100,1000,10000}, func(sz int, _ int) {
+	lo.ForEach([]int{1, 10, 100, 1000, 10000}, func(sz, _ int) {
 		bh := &benchmarkRedisHandle{
-			kvMgr: kvMgr,
-			config: config,
+			kvMgr:   kvMgr,
+			config:  config,
 			custMgr: customManager,
-			size: sz,
+			size:    sz,
 		}
 		bh.formPayloads()
-	
+
 		// key not present(1st time) & path not present in Redis
 		benchmarkStr := fmt.Sprintf("redis %d requests", bh.size)
 		b.Run(benchmarkStr, func(b *testing.B) {

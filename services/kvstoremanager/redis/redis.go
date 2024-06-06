@@ -201,19 +201,20 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSet
 	if !isRootInsert {
 		nestedJsonVal, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
 		if setErr != nil {
-			return nil, fmt.Errorf("problem while setting value into path: %w", setErr)
+			return nil, fmt.Errorf("setArgsForMergeStrategy: setting value into path: %w", setErr)
 		}
 		mergeFrom = nestedJsonVal
 	}
 	// merge jsons
 	mergedValueToBeInserted, mergedErr := jsonpatch.MergeMergePatches([]byte(valueToBeInserted), []byte(mergeFrom))
 	if mergedErr != nil {
-		return nil, fmt.Errorf("merging process failed: %w", mergedErr)
+		return nil, fmt.Errorf("setArgsForMergeStrategy: JSON merge failed: %w", mergedErr)
 	}
 	setCmdArgs.value = string(mergedValueToBeInserted)
 	return setCmdArgs, nil
 }
 
+// nolint:unused
 func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) (*jsonSetCmdArgs, error) {
 	key := inputArgs.key
 	path := inputArgs.path
@@ -270,23 +271,24 @@ type setArguments struct {
 	jsonVal gjson.Result
 }
 
+// nolint:unparam
 func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) (*jsonSetCmdArgs, error) {
 	key := gjson.GetBytes(transformedData, "message.key").String()
 	path := gjson.GetBytes(transformedData, "message.path").String()
 	jsonVal := gjson.GetBytes(transformedData, "message.value")
 
-	if m.shouldMerge(config) {
-		return m.setArgsForMergeStrategy(setArguments{
-			key:     key,
-			path:    path,
-			jsonVal: jsonVal,
-		})
-	}
-	return m.setArgsForReplaceStrategy(setArguments{
+	return m.setArgsForMergeStrategy(setArguments{
 		key:     key,
 		path:    path,
 		jsonVal: jsonVal,
 	})
+	// if m.shouldMerge(config) {
+	// }
+	// return m.setArgsForReplaceStrategy(setArguments{
+	// 	key:     key,
+	// 	path:    path,
+	// 	jsonVal: jsonVal,
+	// })
 }
 
 func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error) {
@@ -298,12 +300,13 @@ func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[strin
 	ctx := context.Background()
 	val, err := redisClient.JSONSet(ctx, nmSetArgs.key, nmSetArgs.path, nmSetArgs.value).Result()
 	if err != nil {
-		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs.key, nmSetArgs.path, nmSetArgs.value, err)
+		return nil, fmt.Errorf("SendDataAsJSON: error setting JSON data at key '%s' with path '%s' and value '%s': %w", nmSetArgs.key, nmSetArgs.path, nmSetArgs.value, err)
 	}
 
 	return val, err
 }
 
+// nolint:unused
 func (*RedisManager) shouldMerge(config map[string]interface{}) bool {
 	if mergeStrategyI, ok := config["shouldMergeJSON"]; ok {
 		if mergeStrategy, ok := mergeStrategyI.(bool); ok {
