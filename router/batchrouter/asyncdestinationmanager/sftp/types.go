@@ -7,8 +7,9 @@ import (
 
 // defaultManager is the default manager for SFTP
 type defaultManager struct {
-	FileManager sftp.FileManager
-	logger      logger.Logger
+	FileManager    sftp.FileManager
+	logger         logger.Logger
+	filePathPrefix string
 }
 
 type destConfig struct {

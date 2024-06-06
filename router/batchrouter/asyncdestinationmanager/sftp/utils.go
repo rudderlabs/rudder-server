@@ -260,14 +260,7 @@ func getUploadFilePath(path string, metadata map[string]any) (string, error) {
 		}
 	})
 
-	partFileNumber, ok := metadata["partFileNumber"].(int)
-	if !ok {
-		return "", errors.New("part file number is missing")
-	}
-
-	ext := filepath.Ext(result)
-	base := strings.TrimSuffix(result, ext)
-	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext), nil
+	return result, nil
 }
 
 func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -342,4 +335,10 @@ func isValidFileFormat(format string) error {
 		return fmt.Errorf("invalid file format: %s", format)
 	}
 	return nil
+}
+
+func appendFileNumberInFilePath(path string, partFileNumber int) string {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext)
 }
