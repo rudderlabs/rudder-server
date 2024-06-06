@@ -794,6 +794,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			continue
 		}
 
+		gw.stats.NewTaggedStat("gateway.pickup_delivery_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    msg.Properties.SourceID,
+			"workspaceId": msg.Properties.WorkspaceID,
+		}).Since(msg.Properties.ReceivedAt)
+
 		jobsDBParams := params{
 			MessageID:       msg.Properties.MessageID,
 			SourceID:        msg.Properties.SourceID,
