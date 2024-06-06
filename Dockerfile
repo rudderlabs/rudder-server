@@ -1,6 +1,8 @@
 
 # syntax=docker/dockerfile:1
-ARG GO_VERSION=1.22.3
+
+# GO_VERSION is updated automatically to match go.mod, see Makefile
+ARG GO_VERSION=1.22.4
 ARG ALPINE_VERSION=3.20
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG VERSION
