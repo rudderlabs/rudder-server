@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/helper/buffer"
+	buf "github.com/rudderlabs/rudder-server/helper/buffer"
 	fh "github.com/rudderlabs/rudder-server/helper/file"
 	"github.com/rudderlabs/rudder-server/helper/noop"
 	ht "github.com/rudderlabs/rudder-server/helper/types"
@@ -29,13 +29,13 @@ type DebugHandle struct {
 	logger      logger.Logger
 }
 
-func getDebugConfig(parentMod string) (*ht.DebugConfig, error) {
+func getDebugConfig(parentMod string, conf *config.Config) (*ht.DebugConfig, error) {
 	startTimeConfPath := fmt.Sprintf("%s.DebugHelper.startTime", parentMod)
 	endTimeConfPath := fmt.Sprintf("%s.DebugHelper.endTime", parentMod)
 
 	debugConfig := &ht.DebugConfig{}
 
-	stTime := config.GetReloadableStringVar("", startTimeConfPath).Load()
+	stTime := conf.GetReloadableStringVar("", startTimeConfPath).Load()
 	if stTime != "" {
 		startTime, err := time.Parse(time.RFC3339, stTime)
 		if err != nil {
@@ -44,7 +44,7 @@ func getDebugConfig(parentMod string) (*ht.DebugConfig, error) {
 		debugConfig.StartTime = startTime
 	}
 
-	eTime := config.GetReloadableStringVar("", endTimeConfPath).Load()
+	eTime := conf.GetReloadableStringVar("", endTimeConfPath).Load()
 	if eTime != "" {
 		endTime, enderr := time.Parse(time.RFC3339, eTime)
 		if enderr != nil {
@@ -59,9 +59,9 @@ func getDebugConfig(parentMod string) (*ht.DebugConfig, error) {
 	return debugConfig, nil
 }
 
-func getDebugMeta(parentMod string) (*ht.DebuggableMetaInfo, error) {
+func getDebugMeta(parentMod string, conf *config.Config) (*ht.DebuggableMetaInfo, error) {
 	enabledConfPath := fmt.Sprintf("%s.DebugHelper.enabled", parentMod)
-	enabled := config.GetReloadableBoolVar(false, enabledConfPath).Load()
+	enabled := conf.GetReloadableBoolVar(false, enabledConfPath).Load()
 	if !enabled {
 		return nil, errors.New("debugger not enabled")
 	}
@@ -73,43 +73,43 @@ func getDebugMeta(parentMod string) (*ht.DebuggableMetaInfo, error) {
 
 	debugMetaInfo := &ht.DebuggableMetaInfo{
 		Enabled:        enabled,
-		DestTypes:      config.GetReloadableStringSliceVar([]string{}, destTypesConfPath).Load(),
-		WorkspaceIDs:   config.GetReloadableStringSliceVar([]string{}, workspaceIDsConfPath).Load(),
-		DestinationIDs: config.GetReloadableStringSliceVar([]string{}, destIDsConfPath).Load(),
-		EventNames:     config.GetReloadableStringSliceVar([]string{}, eventNamesConfPath).Load(),
+		DestTypes:      conf.GetReloadableStringSliceVar([]string{}, destTypesConfPath).Load(),
+		WorkspaceIDs:   conf.GetReloadableStringSliceVar([]string{}, workspaceIDsConfPath).Load(),
+		DestinationIDs: conf.GetReloadableStringSliceVar([]string{}, destIDsConfPath).Load(),
+		EventNames:     conf.GetReloadableStringSliceVar([]string{}, eventNamesConfPath).Load(),
 	}
 
 	return debugMetaInfo, nil
 }
 
-func getDebugger(parentModule string) Debugger {
-	debugType := config.GetReloadableStringVar("noop", fmt.Sprintf("%s.DebugHelper.type", parentModule)).Load()
+func getDebugger(parentModule string, conf *config.Config) Debugger {
+	debugType := conf.GetReloadableStringVar("noop", fmt.Sprintf("%s.DebugHelper.type", parentModule)).Load()
 	var debugger Debugger
 	var err error
 	switch {
 	case debugType == "file":
-		debugger, err = fh.New(parentModule, fh.WithDirectory("./router/debuglogs/"))
+		debugger, err = fh.New("./router/debuglogs/", fh.WithOptsFromConfig(parentModule, conf))
 		if err != nil {
 			debugger, _ = noop.New()
 		}
 	case debugType == "buffer_file":
-		debugger = buffer.New(parentModule, buffer.WithDirectory("./router/debuglogs/"))
+		debugger = buf.New("./router/debuglogs/", buf.WithOptsFromConfig(parentModule, conf))
 	default:
 		debugger, _ = noop.New()
 	}
 	return debugger
 }
 
-func New(parentModule string) Debugger {
-	debugger := getDebugger(parentModule)
+func New(parentModule string, conf *config.Config) Debugger {
+	debugger := getDebugger(parentModule, conf)
 
-	debugMetaInfo, err := getDebugMeta(parentModule)
+	debugMetaInfo, err := getDebugMeta(parentModule, conf)
 	if err != nil {
 		debugger, _ = noop.New()
 	}
 
 	var debugConfig *ht.DebugConfig
-	debugConfig, err = getDebugConfig(parentModule)
+	debugConfig, err = getDebugConfig(parentModule, conf)
 	if err != nil {
 		debugger, _ = noop.New()
 	}

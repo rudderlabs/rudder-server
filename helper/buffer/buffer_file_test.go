@@ -45,7 +45,7 @@ func TestSendForMultipleGoRoutines(t *testing.T) {
 		DestType:      "ABC",
 	}
 	tempDir := t.TempDir()
-	buf := buffer.New("module", buffer.WithDirectory(tempDir), buffer.WithOptsFromConfig("module", conf))
+	buf := buffer.New(tempDir, buffer.WithOptsFromConfig("module", conf))
 	isExist, err := exists(tempDir + "/buffer_file_debug_log_0.jsonl")
 	require.NoError(t, err)
 	require.Equal(t, true, isExist)

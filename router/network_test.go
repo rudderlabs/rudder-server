@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/helper"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
@@ -58,7 +59,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
-		network.debugHelper = helper.New("")
+		network.debugHelper = helper.New("", config.New())
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -79,7 +80,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
-		network.debugHelper = helper.New("")
+		network.debugHelper = helper.New("", config.New())
 		network.httpClient = http.DefaultClient
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -115,7 +116,7 @@ var _ = Describe("Network", func() {
 	Context("Send requests", func() {
 		It("should successfully send the request to google analytics", func() {
 			network := &netHandle{}
-			network.debugHelper = helper.New("")
+			network.debugHelper = helper.New("", config.New())
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = c.mockHTTPClient
 
@@ -170,7 +171,7 @@ var _ = Describe("Network", func() {
 
 		It("should respect ctx cancelation", func() {
 			network := &netHandle{}
-			network.debugHelper = helper.New("")
+			network.debugHelper = helper.New("", config.New())
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = &http.Client{}
 
@@ -202,7 +203,7 @@ var _ = Describe("Network", func() {
 
 		BeforeEach(func() {
 			network = &netHandle{}
-			network.debugHelper = helper.New("")
+			network.debugHelper = helper.New("", config.New())
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = c.mockHTTPClient
 

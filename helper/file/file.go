@@ -31,62 +31,45 @@ type fileConfig struct {
 }
 
 type FileHandle struct {
-	dir                 string
-	fileConfig          *fileConfig
-	logger              logger.Logger
-	fieldsChan          chan fields
-	backgroundCtxCancel context.CancelFunc
-	backgroundWait      func() error
+	dir            string
+	fileConfig     *fileConfig
+	logger         logger.Logger
+	fieldsChan     chan fields
+	backgroundWait func() error
 }
 
-func getFileConfig(parentMod string) *fileConfig {
+func WithOptsFromConfig(parentMod string, conf *config.Config) func(*FileHandle) {
 	maxBatchSzConfPath := fmt.Sprintf("%s.DebugHelper.maxBatchSize", parentMod)
 	maxBatchTimeoutConfPath := fmt.Sprintf("%s.DebugHelper.maxBatchTimeout", parentMod)
 
-	return &fileConfig{
-		MaxBatchTimeout: config.GetReloadableDurationVar(20, time.Second, maxBatchTimeoutConfPath).Load(),
-		MaxBatchSize:    config.GetReloadableIntVar(200, 1, maxBatchSzConfPath).Load(),
-	}
-}
-
-func WithDirectory(dir string) func(*FileHandle) {
-	return func(fh *FileHandle) {
-		fh.dir = dir
-	}
-}
-
-func WithConfig(maxBatchSz int, maxBatchTimeout time.Duration) func(*FileHandle) {
 	return func(fh *FileHandle) {
 		fh.fileConfig = &fileConfig{
-			MaxBatchSize:    maxBatchSz,
-			MaxBatchTimeout: maxBatchTimeout,
+			MaxBatchSize:    conf.GetReloadableIntVar(200, 1, maxBatchSzConfPath).Load(),
+			MaxBatchTimeout: conf.GetReloadableDurationVar(20, time.Second, maxBatchTimeoutConfPath).Load(),
 		}
 	}
 }
 
-func New(parentMod string, opts ...func(*FileHandle)) (*FileHandle, error) {
-	fileConfig := getFileConfig(parentMod)
-	fieldsChan := make(chan fields, fileConfig.MaxBatchSize)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, _ := errgroup.WithContext(ctx)
-
-	handle := &FileHandle{
-		dir:                 "mydebuglogs/",
-		fileConfig:          fileConfig,
-		logger:              logger.NewLogger().Child("helper.file"),
-		fieldsChan:          fieldsChan,
-		backgroundCtxCancel: cancel,
-		backgroundWait:      g.Wait,
+func New(dir string, opts ...func(*FileHandle)) (*FileHandle, error) {
+	g, _ := errgroup.WithContext(context.Background())
+	fh := &FileHandle{
+		dir: dir,
+		fileConfig: &fileConfig{
+			MaxBatchSize:    200,
+			MaxBatchTimeout: 20 * time.Second,
+		},
+		logger:         logger.NewLogger().Child("helper.file"),
+		backgroundWait: g.Wait,
 	}
 	for _, opt := range opts {
-		opt(handle)
+		opt(fh)
 	}
+	fh.fieldsChan = make(chan fields, fh.fileConfig.MaxBatchSize)
 	g.Go(misc.WithBugsnag(func() error {
-		handle.writeToFile()
+		fh.writeToFile()
 		return nil
 	}))
-	return handle, nil
+	return fh, nil
 }
 
 func (h *FileHandle) Send(input, output any, metainfo ht.MetaInfo) {
@@ -127,7 +110,6 @@ func (h *FileHandle) writeToFile() {
 }
 
 func (h *FileHandle) Shutdown() {
-	h.backgroundCtxCancel()
 	close(h.fieldsChan)
 	_ = h.backgroundWait()
 }

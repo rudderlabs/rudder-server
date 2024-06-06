@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	jsoniter "github.com/json-iterator/go"
@@ -29,16 +28,6 @@ type BufferHandle struct {
 	mu                      *sync.RWMutex
 }
 
-func WithDirectory(dir string) func(*BufferHandle) {
-	return func(bh *BufferHandle) {
-		hasSuffix := strings.HasSuffix(dir, "/")
-		if !hasSuffix {
-			dir = dir + "/"
-		}
-		bh.dir = dir
-	}
-}
-
 func WithOptsFromConfig(prefix string, conf *config.Config) func(*BufferHandle) {
 	maxSizeinBKey := fmt.Sprintf("%s.DebugHelper.bufferCapacityInB", prefix)
 	maxBytesFileRotKey := fmt.Sprintf("%s.DebugHelper.maxBytesForFileRotation", prefix)
@@ -51,9 +40,9 @@ func WithOptsFromConfig(prefix string, conf *config.Config) func(*BufferHandle) 
 	}
 }
 
-func New(parentMod string, opts ...func(*BufferHandle)) *BufferHandle {
+func New(dir string, opts ...func(*BufferHandle)) *BufferHandle {
 	bh := &BufferHandle{
-		dir:                     "mydebuglogs/",
+		dir:                     dir,
 		logger:                  logger.NewLogger().Child("helper.buffer_file"),
 		bufferCapacity:          1,
 		maxBytesForFileRotation: 2 * 1024,

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/helper"
@@ -314,5 +315,5 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 
-	network.debugHelper = helper.New("Router.Network")
+	network.debugHelper = helper.New("Router.Network", config.New())
 }
