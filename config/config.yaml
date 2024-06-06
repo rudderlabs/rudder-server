@@ -90,6 +90,13 @@ JobsDB:
     enableWriterQueue: false
     maxOpenConnections: 64
 Router:
+  Network:
+    DebugHelper:
+      enabled: true
+      destinationIDs: "destId1 destId1"
+      destTypes: "DEST_TYPE"
+      eventNames: ["event name 1", "event name 2"]
+      maxBatchSize: 4
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
   readSleep: 1000ms

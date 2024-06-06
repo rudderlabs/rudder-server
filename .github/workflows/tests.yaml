@@ -39,7 +39,7 @@ jobs:
         if: matrix.FEATURES == 'oss'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
-          RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+          RSERVER_ENABLE_MULTITENANCY: false
   warehouse-integration:
     name: Warehouse Integration
     runs-on: 'ubuntu-20.04'

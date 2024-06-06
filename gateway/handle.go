@@ -673,12 +673,9 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 
 			// Sending events to config backend
 			for _, job := range jobs {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				writeKey, ok := gw.getWriteKeyFromSourceID(sourceID)
-				if !ok {
-					gw.logger.Warnn("unable to get writeKey for job",
-						logger.NewStringField("uuid", job.UUID.String()),
-						obskit.SourceID(sourceID))
+				writeKey := gjson.GetBytes(job.EventPayload, "writeKey").String()
+				if writeKey == "" {
+					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
 				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
@@ -742,6 +739,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		Batch      []json.RawMessage `json:"batch"`
 		ReceivedAt string            `json:"receivedAt"`
 		RequestIP  string            `json:"requestIP"`
+		WriteKey   string            `json:"writeKey"` // only needed for live-events
 	}
 
 	var (
@@ -793,6 +791,14 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			DestinationID:   msg.Properties.DestinationID,
 		}
 
+		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
+		if !ok {
+			// only live-events will not work if writeKey is not found
+			gw.logger.Errorn("unable to get writeKey for job",
+				logger.NewStringField("messageId", msg.Properties.MessageID),
+				obskit.SourceID(msg.Properties.SourceID))
+		}
+
 		marshalledParams, err := json.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
@@ -808,6 +814,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			Batch:      []json.RawMessage{msg.Payload},
 			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
 			RequestIP:  msg.Properties.RequestIP,
+			WriteKey:   writeKey,
 		}
 
 		payload, err := json.Marshal(eventBatch)

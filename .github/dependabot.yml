@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: "daily"
     groups:
+      frequent:
+        patterns:
+          - "github.com/aws/aws-sdk-go"
+          - "google.golang.org/api"
+          - "cloud.google.com/go/*"
       go-deps:
         patterns:
           - "*"
@@ -15,13 +20,6 @@ updates:
     directory: "/" 
     schedule:
       interval: "daily"
-    groups:
-      actions-deps:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
   - package-ecosystem: "docker"
     directory: "/" 
     schedule:

@@ -262,7 +262,7 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
+func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
 	defer func() {
 		_ = req.Body.Close()
 	}()
@@ -276,7 +276,7 @@ func prepareRequestBody(req *http.Request, includeQueryParams bool, sourceType s
 		body = []byte("{}") // If body is empty, set it to an empty JSON object
 	}
 
-	if includeQueryParams && slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
+	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
 		queryParams := req.URL.Query()
 		paramsBytes, err := json.Marshal(queryParams)
 		if err != nil {
@@ -319,7 +319,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := prepareRequestBody(req.request, slices.Contains(bt.webhook.config.sourceListForParsingParams, breq.sourceType), breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
 				continue
