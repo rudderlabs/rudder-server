@@ -17,9 +17,12 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
@@ -819,7 +822,7 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 			}
 			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(stats.Default, warehouseutils.RudderMissingDatatype, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 

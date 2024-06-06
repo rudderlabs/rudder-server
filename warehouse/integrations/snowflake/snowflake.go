@@ -1416,7 +1416,7 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 			}
 			unrecognizedSchema[tableName][columnName] = whutils.MissingDatatype
 
-			whutils.WHCounterStat(whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			whutils.WHCounterStat(sf.stats, whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {

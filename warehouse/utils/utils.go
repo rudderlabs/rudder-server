@@ -741,7 +741,7 @@ type Tag struct {
 	Value string
 }
 
-func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(s stats.Stats, name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
@@ -752,7 +752,7 @@ func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) st
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
+	return s.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func formatSSLFile(content string) (formattedContent string) {

@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -359,7 +360,16 @@ func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 				}
 				unrecognizedSchema[tableName][colName] = warehouseutils.MissingDatatype
 
-				warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatype}).Count(1)
+				datatypeForStats := strings.ToLower(dataType)
+				if strings.HasPrefix(datatypeForStats, "array") {
+					datatypeForStats = "array"
+				} else if strings.HasPrefix(datatypeForStats, "map") {
+					datatypeForStats = "map"
+				} else if strings.HasPrefix(datatypeForStats, "struct") {
+					datatypeForStats = "struct"
+				}
+
+				warehouseutils.WHCounterStat(d.stats, warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatypeForStats}).Count(1)
 			}
 		}
 	}
