@@ -2,15 +2,16 @@ package helper_test
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/docker/go-units"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/helper/buffer"
 	fh "github.com/rudderlabs/rudder-server/helper/file"
 	"github.com/rudderlabs/rudder-server/helper/types"
+	"github.com/stretchr/testify/require"
 )
 
 type fhBenchmarkConfig struct {
@@ -71,6 +72,7 @@ func BenchmarkFileHelper(pb *testing.B) {
 			for i := 0; i < b.N; i++ {
 				cfg.makeLoad()
 			}
+			// b.Cleanup(cfg.fileHandle.Shutdown)
 		})
 	}
 }
@@ -95,28 +97,34 @@ func (bc *bhBenchmarkConfig) makeLoad() {
 		bc.bh.Send(inp, out, metaInf)
 	}
 }
-
+// BenchmarkBufferIOFileHelper/bench_for_n=10-12         	  157378	      7526 ns/op
+// BenchmarkBufferIOFileHelper/bench_for_n=100-12        	   16298	     74468 ns/op
 func BenchmarkBufferIOFileHelper(pb *testing.B) {
 	configs := []bhBenchmarkConfig{
 		{
 			nEvents:                 10,
-			bufferCapacityInB:       1024,
-			maxBytesForFileRotation: 4096,
+			bufferCapacityInB:       4*units.MiB,
+			maxBytesForFileRotation: int(40 * units.MiB),
+		},
+		{
+			nEvents:                 100,
+			bufferCapacityInB:       40*units.MiB,
+			maxBytesForFileRotation: int(100 * units.MiB),
 		},
 	}
 	conf := config.New()
 	for _, cfg := range configs {
 		conf.Set("some.DebugHelper.bufferCapacityInB", cfg.bufferCapacityInB)
 		conf.Set("some.DebugHelper.maxBytesForFileRotation", cfg.maxBytesForFileRotation)
-
-		h := buffer.New(pb.TempDir(), buffer.WithOptsFromConfig("some", conf))
+		
+		h := buffer.New(pb.TempDir() + strconv.Itoa(int(cfg.nEvents)) + "/", buffer.WithOptsFromConfig("some", conf))
 		cfg.bh = h
-
 		pbStr := fmt.Sprintf("bench for n=%d", cfg.nEvents)
 		pb.Run(pbStr, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				cfg.makeLoad()
 			}
 		})
+		pb.Cleanup(cfg.bh.Shutdown)
 	}
 }

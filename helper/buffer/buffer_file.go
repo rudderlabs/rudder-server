@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/docker/go-units"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -67,12 +68,13 @@ func New(dir string, opts ...func(*BufferHandle)) *BufferHandle {
 		ready <- true
 	})
 	bh.IsInitialised = <-ready
-	bh.logger.Info("handle is ready to send information: %v", bh.IsInitialised)
+	bh.logger.Infof("handle is ready to send information: %t", bh.IsInitialised)
 	defer close(ready)
 	return bh
 }
 
 func (bh *BufferHandle) createFile() error {
+	bh.logger.Debug("createFile method called")
 	fname := fmt.Sprintf("buffer_file_debug_log_%d.jsonl", bh.counter)
 	file, err := os.Create(bh.dir + fname)
 	if err != nil {
@@ -108,13 +110,14 @@ func (bh *BufferHandle) Send(input, output any, metainfo ht.MetaInfo) {
 		bh.bytesWritten += bytesWritten
 	})
 
-	bh.logger.Infof("Bytes written to buffer: %d", bh.bytesWritten)
-	bh.logger.Infof("Max bytes for file rotation: %d", bh.maxBytesForFileRotation)
+	bh.logger.Debugf("Bytes written to buffer: %d", bh.bytesWritten)
+	bh.logger.Debugf("Max bytes for file rotation: %d", bh.maxBytesForFileRotation)
 
 	bh.WriteSyncBlock(bh.rotateFile)
 }
 
 func (bh *BufferHandle) rotateFile() {
+	bh.logger.Debugf("Total bytes written=%d", bh.bytesWritten)
 	if bh.bytesWritten >= bh.maxBytesForFileRotation {
 		// Rotate file
 		flushErr := bh.writer.Flush()
@@ -122,7 +125,15 @@ func (bh *BufferHandle) rotateFile() {
 			bh.logger.Warnf("flush:%v", flushErr.Error())
 			return
 		}
-		defer bh.file.Close()
+		closedFileName := bh.file.Name()
+		fileStat, statErr:= bh.file.Stat()
+		if statErr != nil {
+			bh.logger.Warnf("unable to get stat info:%v for file: %s", statErr.Error(), closedFileName)
+			return
+		}
+		fSz := fileStat.Size()
+		bh.file.Close()
+		bh.logger.Infof("file:%s closed with size:%s\n", closedFileName, units.BytesSize(float64(fSz)))
 		bh.bytesWritten = 0
 		bh.counter += 1
 
