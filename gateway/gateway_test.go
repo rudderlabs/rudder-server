@@ -1827,9 +1827,9 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 
-			Expect(statStore.GetByName("gateway.pickup_delivery_lag_seconds")).To(Equal([]memstats.Metric{
+			Expect(statStore.GetByName("gateway.event_pickup_lag_seconds")).To(Equal([]memstats.Metric{
 				{
-					Name: "gateway.pickup_delivery_lag_seconds",
+					Name: "gateway.event_pickup_lag_seconds",
 					Tags: map[string]string{"sourceId": SourceIDEnabled, "workspaceId": WorkspaceID},
 					Durations: []time.Duration{
 						time.Second,
