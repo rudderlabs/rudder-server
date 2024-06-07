@@ -67,37 +67,42 @@ func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events
 }
 
 func MockTransformerServer(
-	t testing.TB,
 	expectedRequest *transformer.TransformerEvent,
 	response *transformer.TransformerResponse,
 ) *httptest.Server {
-	t.Helper()
-
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/customTransform":
-			require.Equal(t, http.MethodPost, r.Method, "Expected POST request")
+			if r.Method != http.MethodPost {
+				http.Error(w, "Expected POST request", http.StatusBadRequest)
+				return
+			}
 
 			var actualRequest transformer.TransformerEvent
-			err := json.NewDecoder(r.Body).Decode(&actualRequest)
-			require.NoError(t, err)
+			if err := json.NewDecoder(r.Body).Decode(&actualRequest); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 
-			require.NotNil(t, actualRequest.Credentials, "Expected non-nil credentials in the transformation event")
-			require.NotEmpty(t, actualRequest.Credentials, "Expected non-empty credentials in the transformation event")
-
-			require.Equal(t, expectedRequest, &actualRequest)
+			if !reflect.DeepEqual(expectedRequest, &actualRequest) {
+				http.Error(w, "Expected request does not match actual request", http.StatusBadRequest)
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 
 			responseBytes, err := json.Marshal(response)
-			require.NoError(t, err)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
-			n, err := w.Write(responseBytes)
-			require.NoError(t, err)
-			require.Equal(t, len(responseBytes), n)
+			if _, err := w.Write(responseBytes); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		default:
-			require.FailNowf(t, "MockTransformerServer", "Unexpected request %s to MockTransformerServer, not found: %+v", r.Method, r.URL)
-			w.WriteHeader(http.StatusNotFound)
+			http.NotFound(w, r)
 		}
 	}))
 }
@@ -2460,7 +2465,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
-		It("messages should be skipped on user transform failures, without failing the job - new", func(t *testing.T) {
+		It("messages should be skipped on user transform failures, without failing the job - new", func() {
 			messages := map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -2531,7 +2536,7 @@ var _ = Describe("Processor", Ordered, func() {
 				Error:      "error-combined",
 			}
 
-			transformerSrv := MockTransformerServer(t, expectedTransformerRequest, transformerResponse)
+			transformerSrv := MockTransformerServer(expectedTransformerRequest, transformerResponse)
 			defer transformerSrv.Close()
 
 			assertErrStoreJob := func(job *jobsdb.JobT) {
