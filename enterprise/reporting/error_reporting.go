@@ -540,17 +540,15 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				irep.ErrorMessage < jrep.ErrorMessage ||
 				irep.EventType < jrep.EventType)
 		})
-		errs := make([]types.EDErrorDetails, len(reportGrpKeys))
-		for i, repKey := range reportGrpKeys {
-			repCount := reportsCountMap[repKey]
-			errs[i] = types.EDErrorDetails{
-				StatusCode:   repKey.StatusCode,
-				ErrorCode:    repKey.ErrorCode,
-				ErrorMessage: repKey.ErrorMessage,
-				EventType:    repKey.EventType,
-				Count:        repCount,
+		errs := lo.MapToSlice(reportsCountMap, func(rep types.EDErrorDetails, count int64) types.EDErrorDetails {
+			return types.EDErrorDetails{
+				StatusCode:   rep.StatusCode,
+				ErrorCode:    rep.ErrorCode,
+				ErrorMessage: rep.ErrorMessage,
+				EventType:    rep.EventType,
+				Count:        count,
 			}
-		}
+		})
 		edrSchema.Errors = errs
 		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}
