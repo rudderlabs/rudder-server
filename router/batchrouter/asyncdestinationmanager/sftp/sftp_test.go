@@ -284,11 +284,10 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			now := time.Now()
 			input := "/path/to/{destinationID}_{jobRunID}/{YYYY}/{MM}/{DD}/{hh}/{mm}/{ss}/{ms}/{timestampInSec}/{timestampInMS}"
-			expected := fmt.Sprintf("/path/to/%s_%s/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d_1", "some_destination_id", "some_source_job_run_id", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, now.Unix(), now.UnixNano()/1e6)
+			expected := fmt.Sprintf("/path/to/%s_%s/%d/%02d/%02d/%02d/%02d/%02d/%03d/%d/%d", "some_destination_id", "some_source_job_run_id", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1e6, now.Unix(), now.UnixNano()/1e6)
 			metadata := map[string]any{
 				"destinationID":  "some_destination_id",
 				"sourceJobRunID": "some_source_job_run_id",
-				"partFileNumber": 1,
 			}
 			received, err := getUploadFilePath(input, metadata)
 			Expect(err).To(BeNil())
@@ -298,37 +297,24 @@ var _ = Describe("SFTP test", func() {
 		It("TestNoDynamicVariables", func() {
 			initSFTP()
 			input := "/path/to/file.txt"
-			expected := "/path/to/file_1.txt"
-			received, err := getUploadFilePath(input, map[string]any{
-				"partFileNumber": 1,
-			})
+			expected := "/path/to/file.txt"
+			received, err := getUploadFilePath(input, nil)
 			Expect(err).To(BeNil())
 			Expect(received).To(Equal(expected))
-		})
-
-		It("TestMissingPartFileNumber", func() {
-			initSFTP()
-			input := "/path/to/file.txt"
-			_, err := getUploadFilePath(input, nil)
-			Expect(err).To(MatchError("part file number is missing"))
 		})
 
 		It("TestEmptyInputPath", func() {
 			initSFTP()
 			input := ""
-			_, err := getUploadFilePath(input, map[string]any{
-				"partFileNumber": 1,
-			})
+			_, err := getUploadFilePath(input, nil)
 			Expect(err).To(MatchError("upload file path can not be empty"))
 		})
 
 		It("TestInvalidDynamicVariables", func() {
 			initSFTP()
 			input := "/path/to/{invalid}/file.txt"
-			expected := "/path/to/{invalid}/file_1.txt"
-			received, err := getUploadFilePath(input, map[string]any{
-				"partFileNumber": 1,
-			})
+			expected := "/path/to/{invalid}/file.txt"
+			received, err := getUploadFilePath(input, nil)
 			Expect(err).To(BeNil())
 			Expect(received).To(Equal(expected))
 		})

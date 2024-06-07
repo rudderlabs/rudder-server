@@ -310,11 +310,11 @@ func validate(d destConfig) error {
 
 func validateFilePath(path string) error {
 	if !strings.Contains(path, "{destinationID}") {
-		return errors.New("destinationID is missing in upload filePath")
+		return errors.New("destinationID placeholder is missing in the upload filePath")
 	}
 
 	if !strings.Contains(path, "{jobRunID}") {
-		return errors.New("jobRunID is missing in upload filePath")
+		return errors.New("jobRunID placeholder is missing in the upload filePath")
 	}
 	return nil
 }
