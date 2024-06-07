@@ -66,6 +66,42 @@ func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events
 	}{source: source, events: events})
 }
 
+func MockTransformerServer(
+	t testing.TB,
+	expectedRequest *transformer.TransformerEvent,
+	response *transformer.TransformerResponse,
+) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/customTransform":
+			require.Equal(t, http.MethodPost, r.Method, "Expected POST request")
+
+			var actualRequest transformer.TransformerEvent
+			err := json.NewDecoder(r.Body).Decode(&actualRequest)
+			require.NoError(t, err)
+
+			require.NotNil(t, actualRequest.Credentials, "Expected non-nil credentials in the transformation event")
+			require.NotEmpty(t, actualRequest.Credentials, "Expected non-empty credentials in the transformation event")
+
+			require.Equal(t, expectedRequest, &actualRequest)
+
+			w.Header().Set("Content-Type", "application/json")
+
+			responseBytes, err := json.Marshal(response)
+			require.NoError(t, err)
+
+			n, err := w.Write(responseBytes)
+			require.NoError(t, err)
+			require.Equal(t, len(responseBytes), n)
+		default:
+			require.FailNowf(t, "MockTransformerServer", "Unexpected request %s to MockTransformerServer, not found: %+v", r.Method, r.URL)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
 type testContext struct {
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -2394,6 +2430,162 @@ var _ = Describe("Processor", Ordered, func() {
 				Return(transformer.Response{
 					Events:       []transformer.TransformerResponse{},
 					FailedEvents: transformerResponses,
+				})
+
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				AnyTimes()
+
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
+				})
+
+			// One Store call is expected for all events
+			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(1))
+					for _, job := range jobs {
+						assertErrStoreJob(job)
+					}
+				})
+
+			processorSetupAndAssertJobHandling(processor, c)
+		})
+		It("messages should be skipped on user transform failures, without failing the job - new", func(t *testing.T) {
+			messages := map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+				},
+				"message-2": {
+					id:                        "2",
+					jobid:                     1011,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+				},
+			}
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:      uuid.New(),
+					JobID:     1010,
+					CreatedAt: time.Date(2020, 4, 28, 23, 26, 0, 0, time.UTC),
+					ExpireAt:  time.Date(2020, 4, 28, 23, 26, 0, 0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabled,
+						"2001-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-1"],
+							messages["message-2"],
+						},
+						createMessagePayload,
+					),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+			}
+
+			expectedTransformerRequest := &transformer.TransformerEvent{
+				Metadata: transformer.Metadata{
+					MessageID: "msgID",
+				},
+				Message: map[string]interface{}{
+					"src-key-1":       "msgID",
+					"forceStatusCode": 200,
+				},
+				Credentials: []transformer.Credential{
+					{
+						ID:       "test-credential",
+						Key:      "test-key",
+						Value:    "test-value",
+						IsSecret: false,
+					},
+				},
+			}
+
+			transformerResponse := &transformer.TransformerResponse{
+				Metadata: transformer.Metadata{
+					MessageIDs: []string{"message-1", "message-2"},
+				},
+				StatusCode: 400,
+				Error:      "error-combined",
+			}
+
+			transformerSrv := MockTransformerServer(t, expectedTransformerRequest, transformerResponse)
+			defer transformerSrv.Close()
+
+			assertErrStoreJob := func(job *jobsdb.JobT) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(job.CustomVal).To(Equal("MINIO"))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+
+				var paramsMap, expectedParamsMap map[string]interface{}
+				err := json.Unmarshal(job.Parameters, &paramsMap)
+				Expect(err).To(BeNil())
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`, SourceIDEnabled))
+				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				Expect(err).To(BeNil())
+				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+				Expect(equals).To(Equal(true))
+
+				// compare payloads
+				var payload []map[string]interface{}
+				err = json.Unmarshal(job.EventPayload, &payload)
+				Expect(err).To(BeNil())
+				Expect(len(payload)).To(Equal(2))
+				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
+				Expect(fmt.Sprintf(`message-%s`, message1.id)).To(Equal(payload[0]["messageId"]))
+				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message1.id)))
+				Expect(message1.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
+				message2 := messages[fmt.Sprintf(`message-%v`, 2)]
+				Expect(fmt.Sprintf(`message-%s`, message2.id)).To(Equal(payload[1]["messageId"]))
+				Expect(payload[1]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message2.id)))
+				Expect(message2.expectedOriginalTimestamp).To(Equal(payload[1]["originalTimestamp"]))
+			}
+
+			var toRetryJobsList []*jobsdb.JobT
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+				CustomValFilters: gatewayCustomVal,
+				JobsLimit:        processor.config.maxEventsToProcess.Load(),
+				EventsLimit:      processor.config.maxEventsToProcess.Load(),
+				PayloadSizeLimit: processor.payloadLimit.Load(),
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+			// Test transformer failure
+			mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Return(transformer.Response{
+					Events:       []transformer.TransformerResponse{},
+					FailedEvents: []transformer.TransformerResponse{*transformerResponse},
 				})
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
