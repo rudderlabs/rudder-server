@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -1027,38 +1028,57 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
 	jobDB := Handle{config: config.New()}
 	ch := func(n int) string {
-		return strings.Repeat(string("?"), n)
+		return strings.Repeat("�", n)
 	}
 	toValidUTF8Tests := []struct {
 		in  string
 		out string
+		err error
 	}{
-		{`\u0000`, ""},
-		{`\u0000☺\u0000b☺`, "☺b☺"},
+		{`\u0000`, "", nil},
+		{`\u0000☺\u0000b☺`, "☺b☺", nil},
 		// NOTE: we are not handling the following:
 		// {"\u0000", ""},
 		// {"\u0000☺\u0000b☺", "☺b☺"},
 
-		{"", ""},
-		{"abc", "abc"},
-		{"\uFDDD", "\uFDDD"},
-		{"a\xffb", "a" + ch(1) + "b"},
-		{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD"},
-		{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1)},
-		{"\xC0\xAF", ch(2)},
-		{"\xE0\x80\xAF", ch(3)},
-		{"\xed\xa0\x80", ch(3)},
-		{"\xed\xbf\xbf", ch(3)},
-		{"\xF0\x80\x80\xaf", ch(4)},
-		{"\xF8\x80\x80\x80\xAF", ch(5)},
-		{"\xFC\x80\x80\x80\x80\xAF", ch(6)},
+		{"", "", nil},
+		{"abc", "abc", nil},
+		{"\uFDDD", "\uFDDD", nil},
+		{"a\xffb", "a" + ch(1) + "b", nil},
+		{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD", nil},
+		{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1), nil},
+		{"\xC0\xAF", ch(2), nil},
+		{"\xE0\x80\xAF", ch(3), nil},
+		{"\xed\xa0\x80", ch(3), nil},
+		{"\xed\xbf\xbf", ch(3), nil},
+		{"\xF0\x80\x80\xaf", ch(4), nil},
+		{"\xF8\x80\x80\x80\xAF", ch(5), nil},
+		{"\xFC\x80\x80\x80\x80\xAF", ch(6), nil},
+
+		// {"\ud800", ""},
+		{`\ud800`, ch(1), nil},
+		{`\uDEAD`, ch(1), nil},
+
+		{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
+		{`\uD83D\ude04`, "😄", nil},
+
+		{`\u4e2d\u6587`, "中文", nil},
+		{`\ud83d\udc4a`, "\xf0\x9f\x91\x8a", nil},
+
+		{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
+		{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
 	}
 
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
+	require.NoError(t, err)
+	defer jobDB.TearDown()
+
 	eventPayload := []byte(`{"batch": [{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
-	customVal := "MOCKDS"
-	var jobs []*JobT
-	for _, tt := range toValidUTF8Tests {
-		jobs = append(jobs, &JobT{
+	for i, tt := range toValidUTF8Tests {
+
+		customVal := fmt.Sprintf("TEST_%d", i)
+
+		jobs := []*JobT{{
 			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 			EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
 			UserID:       uuid.New().String(),
@@ -1066,27 +1086,29 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 			CustomVal:    customVal,
 			WorkspaceId:  defaultWorkspaceID,
 			EventCount:   1,
+		}}
+
+		err := jobDB.Store(context.Background(), jobs)
+		if tt.err != nil {
+			require.Error(t, err, "should error")
+			require.Contains(t, err.Error(), tt.err.Error(), "should contain error")
+			continue
+		}
+
+		require.NoError(t, err)
+
+		unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+			ParameterFilters: []ParameterFilterT{},
 		})
-	}
+		require.NoError(t, err, "should not error")
 
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
-	require.NoError(t, err)
-	defer jobDB.TearDown()
+		require.Len(t, unprocessedJob.Jobs, 1)
 
-	err = jobDB.Store(context.Background(), jobs)
-	require.NoError(t, err)
-
-	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
-		CustomValFilters: []string{customVal},
-		JobsLimit:        100,
-		ParameterFilters: []ParameterFilterT{},
-	})
-	require.NoError(t, err, "should not error")
-
-	for i, tt := range toValidUTF8Tests {
 		require.JSONEq(t,
 			string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
-			string(unprocessedJob.Jobs[i].EventPayload),
+			string(unprocessedJob.Jobs[0].EventPayload),
 		)
 	}
 }

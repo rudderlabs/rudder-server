@@ -759,9 +759,10 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: whutils.TableNameForStats(tName)},
+		{Name: "sourceCategory", Value: job.warehouse.Source.SourceDefinition.Category},
 	}
-	job.guageStat(`post_load_table_rows_estimate`, tags...).Gauge(int(tableUpload.TotalEvents))
-	job.guageStat(`post_load_table_rows`, tags...).Gauge(int(loadTableStat.RowsInserted))
+	job.gaugeStat(`post_load_table_rows_estimate`, tags...).Gauge(int(tableUpload.TotalEvents))
+	job.gaugeStat(`post_load_table_rows`, tags...).Gauge(int(loadTableStat.RowsInserted))
 
 	status = model.TableUploadExported
 	_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tName, repo.TableUploadSetOptions{
@@ -801,8 +802,8 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	}
 	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
 
-	job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
-	job.counterStat(`warehouse_load_table_column_limit`, tags...).Count(columnCountLimit)
+	job.gaugeStat(`warehouse_load_table_column_count`, tags...).Gauge(currentColumnsCount)
+	job.gaugeStat(`warehouse_load_table_column_limit`, tags...).Gauge(columnCountLimit)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
