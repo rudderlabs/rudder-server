@@ -9,12 +9,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -542,38 +546,82 @@ func TestBatchRouter(t *testing.T) {
 	defer routerDB.TearDown()
 
 	errDB := jobsdb.NewForReadWrite(
-		"router",
+		"err",
 		jobsdb.WithDBHandle(p.DB),
 	)
-	require.NoError(t, routerDB.Start())
-	defer routerDB.TearDown()
+	require.NoError(t, errDB.Start())
+	defer errDB.TearDown()
 
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
-	workspaceIDIST := `workspaceIDIST`
-	c.Set("BatchRouter.customTimezone."+workspaceIDIST, "Asia/Kolkata")
+	testCases := []struct {
+		name           string
+		customTimezone string
+		filenamePrefix string
+	}{
+		{
+			name:           "default",
+			filenamePrefix: "rudder-logs/{sourceID}/2021-06-28",
+		},
+		{
+			name:           "CET",
+			customTimezone: "Europe/Amsterdam",
+			filenamePrefix: "rudder-logs/{sourceID}/2021-06-28",
+		},
+		{
+			name:           "IST",
+			customTimezone: "Asia/Kolkata",
+			filenamePrefix: "rudder-logs/{sourceID}/2021-06-29",
+		},
+	}
 
-	s3Dest := destination.MINIOFromResource("minio-dest", minioResource)
-	s3Dest.WorkspaceID = workspaceID
-	bc := backendconfigtest.NewConfigBuilder().WithSource(
-		backendconfigtest.NewSourceBuilder().WithConnection(s3Dest).Build(),
-	).Build()
-	bc.WorkspaceID = workspaceID
+	// time is picked so it goes to the next day for IST
+	now := time.Date(2021, 6, 28, 21, 1, 30, 0, time.UTC)
 
-	s3DestIST := destination.MINIOFromResource("minio-dest-ist", minioResource)
-	s3DestIST.WorkspaceID = workspaceIDIST
-	bcIST := backendconfigtest.NewConfigBuilder().WithSource(
-		backendconfigtest.NewSourceBuilder().WithConnection(s3DestIST).Build(),
-	).Build()
-	bcIST.WorkspaceID = workspaceIDIST
+	var jobs []*jobsdb.JobT
+	bcs := make(map[string]backendconfig.ConfigT)
+	filePrefixes := make([]string, 0)
 
-	backendConfig := backendconfigtest.NewStaticLibrary(map[string]backendconfig.ConfigT{
-		workspaceID:    bc,
-		workspaceIDIST: bcIST,
-	})
+	for _, tc := range testCases {
+		workspaceID := `workspaceID` + tc.name
 
-	now := time.Date(2021, 6, 28, 23, 4, 48, 527000000, time.UTC)
+		if tc.customTimezone != "" {
+			c.Set("BatchRouter.customTimezone."+workspaceID, tc.customTimezone)
+		}
+
+		s3Dest := destination.MINIOFromResource("minio-dest"+tc.name, minioResource)
+		s3Dest.WorkspaceID = workspaceID
+		bc := backendconfigtest.NewConfigBuilder().WithSource(
+			backendconfigtest.NewSourceBuilder().WithConnection(s3Dest).Build(),
+		).Build()
+		bc.WorkspaceID = workspaceID
+
+		bcs[workspaceID] = bc
+
+		filePrefixes = append(filePrefixes, strings.ReplaceAll(tc.filenamePrefix, "{sourceID}", bc.Sources[0].ID))
+
+		jobs = append(jobs, &jobsdb.JobT{
+			WorkspaceId: workspaceID,
+			EventPayload: jsonb.RawMessage(`
+			{
+				"receivedAt": "2019-10-12T07:20:50.52Z",
+				"metadata": {
+					"columns": {
+						"id": "string"
+					},
+					"table": "tracks"
+				}
+			}`),
+			Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
+				"source_id": %[1]q,
+				"destination_id": %[2]q,
+				"receivedAt": %[3]q
+			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)))),
+			CustomVal: s3Dest.DestinationDefinition.Name,
+			CreatedAt: time.Now(),
+		})
+	}
 
 	batchrouter := &Handle{
 		now: func() time.Time {
@@ -581,8 +629,8 @@ func TestBatchRouter(t *testing.T) {
 		},
 	}
 	batchrouter.Setup(
-		s3Dest.DestinationDefinition.Name,
-		backendConfig,
+		"MINIO",
+		backendconfigtest.NewStaticLibrary(bcs),
 		routerDB,
 		errDB,
 		nil,
@@ -596,70 +644,22 @@ func TestBatchRouter(t *testing.T) {
 	batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
 	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	err = routerDB.Store(ctx, []*jobsdb.JobT{{
-		WorkspaceId: workspaceID,
-		EventPayload: jsonb.RawMessage(`
-		{
-			"receivedAt": "2019-10-12T07:20:50.52Z",
-			"metadata": {
-				"columns": {
-					"id": "string"
-				},
-				"table": "tracks"
-			}
-		}`),
-		Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
-			"source_id": %[1]q,
-			"destination_id": %[2]q,
-			"receivedAt": %[3]q
-		}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)))),
-		CustomVal: s3Dest.DestinationDefinition.Name,
-		CreatedAt: time.Now(),
-	}, {
-		WorkspaceId: workspaceIDIST,
-		EventPayload: jsonb.RawMessage(`
-		{
-			"receivedAt": "2019-10-12T07:20:50.52Z",
-			"metadata": {
-				"columns": {
-					"id": "string"
-				},
-				"table": "tracks"
-			}
-		}`),
-		Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
-			"source_id": %[1]q,
-			"destination_id": %[2]q,
-			"receivedAt": %[3]q
-		}`, bcIST.Sources[0].ID, s3DestIST.ID, time.Now().Format(time.RFC3339)))),
-		CustomVal: s3DestIST.DestinationDefinition.Name,
-		CreatedAt: time.Now(),
-	}})
+	err = routerDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
-
-	// queryParams := jobsdb.GetQueryParams{
-	// 	CustomValFilters: []string{s3Dest.Name},
-	// 	JobsLimit:        10,
-	// 	PayloadSizeLimit: 1000,
-	// }
-
-	// r, err := routerDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
-	// require.NoError(t, err)
-
-	// require.Len(t, r.Jobs, 1)
 
 	batchrouter.Start()
 	defer batchrouter.Shutdown()
 
 	require.Eventually(t, func() bool {
-		return len(minioContents(t, ctx, minioResource, "")) > 1
-	}, 30*time.Second, 5*time.Second)
+		return len(minioContents(t, context.Background(), minioResource, "")) == len(bcs)
+	}, 5*time.Second, 200*time.Millisecond)
 
-	require.Empty(t, minioContents(t, ctx, minioResource, ""))
+	filenames := lo.Map(
+		lo.Keys(minioContents(t, context.Background(), minioResource, "")),
+		func(k string, _ int) string { return path.Dir(k) },
+	)
 
-	cancel()
+	require.ElementsMatch(t, filePrefixes, filenames)
 }
 
 func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {

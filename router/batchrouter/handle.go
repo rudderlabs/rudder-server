@@ -408,8 +408,8 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		loc, err := time.LoadLocation(customTimezone)
 		if err != nil {
 			brt.logger.Errorn(
-				"Error loading custom timezone", 
-				logger.NewErrorField(err), 
+				"Error loading custom timezone",
+				logger.NewErrorField(err),
 				logger.NewStringField("customTimezone", customTimezone),
 			)
 		}

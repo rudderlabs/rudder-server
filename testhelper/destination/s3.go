@@ -7,7 +7,6 @@ import (
 )
 
 func MINIOFromResource(id string, m *minio.Resource) backendconfig.DestinationT {
-
 	destType := "MINIO"
 
 	return backendconfig.DestinationT{
@@ -29,5 +28,4 @@ func MINIOFromResource(id string, m *minio.Resource) backendconfig.DestinationT 
 			"useRudderStorage": false,
 		},
 	}
-
 }

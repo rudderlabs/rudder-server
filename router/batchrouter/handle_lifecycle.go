@@ -95,7 +95,7 @@ func (brt *Handle) Setup(
 	brt.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
 	brt.disableEgress = config.GetBoolVar(false, "disableEgress")
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	brt.setupReloadableVars(conf)
+	brt.setupReloadableVars()
 	brt.drainer = routerutils.NewDrainer(
 		conf,
 		func(destinationID string) (*routerutils.DestinationWithSources, bool) {
@@ -196,7 +196,7 @@ func (brt *Handle) Setup(
 	}))
 }
 
-func (brt *Handle) setupReloadableVars(c *config.Config) {
+func (brt *Handle) setupReloadableVars() {
 	brt.maxFailedCountForJob = config.GetReloadableIntVar(128, 1, "BatchRouter."+brt.destType+".maxFailedCountForJob", "BatchRouter.maxFailedCountForJob")
 	brt.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "BatchRouter.RSources."+brt.destType+".maxFailedCountForJob", "BatchRouter.RSources.maxFailedCountForJob")
 	brt.asyncUploadTimeout = config.GetReloadableDurationVar(30, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
