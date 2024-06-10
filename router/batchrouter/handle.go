@@ -51,6 +51,7 @@ type Handle struct {
 	destType string
 	// dependencies
 
+	conf               *config.Config
 	logger             logger.Logger
 	netHandle          *http.Client
 	jobsDB             jobsdb.JobsDB
@@ -65,6 +66,7 @@ type Handle struct {
 	Diagnostics        diagnostics.DiagnosticsI
 	adaptiveLimit      func(int64) int64
 	isolationStrategy  isolation.Strategy
+	now                func() time.Time
 
 	// configuration
 
@@ -144,6 +146,10 @@ type Handle struct {
 
 // mainLoop is responsible for pinging the workers periodically for every active partition
 func (brt *Handle) mainLoop(ctx context.Context) {
+	if brt.now == nil {
+		brt.now = time.Now
+	}
+
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
 	mainLoopSleep := time.Duration(0)
@@ -394,13 +400,30 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		datePrefixLayout = dateFormat
 	}
 
+	workspaceID := batchJobs.Connection.Destination.WorkspaceID
+	customTimezone := brt.conf.GetString("BatchRouter.customTimezone."+workspaceID, "")
+
+	now := brt.now()
+	if customTimezone != "" {
+		loc, err := time.LoadLocation(customTimezone)
+		if err != nil {
+			brt.logger.Errorn(
+				"Error loading custom timezone", 
+				logger.NewErrorField(err), 
+				logger.NewStringField("customTimezone", customTimezone),
+			)
+		}
+		now = now.In(loc)
+	}
+
 	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
 	switch datePrefixLayout {
 	case "MM-DD-YYYY": // used to be earlier default
-		datePrefixLayout = time.Now().Format("01-02-2006")
+		datePrefixLayout = now.Format("01-02-2006")
 	default:
-		datePrefixLayout = time.Now().Format("2006-01-02")
+		datePrefixLayout = now.Format("2006-01-02")
 	}
+
 	keyPrefixes := []string{folderName, batchJobs.Connection.Source.ID, brt.customDatePrefix.Load() + datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)

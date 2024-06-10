@@ -1,6 +1,7 @@
 package batchrouter
 
 import (
+	"compress/gzip"
 	"context"
 	jsonb "encoding/json"
 	"errors"
@@ -12,7 +13,11 @@ import (
 	"testing"
 	"time"
 
+	miniogo "github.com/minio/minio-go/v7"
+	"github.com/ory/dockertest/v3"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -24,6 +29,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/filemanager/mock_filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -516,4 +523,167 @@ func TestPostToWarehouse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBatchRouter(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	p, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	c := config.New()
+
+	routerDB := jobsdb.NewForReadWrite(
+		"router",
+		jobsdb.WithDBHandle(p.DB),
+	)
+	require.NoError(t, routerDB.Start())
+	defer routerDB.TearDown()
+
+	errDB := jobsdb.NewForReadWrite(
+		"router",
+		jobsdb.WithDBHandle(p.DB),
+	)
+	require.NoError(t, routerDB.Start())
+	defer routerDB.TearDown()
+
+	minioResource, err := minio.Setup(pool, t)
+	require.NoError(t, err)
+
+	workspaceIDIST := `workspaceIDIST`
+	c.Set("BatchRouter.customTimezone."+workspaceIDIST, "Asia/Kolkata")
+
+	s3Dest := destination.MINIOFromResource("minio-dest", minioResource)
+	s3Dest.WorkspaceID = workspaceID
+	bc := backendconfigtest.NewConfigBuilder().WithSource(
+		backendconfigtest.NewSourceBuilder().WithConnection(s3Dest).Build(),
+	).Build()
+	bc.WorkspaceID = workspaceID
+
+	s3DestIST := destination.MINIOFromResource("minio-dest-ist", minioResource)
+	s3DestIST.WorkspaceID = workspaceIDIST
+	bcIST := backendconfigtest.NewConfigBuilder().WithSource(
+		backendconfigtest.NewSourceBuilder().WithConnection(s3DestIST).Build(),
+	).Build()
+	bcIST.WorkspaceID = workspaceIDIST
+
+	backendConfig := backendconfigtest.NewStaticLibrary(map[string]backendconfig.ConfigT{
+		workspaceID:    bc,
+		workspaceIDIST: bcIST,
+	})
+
+	now := time.Date(2021, 6, 28, 23, 4, 48, 527000000, time.UTC)
+
+	batchrouter := &Handle{
+		now: func() time.Time {
+			return now
+		},
+	}
+	batchrouter.Setup(
+		s3Dest.DestinationDefinition.Name,
+		backendConfig,
+		routerDB,
+		errDB,
+		nil,
+		transientsource.NewEmptyService(),
+		rsources.NewNoOpService(),
+		destinationdebugger.NewNoOpService(),
+		c,
+	)
+
+	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
+	batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
+	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	err = routerDB.Store(ctx, []*jobsdb.JobT{{
+		WorkspaceId: workspaceID,
+		EventPayload: jsonb.RawMessage(`
+		{
+			"receivedAt": "2019-10-12T07:20:50.52Z",
+			"metadata": {
+				"columns": {
+					"id": "string"
+				},
+				"table": "tracks"
+			}
+		}`),
+		Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
+			"source_id": %[1]q,
+			"destination_id": %[2]q,
+			"receivedAt": %[3]q
+		}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)))),
+		CustomVal: s3Dest.DestinationDefinition.Name,
+		CreatedAt: time.Now(),
+	}, {
+		WorkspaceId: workspaceIDIST,
+		EventPayload: jsonb.RawMessage(`
+		{
+			"receivedAt": "2019-10-12T07:20:50.52Z",
+			"metadata": {
+				"columns": {
+					"id": "string"
+				},
+				"table": "tracks"
+			}
+		}`),
+		Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
+			"source_id": %[1]q,
+			"destination_id": %[2]q,
+			"receivedAt": %[3]q
+		}`, bcIST.Sources[0].ID, s3DestIST.ID, time.Now().Format(time.RFC3339)))),
+		CustomVal: s3DestIST.DestinationDefinition.Name,
+		CreatedAt: time.Now(),
+	}})
+	require.NoError(t, err)
+
+	// queryParams := jobsdb.GetQueryParams{
+	// 	CustomValFilters: []string{s3Dest.Name},
+	// 	JobsLimit:        10,
+	// 	PayloadSizeLimit: 1000,
+	// }
+
+	// r, err := routerDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
+	// require.NoError(t, err)
+
+	// require.Len(t, r.Jobs, 1)
+
+	batchrouter.Start()
+	defer batchrouter.Shutdown()
+
+	require.Eventually(t, func() bool {
+		return len(minioContents(t, ctx, minioResource, "")) > 1
+	}, 30*time.Second, 5*time.Second)
+
+	require.Empty(t, minioContents(t, ctx, minioResource, ""))
+
+	cancel()
+}
+
+func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {
+	contents := make(map[string]string)
+
+	doneCh := make(chan struct{})
+	defer close(doneCh)
+
+	opts := miniogo.ListObjectsOptions{
+		Recursive: true,
+		Prefix:    prefix,
+	}
+	for objInfo := range dest.Client.ListObjects(ctx, dest.BucketName, opts) {
+		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, miniogo.GetObjectOptions{})
+		require.NoError(t, err)
+
+		g, err := gzip.NewReader(o)
+		require.NoError(t, err)
+
+		b, err := io.ReadAll(g)
+		require.NoError(t, err)
+
+		contents[objInfo.Key] = string(b)
+	}
+
+	return contents
 }
