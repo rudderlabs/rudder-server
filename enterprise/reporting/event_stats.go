@@ -2,7 +2,6 @@ package reporting
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -50,7 +49,6 @@ func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 			"status":          status,
 			"trackingPlanId":  metrics[index].ConnectionDetails.TrackingPlanID,
 		}
-		fmt.Println(tags)
 		es.stats.NewTaggedStat(EventsProcessedMetricName, stats.CountType, tags).Count(int(metrics[index].StatusDetail.Count))
 	}
 }
