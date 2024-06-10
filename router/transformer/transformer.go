@@ -166,8 +166,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 		if trans.oAuthV2EnabledLoader.Load() {
-			// TODO: Remove later
-			trans.logger.Infon("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
+			trans.logger.Debugn("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
 			destinationInfo := &oauthv2.DestinationInfo{
 				Config:           transformMessageCopy.Data[0].Destination.Config,
 				DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
@@ -435,6 +434,21 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
+	if trans.oAuthV2EnabledLoader.Load() {
+		for _, metadata := range proxyReqParams.ResponseData.Metadata {
+			// Conditions for which InterceptorResponse.StatusCode/Response will not be empty
+			// 1. authErrorCategory == CategoryRefreshToken
+			// 2. authErrorCategory == CategoryAuthStatusInactive
+			// 3. Any error occurred while performing authStatusInactive / RefreshToken
+			// Under these conditions, we will have to propagate the response from interceptor to JobsDB
+			if transportResponse.InterceptorResponse.StatusCode > 0 {
+				transResp.routerJobResponseCodes[metadata.JobID] = transportResponse.InterceptorResponse.StatusCode
+			}
+			if transportResponse.InterceptorResponse.Response != "" {
+				transResp.routerJobResponseBodys[metadata.JobID] = transportResponse.InterceptorResponse.Response
+			}
+		}
+	}
 	if trans.oAuthV2EnabledLoader.Load() && transportResponse.InterceptorResponse.Response != "" {
 		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
@@ -519,7 +533,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	httpReqStTime := time.Now()
 	var resp *http.Response
 	if trans.oAuthV2EnabledLoader.Load() {
-		trans.logger.Infon("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
+		trans.logger.Debugn("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
 		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
 		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
