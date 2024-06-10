@@ -86,6 +86,12 @@ var dataTypesMapToRudder = map[string]string{
 	"timestamp": "datetime",
 }
 
+var semiStructuredDataTypes = []string{
+	"array",
+	"map",
+	"struct",
+}
+
 // excludeColumnsMap Columns you need to exclude
 // Since event_date is an auto generated column in order to support partitioning.
 // We need to ignore it during query generation.
@@ -360,20 +366,23 @@ func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 				}
 				unrecognizedSchema[tableName][colName] = warehouseutils.MissingDatatype
 
-				datatypeForStats := strings.ToLower(dataType)
-				if strings.HasPrefix(datatypeForStats, "array") {
-					datatypeForStats = "array"
-				} else if strings.HasPrefix(datatypeForStats, "map") {
-					datatypeForStats = "map"
-				} else if strings.HasPrefix(datatypeForStats, "struct") {
-					datatypeForStats = "struct"
-				}
-
-				warehouseutils.WHCounterStat(d.stats, warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatypeForStats}).Count(1)
+				d.sendStatForMissingDatatype(dataType)
 			}
 		}
 	}
 	return schema, unrecognizedSchema, nil
+}
+
+func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
+	datatypeForStats := strings.ToLower(missingDatatype)
+	for _, semiStructuredDataType := range semiStructuredDataTypes {
+		if strings.HasPrefix(datatypeForStats, semiStructuredDataType) {
+			datatypeForStats = semiStructuredDataType
+			break
+		}
+	}
+
+	warehouseutils.WHCounterStat(d.stats, warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatypeForStats}).Count(1)
 }
 
 // fetchTableAttributes fetches the attributes of a table
