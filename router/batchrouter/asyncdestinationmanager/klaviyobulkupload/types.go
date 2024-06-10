@@ -152,6 +152,7 @@ type Profile struct {
 			Country string `json:"country,omitempty"`
 			IP      string `json:"ip,omitempty"`
 		} `json:"location,omitempty"`
+		Properties map[string]interface{} `json:"properties,omitempty"`
 	} `json:"attributes,omitempty"`
 	ID   string `json:"id,omitempty"`
 	Type string `json:"type,omitempty"`

@@ -330,9 +330,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
 		}
 		profileStructure := kbu.ExtractProfile(input)
-		if profileStructure == (Profile{}) {
-			return kbu.generateKlaviyoErrorOutput("Error while extracting profile. No profile data passed", err, importingJobIDs, destinationID)
-		}
 		combinedProfiles = append(combinedProfiles, profileStructure)
 	}
 
