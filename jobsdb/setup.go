@@ -48,7 +48,6 @@ func (jd *Handle) dropDatabaseTables(l lock.LockToken) {
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))
 	jd.dropJournal()
-	jd.assertError(jd.dropAllBackupDS())
 }
 
 func (jd *Handle) dropSchemaMigrationTables() {

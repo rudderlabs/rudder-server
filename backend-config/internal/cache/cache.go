@@ -7,8 +7,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -17,7 +18,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
-var pkgLogger = logger.NewLogger().Child("backend-config-cache")
+var (
+	pkgLogger = logger.NewLogger().Child("backend-config-cache")
+	json      = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
 type Cache interface {
 	Get(ctx context.Context) ([]byte, error)

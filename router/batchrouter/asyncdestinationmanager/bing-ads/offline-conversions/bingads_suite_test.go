@@ -1,4 +1,4 @@
-package bingads
+package offline_conversions
 
 import (
 	"testing"

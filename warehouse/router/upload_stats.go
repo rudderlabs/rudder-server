@@ -2,10 +2,9 @@ package router
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -40,11 +39,7 @@ func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) 
 	return job.statsFactory.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
-func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	extraTags = append(extraTags, warehouseutils.Tag{
-		Name:  "sourceCategory",
-		Value: job.warehouse.Source.SourceDefinition.Category,
-	})
+func (job *UploadJob) gaugeStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	return job.statsFactory.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
 }
 
@@ -108,12 +103,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
-	capturedTableName := strings.ToLower(tableName)
-	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if !slices.Contains(rudderAPISupportedEventTypes, capturedTableName) {
-		// making all other tableName as other, to reduce cardinality
-		capturedTableName = "others"
-	}
+	capturedTableName := warehouseutils.TableNameForStats(tableName)
 
 	job.counterStat(`event_delivery`, warehouseutils.Tag{
 		Name:  "tableName",

@@ -81,9 +81,11 @@ func (r *Router) Track(
 	}
 
 	trackUploadMissingStat := r.statsFactory.NewTaggedStat("warehouse_track_upload_missing", stats.GaugeType, stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      moduleName,
-		"destType":    r.destType,
+		"workspaceId":   warehouse.WorkspaceID,
+		"module":        moduleName,
+		"destType":      r.destType,
+		"sourceId":      source.ID,
+		"destinationId": destination.ID,
 		"warehouseID": misc.GetTagName(
 			destination.ID,
 			source.Name,

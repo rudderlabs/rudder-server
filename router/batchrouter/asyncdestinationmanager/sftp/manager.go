@@ -27,9 +27,15 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
 
+	jobRunID := gjson.GetBytes(asyncDestStruct.OriginalJobParameters[0], "source_job_run_id").String()
+	metadata := map[string]any{
+		"destinationID":  destinationID,
+		"sourceJobRunID": jobRunID,
+	}
+
 	result := gjson.ParseBytes(destConfigJSON)
 	uploadFilePath := result.Get("filePath").String()
-	uploadFilePath = getUploadFilePath(uploadFilePath)
+	uploadFilePath = getUploadFilePath(uploadFilePath, metadata)
 	fileFormat := result.Get("fileFormat").String()
 
 	// Generate temporary file based on the destination's file format
@@ -67,14 +73,9 @@ func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUp
 	if err != nil {
 		return nil, fmt.Errorf("creating SSH config: %w", err)
 	}
-	sshClient, err := sftp.NewSSHClient(sshConfig)
-	if err != nil {
-		return nil, fmt.Errorf("creating SSH client: %w", err)
-	}
 
-	fileManager, err := sftp.NewFileManager(sshClient)
+	fileManager, err := sftp.NewFileManager(sshConfig, sftp.WithRetryOnIdleConnection())
 	if err != nil {
-		sshClient.Close()
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 

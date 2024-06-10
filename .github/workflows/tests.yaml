@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          check-latest: true
+          go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
 
@@ -39,7 +39,7 @@ jobs:
         if: matrix.FEATURES == 'oss'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
-          RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+          RSERVER_ENABLE_MULTITENANCY: false
   warehouse-integration:
     name: Warehouse Integration
     runs-on: 'ubuntu-20.04'
@@ -76,7 +76,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          check-latest: true
+          go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          check-latest: true
+          go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - run: make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          check-latest: true
+          go-version-file: 'go.mod'
       - run: go version
       - run: go mod download
       - name: Package Unit [ ${{ matrix.package }} ]
@@ -188,7 +188,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          check-latest: true
+          go-version-file: 'go.mod'
       - name: Download coverage reports
         uses: actions/download-artifact@v4
       - name: Merge Coverage

@@ -11,8 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 )
 
 func TestMigration(t *testing.T) {
@@ -40,8 +38,6 @@ func TestMigration(t *testing.T) {
 			ReadWrite,
 			true,
 			tablePrefix,
-			[]prebackup.Handler{},
-			fileuploader.NewDefaultProvider(),
 		)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
@@ -227,8 +223,6 @@ func TestMigration(t *testing.T) {
 			ReadWrite,
 			true,
 			tablePrefix,
-			[]prebackup.Handler{},
-			fileuploader.NewDefaultProvider(),
 		))
 		defer jobDB.TearDown()
 

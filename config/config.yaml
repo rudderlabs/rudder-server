@@ -37,6 +37,7 @@ Gateway:
     maxRetryTime: 10s
     sourceListForParsingParams:
       - shopify
+      - adjust
 EventSchemas:
   enableEventSchemasFeature: false
   syncInterval: 240s

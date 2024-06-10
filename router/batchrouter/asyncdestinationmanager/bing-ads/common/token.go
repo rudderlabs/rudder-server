@@ -1,4 +1,4 @@
-package bingads
+package common
 
 import (
 	"encoding/json"
@@ -13,31 +13,31 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type secretStruct struct {
+type SecretStruct struct {
 	AccessToken    string `json:"accessToken"`
 	RefreshToken   string `json:"refreshToken"`
 	DeveloperToken string `json:"developer_token"`
 	ExpirationDate string `json:"expirationDate"`
 }
 
-type tokenSource struct {
-	workspaceID     string
-	destinationName string
-	accountID       string
-	oauthClient     oauth.Authorizer
-	oauthClientV2   oauthv2.Authorizer
-	destinationID   string
+type TokenSource struct {
+	WorkspaceID     string
+	DestinationName string
+	AccountID       string
+	OauthClient     oauth.Authorizer
+	OauthClientV2   oauthv2.Authorizer
+	DestinationID   string
 }
 
 // authentication related utils
 
-func (ts *tokenSource) generateToken() (*secretStruct, error) {
+func (ts *TokenSource) GenerateToken() (*SecretStruct, error) {
 	refreshTokenParams := oauth.RefreshTokenParams{
-		WorkspaceId: ts.workspaceID,
-		DestDefName: ts.destinationName,
-		AccountId:   ts.accountID,
+		WorkspaceId: ts.WorkspaceID,
+		DestDefName: ts.DestinationName,
+		AccountId:   ts.AccountID,
 	}
-	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
+	statusCode, authResponse := ts.OauthClient.FetchToken(&refreshTokenParams)
 	if statusCode != 200 {
 		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
 	}
@@ -59,7 +59,7 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
 	*/
 
-	secret := secretStruct{}
+	secret := SecretStruct{}
 	err := json.Unmarshal(authResponse.Account.Secret, &secret)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
@@ -71,7 +71,7 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 	}
 	if currentTime.After(expirationTime) {
 		refreshTokenParams.Secret = authResponse.Account.Secret
-		statusCode, authResponse = ts.oauthClient.RefreshToken(&refreshTokenParams)
+		statusCode, authResponse = ts.OauthClient.RefreshToken(&refreshTokenParams)
 		if statusCode != 200 {
 			return nil, fmt.Errorf("error in refreshing access token")
 		}
@@ -84,19 +84,19 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 	return &secret, nil
 }
 
-func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
+func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
 	destination := oauthv2.DestinationInfo{
-		WorkspaceID:    ts.workspaceID,
-		DefinitionName: ts.destinationName,
-		ID:             ts.destinationID,
+		WorkspaceID:    ts.WorkspaceID,
+		DefinitionName: ts.DestinationName,
+		ID:             ts.DestinationID,
 	}
 	refreshTokenParams := oauthv2.RefreshTokenParams{
-		WorkspaceID: ts.workspaceID,
-		DestDefName: ts.destinationName,
-		AccountID:   ts.accountID,
+		WorkspaceID: ts.WorkspaceID,
+		DestDefName: ts.DestinationName,
+		AccountID:   ts.AccountID,
 		Destination: &destination,
 	}
-	statusCode, authResponse, err := ts.oauthClientV2.FetchToken(&refreshTokenParams)
+	statusCode, authResponse, err := ts.OauthClientV2.FetchToken(&refreshTokenParams)
 	if err != nil && authResponse != nil {
 		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
 	}
@@ -121,7 +121,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
 	*/
 
-	var secret secretStruct
+	var secret SecretStruct
 	if err = json.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
@@ -134,7 +134,7 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 		return &secret, nil
 	}
 	refreshTokenParams.Secret = authResponse.Account.Secret
-	statusCode, authResponse, err = ts.oauthClientV2.RefreshToken(&refreshTokenParams)
+	statusCode, authResponse, err = ts.OauthClientV2.RefreshToken(&refreshTokenParams)
 	// TODO: check if the error is not nil working verify during unit test
 	if err != nil {
 		return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
@@ -145,14 +145,14 @@ func (ts *tokenSource) generateTokenV2() (*secretStruct, error) {
 	return &secret, nil
 }
 
-func (ts *tokenSource) Token() (*oauth2.Token, error) {
-	oauthV2Enabled := config.GetReloadableBoolVar(false, "BatchRouter."+ts.destinationName+".oauthV2Enabled", "BatchRouter.oauthV2Enabled")
-	var secret *secretStruct
+func (ts *TokenSource) Token() (*oauth2.Token, error) {
+	oauthV2Enabled := config.GetReloadableBoolVar(false, "BatchRouter."+ts.DestinationName+".oauthV2Enabled", "BatchRouter.oauthV2Enabled")
+	var secret *SecretStruct
 	var err error
 	if oauthV2Enabled.Load() {
-		secret, err = ts.generateTokenV2()
+		secret, err = ts.GenerateTokenV2()
 	} else {
-		secret, err = ts.generateToken()
+		secret, err = ts.GenerateToken()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("generating the accessToken: %w", err)

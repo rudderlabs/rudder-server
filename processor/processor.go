@@ -150,6 +150,9 @@ type Handle struct {
 		jobRunIDs config.ValueLoader[[]string]
 	}
 
+	namespace  string
+	instanceID string
+
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
@@ -396,8 +399,13 @@ func (proc *Handle) Setup(
 	}
 	proc.storePlocker = *kitsync.NewPartitionLocker()
 
+	proc.namespace = config.GetKubeNamespace()
+	proc.instanceID = misc.GetInstanceID()
+
 	// Stats
-	proc.statsFactory = stats.Default
+	if proc.statsFactory == nil {
+		proc.statsFactory = stats.Default
+	}
 	proc.tracer = proc.statsFactory.NewTracer("processor")
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
@@ -910,13 +918,13 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
+func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
-	commonMetadata.Namespace = config.GetKubeNamespace()
-	commonMetadata.InstanceID = misc.GetInstanceID()
+	commonMetadata.Namespace = proc.namespace
+	commonMetadata.InstanceID = proc.instanceID
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
@@ -961,6 +969,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.EventType = commonMetadata.EventType
 	metadata.SourceDefinitionID = commonMetadata.SourceDefinitionID
 	metadata.DestinationID = destination.ID
+	metadata.DestinationName = destination.Name
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
@@ -1608,6 +1617,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
+		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    sourceID,
+			"workspaceId": batchEvent.WorkspaceId,
+		}).Since(receivedAt)
+
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
 			JobState:      jobsdb.Succeeded.State,
@@ -1669,7 +1683,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				ReceivedAt:    receivedAt,
 			}
 
-			commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
 				singularEvent,
 				batchEvent,
 				receivedAt,
@@ -1942,6 +1956,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
+					shallowEventCopy.Metadata.DestinationName = destination.Name
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
 					if len(destination.Transformations) > 0 {
 						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
@@ -2416,8 +2431,8 @@ func (proc *Handle) transformSrcDest(
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
-		Namespace:            config.GetKubeNamespace(),
-		InstanceID:           misc.GetInstanceID(),
+		Namespace:            proc.namespace,
+		InstanceID:           proc.instanceID,
 		DestinationID:        destID,
 		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
