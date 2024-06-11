@@ -262,6 +262,259 @@
         "eventUpload": false,
         "eventUploadTS": 1646073666353
       },
+      "id": "{{.keypairEncryptedSourceID}}",
+      "name": "snowflake-integration",
+      "writeKey": "{{.keypairEncryptedWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "{{.workspaceID}}",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+        {{.preferAppend}}
+        "account": "{{.account}}",
+        "database": "{{.database}}",
+        "warehouse": "{{.warehouse}}",
+        "user": "{{.keypairEncryptedUser}}",
+        "cloudProvider": "AWS",
+        "bucketName": "{{.bucketName}}",
+        "storageIntegration": "",
+        "accessKeyID": "{{.accessKeyID}}",
+        "accessKey": "{{.accessKey}}",
+        "namespace": "{{.keypairEncryptedNamespace}}",
+        "prefix": "snowflake-prefix",
+        "syncFrequency": "30",
+        "enableSSE": false,
+        "useKeyPairAuth": true,
+        "privateKey": "{{.keypairEncryptedPrivateKey}}",
+        "privateKeyPassphrase": "{{.keypairEncryptedPassphrase}}",
+        "useRudderStorage": false
+        },
+        "liveEventsConfig": {},
+        "secretConfig": {},
+        "id": "{{.keypairEncryptedDestinationID}}",
+        "name": "snowflake-demo",
+        "enabled": true,
+        "workspaceId": "{{.workspaceID}}",
+        "deleted": false,
+        "createdAt": "2022-02-08T23:19:58.278Z",
+        "updatedAt": "2022-05-17T08:18:33.587Z",
+        "revisionId": "{{.keypairEncryptedDestinationID}}",
+        "transformations": [],
+        "destinationDefinition": {
+          "config": {
+            "destConfig": {
+              "defaultConfig": [
+                "account",
+                "database",
+                "warehouse",
+                "user",
+                "password",
+                "cloudProvider",
+                "bucketName",
+                "containerName",
+                "storageIntegration",
+                "accessKeyID",
+                "accessKey",
+                "accountName",
+                "accountKey",
+                "credentials",
+                "namespace",
+                "prefix",
+                "syncFrequency",
+                "syncStartAt",
+                "enableSSE",
+                "excludeWindow",
+                "useRudderStorage"
+              ]
+            },
+            "secretKeys": [
+              "password",
+              "accessKeyID",
+              "accessKey"
+            ],
+            "excludeKeys": [],
+            "includeKeys": [],
+            "transformAt": "processor",
+            "transformAtV1": "processor",
+            "supportedSourceTypes": [
+              "android",
+              "ios",
+              "web",
+              "unity",
+              "amp",
+              "cloud",
+              "reactnative",
+              "cloudSource",
+              "flutter",
+              "cordova"
+            ],
+            "saveDestinationResponse": true
+          },
+          "responseRules": null,
+          "options": null,
+          "id": "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+          "name": "SNOWFLAKE",
+          "displayName": "Snowflake",
+          "category": "warehouse",
+          "createdAt": "2020-02-13T05:39:20.184Z",
+          "updatedAt": "2022-02-08T06:46:45.432Z"
+        },
+        "isConnectionEnabled": true,
+        "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "id": "{{.keypairUnencryptedSourceID}}",
+      "name": "snowflake-integration",
+      "writeKey": "{{.keypairUnencryptedWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "{{.workspaceID}}",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+        {{.preferAppend}}
+        "account": "{{.account}}",
+        "database": "{{.database}}",
+        "warehouse": "{{.warehouse}}",
+        "user": "{{.keypairUnencryptedUser}}",
+        "cloudProvider": "AWS",
+        "bucketName": "{{.bucketName}}",
+        "storageIntegration": "",
+        "accessKeyID": "{{.accessKeyID}}",
+        "accessKey": "{{.accessKey}}",
+        "namespace": "{{.keypairUnencryptedNamespace}}",
+        "prefix": "snowflake-prefix",
+        "syncFrequency": "30",
+        "enableSSE": false,
+        "useKeyPairAuth": true,
+        "privateKey": "{{.keypairUnencryptedPrivateKey}}",
+        "useRudderStorage": false
+        },
+        "liveEventsConfig": {},
+        "secretConfig": {},
+        "id": "{{.keypairUnencryptedDestinationID}}",
+        "name": "snowflake-demo",
+        "enabled": true,
+        "workspaceId": "{{.workspaceID}}",
+        "deleted": false,
+        "createdAt": "2022-02-08T23:19:58.278Z",
+        "updatedAt": "2022-05-17T08:18:33.587Z",
+        "revisionId": "{{.keypairUnencryptedDestinationID}}",
+        "transformations": [],
+        "destinationDefinition": {
+          "config": {
+            "destConfig": {
+              "defaultConfig": [
+                "account",
+                "database",
+                "warehouse",
+                "user",
+                "password",
+                "cloudProvider",
+                "bucketName",
+                "containerName",
+                "storageIntegration",
+                "accessKeyID",
+                "accessKey",
+                "accountName",
+                "accountKey",
+                "credentials",
+                "namespace",
+                "prefix",
+                "syncFrequency",
+                "syncStartAt",
+                "enableSSE",
+                "excludeWindow",
+                "useRudderStorage"
+              ]
+            },
+            "secretKeys": [
+              "password",
+              "accessKeyID",
+              "accessKey"
+            ],
+            "excludeKeys": [],
+            "includeKeys": [],
+            "transformAt": "processor",
+            "transformAtV1": "processor",
+            "supportedSourceTypes": [
+              "android",
+              "ios",
+              "web",
+              "unity",
+              "amp",
+              "cloud",
+              "reactnative",
+              "cloudSource",
+              "flutter",
+              "cordova"
+            ],
+            "saveDestinationResponse": true
+          },
+          "responseRules": null,
+          "options": null,
+          "id": "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+          "name": "SNOWFLAKE",
+          "displayName": "Snowflake",
+          "category": "warehouse",
+          "createdAt": "2020-02-13T05:39:20.184Z",
+          "updatedAt": "2022-02-08T06:46:45.432Z"
+        },
+        "isConnectionEnabled": true,
+        "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
       "id": "{{.rbacSourceID}}",
       "name": "snowflake-rbac-integration",
       "writeKey": "{{.rbacWriteKey}}",

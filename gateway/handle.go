@@ -406,6 +406,19 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 		toSet["rudderId"] = rudderId
+		if _, ok := toSet["receivedAt"]; !ok {
+			toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
+		}
+		if _, ok := toSet["requestIP"]; ok {
+			var tcOk bool
+			ipAddr, tcOk = toSet["requestIP"].(string)
+			if !tcOk {
+				gw.logger.Warnf("requestIP is not a string: %v", toSet["requestIP"])
+			}
+
+		} else {
+			toSet["requestIP"] = ipAddr
+		}
 		fillMessageID(toSet)
 		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
@@ -781,6 +794,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			continue
 		}
 
+		gw.stats.NewTaggedStat("gateway.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    msg.Properties.SourceID,
+			"workspaceId": msg.Properties.WorkspaceID,
+		}).Since(msg.Properties.ReceivedAt)
+
 		jobsDBParams := params{
 			MessageID:       msg.Properties.MessageID,
 			SourceID:        msg.Properties.SourceID,
@@ -810,6 +828,15 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			)
 		}
 
+		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
+		if err != nil {
+			return nil, fmt.Errorf("filling receivedAt: %w", err)
+		}
+		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
+		if err != nil {
+			return nil, fmt.Errorf("filling requestIP: %w", err)
+		}
+
 		eventBatch := singularEventBatch{
 			Batch:      []json.RawMessage{msg.Payload},
 			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
@@ -837,6 +864,20 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return jobs, nil
+}
+
+func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {
+	if !gjson.GetBytes(event, "receivedAt").Exists() {
+		return sjson.SetBytes(event, "receivedAt", receivedAt.Format(misc.RFC3339Milli))
+	}
+	return event, nil
+}
+
+func fillRequestIP(event []byte, ip string) ([]byte, error) {
+	if !gjson.GetBytes(event, "requestIP").Exists() {
+		return sjson.SetBytes(event, "requestIP", ip)
+	}
+	return event, nil
 }
 
 func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {
