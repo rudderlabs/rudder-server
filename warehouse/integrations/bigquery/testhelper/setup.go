@@ -41,11 +41,6 @@ func GetBQTestCredentials() (*TestCredentials, error) {
 	return &credentials, nil
 }
 
-func IsBQTestCredentialsAvailable() bool {
-	_, err := GetBQTestCredentials()
-	return err == nil
-}
-
 // RetrieveRecordsFromWarehouse retrieves records from the warehouse based on the given query.
 // It returns a slice of slices, where each inner slice represents a record's values.
 func RetrieveRecordsFromWarehouse(

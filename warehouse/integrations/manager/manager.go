@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
@@ -65,7 +66,7 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		return snowflake.New(conf, logger, stats)
+		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
@@ -90,7 +91,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		return snowflake.New(conf, logger, stats)
+		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:

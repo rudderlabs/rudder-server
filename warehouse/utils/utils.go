@@ -755,16 +755,23 @@ func WHCounterStat(s stats.Stats, name string, warehouse *model.Warehouse, extra
 	return s.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func formatSSLFile(content string) (formattedContent string) {
-	formattedContent = strings.ReplaceAll(content, "\n", "")
-	// Add new line at the end of -----BEGIN CERTIFICATE-----
+// FormatPemContent formats the content of certificates and keys by adding necessary newlines around specific markers.
+func FormatPemContent(content string) string {
+	// Remove all existing newline characters
+	formattedContent := strings.ReplaceAll(content, "\n", "")
+
+	// Add a newline after specific BEGIN markers
 	formattedContent = strings.Replace(formattedContent, "-----BEGIN CERTIFICATE-----", "-----BEGIN CERTIFICATE-----\n", 1)
-	// Add new line at the end of -----BEGIN RSA PRIVATE KEY-----
 	formattedContent = strings.Replace(formattedContent, "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n", 1)
-	// Add new line at the start and end of -----END CERTIFICATE-----
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN ENCRYPTED PRIVATE KEY-----", "-----BEGIN ENCRYPTED PRIVATE KEY-----\n", 1)
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n", 1)
+
+	// Add a newline before and after specific END markers
 	formattedContent = strings.Replace(formattedContent, "-----END CERTIFICATE-----", "\n-----END CERTIFICATE-----\n", 1)
-	// Add new line at the start and end of -----END RSA PRIVATE KEY-----
 	formattedContent = strings.Replace(formattedContent, "-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----\n", 1)
+	formattedContent = strings.Replace(formattedContent, "-----END ENCRYPTED PRIVATE KEY-----", "\n-----END ENCRYPTED PRIVATE KEY-----\n", 1)
+	formattedContent = strings.Replace(formattedContent, "-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----\n", 1)
+
 	return formattedContent
 }
 
@@ -802,9 +809,9 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	if clientKeyConfig == nil || clientCertConfig == nil || serverCAConfig == nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error extracting ssl information; invalid config passed for destination %s", destination.ID), "certs_nil_value"}
 	}
-	clientKey := formatSSLFile(clientKeyConfig.(string))
-	clientCert := formatSSLFile(clientCertConfig.(string))
-	serverCert := formatSSLFile(serverCAConfig.(string))
+	clientKey := FormatPemContent(clientKeyConfig.(string))
+	clientCert := FormatPemContent(clientCertConfig.(string))
+	serverCert := FormatPemContent(serverCAConfig.(string))
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
 	if err = os.MkdirAll(sslDirPath, 0o700); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}

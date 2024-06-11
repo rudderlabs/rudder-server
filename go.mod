@@ -97,6 +97,7 @@ require (
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.5.1
 	github.com/xitongsys/parquet-go-source v0.0.0-20240122235623-d6294584ab18
+	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
 	go.etcd.io/etcd/api/v3 v3.5.14
 	go.etcd.io/etcd/client/v3 v3.5.14
 	go.uber.org/atomic v1.11.0
