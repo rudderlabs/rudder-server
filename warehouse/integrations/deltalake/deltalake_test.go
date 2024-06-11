@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/golang/mock/gomock"
@@ -25,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -170,17 +172,7 @@ func TestIntegration(t *testing.T) {
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		t.Cleanup(func() {
-			require.Eventually(t,
-				func() bool {
-					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace)); err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
-				time.Minute,
-				time.Second,
-			)
+			dropSchema(t, db, namespace)
 		})
 
 		testCases := []struct {
@@ -324,17 +316,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Validation", func(t *testing.T) {
 		t.Cleanup(func() {
-			require.Eventually(t,
-				func() bool {
-					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace)); err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
-				time.Minute,
-				time.Second,
-			)
+			dropSchema(t, db, namespace)
 		})
 
 		dest := backendconfig.DestinationT{
@@ -415,20 +397,6 @@ func TestIntegration(t *testing.T) {
 
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
-		cleanupSchema := func() {
-			require.Eventually(t,
-				func() bool {
-					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
-					if err != nil {
-						t.Logf("error deleting schema %q: %v", namespace, err)
-						return false
-					}
-					return true
-				},
-				time.Minute,
-				time.Second,
-			)
-		}
 
 		schemaInUpload := model.TableSchema{
 			"test_bool":     "boolean",
@@ -520,7 +488,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
 			require.Error(t, err)
@@ -543,7 +513,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -589,7 +561,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -640,7 +614,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -689,7 +665,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 				require.NoError(t, err)
@@ -740,7 +718,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -790,7 +770,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -813,7 +795,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -855,7 +839,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -897,7 +883,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
 			require.NoError(t, err)
@@ -938,7 +926,9 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateSchema(ctx)
 			require.NoError(t, err)
-			t.Cleanup(cleanupSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
@@ -981,7 +971,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				_, err = d.DB.QueryContext(ctx,
 					`CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
@@ -1040,7 +1032,9 @@ func TestIntegration(t *testing.T) {
 
 				err = d.CreateSchema(ctx)
 				require.NoError(t, err)
-				t.Cleanup(cleanupSchema)
+				t.Cleanup(func() {
+					dropSchema(t, d.DB.DB, namespace)
+				})
 
 				_, err = d.DB.QueryContext(ctx,
 					`CREATE TABLE IF NOT EXISTS `+namespace+`.`+tableName+` (
@@ -1087,6 +1081,159 @@ func TestIntegration(t *testing.T) {
 			})
 		})
 	})
+
+	t.Run("Fetch Schema", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":           deltaLakeCredentials.Host,
+					"port":           deltaLakeCredentials.Port,
+					"path":           deltaLakeCredentials.Path,
+					"token":          deltaLakeCredentials.Token,
+					"namespace":      namespace,
+					"bucketProvider": warehouseutils.AzureBlob,
+					"containerName":  deltaLakeCredentials.ContainerName,
+					"accountName":    deltaLakeCredentials.AccountName,
+					"accountKey":     deltaLakeCredentials.AccountKey,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		t.Run("create schema if not exists", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			err := d.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			var schema string
+			err = d.DB.QueryRowContext(ctx, fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, d.Namespace)).Scan(&schema)
+			require.ErrorIs(t, err, sql.ErrNoRows)
+			require.Empty(t, schema)
+
+			warehouseSchema, unrecognizedWarehouseSchema, err := d.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Empty(t, warehouseSchema)
+			require.Empty(t, unrecognizedWarehouseSchema)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
+
+			err = d.DB.QueryRowContext(ctx, fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, d.Namespace)).Scan(&schema)
+			require.NoError(t, err)
+			require.Equal(t, schema, d.Namespace)
+		})
+
+		t.Run("schema already exists with some missing datatype", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			d := deltalake.New(config.New(), logger.NOP, statsStore)
+			err = d.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = d.CreateSchema(ctx)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
+
+			_, err = d.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s.test_table (c1 bigint, c2 binary, c3 boolean, c4 date, c5 decimal(10,2), c6 double, c7 float, c8 int, c9 void, c10 smallint, c11 string, c12 timestamp, c13 timestamp_ntz, c14 tinyint, c15 array<int>, c16 map<timestamp, int>, c17 struct<Field1:timestamp,Field2:int>, received_at timestamp, event_date date GENERATED ALWAYS AS (CAST(received_at AS DATE)));`, d.Namespace))
+			require.NoError(t, err)
+			_, err = d.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s.rudder_staging_123 (c1 string, c2 int);`, d.Namespace))
+			require.NoError(t, err)
+
+			warehouseSchema, unrecognizedWarehouseSchema, err := d.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, warehouseSchema)
+			require.NotEmpty(t, unrecognizedWarehouseSchema)
+			require.Contains(t, warehouseSchema, "test_table")
+			require.NotContains(t, warehouseSchema["test_table"], "event_date")
+			require.NotContains(t, warehouseSchema, "rudder_staging_123")
+
+			require.Equal(t, model.TableSchema{
+				"c1":          "int",
+				"c11":         "string",
+				"c4":          "date",
+				"c14":         "int",
+				"c3":          "boolean",
+				"received_at": "datetime",
+				"c7":          "float",
+				"c12":         "datetime",
+				"c10":         "int",
+				"c6":          "float",
+				"c8":          "int",
+			},
+				warehouseSchema["test_table"],
+			)
+			require.Equal(t, model.Schema{
+				"test_table": {
+					"c13": "<missing_datatype>",
+					"c16": "<missing_datatype>",
+					"c5":  "<missing_datatype>",
+					"c2":  "<missing_datatype>",
+					"c15": "<missing_datatype>",
+					"c9":  "<missing_datatype>",
+					"c17": "<missing_datatype>",
+				},
+			},
+				unrecognizedWarehouseSchema,
+			)
+
+			missingDatatypeStats := []string{"void", "timestamp_ntz", "struct", "array", "binary", "map", "decimal(10,2)"}
+			for _, missingDatatype := range missingDatatypeStats {
+				require.EqualValues(t, 1, statsStore.Get(warehouseutils.RudderMissingDatatype, stats.Tags{
+					"module":      "warehouse",
+					"destType":    warehouse.Type,
+					"workspaceId": warehouse.WorkspaceID,
+					"destID":      warehouse.Destination.ID,
+					"sourceID":    warehouse.Source.ID,
+					"datatype":    missingDatatype,
+				}).LastValue())
+			}
+		})
+	})
+}
+
+func dropSchema(t *testing.T, db *sql.DB, namespace string) {
+	t.Helper()
+
+	require.Eventually(t,
+		func() bool {
+			_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
+			if err != nil {
+				t.Logf("error deleting schema %q: %v", namespace, err)
+				return false
+			}
+			return true
+		},
+		time.Minute,
+		time.Second,
+	)
 }
 
 func TestDeltalake_TrimErrorMessage(t *testing.T) {

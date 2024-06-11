@@ -1019,7 +1019,7 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 			}
 			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
