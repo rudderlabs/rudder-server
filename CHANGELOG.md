@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.4](https://github.com/rudderlabs/rudder-server/compare/v1.26.3...v1.26.4) (2024-06-11)
+
+
+### Miscellaneous
+
+* detect tracker not running ([#4792](https://github.com/rudderlabs/rudder-server/issues/4792)) ([16fecdf](https://github.com/rudderlabs/rudder-server/commit/16fecdfbb657328e9218407ae00880c98801fdcb))
+
 ## [1.26.3](https://github.com/rudderlabs/rudder-server/compare/v1.26.2...v1.26.3) (2024-06-06)
 
 
