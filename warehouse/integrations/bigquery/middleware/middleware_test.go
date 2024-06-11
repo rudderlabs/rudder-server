@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -11,13 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 func TestQueryWrapper(t *testing.T) {
-	if !bqHelper.IsBQTestCredentialsAvailable() {
+	if _, exists := os.LookupEnv(bqHelper.TestKey); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 

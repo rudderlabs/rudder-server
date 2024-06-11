@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -102,7 +103,7 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 						}
 						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MissingDatatype
 
-						warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
+						warehouseutils.WHCounterStat(stats.Default, warehouseutils.RudderMissingDatatype, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
 					}
 				}
 			}
