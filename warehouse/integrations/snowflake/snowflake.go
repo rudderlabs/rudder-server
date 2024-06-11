@@ -3,8 +3,10 @@ package snowflake
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/csv"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
+	"github.com/youmark/pkcs8"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -37,14 +40,17 @@ const (
 
 // String constants for snowflake destination config
 const (
-	storageIntegration = "storageIntegration"
-	account            = "account"
-	warehouse          = "warehouse"
-	database           = "database"
-	user               = "user"
-	role               = "role"
-	password           = "password"
-	application        = "Rudderstack_Warehouse"
+	storageIntegration   = "storageIntegration"
+	account              = "account"
+	warehouse            = "warehouse"
+	database             = "database"
+	user                 = "user"
+	role                 = "role"
+	password             = "password"
+	useKeyPairAuth       = "useKeyPairAuth"
+	privateKey           = "privateKey"
+	privateKeyPassphrase = "privateKeyPassphrase"
+	application          = "Rudderstack_Warehouse"
 )
 
 var primaryKeyMap = map[string]string{
@@ -127,14 +133,17 @@ var errorsMappings = []model.JobError{
 }
 
 type credentials struct {
-	account    string
-	warehouse  string
-	database   string
-	user       string
-	role       string
-	password   string
-	schemaName string
-	timeout    time.Duration
+	account              string
+	warehouse            string
+	database             string
+	user                 string
+	role                 string
+	password             string
+	schemaName           string
+	useKeyPairAuth       bool
+	privateKey           string
+	privateKeyPassphrase string
+	timeout              time.Duration
 }
 
 type tableLoadResp struct {
@@ -179,11 +188,11 @@ type Snowflake struct {
 	}
 }
 
-func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, error) {
-	sf := &Snowflake{}
-
-	sf.logger = log.Child("integrations").Child("snowflake")
-	sf.stats = stat
+func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
+	sf := &Snowflake{
+		logger: log.Child("integrations").Child("snowflake"),
+		stats:  stat,
+	}
 
 	sf.config.allowMerge = conf.GetBool("Warehouse.snowflake.allowMerge", true)
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
@@ -199,7 +208,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 		return strings.ToUpper(item)
 	})
 
-	return sf, nil
+	return sf
 }
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
@@ -1058,15 +1067,25 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		Account:     cred.account,
 		User:        cred.user,
 		Role:        cred.role,
-		Password:    cred.password,
 		Database:    cred.database,
 		Schema:      cred.schemaName,
 		Warehouse:   cred.warehouse,
 		Application: application,
 	}
-
 	if cred.timeout > 0 {
 		urlConfig.LoginTimeout = cred.timeout
+	}
+	if cred.useKeyPairAuth {
+		rsaPrivateKey, err := ParsePrivateKey(cred.privateKey, cred.privateKeyPassphrase)
+		if err != nil {
+			return nil, fmt.Errorf("parsing private key: %w", err)
+		}
+
+		urlConfig.PrivateKey = rsaPrivateKey
+		urlConfig.Authenticator = snowflake.AuthTypeJwt
+	} else {
+		urlConfig.Password = cred.password
+		urlConfig.Authenticator = snowflake.AuthTypeSnowflake
 	}
 
 	var err error
@@ -1106,6 +1125,24 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		}),
 	)
 	return middleware, nil
+}
+
+func ParsePrivateKey(privateKey, passPhrase string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(whutils.FormatPemContent(privateKey)))
+	if block == nil {
+		return nil, errors.New("decoding private key failed")
+	}
+
+	var opts [][]byte
+	if len(passPhrase) > 0 {
+		opts = append(opts, []byte(passPhrase))
+	}
+
+	rsaPrivateKey, err := pkcs8.ParsePKCS8PrivateKeyRSA(block.Bytes, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("parsing private key: %w", err)
+	}
+	return rsaPrivateKey, nil
 }
 
 func (sf *Snowflake) CreateSchema(ctx context.Context) (err error) {
@@ -1336,14 +1373,17 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 
 func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) credentials {
 	return credentials{
-		account:    whutils.GetConfigValue(account, sf.Warehouse),
-		warehouse:  whutils.GetConfigValue(warehouse, sf.Warehouse),
-		database:   whutils.GetConfigValue(database, sf.Warehouse),
-		user:       whutils.GetConfigValue(user, sf.Warehouse),
-		role:       whutils.GetConfigValue(role, sf.Warehouse),
-		password:   whutils.GetConfigValue(password, sf.Warehouse),
-		schemaName: opts.schemaName,
-		timeout:    sf.connectTimeout,
+		account:              whutils.GetConfigValue(account, sf.Warehouse),
+		warehouse:            whutils.GetConfigValue(warehouse, sf.Warehouse),
+		database:             whutils.GetConfigValue(database, sf.Warehouse),
+		user:                 whutils.GetConfigValue(user, sf.Warehouse),
+		role:                 whutils.GetConfigValue(role, sf.Warehouse),
+		password:             whutils.GetConfigValue(password, sf.Warehouse),
+		useKeyPairAuth:       whutils.ReadAsBool(useKeyPairAuth, sf.Warehouse.Destination.Config),
+		privateKey:           whutils.GetConfigValue(privateKey, sf.Warehouse),
+		privateKeyPassphrase: whutils.GetConfigValue(privateKeyPassphrase, sf.Warehouse),
+		schemaName:           opts.schemaName,
+		timeout:              sf.connectTimeout,
 	}
 }
 
@@ -1416,7 +1456,7 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 			}
 			unrecognizedSchema[tableName][columnName] = whutils.MissingDatatype
 
-			whutils.WHCounterStat(whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			whutils.WHCounterStat(sf.stats, whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {

@@ -70,16 +70,11 @@ func rsTestCredentials() (*testCredentials, error) {
 	return &credentials, nil
 }
 
-func testCredentialsAvailable() bool {
-	_, err := rsTestCredentials()
-	return err == nil
-}
-
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !testCredentialsAvailable() {
+	if _, exists := os.LookupEnv(testKey); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 

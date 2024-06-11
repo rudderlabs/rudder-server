@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -34,6 +35,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -471,7 +473,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *MSSQL) ProcessColumnValue(
+func (ms *MSSQL) ProcessColumnValue(
 	value string,
 	valueType string,
 ) (interface{}, error) {
@@ -935,7 +937,7 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 			}
 			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(ms.stats, warehouseutils.RudderMissingDatatype, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
