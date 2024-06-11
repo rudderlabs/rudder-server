@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -25,6 +26,15 @@ type ConfigBuilder struct {
 
 // WithSource adds a source to the config
 func (b *ConfigBuilder) WithSource(source backendconfig.SourceT) *ConfigBuilder {
+	source.WorkspaceID = b.v.WorkspaceID
+	for i := range source.Destinations {
+		source.Destinations[i].WorkspaceID = b.v.WorkspaceID
+	}
 	b.v.Sources = append(b.v.Sources, source)
+	return b
+}
+
+func (b *ConfigBuilder) WithCredentials(credentials map[string]backendconfig.Credential) *ConfigBuilder {
+	b.v.Credentials = credentials
 	return b
 }
