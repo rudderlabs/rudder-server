@@ -46,8 +46,8 @@ func (l *StaticLibrary) SetUp() error {
 	return nil
 }
 
-func (l *StaticLibrary) WaitForConfig(ctx context.Context) {}
+func (l *StaticLibrary) WaitForConfig(context.Context) {}
 
 func (l *StaticLibrary) Stop() {}
 
-func (l *StaticLibrary) StartWithIDs(ctx context.Context, workspaces string) {}
+func (l *StaticLibrary) StartWithIDs(context.Context, string) {}
