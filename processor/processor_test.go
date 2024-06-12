@@ -2530,13 +2530,14 @@ var _ = Describe("Processor", Ordered, func() {
 
 			transformerResponse := &transformer.TransformerResponse{
 				Metadata: transformer.Metadata{
-					MessageID: "msgID",
+					MessageIDs: []string{"message-1", "message-2"},
 				},
-				Output: map[string]interface{}{
-					"src-key-1": "msgID",
-				},
-				StatusCode: 200,
+				StatusCode: 400,
+				Error:      "error-combined",
 			}
+
+			transformerSrv := MockTransformerServer(expectedTransformerRequest, transformerResponse)
+			defer transformerSrv.Close()
 
 			assertErrStoreJob := func(job *jobsdb.JobT) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -2577,9 +2578,6 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
-
-			transformerSrv := MockTransformerServer(expectedTransformerRequest, transformerResponse)
-			defer transformerSrv.Close()
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
