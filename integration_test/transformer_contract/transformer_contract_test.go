@@ -178,6 +178,7 @@ func TestTransformerContract(t *testing.T) {
 		cancel()
 		require.NoError(t, wg.Wait())
 	})
+	// TODO: Add tests for dest transformer and tracking plan validation
 	t.Run("Dest Transformer", func(t *testing.T) {})
 	t.Run("Tracking Plan Validation", func(t *testing.T) {})
 }
