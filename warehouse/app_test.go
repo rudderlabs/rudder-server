@@ -365,7 +365,6 @@ func TestApp(t *testing.T) {
 		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
 		require.NoError(t, a.Setup(ctx))
 		cancel()
-		require.Contains(t, a.monitorDestRouters(ctx).Error(), "reset in progress: context canceled")
 	})
 	t.Run("rudder core recovery mode", func(t *testing.T) {
 		t.Run("stand alone", func(t *testing.T) {

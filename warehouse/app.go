@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type App struct {
@@ -396,9 +394,32 @@ func (a *App) Run(ctx context.Context) error {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return a.notifier.ClearJobs(gCtx)
 		}))
+
+		routerManager := router.NewLifecycleManager(
+			a.tenantManager,
+			func(ctx context.Context, destType string) error {
+				r := router.New(
+					a.reporting,
+					destType,
+					a.conf,
+					a.logger.Child("router"),
+					a.statsFactory,
+					a.db,
+					a.notifier,
+					a.tenantManager,
+					a.controlPlaneClient,
+					a.bcManager,
+					a.encodingFactory,
+					a.triggerStore,
+					a.createUploadAlways,
+				)
+				return r.Start(ctx)
+			},
+		)
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return a.monitorDestRouters(gCtx)
+			return routerManager.Run(gCtx)
 		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			archive.CronArchiver(gCtx, archive.New(
 				a.conf,
@@ -432,64 +453,4 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-// Gets the config from config backend and extracts enabled write keys
-func (a *App) monitorDestRouters(ctx context.Context) error {
-	dstToWhRouter := make(map[string]*router.Router)
-	g, ctx := errgroup.WithContext(ctx)
-	ch := a.tenantManager.WatchConfig(ctx)
-	for configData := range ch {
-		diffRouters := a.onConfigDataEvent(configData, dstToWhRouter)
-		for _, r := range diffRouters {
-			g.Go(func() error { return r.Start(ctx) })
-		}
-	}
-	return g.Wait()
-}
-
-func (a *App) onConfigDataEvent(
-	configMap map[string]backendconfig.ConfigT,
-	dstToWhRouter map[string]*router.Router,
-) map[string]*router.Router {
-	enabledDestinations := make(map[string]bool)
-	diffRouters := make(map[string]*router.Router)
-	for _, wConfig := range configMap {
-		for _, source := range wConfig.Sources {
-			for _, destination := range source.Destinations {
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-
-				if !slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-					continue
-				}
-
-				_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-				if ok {
-					a.logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-					continue
-				}
-
-				a.logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-
-				r := router.New(
-					a.reporting,
-					destination.DestinationDefinition.Name,
-					a.conf,
-					a.logger.Child("router"),
-					a.statsFactory,
-					a.db,
-					a.notifier,
-					a.tenantManager,
-					a.controlPlaneClient,
-					a.bcManager,
-					a.encodingFactory,
-					a.triggerStore,
-					a.createUploadAlways,
-				)
-				dstToWhRouter[destination.DestinationDefinition.Name] = r
-				diffRouters[destination.DestinationDefinition.Name] = r
-			}
-		}
-	}
-	return diffRouters
 }
