@@ -153,3 +153,9 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 		l.Handle.adaptiveLimit = adaptiveLimitFunction
 	}
 }
+
+func WithStats(stats stats.Stats) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.statsFactory = stats
+	}
+}

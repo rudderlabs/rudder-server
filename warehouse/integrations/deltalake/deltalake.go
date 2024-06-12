@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -83,6 +84,12 @@ var dataTypesMapToRudder = map[string]string{
 	"string":    "string",
 	"date":      "date",
 	"timestamp": "datetime",
+}
+
+var semiStructuredDataTypes = []string{
+	"array",
+	"map",
+	"struct",
 }
 
 // excludeColumnsMap Columns you need to exclude
@@ -359,11 +366,23 @@ func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 				}
 				unrecognizedSchema[tableName][colName] = warehouseutils.MissingDatatype
 
-				warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatype}).Count(1)
+				d.sendStatForMissingDatatype(dataType)
 			}
 		}
 	}
 	return schema, unrecognizedSchema, nil
+}
+
+func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
+	datatypeForStats := strings.ToLower(missingDatatype)
+	for _, semiStructuredDataType := range semiStructuredDataTypes {
+		if strings.HasPrefix(datatypeForStats, semiStructuredDataType) {
+			datatypeForStats = semiStructuredDataType
+			break
+		}
+	}
+
+	warehouseutils.WHCounterStat(d.stats, warehouseutils.RudderMissingDatatype, &d.Warehouse, warehouseutils.Tag{Name: "datatype", Value: datatypeForStats}).Count(1)
 }
 
 // fetchTableAttributes fetches the attributes of a table

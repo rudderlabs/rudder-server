@@ -404,7 +404,9 @@ func (proc *Handle) Setup(
 	proc.instanceID = misc.GetInstanceID()
 
 	// Stats
-	proc.statsFactory = stats.Default
+	if proc.statsFactory == nil {
+		proc.statsFactory = stats.Default
+	}
 	proc.tracer = proc.statsFactory.NewTracer("processor")
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
@@ -1626,6 +1628,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
+
+		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    sourceID,
+			"workspaceId": batchEvent.WorkspaceId,
+		}).Since(receivedAt)
 
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
