@@ -89,6 +89,7 @@ func (brt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
+	brt.conf = conf
 	brt.maxEventsInABatch = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxEventsInABatch", "BatchRouter.maxEventsInABatch")
 	brt.maxPayloadSizeInBytes = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxPayloadSizeInBytes", "BatchRouter.maxPayloadSizeInBytes")
 	brt.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")

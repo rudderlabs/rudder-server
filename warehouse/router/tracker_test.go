@@ -203,13 +203,28 @@ func TestRouter_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		r := Router{
-			logger: mockLogger,
+			logger:       mockLogger,
+			statsFactory: statsStore,
+			destType:     warehouseutils.POSTGRES,
 		}
 
 		mockLogger.EXPECT().Infon("context is cancelled, stopped running tracking").Times(1)
 
-		err := r.CronTracker(ctx)
+		err = r.CronTracker(ctx)
 		require.NoError(t, err)
+
+		m := statsStore.GetByName("warehouse_cron_tracker_tick")
+		require.Equal(t, []memstats.Metric{{
+			Name: "warehouse_cron_tracker_tick",
+			Tags: stats.Tags{
+				"module":   moduleName,
+				"destType": warehouseutils.POSTGRES,
+			},
+			Value: 1,
+		}}, m)
 	})
 }
