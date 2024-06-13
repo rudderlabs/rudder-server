@@ -24,7 +24,7 @@ import (
 const (
 	KlaviyoAPIURL       = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
 	BATCHSIZE           = 10000
-	MAXPAYLOADSIZE      = 5000000
+	MAXPAYLOADSIZE      = 4900000
 	IMPORT_ID_SEPARATOR = ":"
 )
 
@@ -68,8 +68,8 @@ func NewManager(destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, 
 
 func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements int) ([][]Profile, error) {
 	var chunks [][]Profile
-	var chunk []Profile
-	var chunkSize int
+	chunk := make([]Profile, 0)
+	var chunkSize int = 0
 
 	for _, profile := range combinedProfiles {
 		profileJSON, err := json.Marshal(profile)
@@ -79,9 +79,9 @@ func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements in
 
 		profileSize := len(profileJSON)
 
-		if (chunkSize+profileSize > maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
+		if (chunkSize+profileSize > maxBytes || chunkSize+profileSize == maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
 			chunks = append(chunks, chunk)
-			chunk = nil
+			chunk = make([]Profile, 0)
 			chunkSize = 0
 		}
 
@@ -344,7 +344,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		combinedPayload := createFinalPayload(chunk, listId)
 
 		// Convert combined payload to JSON
-		outputJSON, err := json.MarshalIndent(combinedPayload, "", "  ")
+		outputJSON, err := json.Marshal(combinedPayload)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while marshaling combined JSON.", err, importingJobIDs, destinationID)
 		}
