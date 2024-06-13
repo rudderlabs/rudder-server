@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   clickhouse:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:24-alpine
     environment:
       - CLICKHOUSE_DB=rudderdb
       - CLICKHOUSE_PASSWORD=rudder-password

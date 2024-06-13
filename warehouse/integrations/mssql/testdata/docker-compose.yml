@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mssql:
     image: rudderstack/azure-sql-edge:1.0.6

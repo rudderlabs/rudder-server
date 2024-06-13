@@ -12,7 +12,7 @@ concurrency:
 jobs:
   integration:
     name: Integration
-    runs-on: 'ubuntu-20.04'
+    runs-on: 'ubuntu-24.04'
     strategy:
       matrix:
         FEATURES: [ oss ,enterprise ]
@@ -42,7 +42,7 @@ jobs:
           RSERVER_ENABLE_MULTITENANCY: false
   warehouse-integration:
     name: Warehouse Integration
-    runs-on: 'ubuntu-20.04'
+    runs-on: 'ubuntu-24.04'
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +99,7 @@ jobs:
           path: coverage.txt
   unit:
     name: Unit
-    runs-on: 'ubuntu-20.04'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: Disable IPv6 (temporary fix)
         run: |
@@ -119,7 +119,7 @@ jobs:
           path: coverage.txt
   package-unit:
     name: Package Unit
-    runs-on: 'ubuntu-20.04'
+    runs-on: 'ubuntu-24.04'
     strategy:
       fail-fast: false
       matrix:
@@ -177,7 +177,7 @@ jobs:
           path: coverage.txt
   coverage:
     name: Coverage
-    runs-on: 'ubuntu-20.04'
+    runs-on: 'ubuntu-24.04'
     needs:
       - warehouse-integration
       - unit
@@ -203,7 +203,7 @@ jobs:
   all-green:
     name: All
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - integration
       - warehouse-integration

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   ssh-server:
     image: lscr.io/linuxserver/openssh-server:9.3_p2-r1-ls145

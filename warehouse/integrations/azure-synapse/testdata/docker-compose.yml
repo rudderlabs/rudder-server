@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   azure_synapse:
     image: rudderstack/azure-sql-edge:1.0.6

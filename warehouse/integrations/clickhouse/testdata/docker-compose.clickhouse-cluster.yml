@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   zookeeper:
     image: zookeeper:3.5
@@ -8,7 +6,7 @@ services:
       interval: 1s
       retries: 25
   clickhouse01:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:24-alpine
     ports:
       - "9000"
     volumes:
@@ -20,7 +18,7 @@ services:
       interval: 1s
       retries: 25
   clickhouse02:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:24-alpine
     ports:
       - "9000"
     volumes:
@@ -32,7 +30,7 @@ services:
       interval: 1s
       retries: 25
   clickhouse03:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:24-alpine
     ports:
       - "9000"
     volumes:
@@ -44,7 +42,7 @@ services:
       interval: 1s
       retries: 25
   clickhouse04:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:24-alpine
     ports:
       - "9000"
     volumes:

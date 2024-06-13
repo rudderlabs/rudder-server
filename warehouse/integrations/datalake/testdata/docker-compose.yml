@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   azure:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
+    image: mcr.microsoft.com/azure-storage/azurite:3.29.0
     ports:
       - "10000"
     environment:
