@@ -2,6 +2,7 @@ package wunderkind
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
 	jsoniter "github.com/json-iterator/go"
@@ -83,6 +84,8 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 	if err = invokeInput.Validate(); err != nil {
 		return 400, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
 	}
+
+	fmt.Println("Invoke Input: ", invokeInput)
 
 	response, err := client.Invoke(&invokeInput)
 	if err != nil {
