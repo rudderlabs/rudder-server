@@ -142,6 +142,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	var modifiedConfig ConfigT
 	modifiedConfig.Libraries = config.Libraries
 	modifiedConfig.Sources = make([]SourceT, 0)
+	modifiedConfig.Credentials = config.Credentials
 	for _, source := range config.Sources {
 		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006

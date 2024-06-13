@@ -74,6 +74,12 @@ type SourceT struct {
 	}
 }
 
+type Credential struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}
+
 func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
 }
@@ -87,6 +93,7 @@ type ConfigT struct {
 	ConnectionFlags ConnectionFlags              `json:"flags"`
 	Settings        Settings                     `json:"settings"`
 	UpdatedAt       time.Time                    `json:"updatedAt"`
+	Credentials     map[string]Credential        `json:"credentials"`
 }
 
 func (c *ConfigT) SourcesMap() map[string]*SourceT {
