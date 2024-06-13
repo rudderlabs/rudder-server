@@ -144,13 +144,25 @@ type Input struct {
 type Profile struct {
 	Attributes struct {
 		Email         string `json:"email,omitempty"`
+		Phone         string `json:"phone_number,omitempty"`
+		ExternalId    string `json:"external_id,omitempty"`
 		FirstName     string `json:"first_name,omitempty"`
 		JobIdentifier string `json:"jobIdentifier,omitempty"`
 		LastName      string `json:"last_name,omitempty"`
+		Organization  string `json:"organization,omitempty"`
+		Title         string `json:"title,omitempty"`
+		Image         string `json:"image,omitempty"`
 		Location      struct {
-			City    string `json:"city,omitempty"`
-			Country string `json:"country,omitempty"`
-			IP      string `json:"ip,omitempty"`
+			Address1  string `json:"address1,omitempty"`
+			Address2  string `json:"address2,omitempty"`
+			City      string `json:"city,omitempty"`
+			Country   string `json:"country,omitempty"`
+			Latitude  string `json:"latitude,omitempty"`
+			Longitude string `json:"longitude,omitempty"`
+			Region    string `json:"region,omitempty"`
+			Zip       string `json:"zip,omitempty"`
+			Timezone  string `json:"timezone,omitempty"`
+			IP        string `json:"ip,omitempty"`
 		} `json:"location,omitempty"`
 		Properties map[string]interface{} `json:"properties,omitempty"`
 	} `json:"attributes,omitempty"`
