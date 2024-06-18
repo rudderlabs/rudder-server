@@ -79,7 +79,7 @@ func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements in
 
 		profileSize := len(profileJSON)
 
-		if (chunkSize+profileSize > maxBytes || chunkSize+profileSize == maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
+		if (chunkSize+profileSize >= maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
 			chunks = append(chunks, chunk)
 			chunk = make([]Profile, 0)
 			chunkSize = 0
