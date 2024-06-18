@@ -203,6 +203,14 @@ func TestTransformer(t *testing.T) {
 						"src-key-1":       msgID,
 						"forceStatusCode": statusCode,
 					},
+					Credentials: []Credential{
+						{
+							ID:       "test-credential",
+							Key:      "test-key",
+							Value:    "test-value",
+							IsSecret: false,
+						},
+					},
 				}
 
 				tResp := TransformerResponse{
@@ -237,6 +245,14 @@ func TestTransformer(t *testing.T) {
 			},
 			Message: map[string]interface{}{
 				"src-key-1": msgID,
+			},
+			Credentials: []Credential{
+				{
+					ID:       "test-credential",
+					Key:      "test-key",
+					Value:    "test-value",
+					IsSecret: false,
+				},
 			},
 		})
 
@@ -347,6 +363,14 @@ func TestTransformer(t *testing.T) {
 			Message: map[string]interface{}{
 				"src-key-1": msgID,
 			},
+			Credentials: []Credential{
+				{
+					ID:       "test-credential",
+					Key:      "test-key",
+					Value:    "test-value",
+					IsSecret: false,
+				},
+			},
 		})
 
 		elt := &endlessLoopTransformer{
@@ -402,6 +426,14 @@ func TestTransformer(t *testing.T) {
 						ID:        "test-transformation",
 						VersionID: "test-version",
 					},
+				},
+			},
+			Credentials: []Credential{
+				{
+					ID:       "test-credential",
+					Key:      "test-key",
+					Value:    "test-value",
+					IsSecret: false,
 				},
 			},
 		})
@@ -529,6 +561,14 @@ func TestTransformer(t *testing.T) {
 					},
 				},
 			},
+			Credentials: []Credential{
+				{
+					ID:       "test-credential",
+					Key:      "test-key",
+					Value:    "test-value",
+					IsSecret: false,
+				},
+			},
 		})
 
 		testCases := []struct {
@@ -637,6 +677,14 @@ func TestTransformer(t *testing.T) {
 					},
 				},
 			},
+			Credentials: []Credential{
+				{
+					ID:       "test-credential",
+					Key:      "test-key",
+					Value:    "test-value",
+					IsSecret: false,
+				},
+			},
 		})
 
 		t.Run("Destination transformations", func(t *testing.T) {
@@ -710,6 +758,14 @@ func TestTransformer(t *testing.T) {
 									ID:        "test-transformation",
 									VersionID: "test-version",
 								},
+							},
+						},
+						Credentials: []Credential{
+							{
+								ID:       "test-credential",
+								Key:      "test-key",
+								Value:    "test-value",
+								IsSecret: false,
 							},
 						},
 					})
