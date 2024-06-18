@@ -10,6 +10,6 @@ services:
     ports:
       - "9000"
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:8123/ping || exit 1
       interval: 1s
       retries: 25

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -1753,6 +1754,17 @@ var _ = Describe("Gateway", func() {
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
 
+		// a second after receivedAt
+		now, err := time.Parse(time.RFC3339Nano, "2024-01-01T01:01:02.000000001Z")
+		Expect(err).To(BeNil())
+
+		statStore, err := memstats.New(
+			memstats.WithNow(func() time.Time {
+				return now
+			}),
+		)
+		Expect(err).To(BeNil())
+
 		BeforeEach(func() {
 			c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
 			c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
@@ -1770,7 +1782,6 @@ var _ = Describe("Gateway", func() {
 			conf.Set("Gateway.enableSuppressUserFeature", true)
 			conf.Set("Gateway.enableEventSchemasFeature", false)
 
-			var err error
 			serverPort, err := kithelper.GetFreePort()
 			Expect(err).To(BeNil())
 			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
@@ -1778,7 +1789,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -1815,6 +1826,16 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+
+			Expect(statStore.GetByName("gateway.event_pickup_lag_seconds")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.event_pickup_lag_seconds",
+					Tags: map[string]string{"sourceId": SourceIDEnabled, "workspaceId": WorkspaceID},
+					Durations: []time.Duration{
+						time.Second,
+					},
+				},
+			}))
 		})
 
 		It("Successful request, without debugger", func() {
@@ -1891,6 +1912,103 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
+		})
+	})
+
+	Context("extractJobsFromInternalBatchPayload", func() {
+		var gateway *Handle
+		BeforeEach(func() {
+			c.initializeAppFeatures()
+			gateway = &Handle{}
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			Expect(err).To(BeNil())
+			waitForBackendConfigInit(gateway)
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("doesn't override if receivedAt or requestIP already exists in payload", func() {
+			properties := stream.MessageProperties{
+				MessageID:     "messageID",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "requestIP": "dummyIPFromPayload"}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := json.Marshal(messages)
+			Expect(err).To(BeNil())
+
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			Expect(jobForm).To(HaveLen(1))
+			err = json.Unmarshal(jobForm[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+		})
+
+		It("adds receivedAt and requestIP in the request payload if it's not already present", func() {
+			properties := stream.MessageProperties{
+				MessageID:     "messageID",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := json.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"requestIP"`
+				} `json:"batch"`
+			}
+			Expect(jobForm).To(HaveLen(1))
+			err = json.Unmarshal(jobForm[0].EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000Z"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
 		})
 	})
 })

@@ -22,6 +22,7 @@ func TestEventStatsReporter(t *testing.T) {
 	destinationID := "test-destination-id"
 	reportedBy := "test-reported-by"
 	sourceCategory := "test-source-category"
+	trackingPlanID := "test-tracking-plan-id"
 	ctrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -77,6 +78,7 @@ func TestEventStatsReporter(t *testing.T) {
 				SourceID:       sourceID,
 				DestinationID:  destinationID,
 				SourceCategory: sourceCategory,
+				TrackingPlanID: "",
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
@@ -93,6 +95,7 @@ func TestEventStatsReporter(t *testing.T) {
 				SourceID:       sourceID,
 				DestinationID:  destinationID,
 				SourceCategory: sourceCategory,
+				TrackingPlanID: "",
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
@@ -109,6 +112,7 @@ func TestEventStatsReporter(t *testing.T) {
 				SourceID:       sourceID,
 				DestinationID:  destinationID,
 				SourceCategory: sourceCategory,
+				TrackingPlanID: trackingPlanID,
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
@@ -125,6 +129,7 @@ func TestEventStatsReporter(t *testing.T) {
 				SourceID:       sourceID,
 				DestinationID:  destinationID,
 				SourceCategory: sourceCategory,
+				TrackingPlanID: trackingPlanID,
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
@@ -141,6 +146,7 @@ func TestEventStatsReporter(t *testing.T) {
 				SourceID:       sourceID,
 				DestinationID:  destinationID,
 				SourceCategory: "",
+				TrackingPlanID: "",
 			},
 			PUDetails: types.PUDetails{
 				PU:         reportedBy,
@@ -165,6 +171,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
+		"trackingPlanId":  "",
 	}).LastValue(), float64(10))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -176,6 +183,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "true",
 		"status":          jobsdb.Aborted.State,
+		"trackingPlanId":  "",
 	}).LastValue(), float64(50))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -187,6 +195,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "true",
 		"status":          jobsdb.Migrated.State,
+		"trackingPlanId":  trackingPlanID,
 	}).LastValue(), float64(150))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -198,6 +207,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "false",
 		"status":          "non-terminal",
+		"trackingPlanId":  trackingPlanID,
 	}).LastValue(), float64(100))
 	require.Equal(t, statsStore.Get(EventsProcessedMetricName, map[string]string{
 		"workspaceId":     workspaceID,
@@ -209,6 +219,7 @@ func TestEventStatsReporter(t *testing.T) {
 		"destinationType": "test-destination-name",
 		"terminal":        "true",
 		"status":          jobsdb.Succeeded.State,
+		"trackingPlanId":  "",
 	}).LastValue(), float64(20))
 	require.Len(t, statsStore.GetAll(), 5)
 	t.Cleanup(func() {

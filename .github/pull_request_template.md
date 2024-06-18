@@ -4,7 +4,7 @@
 
 ## Linear Ticket
 
-< Replace with Linear Link >
+< Replace with Linear Link ( [create](https://linear.new?title=Awesome-pr-without-linear-ticket) or [search](https://linear.app/rudderstack/search) linear ticket) or  >
 
 ## Security
 
