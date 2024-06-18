@@ -214,57 +214,6 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSet
 	return setCmdArgs, nil
 }
 
-// nolint:unused
-func (m *RedisManager) setArgsForReplaceStrategy(inputArgs setArguments) (*jsonSetCmdArgs, error) {
-	key := inputArgs.key
-	path := inputArgs.path
-	jsonVal := inputArgs.jsonVal
-
-	actualPath := "$" // root insert
-	if path != "" {
-		actualPath = fmt.Sprintf("$.%s", path)
-	}
-
-	setCmdArgs := &jsonSetCmdArgs{
-		key:   key,
-		path:  actualPath,
-		value: jsonVal.String(),
-	}
-
-	// Insert a value into a path for a key
-	// 1. Validate if key is present
-	// 2. If key is not present, then insert value into the path
-	//    Execute the following command:
-	//    > JSON.SET key $ {[path]: value}
-	// Limitation: It can only insert values at a single level
-	// Example of limitation:
-	//    - JSON.SET key $.k1.k2.k3 '{"A":1}' cannot be done and would be converted to
-	//      JSON.SET key $ '{"k1.k2.k3": {"A": 1}}'
-	// Example of correct usage:
-	//    - JSON.SET key $.k1 '{"A":1}' can be done and would be converted to
-	//      JSON.SET key $ '{"k1": {"A": 1}}'
-	if actualPath != "$" {
-		v, err := m.GetClient().JSONGet(context.Background(), key).Result()
-		if err != nil {
-			return nil, err
-		}
-		if v == "" {
-			// key is new one but we need to insert a value other than root
-			// formulate {[path]: value}
-			mapStr, err := json.Marshal(map[string]interface{}{
-				path: jsonVal.Value(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			// data is not present in key
-			setCmdArgs.path = "$"
-			setCmdArgs.value = string(mapStr)
-		}
-	}
-	return setCmdArgs, nil
-}
-
 type setArguments struct {
 	key     string
 	path    string
@@ -282,13 +231,6 @@ func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, confi
 		path:    path,
 		jsonVal: jsonVal,
 	})
-	// if m.shouldMerge(config) {
-	// }
-	// return m.setArgsForReplaceStrategy(setArguments{
-	// 	key:     key,
-	// 	path:    path,
-	// 	jsonVal: jsonVal,
-	// })
 }
 
 func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error) {
@@ -304,16 +246,6 @@ func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[strin
 	}
 
 	return val, err
-}
-
-// nolint:unused
-func (*RedisManager) shouldMerge(config map[string]interface{}) bool {
-	if mergeStrategyI, ok := config["shouldMergeJSON"]; ok {
-		if mergeStrategy, ok := mergeStrategyI.(bool); ok {
-			return mergeStrategy
-		}
-	}
-	return false
 }
 
 func (*RedisManager) ShouldSendDataAsJSON(config map[string]interface{}) bool {
