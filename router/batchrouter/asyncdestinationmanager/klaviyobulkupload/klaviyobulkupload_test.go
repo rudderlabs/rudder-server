@@ -164,8 +164,8 @@ func TestExtractProfileValidInput(t *testing.T) {
 	if err != nil {
 		t.Errorf("json.Unmarshal failed: %v", err)
 	}
-	expectedProfile := `{"attributes":{"email":"qwe122@mail.com","first_name":"Testqwe0122","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"}},"id":"111222334","type":"profile"}`
+	expectedProfile := `{"attributes":{"email":"qwe122@mail.com","phone_number":"+919912000123","first_name":"Testqwe0122","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"}},"id":"111222334","type":"profile"}`
 	result := kbu.ExtractProfile(inputPayload)
 	profileJson, _ := json.Marshal(result)
-	assert.Equal(t, expectedProfile, string(profileJson))
+	assert.JSONEq(t, expectedProfile, string(profileJson))
 }

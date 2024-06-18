@@ -337,7 +337,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
-	var importIds []string // DelimitedImportIds is : seperated importIds
+	var importIds []string // DelimitedImportIds is : separated importIds
 	var DelimitedUploadRespErr string
 
 	for idx, chunk := range chunks {
