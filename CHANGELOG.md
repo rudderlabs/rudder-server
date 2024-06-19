@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.28.0](https://github.com/rudderlabs/rudder-server/compare/v1.27.0...v1.28.0) (2024-06-19)
+
+
+### Features
+
+* onboard klaviyo bulk upload destination ([#4682](https://github.com/rudderlabs/rudder-server/issues/4682)) ([6e92029](https://github.com/rudderlabs/rudder-server/commit/6e92029b7d5cea42cf02b57462ec52feb17c6f77))
+
+
+### Miscellaneous
+
+* create migration for tracked_user_reports table ([#4804](https://github.com/rudderlabs/rudder-server/issues/4804)) ([24fd6d4](https://github.com/rudderlabs/rudder-server/commit/24fd6d4c3054e481a3b2e32c263a9fc614760384))
+* data plane changes for credentials in transformation ([#4715](https://github.com/rudderlabs/rudder-server/issues/4715)) ([2a89bf9](https://github.com/rudderlabs/rudder-server/commit/2a89bf9fd767dba06921a9310f134ca16bb9f7f8))
+* fix warehouse integration tests ([#4806](https://github.com/rudderlabs/rudder-server/issues/4806)) ([cb26a0b](https://github.com/rudderlabs/rudder-server/commit/cb26a0bca36f309e148aea5a099a5c711672021e))
+* rename requestIP to request_ip in payload ([#4809](https://github.com/rudderlabs/rudder-server/issues/4809)) ([f5d6043](https://github.com/rudderlabs/rudder-server/commit/f5d6043915cc1f332499888a6d6c69f6175f33d0))
+* sync release v1.27.0 to main branch ([#4797](https://github.com/rudderlabs/rudder-server/issues/4797)) ([d4cd2a4](https://github.com/rudderlabs/rudder-server/commit/d4cd2a41f9473e0fbf4c0ded2967e5baea676b8a))
+
 ## [1.27.0](https://github.com/rudderlabs/rudder-server/compare/v1.26.2...v1.27.0) (2024-06-12)
 
 
