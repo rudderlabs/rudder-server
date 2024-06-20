@@ -9,6 +9,12 @@ type Flusher struct {
 	inAppAggregator InAppAggregator
 }
 
+func NewFlusher(inAppAggregator InAppAggregator) *Flusher {
+	return &Flusher{
+		inAppAggregator: inAppAggregator,
+	}
+}
+
 func (f *Flusher) Start(ctx context.Context) {
 
 }
